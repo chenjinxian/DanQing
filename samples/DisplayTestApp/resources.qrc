@@ -1,0 +1,221 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/">
+        <file alias="freecad.qss">freecad.qss</file>
+    </qresource>
+    <qresource prefix="/fonts">
+        <!-- itwinjs-core display-test-app 的图标字体（MIT）——Surface 页 5 项功能的
+             原始图标（ToolBar.ts:18 fontFamily "Display-Test-App-Icons"）。
+             Ported from: itwinjs-core test-apps/display-test-app/public/Fonts/ -->
+        <file alias="Display-Test-App-Icons.ttf">fonts/Display-Test-App-Icons.ttf</file>
+    </qresource>
+    <qresource prefix="/icons">
+        <!-- DTA 工具栏图标（.static-assets 的 SVG——Viewer.ts createImageButton 引用）。
+             Ported from: itwinjs-core test-apps/display-test-app/.static-assets/ -->
+        <file alias="dta/zoom.svg">icons/dta/zoom.svg</file>
+        <file alias="dta/fit-to-view.svg">icons/dta/fit-to-view.svg</file>
+        <file alias="dta/window-area.svg">icons/dta/window-area.svg</file>
+        <file alias="dta/rotate-left.svg">icons/dta/rotate-left.svg</file>
+        <file alias="dta/walk.svg">icons/dta/walk.svg</file>
+
+        <!-- File toolbar -->
+        <file alias="document-new.svg">icons/document-new.svg</file>
+        <file alias="document-open.svg">icons/document-open.svg</file>
+        <file alias="document-save.svg">icons/document-save.svg</file>
+        <file alias="document-save-as.svg">icons/document-save-as.svg</file>
+        <file alias="Document.svg">icons/Document.svg</file>
+
+        <!-- Edit toolbar -->
+        <file alias="edit-undo.svg">icons/edit-undo.svg</file>
+        <file alias="edit-redo.svg">icons/edit-redo.svg</file>
+        <file alias="view-refresh.svg">icons/view-refresh.svg</file>
+        <file alias="edit-cut.svg">icons/edit-cut.svg</file>
+        <file alias="edit-copy.svg">icons/edit-copy.svg</file>
+        <file alias="edit-paste.svg">icons/edit-paste.svg</file>
+
+        <!-- View toolbar -->
+        <file alias="zoom-fit-best.svg">icons/zoom-fit-best.svg</file>
+        <file alias="view-perspective.svg">icons/view-perspective.svg</file>
+        <file alias="view-front.svg">icons/view-front.svg</file>
+        <file alias="view-top.svg">icons/view-top.svg</file>
+        <file alias="view-right.svg">icons/view-right.svg</file>
+
+        <!-- Structure toolbar -->
+        <file alias="Group.svg">icons/Group.svg</file>
+
+        <!-- Start page workbench icons -->
+        <file alias="PartDesignWorkbench.svg">icons/PartDesignWorkbench.svg</file>
+        <file alias="AssemblyWorkbench.svg">icons/AssemblyWorkbench.svg</file>
+        <file alias="DraftWorkbench.svg">icons/DraftWorkbench.svg</file>
+        <file alias="BIMWorkbench.svg">icons/BIMWorkbench.svg</file>
+
+        <!-- Dock widget and tab bar icons -->
+        <file alias="images_classic/close-black.svg">icons/images_classic/close-black.svg</file>
+        <file alias="images_classic/close-red.svg">icons/images_classic/close-red.svg</file>
+        <file alias="images_classic/close-darkred.svg">icons/images_classic/close-darkred.svg</file>
+        <file alias="images_classic/close-lightgray.svg">icons/images_classic/close-lightgray.svg</file>
+        <file alias="images_classic/undock-black.svg">icons/images_classic/undock-black.svg</file>
+        <file alias="images_classic/undock-blue.svg">icons/images_classic/undock-blue.svg</file>
+        <file alias="images_classic/overlay-lightgray.svg">icons/images_classic/overlay-lightgray.svg</file>
+        <file alias="images_classic/overlay-black.svg">icons/images_classic/overlay-black.svg</file>
+        <file alias="images_classic/float-lightgray.svg">icons/images_classic/float-lightgray.svg</file>
+        <file alias="images_classic/float-black.svg">icons/images_classic/float-black.svg</file>
+        <file alias="images_classic/sizegrip-lightgray.svg">icons/images_classic/sizegrip-lightgray.svg</file>
+        <file alias="images_classic/hmovetoolbar-lightgray.svg">icons/images_classic/hmovetoolbar-lightgray.svg</file>
+        <file alias="images_classic/hmovetoolbar-black.svg">icons/images_classic/hmovetoolbar-black.svg</file>
+        <file alias="images_classic/vmovetoolbar-lightgray.svg">icons/images_classic/vmovetoolbar-lightgray.svg</file>
+        <file alias="images_classic/vmovetoolbar-black.svg">icons/images_classic/vmovetoolbar-black.svg</file>
+        <file alias="images_classic/splitter_vertical-lightgray.svg">icons/images_classic/splitter_vertical-lightgray.svg</file>
+        <file alias="images_classic/splitter_horizontal-lightgray.svg">icons/images_classic/splitter_horizontal-lightgray.svg</file>
+
+        <!-- Arrow icons -->
+        <file alias="images_classic/arrow-down-lightgray.svg">icons/images_classic/arrow-down-lightgray.svg</file>
+        <file alias="images_classic/arrow-down-black.svg">icons/images_classic/arrow-down-black.svg</file>
+        <file alias="images_classic/arrow-up-lightgray.svg">icons/images_classic/arrow-up-lightgray.svg</file>
+        <file alias="images_classic/arrow-up-black.svg">icons/images_classic/arrow-up-black.svg</file>
+        <file alias="images_classic/arrow-left-lightgray.svg">icons/images_classic/arrow-left-lightgray.svg</file>
+        <file alias="images_classic/arrow-left-black.svg">icons/images_classic/arrow-left-black.svg</file>
+        <file alias="images_classic/arrow-left-darkgray.svg">icons/images_classic/arrow-left-darkgray.svg</file>
+        <file alias="images_classic/arrow-right-lightgray.svg">icons/images_classic/arrow-right-lightgray.svg</file>
+        <file alias="images_classic/arrow-right-black.svg">icons/images_classic/arrow-right-black.svg</file>
+        <file alias="images_classic/arrow-right-darkgray.svg">icons/images_classic/arrow-right-darkgray.svg</file>
+
+        <!-- Checkbox and radio marks -->
+        <file alias="images_classic/check-mark-black.svg">icons/images_classic/check-mark-black.svg</file>
+        <file alias="images_classic/check-mark-lightgray.svg">icons/images_classic/check-mark-lightgray.svg</file>
+        <file alias="images_classic/checkbox-checked-black.svg">icons/images_classic/checkbox-checked-black.svg</file>
+        <file alias="images_classic/checkbox-checked-lightgray.svg">icons/images_classic/checkbox-checked-lightgray.svg</file>
+        <file alias="images_classic/checkbox-empty-black.svg">icons/images_classic/checkbox-empty-black.svg</file>
+        <file alias="images_classic/checkbox-empty-lightgray.svg">icons/images_classic/checkbox-empty-lightgray.svg</file>
+        <file alias="images_classic/checkbox-indeterminate-black.svg">icons/images_classic/checkbox-indeterminate-black.svg</file>
+        <file alias="images_classic/radio-checked-black.svg">icons/images_classic/radio-checked-black.svg</file>
+        <file alias="images_classic/radio-checked-lightgray.svg">icons/images_classic/radio-checked-lightgray.svg</file>
+        <file alias="images_classic/radio-unchecked-black.svg">icons/images_classic/radio-unchecked-black.svg</file>
+        <file alias="images_classic/radio-unchecked-lightgray.svg">icons/images_classic/radio-unchecked-lightgray.svg</file>
+        <file alias="images_classic/radio-mark-black.svg">icons/images_classic/radio-mark-black.svg</file>
+        <file alias="images_classic/radio-mark-lightgray.svg">icons/images_classic/radio-mark-lightgray.svg</file>
+        <file alias="images_classic/indeterminate-mark-black.svg">icons/images_classic/indeterminate-mark-black.svg</file>
+        <file alias="images_classic/indeterminate-mark-lightgray.svg">icons/images_classic/indeterminate-mark-lightgray.svg</file>
+        <file alias="images_classic/more-hack.svg">icons/images_classic/more-hack.svg</file>
+
+        <!-- Overlay title bar icons -->
+        <file alias="overlay/close.svg">icons/overlay/close.svg</file>
+        <file alias="overlay/float.svg">icons/overlay/float.svg</file>
+        <file alias="overlay/overlay.svg">icons/overlay/overlay.svg</file>
+
+        <!-- Misc -->
+        <file alias="preferences-general.svg">icons/preferences-general.svg</file>
+        <file alias="accessories-text-editor.svg">icons/accessories-text-editor.svg</file>
+        <file alias="NavigationBlender_light.svg">icons/NavigationBlender_light.svg</file>
+
+        <!-- File commands -->
+        <file alias="document-print.svg">icons/document-print.svg</file>
+        <file alias="document-print-preview.svg">icons/document-print-preview.svg</file>
+        <file alias="document-properties.svg">icons/document-properties.svg</file>
+        <file alias="Std_RecentFiles.svg">icons/Std_RecentFiles.svg</file>
+        <file alias="Std_SaveCopy.svg">icons/Std_SaveCopy.svg</file>
+        <file alias="Std_SaveAll.svg">icons/Std_SaveAll.svg</file>
+        <file alias="Std_Revert.svg">icons/Std_Revert.svg</file>
+        <file alias="Std_Import.svg">icons/Std_Import.svg</file>
+        <file alias="Std_Export.svg">icons/Std_Export.svg</file>
+        <file alias="Std_MergeProjects.svg">icons/Std_MergeProjects.svg</file>
+        <file alias="Std_CloseActiveWindow.svg">icons/Std_CloseActiveWindow.svg</file>
+        <file alias="Std_CloseAllWindows.svg">icons/Std_CloseAllWindows.svg</file>
+        <file alias="Std_RecentMacros.svg">icons/Std_RecentMacros.svg</file>
+
+        <!-- Edit commands -->
+        <file alias="edit-delete.svg">icons/edit-delete.svg</file>
+        <file alias="edit-edit.svg">icons/edit-edit.svg</file>
+        <file alias="edit-select-all.svg">icons/edit-select-all.svg</file>
+        <file alias="edit-select-box.svg">icons/edit-select-box.svg</file>
+        <file alias="edit-element-select-box.svg">icons/edit-element-select-box.svg</file>
+        <file alias="Std_DuplicateSelection.svg">icons/Std_DuplicateSelection.svg</file>
+        <file alias="Std_SelectVisibleObjects.svg">icons/Std_SelectVisibleObjects.svg</file>
+
+        <!-- View commands -->
+        <file alias="view-axonometric.svg">icons/view-axonometric.svg</file>
+        <file alias="view-isometric.svg">icons/view-isometric.svg</file>
+        <file alias="view-bottom.svg">icons/view-bottom.svg</file>
+        <file alias="view-left.svg">icons/view-left.svg</file>
+        <file alias="view-rear.svg">icons/view-rear.svg</file>
+        <file alias="view-fullscreen.svg">icons/view-fullscreen.svg</file>
+        <file alias="view-unselectable.svg">icons/view-unselectable.svg</file>
+        <file alias="view-rotate-left.svg">icons/view-rotate-left.svg</file>
+        <file alias="view-rotate-right.svg">icons/view-rotate-right.svg</file>
+        <file alias="Std_ViewDimetric.svg">icons/Std_ViewDimetric.svg</file>
+        <file alias="Std_ViewTrimetric.svg">icons/Std_ViewTrimetric.svg</file>
+        <file alias="Std_ViewHome.svg">icons/Std_ViewHome.svg</file>
+        <file alias="Std_ViewScreenShot.svg">icons/Std_ViewScreenShot.svg</file>
+        <file alias="Std_Alignment.svg">icons/Std_Alignment.svg</file>
+        <file alias="Std_AxisCross.svg">icons/Std_AxisCross.svg</file>
+        <file alias="Std_Placement.svg">icons/Std_Placement.svg</file>
+        <file alias="Std_ToggleClipPlane.svg">icons/Std_ToggleClipPlane.svg</file>
+        <file alias="Std_TextureMapping.svg">icons/Std_TextureMapping.svg</file>
+        <file alias="Std_TransformManip.svg">icons/Std_TransformManip.svg</file>
+        <file alias="DrawStyleAsIs.svg">icons/DrawStyleAsIs.svg</file>
+        <file alias="Std_DlgParameter.svg">icons/Std_DlgParameter.svg</file>
+        <file alias="Std_PrintPdf.svg">icons/Std_PrintPdf.svg</file>
+        <file alias="Std_ProjectUtil.svg">icons/Std_ProjectUtil.svg</file>
+        <file alias="Std_UserEditModeDefault.svg">icons/Std_UserEditModeDefault.svg</file>
+
+        <!-- Zoom commands -->
+        <file alias="zoom-all.svg">icons/zoom-all.svg</file>
+        <file alias="zoom-selection.svg">icons/zoom-selection.svg</file>
+        <file alias="zoom-in.svg">icons/zoom-in.svg</file>
+        <file alias="zoom-out.svg">icons/zoom-out.svg</file>
+        <file alias="zoom-border.svg">icons/zoom-border.svg</file>
+
+        <!-- Object visibility commands -->
+        <file alias="Std_HideObjects.svg">icons/Std_HideObjects.svg</file>
+        <file alias="Std_HideSelection.svg">icons/Std_HideSelection.svg</file>
+        <file alias="Std_ShowObjects.svg">icons/Std_ShowObjects.svg</file>
+        <file alias="Std_ShowSelection.svg">icons/Std_ShowSelection.svg</file>
+        <file alias="Std_ToggleObjects.svg">icons/Std_ToggleObjects.svg</file>
+        <file alias="Std_ToggleVisibility.svg">icons/Std_ToggleVisibility.svg</file>
+        <file alias="Std_ToggleTransparency.svg">icons/Std_ToggleTransparency.svg</file>
+        <file alias="Std_ToggleNavigation.svg">icons/Std_ToggleNavigation.svg</file>
+        <file alias="Std_ToggleBottomPanels.svg">icons/Std_ToggleBottomPanels.svg</file>
+        <file alias="Std_DependencyGraph.svg">icons/Std_DependencyGraph.svg</file>
+
+        <!-- Window and UI commands -->
+        <file alias="window-new.svg">icons/window-new.svg</file>
+        <file alias="preferences-system.svg">icons/preferences-system.svg</file>
+        <file alias="safe-mode-restart.svg">icons/safe-mode-restart.svg</file>
+
+        <!-- Application commands -->
+        <file alias="application-exit.svg">icons/application-exit.svg</file>
+        <file alias="applications-accessories.svg">icons/applications-accessories.svg</file>
+        <file alias="applications-python.svg">icons/applications-python.svg</file>
+        <file alias="freecad.svg">icons/freecad.svg</file>
+        <file alias="folder.svg">icons/folder.svg</file>
+        <file alias="help-browser.svg">icons/help-browser.svg</file>
+        <file alias="internet-web-browser.svg">icons/internet-web-browser.svg</file>
+        <file alias="utilities-terminal.svg">icons/utilities-terminal.svg</file>
+        <file alias="media-playback-start.svg">icons/media-playback-start.svg</file>
+        <file alias="media-record.svg">icons/media-record.svg</file>
+        <file alias="image-open.svg">icons/image-open.svg</file>
+        <file alias="align-to-selection.svg">icons/align-to-selection.svg</file>
+
+        <!-- Tree and annotation -->
+        <file alias="Tree_Annotation.svg">icons/Tree_Annotation.svg</file>
+        <file alias="tree-pre-sel.svg">icons/tree-pre-sel.svg</file>
+        <file alias="sel-bbox.svg">icons/sel-bbox.svg</file>
+
+        <!-- Feature icons -->
+        <file alias="Geofeaturegroup.svg">icons/Geofeaturegroup.svg</file>
+        <file alias="MacroFolder.svg">icons/MacroFolder.svg</file>
+        <file alias="TextDocument.svg">icons/TextDocument.svg</file>
+        <file alias="VarSet.svg">icons/VarSet.svg</file>
+        <file alias="WhatsThis.svg">icons/WhatsThis.svg</file>
+        <file alias="umf-measurement.svg">icons/umf-measurement.svg</file>
+
+        <!-- User input icons (for InputHintWidget key rendering) -->
+        <file alias="user-input/mouse-left.svg">icons/user-input/mouse-left.svg</file>
+        <file alias="user-input/mouse-right.svg">icons/user-input/mouse-right.svg</file>
+        <file alias="user-input/mouse-move.svg">icons/user-input/mouse-move.svg</file>
+        <file alias="user-input/mouse-middle.svg">icons/user-input/mouse-middle.svg</file>
+        <file alias="user-input/mouse-scroll.svg">icons/user-input/mouse-scroll.svg</file>
+        <file alias="user-input/mouse-scroll-up.svg">icons/user-input/mouse-scroll-up.svg</file>
+        <file alias="user-input/mouse-scroll-down.svg">icons/user-input/mouse-scroll-down.svg</file>
+    </qresource>
+</RCC>

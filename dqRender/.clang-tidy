@@ -1,0 +1,29 @@
+---
+# DanQing dqRender/.clang-tidy — 嵌套覆盖（方法/函数 → camelCase）
+#
+# dqRender 是 itwinjs-core (TypeScript) 1:1 移植模块（CLAUDE.md §0/§3.3）：
+# 方法/函数名按参考语言原样保留 → camelCase（camelBack），覆盖根 .clang-tidy 的 CamelCase。
+# 类型/类/结构/枚举/命名空间等结构性标识符仍 PascalCase（继承根配置，与 C++ 参考模块一致）。
+#
+# 覆盖范围依据（2026-07-09 核查）：dqRender/src/ 全部子目录（render/rhi/gl/platform/tile/shader）
+# 方法声明 90%+ 已 camelCase——filament C++ 参考本身用 camelCase，故 src/rhi/src/gl 不应 PascalCase。
+# src/render TS-ref 方法经 session 3 全量 pass 已净（2026-07-09 PublicAPI 一致性审计
+# 确认，审计文档已随 2026-09-24 历史文档清理删除）；剩余 PascalCase 仅为：
+#   (1) C++-ref 调用点（CreateNull/HasFlag/MultiplyTransform/…，§3.3 正确保留，MethodCase 不查 call-site）；
+#   (2) 2 处特例（FeatureGpuAppearance::Default 因 `default` 硬关键字；FloatColorScale/FloatColorClamp
+#       自创前缀 free fn，TS 为 scale/clamp）→ 源码 // NOLINT(readability-identifier-naming) 显式排除。
+#
+# 继承根 .clang-tidy 的 Checks / WarningsAsErrors / 其余 CheckOptions（Class/Struct/Enum/Namespace…=CamelCase）。
+InheritParentConfig: true
+
+# 仅检查 dqRender 自有头（公开 PublicAPI + 内部 src/）；不查 dqBase/dqCommon/dqGeom 等 C++-ref 依赖头
+# （那些由根 CamelCase 配置在其自身文件分析时管辖）。
+HeaderFilterRegex: 'dqRender/(PublicAPI|src)/.*\.h$'
+
+CheckOptions:
+  # 方法 / 自由函数 → camelCase（dqRender = TS 移植模块）。覆盖根配置 MethodCase/FunctionCase=CamelCase。
+  - key:   readability-identifier-naming.MethodCase
+    value: camelBack
+  - key:   readability-identifier-naming.FunctionCase
+    value: camelBack
+...

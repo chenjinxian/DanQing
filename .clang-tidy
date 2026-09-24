@@ -1,0 +1,68 @@
+# DanQing .clang-tidy
+# 静态分析配置。聚焦高信号检查，容忍字节流/底层代码的合理 reinterpret_cast 与指针运算。
+# 核心规则：禁异常（§6.5）、禁 RTTI/dynamic_cast（§2.3）、禁裸 new/delete（§5.4）。
+# 命名检查：类型/枚举/命名空间等结构性标识符查大小写；方法/函数名按 CLAUDE.md §3
+# 1:1 对齐参考语言（不强制固定大小写——TS 移植为 camelCase，C++ 参考为 PascalCase），
+# 故 identifier-naming 对方法/函数的告警在 TS 移植代码上属预期误报。
+
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-narrowing-conversions,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-shared-ptr-array-mismatch,
+  cert-*,
+  -cert-err58-cpp,
+  cppcoreguidelines-slicing,
+  cppcoreguidelines-pro-type-cstyle-cast,
+  # static-cast-downcast 建议改 dynamic_cast，但项目 -fno-rtti（§9）禁 dynamic_cast，
+  # 且 filament C++ 参考同样 -fno-rtti + static_cast downcast。此 check 在本项目不适用。
+  -cppcoreguidelines-pro-type-static-cast-downcast,
+  cppcoreguidelines-pro-type-const-cast,
+  cppcoreguidelines-pro-type-reinterpret-cast,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  -modernize-use-nodiscard,
+  -modernize-avoid-c-arrays,
+  performance-*,
+  -performance-unnecessary-value-param,
+  readability-*,
+  -readability-named-parameter,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-implicit-bool-conversion,
+  -readability-function-cognitive-complexity,
+  -readability-braces-around-statements,
+  -readability-else-after-return,
+  # uppercase-literal-suffix 要求 1.0f → 1.0F。但 filament/imodel-native 参考均用小写 f，
+  # 全仓 ~1049 处为既有风格；逐个改既低价值又偏离参考保真（§0）。此 check 不适用。
+  -readability-uppercase-literal-suffix,
+  misc-*,
+  -misc-non-private-member-variables-in-classes,
+  -misc-no-recursion,
+  hicpp-no-malloc,
+  hicpp-exception-base,
+  clang-analyzer-*,
+  -clang-analyzer-alpha.*
+
+# 仅警告，不阻塞构建（CI 可逐步收紧）。如需阻断，改为 '*'。
+WarningsAsErrors: ''
+
+HeaderFilterRegex: 'dqBase/(PublicAPI|src)/.*\.h$'
+
+CheckOptions:
+  # 命名约定（仅类型/方法；成员/局部不强制，避免对 DTO 与测试代码的噪音）
+  - key:   readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key:   readability-identifier-naming.StructCase
+    value: CamelCase
+  - key:   readability-identifier-naming.FunctionCase
+    value: CamelCase
+  - key:   readability-identifier-naming.MethodCase
+    value: CamelCase
+  - key:   readability-identifier-naming.NamespaceCase
+    value: CamelCase
+  - key:   readability-identifier-naming.EnumCase
+    value: CamelCase
+  - key:   readability-identifier-naming.EnumConstantCase
+    value: CamelCase
