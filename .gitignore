@@ -1,0 +1,68 @@
+# Build directories
+build/
+cmake-build-*/
+out/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Editor/tool caches
+.cache/
+
+# Local tooling state (superpowers brainstorm cache, runtime pid/log)
+.superpowers/
+
+# CMake generated
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# Object files
+*.o
+*.obj
+*.lo
+*.slo
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lai
+*.so
+*.dylib
+*.dll
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Test output
+Testing/
+test-results.xml
+
+# Coverage
+*.gcda
+*.gcno
+*.gcov
+coverage/
+
+# Doxygen
+docs/api/html/
+
+# Downloaded third-party binaries (aqtinstall). Submodules (e.g. googletest) ARE tracked.
+# Add new binary deps here by name as they are introduced.
+third_party/qt/
+
+# Qt generated
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+build-asan/

@@ -1,0 +1,55 @@
+丹青（DanQing）
+Copyright 2026 chenjinxian
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+===============================================================================
+Reference implementations (code ported/adapted from, per-file provenance is
+recorded in "Ported from:" comments):
+===============================================================================
+
+- itwinjs-core (https://github.com/iTwin/itwinjs-core)
+  MIT License, Copyright (c) Bentley Systems, Incorporated.
+  Primary reference for the rendering stack: render pipeline, frontend API,
+  Tile system, glTF.
+
+- imodel-native (https://github.com/iTwin/imodel-native)
+  MIT License, Copyright (c) Bentley Systems, Incorporated.
+  Reference for the dqGeom geometry library and dqBase infrastructure patterns.
+
+- filament (https://github.com/google/filament)
+  Apache License 2.0, Copyright (C) 2015 Google LLC.
+  Reference for the RHI driver, OpenGL backend, and the Windows WGL platform
+  presentation layer.
+
+- FreeCAD (https://github.com/FreeCAD/FreeCAD)
+  LGPL-2.1-or-later, Copyright (c) FreeCAD contributors.
+  Reference for the test-host GUI command framework. Files derived from
+  FreeCAD sources (under samples/DisplayTestApp/src/Mod/Start/ and selected
+  Gui framework files) retain their upstream LGPL-2.1-or-later license and
+  copyright headers (SPDX-License-Identifier: LGPL-2.1-or-later).
+
+===============================================================================
+Vendored third-party components (their original licenses apply; see each
+component's directory and file headers):
+===============================================================================
+
+- googletest (third_party/googletest/) — BSD 3-Clause, Copyright Google LLC
+- cgltf (third_party/cgltf/) — MIT, Copyright (c) 2019 Johannes Kuhlmann
+- stb_image (third_party/stb_image/) — Public Domain / MIT, Sean Barrett
+- glheaders (third_party/glheaders/) — MIT, Khronos Group
+  (glcorearb.h from OpenGL-Registry; khrplatform.h from EGL-Registry)
+- gltf-sample-assets (third_party/gltf-sample-assets/) — KhronosGroup
+  glTF-Sample-Assets; BoxTextured model and Cesium logo texture are
+  CC-BY 4.0 (see upstream Models/BoxTextured/README.md)
+- itwinjs-cursors / itwinjs-sprites (third_party/) — assets extracted from
+  itwinjs-core, MIT License, Copyright (c) Bentley Systems, Incorporated
+- cpp-btree (dqBase/PublicAPI/dqBase/btree/) — Apache License 2.0,
+  Copyright (C) 2013 Google Inc., (C) 2019 German Mendez Bravo (Kronuz fork)
+- bpool.h (dqBase/PublicAPI/dqBase/) — derived from Boost.Pool,
+  Boost Software License 1.0, Copyright (C) 2000-2001 Stephen Cleary
+
+Qt 6.11.1 (LGPL v3 / commercial) is required to build dqApp and the test host;
+it is NOT vendored in this repository (download script: scripts/bootstrap_third_party.*).

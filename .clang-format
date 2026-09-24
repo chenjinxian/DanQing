@@ -1,0 +1,100 @@
+# DanQing .clang-format
+# 格式总则：
+#   - 4 空格缩进，禁用 Tab
+#   - 100 列限宽
+#   - K&R（1TBS）大括号
+#   - public:/private: 顶格（AccessModifierOffset: -4）
+#   - 命名空间内容不缩进
+#   - 指针左对齐（Type* name）
+# 详见 docs/DanQing-C++代码规范.md §9
+
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++17
+
+# --- 缩进 ---
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 8
+ConstructorInitializerIndentWidth: 8
+AccessModifierOffset: -4
+NamespaceIndentation: None
+IndentCaseLabels: true
+IndentPPDirectives: None
+IndentWrappedFunctionNames: true
+BracedInitializerIndentWidth: 4
+
+# --- 列宽 ---
+ColumnLimit: 100
+
+# --- 大括号（K&R / 1TBS）---
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel: false
+  AfterClass: false
+  AfterControlStatement: Never
+  AfterEnum: false
+  AfterFunction: false
+  AfterNamespace: false
+  AfterStruct: false
+  AfterUnion: false
+  BeforeCatch: false
+  BeforeElse: false
+  IndentBraces: false
+  SplitEmptyFunction: false
+  SplitEmptyRecord: true
+
+# --- 指针与对齐 ---
+PointerAlignment: Left
+AlignAfterOpenBracket: DontAlign
+AlignConsecutiveAssignments: None
+AlignOperands: Align
+
+# --- 短语句（保守：仅空函数体单行）---
+AllowShortBlocksOnASingleLine: Empty
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: Empty
+AllowShortLoopsOnASingleLine: false
+AllowAllArgumentsOnNextLine: false
+AllowAllConstructorInitializersOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: true
+
+# --- 模板与构造初始化 ---
+AlwaysBreakTemplateDeclarations: Yes
+BreakConstructorInitializers: BeforeColon
+BreakInheritanceList: BeforeColon
+PackConstructorInitializers: Never
+
+# --- 换行规则 ---
+BreakBeforeBinaryOperators: None
+BreakBeforeTernaryOperators: true
+AlwaysBreakAfterReturnType: None
+AlwaysBreakBeforeMultilineStrings: false
+
+# --- 空行与空格 ---
+MaxEmptyLinesToKeep: 2
+KeepEmptyLinesAtTheStartOfBlocks: true
+ReflowComments: true
+SpacesBeforeTrailingComments: 1
+SpaceAfterCStyleCast: true
+SpaceAfterLogicalNot: false
+SpaceAfterTemplateKeyword: false
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCpp11BracedList: false
+SpaceBeforeCtorInitializerColon: true
+SpaceBeforeInheritanceColon: true
+SpaceBeforeParens: ControlStatements
+SpaceBeforeRangeBasedForLoopColon: false
+SpaceInEmptyParentheses: false
+SpacesInAngles: false
+SpacesInCStyleCastParentheses: false
+SpacesInContainerLiterals: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# --- 杂项 ---
+CompactNamespaces: false
+Cpp11BracedListStyle: false

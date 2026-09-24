@@ -1,0 +1,32 @@
+---
+# DanQing dqCommon/.clang-tidy — 嵌套覆盖（方法/函数 → camelCase）
+#
+# dqCommon = @itwin/core-common (TypeScript) 移植模块（CLAUDE.md §0/§3.3）：
+# 方法/函数名按参考语言原样保留 → camelCase（camelBack），覆盖根 .clang-tidy 的 CamelCase。
+# 类型/类/结构/枚举/命名空间等结构性标识符仍 PascalCase（继承根配置）。
+#
+# 状态（2026-07-10）：dqCommon 方法 camelCase 统一 pass 完成——~383 个 TS-ref 方法全 camelCase
+# （批1: 319 无碰撞单次全消费者 perl；批2: 10 注释假阳性补漏；批3: Point/FromVector；
+#  批4: 26 首轮碰撞 Init/Reset/Compare/From/Get/GetSize/... ；批5: 26 同名多类 decl 补全；
+#  批6: IgnoreAnimationOverrides/GetModelAppearanceOverrides）。
+# 详见 commit 历史（a494bb9→26fb02f）。
+#
+# 唯一例外：ContextRealityModel::Delete（`delete` 硬关键字，TS delete() 不可移植，§3.4）
+# ——源码 // NOLINT(readability-identifier-naming) 显式排除。
+#
+# 碰撞方法（与 dqGeom/dqBase C++-ref 同名，如 Init/Reset/Compare/From/Get/GetSize）经 per-def
+# Edit + build-guided 调用点消歧完成（build error 定位 dqCommon-type 调用点，C++-ref 调用保持）；无 C++-ref 误改。
+#
+# 继承根 .clang-tidy 的 Checks / WarningsAsErrors / 其余 CheckOptions（Class/Struct/Enum/Namespace…=CamelCase）。
+InheritParentConfig: true
+
+# 仅检查 dqCommon 自有头（公开 PublicAPI + 内部 src/）；不查 dqBase/dqGeom 等 C++-ref 依赖头。
+HeaderFilterRegex: 'dqCommon/(PublicAPI|src)/.*\.h$'
+
+CheckOptions:
+  # 方法 / 自由函数 → camelCase（dqCommon = TS 移植模块）。覆盖根配置 MethodCase/FunctionCase=CamelCase。
+  - key:   readability-identifier-naming.MethodCase
+    value: camelBack
+  - key:   readability-identifier-naming.FunctionCase
+    value: camelBack
+...
