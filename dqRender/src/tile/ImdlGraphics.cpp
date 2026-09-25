@@ -100,6 +100,18 @@ decodeImdlGraphics(ImdlDocument const& doc)
             prim.vertices.decodedMax[1] - prim.vertices.decodedMin[1],
             prim.vertices.decodedMax[2] - prim.vertices.decodedMin[2],
         };
+        // 布局守卫（2026-09-25 评审）：octNormal@12-13 仅 16B LitMeshBuilder
+        // 布局（numRgbaPerVertex==4，VertexTableBuilder.ts:385-398——position
+        // 6B + colorIndex 2B + featureIndex 4B + octNormal 2B + unused 2B）
+        // 合法。12B SimpleBuilder（numRgba==3，VertexTableBuilder.ts:224-279）
+        // 顶点表无 octNormal——无条件读 base[12]/[13] 会越入下一顶点的位置
+        // 字节，顶点表居 BIN 末尾时对末顶点构成 1-2 字节正式 OOB。12B 时
+        // 跳过法线（无光照网格本无 octNormal；下游 buildFromPolyface 的
+        // hasNormals=false 走 facet 法线路径，PolyfaceGraphic.cpp:77-86）。
+        // 16B textured 布局又不同（TexturedLitMeshBuilder：octNormal@6-7、
+        // qUV@12-15，VertexTableBuilder.ts:346-383）——textured 消费已
+        // deferred（createImdlLutGraphics TODO），届时按参考布局重审。
+        bool const hasOctNormal = bytesPerVertex >= 16u;
         for (uint32_t v = 0; v < prim.vertices.count; ++v) {
             uint8_t const* base = vertData + v * bytesPerVertex;
             uint16_t const q[3] = {
@@ -114,30 +126,30 @@ decodeImdlGraphics(ImdlDocument const& doc)
             };
             polyface->AddPoint(dqGeom::Point3d(p[0], p[1], p[2]));
 
-            // Oct-encoded normal：量化 mesh 顶点表 16B 布局（Quantized.
-            // LitMeshBuilder，VertexTableBuilder.ts:385-398——position 6B +
-            // colorIndex 2B + featureIndex 4B + octNormal 2B + unused 2B）：
-            // 法线在 bytes 12-13（texel3.xy）。LUT 主路径（法线经 shader 读
-            // g_vertLutData3.xy，Surface.ts:529-566）即此布局；2026-09-25 修正
-            // 旧误读（bytes 6-7 实为 colorIndex——录制夹具 uniform 色下 color
-            // 表为空恒 0，旧误读产出恒定错法线而像素锁未检出）。
-            double const ex = base[12] / 255.0 * 2.0 - 1.0;
-            double const ey = base[13] / 255.0 * 2.0 - 1.0;
-            double nx = ex, ny = ey;
-            double nz = 1.0 - std::abs(nx) - std::abs(ny);
-            if (nz < 0.0) {
-                // Hemisphere fix (Surface.ts:389-392).
-                double const sx = nx >= 0.0 ? 1.0 : -1.0;
-                double const sy = ny >= 0.0 ? 1.0 : -1.0;
-                double const tx = (1.0 - std::abs(ny)) * sx;
-                double const ty = (1.0 - std::abs(nx)) * sy;
-                nx = tx;
-                ny = ty;
-                nz = 0.0;
+            // Oct-encoded normal：量化 mesh 顶点表 16B LitMesh 布局
+            // （bytes 12-13 = texel3.xy；LUT 主路径法线经 shader 读
+            // g_vertLutData3.xy，Surface.ts:529-566；2026-09-25 修正旧误读
+            // bytes 6-7——实为 colorIndex）。仅 hasOctNormal（16B）布局读取，
+            // 12B 表无 octNormal 数据（布局守卫见上）。
+            if (hasOctNormal) {
+                double const ex = base[12] / 255.0 * 2.0 - 1.0;
+                double const ey = base[13] / 255.0 * 2.0 - 1.0;
+                double nx = ex, ny = ey;
+                double nz = 1.0 - std::abs(nx) - std::abs(ny);
+                if (nz < 0.0) {
+                    // Hemisphere fix (Surface.ts:389-392).
+                    double const sx = nx >= 0.0 ? 1.0 : -1.0;
+                    double const sy = ny >= 0.0 ? 1.0 : -1.0;
+                    double const tx = (1.0 - std::abs(ny)) * sx;
+                    double const ty = (1.0 - std::abs(nx)) * sy;
+                    nx = tx;
+                    ny = ty;
+                    nz = 0.0;
+                }
+                double const len = std::sqrt(nx * nx + ny * ny + nz * nz);
+                if (len > 1e-12)
+                    polyface->AddNormal(dqGeom::Vector3d(nx / len, ny / len, nz / len));
             }
-            double const len = std::sqrt(nx * nx + ny * ny + nz * nz);
-            if (len > 1e-12)
-                polyface->AddNormal(dqGeom::Vector3d(nx / len, ny / len, nz / len));
         }
         // Surface indices: triangles of consecutive 24-bit LE indices, each
         // facet terminated via point-index chain (AddPointIndex).
@@ -155,10 +167,14 @@ decodeImdlGraphics(ImdlDocument const& doc)
             polyface->AddPointIndex(static_cast<int32_t>(ia) + 1);
             polyface->AddPointIndex(static_cast<int32_t>(ib) + 1);
             polyface->AddPointIndex(static_cast<int32_t>(ic) + 1);
-            // Per-corner normal indices (1-based, same as points).
-            polyface->AddNormalIndex(static_cast<int32_t>(ia) + 1);
-            polyface->AddNormalIndex(static_cast<int32_t>(ib) + 1);
-            polyface->AddNormalIndex(static_cast<int32_t>(ic) + 1);
+            // Per-corner normal indices (1-based, same as points)——与法线
+            // 同一布局守卫：12B 表无法线数据，normalIndex 必须留空（否则
+            // 下游 buildFromPolyface 按索引取到不存在的法线）。
+            if (hasOctNormal) {
+                polyface->AddNormalIndex(static_cast<int32_t>(ia) + 1);
+                polyface->AddNormalIndex(static_cast<int32_t>(ib) + 1);
+                polyface->AddNormalIndex(static_cast<int32_t>(ic) + 1);
+            }
             polyface->TerminateFacet();
         }
         if (polyface && polyface->FacetCount() > 0)
@@ -205,9 +221,13 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
             continue;
         uint32_t const numRgba = prim.vertices.numRgbaPerVertex;
         uint32_t const count = prim.vertices.count;
-        // 量化 mesh 顶点表为 12B（SimpleBuilder numRgba=3）或 16B（LitMesh
-        // numRgba=4）；其余形态本期不消费（纹理/meshopt 登记 TODO，见头文件）。
-        if ((numRgba != 3u && numRgba != 4u) || count == 0u)
+        // 量化 LitMesh 顶点表为 16B（numRgba=4，Quantized.LitMeshBuilder）；
+        // 12B SimpleBuilder（numRgba=3，无光照网格）本期拒绝——LUT 链路对
+        // 12B 不安全：Task 3 量化 shader 的 pre-read 采样 g_vertLutData3
+        // （12B 表下采到下一顶点 texel0）、Task 4 LUT 构造器恒 FillFlags::Lit
+        // （评审 2026-09-25；参考侧无光照网格本不读法线，glsl/Surface.ts
+        // addNormal 仅在 wantNormals 时）。unlit 12B 接线登记 TODO。
+        if (numRgba != 4u || count == 0u)
             continue;
         if (vertSize < size_t(count) * numRgba * 4u)
             continue;
@@ -219,6 +239,10 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
         // VertexTableBuilder::computeDimensions，勿重写）；回退且末行填充时
         // 需要 width*height*4 的 staging 拷贝（直传语义的保形字节拷贝，非逐
         // 顶点解码）。
+        // 注意（刻意的健壮性扩展，参考 failure mode 不同）：参考在 JSON
+        // width/height 缺失/不一致时直接丢 mesh（VertexLUT.ts:93-96
+        // createFromVertexTable → undefined → 该 primitive 无 graphic）；此处
+        // 选择保活 mesh——离线/转制容器的防御差异，登记于此（评审 2026-09-25）。
         uint32_t texWidth = prim.vertices.width;
         uint32_t texHeight = prim.vertices.height;
         std::vector<uint8_t> staging;

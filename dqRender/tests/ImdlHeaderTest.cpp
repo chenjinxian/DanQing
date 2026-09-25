@@ -548,3 +548,57 @@ TEST(ImdlGraphicsTest, LutPathUsesLessGpuMemoryThanVboPath)
 
     delete graphics[0];
 }
+
+// 12B SimpleBuilder（numRgbaPerVertex=3）布局守卫回归。
+// Authored: 参考无对应测试场景（录制夹具全为 16B LitMesh，§5(f)）——合成
+// 最小内存 doc 验证守卫语义：octNormal@12-13 仅 16B 布局合法，12B 表无条件
+// 读会越入下一顶点位置字节（本布局顶点表居 BIN 末尾——末顶点 1-2 字节正式
+// OOB）。守卫后：CPU 路径无法线（NormalCount==0、normalIndex 留空）、
+// LUT 路径拒绝 12B（返回空）。
+TEST(ImdlGraphicsTest, SimpleBuilder12BLayoutSkipsOctNormalGuarded)
+{
+    // BIN 布局（45B）：bvIdx 0..8（1 三角形 0,1,2），bvVtx 9..44（3 顶点 ×
+    // 12B）——顶点表居 BIN 末尾，旧代码末顶点读 base[12]/[13] = 越界 1-2 字节。
+    dqRender::ImdlDocument doc;
+    doc.sceneJson = R"json({
+        "meshes": {"Mesh_Root": {"primitives": [{
+            "surface": {"indices": "bvIdx", "type": 0},
+            "vertices": {"bufferView": "bvVtx", "count": 3, "width": 9, "height": 1,
+                         "numRgbaPerVertex": 3,
+                         "params": {"decodedMin": [0, 0, 0], "decodedMax": [1, 1, 1]}}
+        }]}},
+        "bufferViews": {
+            "bvIdx": {"buffer": "binary_glTF", "byteOffset": 0, "byteLength": 9},
+            "bvVtx": {"buffer": "binary_glTF", "byteOffset": 9, "byteLength": 36}
+        }
+    })json";
+    doc.binary.assign(45u, 0u);
+    // 索引：三角形 (0, 1, 2)（24-bit LE）。
+    doc.binary[3] = 1u;
+    doc.binary[6] = 2u;
+    // 量化位置（各顶点 bytes 0-5）：v0=(0,0,0)、v1=(65535,0,0)、v2=(0,65535,0)。
+    auto const setU16 = [&doc](size_t off, uint16_t v) {
+        doc.binary[off] = static_cast<uint8_t>(v & 0xFFu);
+        doc.binary[off + 1] = static_cast<uint8_t>((v >> 8) & 0xFFu);
+    };
+    setU16(9u + 12u, 65535);       // v1.qx
+    setU16(9u + 24u + 2u, 65535);  // v2.qy
+
+    // CPU 对照路径：几何存活、法线被守卫跳过（12B 无 octNormal 数据）。
+    auto meshes = dqRender::decodeImdlGraphics(doc);
+    ASSERT_EQ(meshes.size(), 1u);
+    EXPECT_EQ(meshes[0]->Data().PointCount(), 3u);
+    EXPECT_EQ(meshes[0]->FacetCount(), 1u);
+    EXPECT_EQ(meshes[0]->Data().NormalCount(), 0u)
+        << "12B SimpleBuilder table has no octNormal slot — guard must skip normals";
+    EXPECT_TRUE(meshes[0]->Data().normalIndex.empty())
+        << "no normal data → per-corner normal indices must stay empty";
+
+    // LUT 主路径：12B 表被拒绝（量化 shader pre-read 采 g_vertLutData3 会
+    // 误采下一顶点 texel0；unlit 接线登记 TODO）。
+    RecordingLutDriver driver;
+    LutStubSystem system(driver);
+    auto graphics = dqRender::createImdlLutGraphics(doc, system);
+    EXPECT_TRUE(graphics.empty())
+        << "12B SimpleBuilder (unlit) tables are rejected by the LUT path";
+}
