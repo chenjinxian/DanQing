@@ -16,7 +16,7 @@
 #include "render/ShaderProgramImpl.h"  // ShaderProgram, UniformHandle, ShaderProgramParams
 #include "render/DrawParams.h"         // DrawParams（GraphicUniform 探针载荷）
 #include "platform/PlatformFactory.h"  // createPlatform
-#include "rhi/opengl/GlLoader.h"       // Windows: zogl::init 运行时符号装载
+#include "rhi/opengl/GlLoader.h"       // Windows: dqgl::init 运行时符号装载
 
 #include <gtest/gtest.h>
 
@@ -39,7 +39,7 @@ struct ProbeEnv {
 
     bool init() {
 #if defined(_WIN32)
-        if (!zogl::init())
+        if (!dqgl::init())
             return false;
 #endif
         platform.reset(rhi::createPlatform());

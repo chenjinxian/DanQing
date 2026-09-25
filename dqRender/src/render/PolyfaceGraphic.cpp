@@ -248,21 +248,21 @@ void PolyfaceGraphic::draw(rhi::Driver& driver)
         if (n++ < 6) {
             GLint enabled = 0, size = 0, stride = 0, type = 0;
             void* ptr = nullptr;
-            zoglGetVertexAttribiv(3, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &enabled);
-            zoglGetVertexAttribiv(3, GL_VERTEX_ATTRIB_ARRAY_SIZE, &size);
-            zoglGetVertexAttribiv(3, GL_VERTEX_ATTRIB_ARRAY_STRIDE, &stride);
-            zoglGetVertexAttribiv(3, GL_VERTEX_ATTRIB_ARRAY_TYPE, &type);
-            zoglGetVertexAttribPointerv(3, GL_VERTEX_ATTRIB_ARRAY_POINTER, &ptr);
+            dqglGetVertexAttribiv(3, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &enabled);
+            dqglGetVertexAttribiv(3, GL_VERTEX_ATTRIB_ARRAY_SIZE, &size);
+            dqglGetVertexAttribiv(3, GL_VERTEX_ATTRIB_ARRAY_STRIDE, &stride);
+            dqglGetVertexAttribiv(3, GL_VERTEX_ATTRIB_ARRAY_TYPE, &type);
+            dqglGetVertexAttribPointerv(3, GL_VERTEX_ATTRIB_ARRAY_POINTER, &ptr);
             GLint boundAB = 0;
-            zoglGetIntegerv(GL_ARRAY_BUFFER_BINDING, &boundAB);
+            dqglGetIntegerv(GL_ARRAY_BUFFER_BINDING, &boundAB);
             // TEMP-DIAG：attrib 各自真正绑定的 GL buffer（VAO 视角）——若 attrib0/3
             // 不同 buffer，即"读回的字节 ≠ 绘制抓取的字节"实锤。
             GLint bufA0 = 0, bufA3 = 0, bufA2 = 0;
-            zoglGetVertexAttribiv(0, GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING, &bufA0);
-            zoglGetVertexAttribiv(2, GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING, &bufA2);
-            zoglGetVertexAttribiv(3, GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING, &bufA3);
+            dqglGetVertexAttribiv(0, GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING, &bufA0);
+            dqglGetVertexAttribiv(2, GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING, &bufA2);
+            dqglGetVertexAttribiv(3, GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING, &bufA3);
             GLint curVao = 0;
-            zoglGetIntegerv(GL_VERTEX_ARRAY_BINDING, &curVao);
+            dqglGetIntegerv(GL_VERTEX_ARRAY_BINDING, &curVao);
             printf("[DRAW3] enabled=%d size=%d stride=%d type=0x%x offset=%ld boundAB=%u vao=%u bufA0=%u bufA2=%u bufA3=%u\n",
                    enabled, size, stride, type, static_cast<long>(reinterpret_cast<intptr_t>(ptr)),
                    boundAB, curVao, bufA0, bufA2, bufA3);

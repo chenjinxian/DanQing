@@ -38,7 +38,7 @@
 using namespace dqRender;
 
 #if defined(_WIN32)
-extern "C" BOOL WINAPI zoglInitShim();
+extern "C" BOOL WINAPI dqglInitShim();
 #endif
 
 namespace {
@@ -50,7 +50,7 @@ struct OrientationEnv {
 
     bool init() {
 #if defined(_WIN32)
-        if (!zogl::init())
+        if (!dqgl::init())
             return false;
 #endif
         platform.reset(rhi::createPlatform());

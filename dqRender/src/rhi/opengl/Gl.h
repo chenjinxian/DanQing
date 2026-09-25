@@ -49,7 +49,7 @@
     #endif
     #include <GL/glcorearb.h>
     // Windows GL 运行时装载（bluegl 机制）：glXxx 映射到函数指针，
-    // 由 zogl::init()（PlatformFactory::createPlatform）解析
+    // 由 dqgl::init()（PlatformFactory::createPlatform）解析
     #include "GlLoader.h"
 #else
     #include <GL/gl.h>

@@ -385,11 +385,11 @@ void OpenGLDriver::bindRenderPrimitive(RenderPrimitiveHandle rph) noexcept
         static int n = 0;
         GLint bsz = 0;
         glBindBuffer(GL_ARRAY_BUFFER, vb->buffers[0]);
-        zoglGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, &bsz);
+        dqglGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, &bsz);
         if (n < 40 && bsz >= 24 * 52) {
             ++n;
             unsigned char vbuf[3 * 52];
-            zoglGetBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vbuf), vbuf);
+            dqglGetBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vbuf), vbuf);
             printf("[VAO] glBufferId=%u size=%d\n", vb->buffers[0], bsz);
             for (int vi = 0; vi < 3; ++vi) {
                 float* pos = reinterpret_cast<float*>(vbuf + vi * 52);

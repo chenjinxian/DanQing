@@ -1086,17 +1086,17 @@ void SceneCompositor::activateProgram(ShaderProgram* shader, rhi::Driver& driver
             GLint prog = 0;
             glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
             GLint loc = -1;
-            if (prog) loc = zoglGetAttribLocation(static_cast<GLuint>(prog), "a_texCoord");
+            if (prog) loc = dqglGetAttribLocation(static_cast<GLuint>(prog), "a_texCoord");
             GLint aStride = 0, aSize = 0, aEnabled = 0;
             void* aPtr = nullptr;
-            zoglGetVertexAttribiv(3, GL_VERTEX_ATTRIB_ARRAY_STRIDE, &aStride);
-            zoglGetVertexAttribiv(3, GL_VERTEX_ATTRIB_ARRAY_SIZE, &aSize);
-            zoglGetVertexAttribiv(3, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &aEnabled);
-            zoglGetVertexAttribPointerv(3, GL_VERTEX_ATTRIB_ARRAY_POINTER, &aPtr);
+            dqglGetVertexAttribiv(3, GL_VERTEX_ATTRIB_ARRAY_STRIDE, &aStride);
+            dqglGetVertexAttribiv(3, GL_VERTEX_ATTRIB_ARRAY_SIZE, &aSize);
+            dqglGetVertexAttribiv(3, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &aEnabled);
+            dqglGetVertexAttribPointerv(3, GL_VERTEX_ATTRIB_ARRAY_POINTER, &aPtr);
             printf("[ATTR] shader=%p prog=%u a_texCoord@%d a_pos@%d a_feat@%d | loc3: enabled=%d size=%d stride=%d offset=%ld\n",
                    static_cast<void*>(shader), prog, loc,
-                   prog ? zoglGetAttribLocation(static_cast<GLuint>(prog), "a_position") : -1,
-                   prog ? zoglGetAttribLocation(static_cast<GLuint>(prog), "a_featureId") : -1,
+                   prog ? dqglGetAttribLocation(static_cast<GLuint>(prog), "a_position") : -1,
+                   prog ? dqglGetAttribLocation(static_cast<GLuint>(prog), "a_featureId") : -1,
                    aEnabled, aSize, aStride,
                    static_cast<long>(reinterpret_cast<intptr_t>(aPtr)));
         }
@@ -1670,8 +1670,8 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                             static int n = 0;
                             if (n++ < 8) {
                                 GLint ws = 0, wt = 0;
-                                zoglGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, &ws);
-                                zoglGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, &wt);
+                                dqglGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, &ws);
+                                dqglGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, &wt);
                                 printf("[WRAP] wrapS=0x%04x wrapT=0x%04x (REPEAT=0x2901 MIRRORED=0x8370 CLAMP=0x812F)\n", ws, wt);
                             }
                         }
