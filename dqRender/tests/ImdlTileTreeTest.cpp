@@ -12,6 +12,18 @@
 
 #include <dqCommon/FeatureTable.h>
 #include <dqRender/RenderGraphic.h>
+#include <dqRender/RenderSystem.h>
+#include <dqRender/tile/ImdlHeader.h>
+
+#include "render/Batch.h"
+#include "render/Graphic.h"
+
+#include "tile-sample-assets/imdl-fixtures/TileIOFixtures.h"
+
+#include <memory>
+#include <vector>
+
+using namespace dqRender::fixtures;
 
 namespace {
 
@@ -19,6 +31,86 @@ dqGeom::Range3d box(double x0, double y0, double z0, double x1, double y1, doubl
 {
     return dqGeom::Range3d::CreateXYZXYZ(x0, y0, z0, x1, y1, z1);
 }
+
+// 桩 RenderSystem：dqRenderTest 无 GL 环境，承接 readContent 的
+// createGraphicFromPolyface/createGraphicList/createBatch 三调用。
+// createBatch 镜像 OpenGLRenderSystem::createBatch 的真 Batch 路径
+//（System.ts:445-463——graphic 判型 asBatch 与 feature table 复制均走真
+// 实现，本测试锁的是 readContent 的接线而非桩行为）。
+class ReadContentStubGraphic final : public dqRender::Graphic {
+public:
+    void addCommands(dqRender::RenderCommands&) override {}
+};
+
+class ReadContentStubSystem final : public dqRender::RenderSystem {
+public:
+    bool isValid() const noexcept override { return true; }
+    std::unique_ptr<dqRender::RenderTarget> createTarget(void*, uint32_t, uint32_t) override
+    {
+        return nullptr;
+    }
+    std::unique_ptr<dqRender::GraphicBuilder> createGraphicBuilder(
+        const dqRender::GraphicBuilderOptions&) override
+    {
+        return nullptr;
+    }
+    dqRender::GraphicBranch* createBranch(bool = true) override { return nullptr; }
+    dqRender::RenderGraphic* createBranchGraphic(dqRender::GraphicBranch*) override
+    {
+        return nullptr;
+    }
+    dqRender::RenderGraphic* createGraphicList(
+        std::vector<dqRender::RenderGraphic*> graphics) override
+    {
+        if (graphics.empty())
+            return nullptr;
+        if (graphics.size() == 1)
+            return graphics[0];
+        auto* arr = new dqRender::GraphicsArray();
+        for (auto* g : graphics)
+            arr->add(std::unique_ptr<dqRender::Graphic>(static_cast<dqRender::Graphic*>(g)));
+        return arr;
+    }
+    dqRender::RenderGraphicOwner* createGraphicOwner(dqRender::RenderGraphic* owned) override
+    {
+        return owned ? new dqRender::RenderGraphicOwner(owned) : nullptr;
+    }
+    dqRender::RenderGraphic* createGraphicFromPolyface(void const* polyface, uint32_t,
+                                                       uint32_t,
+                                                       dqRender::rhi::TextureHandle) override
+    {
+        if (!polyface)
+            return nullptr;
+        return new ReadContentStubGraphic();
+    }
+    // 镜像 OpenGLRenderSystem::createBatch（System.ts:445-463）：真 Batch +
+    // feature table 复制 + 范围记录。
+    dqRender::RenderGraphic* createBatch(dqRender::RenderGraphic* graphic,
+                                         dqCommon::FeatureTable const* featureTable,
+                                         dqGeom::Range3d const& range) override
+    {
+        if (!graphic)
+            return nullptr;
+        std::unique_ptr<dqCommon::FeatureTable> table;
+        uint32_t featureCount = 1;
+        if (featureTable) {
+            auto t = std::make_unique<dqCommon::FeatureTable>(
+                featureTable->getMaxFeatures(), featureTable->getModelId(),
+                featureTable->getType());
+            for (int i = 0; i < featureTable->getArraySize(); ++i) {
+                auto const& indexed = featureTable->getArray()[i];
+                t->insertWithIndex(indexed.value, indexed.index);
+            }
+            featureCount = static_cast<uint32_t>(t->getSize());
+            table = std::move(t);
+        }
+        auto* batch = new dqRender::Batch(featureCount, std::move(table));
+        batch->setChild(std::unique_ptr<dqRender::Graphic>(
+            static_cast<dqRender::Graphic*>(graphic)));
+        batch->setRange(range);
+        return batch;
+    }
+};
 
 }  // namespace
 
@@ -167,4 +259,69 @@ TEST(ImdlTileTree, ContentIdRoundtrip)
     EXPECT_EQ(dqRender::formatImdlContentId(spec), "2/3/1/0/4");
     parsed = dqRender::parseImdlContentId("2/3/1/0/4");
     EXPECT_EQ(parsed.mult, 4u);
+}
+
+// readContent 的 FeatureTable 链接 + Batch 包裹（U8 归位）。
+// Ported from: itwinjs-core ImdlReader.ts:110-123（readContent 的
+//              featureTable 产出与 Batch 包裹链——decodeImdlGraphics 后
+//              convertFeatureTable + system.createBatch）+
+//              ParseImdlDocument.ts:1259-1266（convertFeatureTable 的
+//              PackedFeatureTable 构造）+ :1278-1284（FT 头读后 seek 到
+//              ftStartPos+length 的定位语义）。
+//              测试形态 Authored：参考侧对应覆盖在 IModelTileReader 集成
+//              测试（依赖 RPC），DanQing 用录制 fixture 直读（§5(f)）。
+TEST(ImdlTileTreeTest, ReadContentPopulatesFeatureTable)
+{
+    // 建树模式照 ImdlTileTree.LoadChildrenCreatesImdlTiles（本文件——
+    // ImdlTileTree(treeId, rootContentId, rootRange, ImdlTreeMetadata)）。
+    dqRender::ImdlTreeMetadata meta;
+    meta.contentRange = box(-1, -1, -1, 9, 9, 9);
+    dqRender::ImdlTileTree tree("fixture://minimal-imdl", "0/0/0/0",
+                                box(0, 0, 0, 8, 8, 8), meta);
+    // readContent 从树取 RenderSystem（TileTree.h 注入约定）——桩系统承接
+    // 三个工厂调用（真 Batch 路径，见文件头桩类注释）。
+    ReadContentStubSystem system;
+    tree.setRenderSystem(&system);
+
+    // fixture 根 tile 的 FT 头真值（自洽断言基准：feature 数与头 count 一致，
+    // 词向量布局 3×u32/feature + 2×u32/subcat tail——PackedFeatureTable.ts）。
+    dqRender::ImdlFeatureTableHeader ftHeader;
+    {
+        dqRender::ImdlByteStream stream(V1_1::rectangleBytes, V1_1::rectangleSize);
+        auto const header = dqRender::ImdlHeader::readFrom(stream);
+        ASSERT_TRUE(header.isValid());
+        ASSERT_TRUE(dqRender::ImdlFeatureTableHeader::readFrom(stream, ftHeader));
+    }
+
+    auto* root = tree.getRootTile();
+    ASSERT_NE(root, nullptr);
+    auto content = root->readContent(V1_1::rectangleBytes, V1_1::rectangleSize);
+
+    // FT 头已由 ImdlHeader/ImdlDocument 测试锁定可读——本测试锁定链接结果：
+    // featureTable 非空、feature 数与 fixture FT 头 count 一致（参考
+    // expectNumFeatures(batch, 1)——TileIO.test.ts rectangle 单元素场景）、
+    // feature0 解析非零 elementId。
+    ASSERT_NE(content.featureTable, nullptr);
+    EXPECT_EQ(content.featureTable->getSize(), static_cast<int>(ftHeader.count));
+    auto f0 = content.featureTable->findFeature(0);
+    ASSERT_TRUE(f0.has_value());
+    printf("[IMDL-READCONTENT] count=%u feature0 elementId=%s subCategoryId=%s\n",
+           ftHeader.count, f0->elementId.ToString().c_str(),
+           f0->subCategoryId.ToString().c_str());
+    EXPECT_NE(f0->elementId.GetValue(), 0u);
+    // 钉死录制夹具真值（v1.1 rectangle = TileIO.data.ts 的绿矩形场景；
+    // fixture 字节或 FT 解析链任一变化即红）。
+    EXPECT_EQ(f0->elementId.GetValue(), 0x4eu);
+    EXPECT_EQ(f0->subCategoryId.GetValue(), 0x18u);
+
+    // graphic 被 Batch 包裹（pickable 的前提，ImdlReader.ts:122-123）：
+    // content.graphic 指向 Batch 且 Batch 持有 feature table。判型走
+    // RenderGraphic::asBatch()——itwinjs `instanceof Batch`（Graphic.ts）
+    // 的 -fno-rtti 等价（PlanarClassifier.ts:374）。
+    auto* batch = content.graphic ? content.graphic->asBatch() : nullptr;
+    ASSERT_NE(batch, nullptr);
+    EXPECT_EQ(batch->getFeatureCount(),
+              static_cast<uint32_t>(content.featureTable->getSize()));
+    ASSERT_NE(batch->getFeatureTable(), nullptr);
+    EXPECT_TRUE(batch->isPickable());
 }
