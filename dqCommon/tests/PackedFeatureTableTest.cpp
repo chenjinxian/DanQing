@@ -222,3 +222,41 @@ TEST(PackedFeatureTableTest, AnimationNodeId)
     EXPECT_EQ(packed.getAnimationNodeId(0), 0u);
     EXPECT_EQ(packed.getAnimationNodeId(999), 0u);
 }
+
+// Ported from: itwinjs-core core/common/src/internal/PackedFeatureTable.ts
+//              constructor (:35-58) + getFeature (:100+) —— 布局契约测试；
+//              参考无独立 PackedFeatureTable.test.ts（用例在 FeatureTable.test.ts
+//              的 pack 往返中），本用例按线上 packed words 布局自写。
+// Authored: no reference test exists in itwinjs-core for constructing
+//           PackedFeatureTable directly from imdl wire words.
+TEST(PackedFeatureTableTest, ConstructFromWireWords)
+{
+    // 2 features + 1 subcategory tail:
+    //   feature0: elementId 0x0000000100000002, subCatIdx 0 | class Primary(0)<<24
+    //   feature1: elementId 0x0000000000000005, subCatIdx 0 | class Construction(1)<<24
+    //   subcat[0]: 0x0000000200000007
+    std::vector<uint32_t> words = {
+        0x00000002u, 0x00000001u, 0x00000000u,  // f0: lo, hi, idx|class
+        0x00000005u, 0x00000000u, 0x01000000u,  // f1
+        0x00000007u, 0x00000002u,               // subcat[0] lo, hi
+    };
+    dqCommon::PackedFeatureTable table(words, /*modelId*/0, /*numFeatures*/2,
+                                       dqCommon::BatchType::Primary);
+    EXPECT_EQ(table.getNumFeatures(), 2u);
+    EXPECT_EQ(table.getNumSubCategories(), 1u);
+
+    auto f0 = table.findFeature(0);
+    ASSERT_TRUE(f0.has_value());
+    EXPECT_EQ(f0->elementId, 0x0000000100000002ull);
+    EXPECT_EQ(f0->subCategoryId, 0x0000000200000007ull);
+    EXPECT_EQ(f0->geometryClass, dqCommon::GeometryClass::Primary);
+
+    auto f1 = table.findFeature(1);
+    ASSERT_TRUE(f1.has_value());
+    EXPECT_EQ(f1->elementId, 0x5ull);
+    EXPECT_EQ(f1->geometryClass, dqCommon::GeometryClass::Construction);
+
+    // unpack() 往返：FeatureTable 侧逐 feature 可达（Task 2 的 createBatch 入口）。
+    dqCommon::FeatureTable unpacked = table.unpack();
+    EXPECT_EQ(unpacked.getSize(), 2);
+}

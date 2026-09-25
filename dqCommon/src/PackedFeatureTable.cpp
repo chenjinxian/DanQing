@@ -3,6 +3,8 @@
 // Ported from: itwinjs-core core/common/src/internal/PackedFeatureTable.ts
 #include "dqCommon/PackedFeatureTable.h"
 
+#include <utility>
+
 BEGIN_DQ_COMMON_NAMESPACE
 
 // Helper: split a64-bit ID into lower/upper32-bit pair.
@@ -16,6 +18,21 @@ static void SplitId(uint64_t id, uint32_t& lower, uint32_t& upper)
 static uint64_t CombineId(uint32_t lower, uint32_t upper)
 {
     return (static_cast<uint64_t>(upper) << 32) | static_cast<uint64_t>(lower);
+}
+
+// Ported from: itwinjs-core PackedFeatureTable.ts constructor (:35-58).
+PackedFeatureTable::PackedFeatureTable(std::vector<uint32_t> data, uint64_t modelId,
+                                       uint32_t numFeatures, BatchType type)
+    : m_data(std::move(data))
+{
+    m_numFeatures = numFeatures;
+    m_modelId = modelId;
+    m_type = type;
+    // _subCategoriesOffset = 3 * numFeatures（PackedFeatureTable.ts:44-46 区）;
+    // 尾部 2×u32/subcat。
+    size_t const subCatsOffset = 3u * static_cast<size_t>(numFeatures);
+    m_numSubCategories = m_data.size() > subCatsOffset
+        ? static_cast<uint32_t>((m_data.size() - subCatsOffset) / 2u) : 0u;
 }
 
 PackedFeatureTable PackedFeatureTable::pack(const FeatureTable& table)
