@@ -332,6 +332,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/PolylineTesselatorTest.cpp
         tests/VertexTableBuilderTest.cpp
         tests/VertexLutTextureTest.cpp
+        tests/LutSurfaceGeometryTest.cpp
         tests/PolylineRenderTest.cpp
         tests/PointStringRenderTest.cpp
         tests/CanvasDecorationRenderTest.cpp

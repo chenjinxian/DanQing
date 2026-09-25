@@ -1447,6 +1447,49 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                         // （pick 变体的 computeLinearDepth 与透视光照的 kFrustumType
                         // 分支同靠它；真派发落地时随 TD-15 拆除）。
                         params.setVec3("u_frustum", m_target.getFrustumUniforms().getFrustumData());
+
+                        // LUT 绑定（量化 imdl 几何）：模式照 polyline 分支（:1490-1534）。
+                        // Ported from: itwinjs-core glsl/Vertex.ts:229-272 —— u_vertLUT ←
+                        // TextureUnit.VertexLUT（RenderFlags.ts:164 = Five），u_vertParams
+                        // ← (texWidth, texHeight, numRgbaPerVertex, numVertices)，
+                        // u_qOrigin/u_qScale ← geometry.qOrigin/qScale（Vertex.ts:261-272）；
+                        // u_color ← lutGeom.getColor（glsl/Color.ts:51-60，量化路径无
+                        // a_color attribute，v_color 取自 u_color uniform）。
+                        // 纹理单元取 5（GL::TextureUnit::VertexLUT）：与 s_texture(0)、
+                        // 主题渐变(1)、u_featureOverrides(7)、s_normalMap(13) 均不冲突
+                        // （polyline 分支的 0 是 headless 测试约定——surface 的 0 已被
+                        // s_texture 占用）。
+                        SurfaceGeometry* surfGeom = geometry->asSurface();
+                        if (surfGeom != nullptr && surfGeom->usesQuantizedPositions()) {
+                            auto const& surfLut = surfGeom->getLut();
+                            constexpr int32_t kSurfaceLutTexUnit = 5;  // GL::TextureUnit::VertexLUT (RenderFlags.h:141)
+                            if (surfLut.isValid()) {
+                                driver.bindTexture(kSurfaceLutTexUnit, surfLut.getTexture());
+                                params.setInt("u_vertLUT", kSurfaceLutTexUnit);
+                                auto const& sp = surfLut.getParams();
+                                float surfVertParams[4] = {
+                                    static_cast<float>(sp.texWidth),
+                                    static_cast<float>(sp.texHeight),
+                                    static_cast<float>(sp.numRgbaPerVert),
+                                    static_cast<float>(sp.numVertices),
+                                };
+                                params.setVec4("u_vertParams", surfVertParams);
+                                // 量化原点/缩放经基类 LUT 转发（构造时 setLut(&m_lut)）。
+                                if (float const* qo = surfGeom->getQOrigin())
+                                    params.setVec3("u_qOrigin", qo);
+                                if (float const* qs = surfGeom->getQScale())
+                                    params.setVec3("u_qScale", qs);
+                            }
+                            dqCommon::ColorDef const surfColor = surfGeom->getColor();
+                            dqCommon::ColorComponents const scc = surfColor.getColors();
+                            float surfColorRgba[4] = {
+                                static_cast<float>(scc.r) / 255.0f,
+                                static_cast<float>(scc.g) / 255.0f,
+                                static_cast<float>(scc.b) / 255.0f,
+                                static_cast<float>(255 - scc.t) / 255.0f,
+                            };
+                            params.setVec4("u_color", surfColorRgba);
+                        }
                     } else if (techniqueId == TechniqueId::PlanarGrid) {
                         params.setMatrix4("u_mvpMatrix", m_branchStack.getCurrentMvp().data());
                     } else if (techniqueId == TechniqueId::Edge ||
