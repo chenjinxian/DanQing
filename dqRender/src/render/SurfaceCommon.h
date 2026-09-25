@@ -135,31 +135,55 @@ inline void createCommon(ProgramBuilder& builder, bool instanced, bool quantized
 // addColor — vertex color varying
 // Ported from: itwinjs-core Color.ts addColor() (line 51-70)
 //              + addVaryingColor() (line 65-70)
+//              + getComputeElementColor() (line 16-26)
 //
-// Simplified: reads color from a_color attribute instead of color LUT texture.
-// The LUT color path (getComputeElementColor from g_vertLutData) arrives
-// with the full VertexLUT color integration. TODO follow-up.
+// Non-quantized (§3.4 deviation): reads color from a_color attribute instead
+// of the color LUT texture appended to the vertex data.
+// Quantized: reads the per-vertex color via u_color uniform. The reference
+// getComputeElementColor() decodes colorIndex = decodeUInt16(g_vertLutData1.zw)
+// and samples the color table appended after the vertex data in u_vertLUT,
+// selecting lutColor vs u_color via u_shaderFlags[kShaderBit_NonUniformColor];
+// the color-table sampling is a registered TODO — the current imdl fixture has
+// no color table (uniform color), so the uniform path is the minimal faithful
+// subset (Color.ts:24 selects u_color when the color is uniform).
 //
 // Adds:
-//   Vertex:  a_color attribute + ComputeBaseColor slot (return a_color)
+//   Vertex:  (non-quantized: a_color attribute) / (quantized: u_color uniform)
+//            + ComputeBaseColor slot
 //   Varying: v_color (vec4)
 //   Fragment: ComputeBaseColor slot (return v_color)
 // ---------------------------------------------------------------------------
-inline void addColor(ProgramBuilder& builder)
+inline void addColor(ProgramBuilder& builder, bool quantized = false)
 {
     auto& vert = builder.getVertexBuilder();
-
-    // a_color attribute
-    vert.addVariable({"a_color", VariableType::Vec4, VariableScope::Attribute, 0});
 
     // v_color varying
     builder.addVarying("v_color", VariableType::Vec4);
 
-    // Vertex ComputeBaseColor: return the per-vertex color.
-    // Ported from: itwinjs-core Color.ts getComputeColor() (simplified —
-    // no LUT, no instance color; TODO follow-up with VertexLUT).
-    vert.setVertexComponent(VertexShaderComponent::ComputeBaseColor,
-                            "    return a_color;\n");
+    if (quantized) {
+        // Quantized LUT path — Ported from: itwinjs-core Color.ts addColor()
+        // (line 51-62). u_color uniform carries the uniform element color.
+        // TODO: color-table sampling per getComputeElementColor()
+        // (Color.ts:16-26) — colorIndex = decodeUInt16(g_vertLutData1.zw),
+        // texel = computeLUTCoords(u_vertParams.z*u_vertParams.w + colorIndex,
+        // u_vertParams.xy, g_vert_center, 1.0) sample of u_vertLUT, selected
+        // by u_shaderFlags[kShaderBit_NonUniformColor]. Deferred: the imdl
+        // fixture consumes uniform colors only.
+        vert.addUniform("u_color", VariableType::Vec4, nullptr);
+
+        // Vertex ComputeBaseColor: return the uniform color.
+        vert.setVertexComponent(VertexShaderComponent::ComputeBaseColor,
+                                "    return u_color;\n");
+    } else {
+        // a_color attribute
+        vert.addVariable({"a_color", VariableType::Vec4, VariableScope::Attribute, 0});
+
+        // Vertex ComputeBaseColor: return the per-vertex color.
+        // Ported from: itwinjs-core Color.ts getComputeColor() (simplified —
+        // no LUT, no instance color; TODO follow-up with VertexLUT).
+        vert.setVertexComponent(VertexShaderComponent::ComputeBaseColor,
+                                "    return a_color;\n");
+    }
 
     // Fragment ComputeBaseColor is owned by addTexture (kComputeBaseColor calls
     // sampleSurfaceTexture + getSurfaceColor, the latter returning v_color).
