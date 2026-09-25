@@ -36,6 +36,10 @@ public:
     RenderGraphicOwner* createGraphicOwner(RenderGraphic* owned) override;
     bool isValid() const noexcept override;
 
+    // The RHI driver backing this system（RenderSystem::driver 的 concrete 实现——
+    // itwinjs 侧经 concrete WebGL System 内部持有 context，DanQing 经 RenderSystemImpl）。
+    rhi::Driver* driver() noexcept override { return m_impl ? &m_impl->getDriver() : nullptr; }
+
     // Access internal implementation
     RenderSystemImpl& getImpl() noexcept { return *m_impl; }
 

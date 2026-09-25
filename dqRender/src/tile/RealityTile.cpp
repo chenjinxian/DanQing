@@ -212,25 +212,40 @@ TileContent RealityTile::readContent(uint8_t const* data, size_t dataSize)
                     content.contentRange = desc->contentRange;
                     content.isLeaf = desc->isLeaf;
                     // Graphics pass (ImdlReader.ts:104-110 decodeImdlGraphics
-                    // → system.createBatch): decode meshes → polyface
-                    // graphics via the tree's injected render system.
+                    // → system.createBatch): LUT 直传主路径（U7 归位，
+                    // createImdlLutGraphics——零 CPU 逐顶点解码）。
+                    // EQUIVALENCE: 参考源=itwinjs-core VertexLUT.ts:93-99（线上
+                    //   顶点表直传纹理）+ Vertex.ts computeVertexPosition（shader
+                    //   侧 f32 解量化）。发散=旧路径 CPU f64 解量化后截 f32，新路径
+                    //   shader f32 解量化，量化域内差异 ≤1ulp、屏幕像素不可辨；
+                    //   验证法=TileTreeRender 8 项像素锁全绿（尤其
+                    //   ImdlTilesetRendersRecordedFixture）+
+                    //   LutPathUploadsVertexTableVerbatim 的字节级直传断言。
                     auto doc = parseImdlDocument(imdlStream, hasFt ? &ftHeader : nullptr, &featureWords);
                     if (doc.has_value()) {
-                        auto meshes = decodeImdlGraphics(*doc);
-                        if (tileTraceEnabled()) {
-                            for (auto const& pf : meshes) {
-                                std::fprintf(stderr, "[TILE] imdl mesh pts=%zu facets=%zu:",
-                                             pf->Data().PointCount(), pf->FacetCount());
-                                for (size_t i = 0; i < pf->Data().PointCount() && i < 6; ++i)
-                                    std::fprintf(stderr, " (%.2f,%.2f)",
-                                                 pf->Data().GetPoint(static_cast<int32_t>(i + 1)).x,
-                                                 pf->Data().GetPoint(static_cast<int32_t>(i + 1)).y);
-                                std::fprintf(stderr, "\\n");
+                        RenderSystem* system = getTree().getRenderSystem();
+                        if (system && system->driver()) {
+                            auto graphics = createImdlLutGraphics(*doc, *system);
+                            if (tileTraceEnabled())
+                                std::fprintf(stderr, "[TILE] imdl lut graphics=%zu\\n", graphics.size());
+                            if (!graphics.empty())
+                                content.graphic.reset(system->createGraphicList(std::move(graphics)));
+                        } else if (system) {
+                            // 无 GL 桩系统回退：polyface 对照/调试通道（旧
+                            // decodeImdlGraphics；ImdlGraphics 既有测试亦直接测它）。
+                            auto meshes = decodeImdlGraphics(*doc);
+                            if (tileTraceEnabled()) {
+                                for (auto const& pf : meshes) {
+                                    std::fprintf(stderr, "[TILE] imdl mesh pts=%zu facets=%zu:",
+                                                 pf->Data().PointCount(), pf->FacetCount());
+                                    for (size_t i = 0; i < pf->Data().PointCount() && i < 6; ++i)
+                                        std::fprintf(stderr, " (%.2f,%.2f)",
+                                                     pf->Data().GetPoint(static_cast<int32_t>(i + 1)).x,
+                                                     pf->Data().GetPoint(static_cast<int32_t>(i + 1)).y);
+                                    std::fprintf(stderr, "\\n");
+                                }
                             }
-                        }
-                        if (!meshes.empty()) {
-                            RenderSystem* system = getTree().getRenderSystem();
-                            if (system) {
+                            if (!meshes.empty()) {
                                 std::vector<RenderGraphic*> graphics;
                                 for (auto& polyface : meshes) {
                                     if (auto* graphic = system->createGraphicFromPolyface(

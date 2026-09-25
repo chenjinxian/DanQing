@@ -314,6 +314,8 @@ struct ImdlSurfaceProps {
 struct ImdlPrimitiveProps {
     ImdlVertexTableProps vertices;
     ImdlSurfaceProps surface;
+    bool isPlanar = false;  // ImdlSchema.ts:177 mesh primitive isPlanar → 参考侧
+                            // 决定 OpaquePlanar pass 归属（Task 5 LUT 路径）
 };
 
 inline std::vector<ImdlPrimitiveProps> parseImdlMeshPrimitives(JsonValue const& doc)
@@ -358,6 +360,8 @@ inline std::vector<ImdlPrimitiveProps> parseImdlMeshPrimitives(JsonValue const& 
                 if (JsonValue const* t = surf->find("type"))
                     props.surface.type = static_cast<uint32_t>(t->number);
             }
+            if (JsonValue const* pl = prim.find("isPlanar"))
+                props.isPlanar = pl->boolean;
             out.push_back(std::move(props));
         }
     }

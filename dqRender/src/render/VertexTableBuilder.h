@@ -92,14 +92,16 @@ public:
                                                dqCommon::ColorDef const& uniformColor,
                                                uint32_t maxDimension = 2048u);
 
-private:
     // Ported from: VertexTable.ts computeDimensions (:53-81).
     // Picks (width, height) so width*height >= nEntries*nRgbaPerEntry + nExtraRgba
     // and width % nRgbaPerEntry == 0 (a vertex's texels never wrap rows).
+    // 公开访问（Task 5 createImdlLutGraphics 的 computeDimensions 回退路径复用，
+    // 既有 1:1 移植，勿重写）。
     static void computeDimensions(uint32_t nEntries, uint32_t nRgbaPerEntry,
                                   uint32_t nExtraRgba, uint32_t maxSize,
                                   uint32_t& width, uint32_t& height);
 
+private:
     // Ported from: VertexTableBuilder.ts convertFloat32 (:450-453).
     // Reinterprets IEEE-754 float bits as uint32 via memcpy (no conversion).
     static uint32_t convertFloat32(float val) noexcept;

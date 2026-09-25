@@ -204,9 +204,11 @@ TEST(TileTreeRegistry, ResetDisposesOnlyTargetTree)
     EXPECT_EQ(ownerB->getTileTree(), treeB);
     EXPECT_EQ(ownerB->getLoadStatus(), dqRender::TileTreeLoadStatus::Loaded);
 
-    // a 同 id 再取 → 新 owner（旧树已被处置）。
+    // a 同 id 再取 → 新 owner（旧树已被处置）。指针同一性在释放后不可靠
+    // （堆回收可能复用地址——全量跑堆碎片时 ownerA2==ownerA 间歇恒真，本测试
+    // 历史 flake 实锤；TD-12 同类修正见 DropSupplierForgetsAllItsOwners）：
+    // 改用状态判定——新 owner 必须是 NotLoaded（fresh）。
     auto* ownerA2 = &tiles.getTileTreeOwner("a", supplier);
-    EXPECT_NE(ownerA2, ownerA);
     EXPECT_EQ(ownerA2->getLoadStatus(), dqRender::TileTreeLoadStatus::NotLoaded);
     // 旧 owner 经 reset 已不在注册表内——不触碰（参考 erase 后 owner 失效）。
 }

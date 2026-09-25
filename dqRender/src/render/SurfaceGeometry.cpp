@@ -30,12 +30,16 @@ SurfaceGeometry::SurfaceGeometry(rhi::Driver& driver, rhi::IndexBufferHandle ibh
 SurfaceGeometry::SurfaceGeometry(rhi::Driver& driver, VertexLutTexture lut,
                                  rhi::BufferObjectHandle lutIndexBuffer,
                                  uint32_t numIndices, SurfaceType surfaceType,
-                                 bool isPlanar, bool hasTextures)
+                                 bool isPlanar, bool hasTextures,
+                                 rhi::VertexBufferHandle lutVertexBuffer,
+                                 rhi::VertexBufferInfoHandle lutVertexBufferInfo)
     : MeshGeometry(numIndices, surfaceType, FillFlags::Lit, isPlanar, hasTextures, true)
     , m_driver(driver)
     , m_numIndices(numIndices)
     , m_lut(std::move(lut))
     , m_lutIndexBuffer(lutIndexBuffer)
+    , m_lutVertexBuffer(lutVertexBuffer)
+    , m_lutVertexBufferInfo(lutVertexBufferInfo)
     , m_usesQuantizedPositions(true)
 {
     setLut(&m_lut);
@@ -47,15 +51,19 @@ SurfaceGeometry::SurfaceGeometry(rhi::Driver& driver, VertexLutTexture lut,
 // (no `if (m_ibh)`) so the release path is uniform and unit-testable with a
 // NullDriver-based mock (whose createXxx return {} ).
 // Mirrors PolyfaceGraphic::~PolyfaceGraphic (PolyfaceGraphic.cpp:24-30).
-// LUT 形态追加 m_lut.destroy + destroyBufferObject(m_lutIndexBuffer)（资源清单对齐
-// PolylineGeometry::~PolylineGeometry (本文件下方)：VBO 形态下
+// LUT 形态追加 m_lut.destroy + destroyVertexBuffer(Info) + destroyBufferObject
+// （资源清单对齐 PolylineGeometry::~PolylineGeometry (本文件下方)：VBO 形态下
 // m_lut 为空（VertexLutTexture::destroy 内做 nullid 守卫并同步失效 m_texture，
-// VertexLutTexture.cpp:55-61）且 m_lutIndexBuffer 为 nullid，两行为空调用。
+// VertexLutTexture.cpp:55-61）且各 handle 为 nullid，全部为空调用。
+// m_lutVertexBuffer 先毁（glDeleteBuffers vb->buffers[i]，与 lutIndexBuffer 同
+// id——GL 对二次删除同名 buffer 静默忽略，PolylineGeometry 同款顺序）。
 SurfaceGeometry::~SurfaceGeometry()
 {
     m_driver.destroyIndexBuffer(m_ibh);
     m_driver.destroyRenderPrimitive(m_primitive);
     m_lut.destroy(m_driver);
+    m_driver.destroyVertexBuffer(m_lutVertexBuffer);
+    m_driver.destroyVertexBufferInfo(m_lutVertexBufferInfo);
     m_driver.destroyBufferObject(m_lutIndexBuffer);
 }
 

@@ -226,18 +226,28 @@ TileContent ImdlTile::readContent(uint8_t const* data, size_t dataSize)
     if (!doc.has_value())
         return content;
 
-    auto meshes = decodeImdlGraphics(*doc);
-    if (meshes.empty())
-        return content;
-
     RenderSystem* system = getTree().getRenderSystem();
     if (!system)
         return content;
 
+    // imdl 顶点消费主路径：LUT 直传（U7 归位，createImdlLutGraphics）。
+    // EQUIVALENCE: 参考源=itwinjs-core VertexLUT.ts:93-99（线上顶点表直传纹理）+
+    //   Vertex.ts computeVertexPosition（shader 侧 f32 解量化）。发散=旧路径 CPU
+    //   f64 解量化后截 f32，新路径 shader f32 解量化，量化域内差异 ≤1ulp、
+    //   屏幕像素不可辨；验证法=TileTreeRender 8 项像素锁全绿 +
+    //   LutPathUploadsVertexTableVerbatim 的字节级直传断言。
     std::vector<RenderGraphic*> graphics;
-    for (auto& polyface : meshes) {
-        if (auto* graphic = system->createGraphicFromPolyface(polyface.Get(), 0xFFFFFFFFu, 0))
-            graphics.push_back(graphic);
+    if (system->driver()) {
+        graphics = createImdlLutGraphics(*doc, *system);
+    } else {
+        // 无 GL 桩系统（dqRenderTest 的 ReadContentStubSystem）回退：polyface
+        // 形态保留为对照/调试通道（旧 decodeImdlGraphics——ImdlGraphics 既有
+        // 测试亦直接测它）。
+        auto meshes = decodeImdlGraphics(*doc);
+        for (auto& polyface : meshes) {
+            if (auto* graphic = system->createGraphicFromPolyface(polyface.Get(), 0xFFFFFFFFu, 0))
+                graphics.push_back(graphic);
+        }
     }
     if (graphics.empty())
         return content;

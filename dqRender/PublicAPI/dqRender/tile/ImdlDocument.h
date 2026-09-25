@@ -9,6 +9,7 @@
 #pragma once
 
 #include "../Export.h"
+#include "../RenderGraphic.h"
 #include "ImdlHeader.h"
 
 #include <dqBase/RefCounted.h>
@@ -26,6 +27,8 @@
 #endif
 
 BEGIN_DQ_RENDER_NAMESPACE
+
+class RenderSystem;
 
 // The description of an imdl tile's content, derived from its header.
 // Ported from: itwinjs-core TileContentDescription (TileMetadata.ts:880-940 —
@@ -86,7 +89,28 @@ parseImdlDocument(ImdlByteStream& stream,
 // land with the full graphics pass, uniform color carried by the props).
 // Ported from: ImdlGraphicsCreator.decodeImdlGraphics
 // (ImdlGraphicsCreator.ts:414-437) — the DanQing CPU-decoding equivalent.
+// 保留为无 GL 环境（桩 RenderSystem）与调试对照通道；生产路径走
+// createImdlLutGraphics（U7 LUT 直传）。
 std::vector<dqBase::RefPtr<dqGeom::IndexedPolyface>> DQ_RENDER_EXPORT
 decodeImdlGraphics(ImdlDocument const& doc);
+
+// imdl 量化顶点表的 LUT 直传创建（零 CPU 逐顶点解码——线上 RGBA8 顶点表
+// 即 LUT texel 布局，JSON width/height 选纹理尺寸后原样上传；
+// VertexTable.ts:53-81 computeDimensions 为 width/height 缺失时的回退）。
+// Ported from: itwinjs-core VertexLUT.ts（:93-99 直传 + VertexTable.ts:53-81
+//              computeDimensions + ParseImdlDocument.ts:1029-1042 parseVertexTable
+//              ——data 即线上 bufferView、width/height 原样自 JSON）+
+//              ImdlGraphicsCreator.decodeImdlGraphics（:414-437 的 node walk
+//              形态——每 mesh primitive 一个 graphic）。
+// 返回的 graphic 链与 decodeImdlGraphics 等价（每 mesh primitive 一个
+// MeshGraphic，由调用方 createGraphicList + createBatch 包裹）；裸指针
+// 所有权交调用方（readContent → system.createGraphicList）。
+// system.driver() == nullptr（桩/无 GL 系统）→ 返回空，调用方回退 polyface 路径。
+// TODO（后续里程碑，ParseImdlDocument.ts:969-1003）：meshopt 压缩顶点表
+// （compressedSize 分支）；surface.uvParams → textured 变体（hasTextures）；
+// json.featureID uniform 语义（uniformFeatureID :1011）与非均匀 featureIndexType
+// 的 LUT 颜色表采样。
+std::vector<RenderGraphic*> DQ_RENDER_EXPORT
+createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system);
 
 END_DQ_RENDER_NAMESPACE

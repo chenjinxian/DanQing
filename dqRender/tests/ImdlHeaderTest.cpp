@@ -9,12 +9,23 @@
 //      （录制自真后端的 5 版本 × 5 场景二进制）。
 #include <gtest/gtest.h>
 
+#include "NullDriver.h"
+
+#include "rhi/DriverBase.h"
+#include "rhi/HandleAllocator.h"
+#include "render/MeshGraphic.h"
+#include "render/PolyfaceGraphic.h"
+#include "render/SurfaceGeometry.h"
+#include "tile/TilesetJson.h"
 #include "tile-sample-assets/imdl-fixtures/TileIOFixtures.h"
+#include <dqRender/RenderSystem.h>
 #include <dqRender/tile/ImdlDocument.h>
 #include <dqRender/tile/ImdlHeader.h>
 #include <dqRender/tile/RealityTileTree.h>
 
 #include <cmath>
+#include <cstring>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -320,4 +331,220 @@ TEST(ImdlDocument, MaterialColorAndFeatureTable)
     // expectNumFeatures(batch, 1)——存疑时以夹具实际 count 为准）。
     printf("[IMDL-FT] count=%u length=%u words=%zu\n",
            doc->featureCount, doc->featureTableLength, doc->featureData.size());
+}
+
+// ---------------------------------------------------------------------------
+// U7：LUT 直传路径（createImdlLutGraphics）——线上 RGBA8 顶点表零 CPU 逐顶点
+// 解码，原样上传为 LUT 纹理（VertexLUT.ts:93-99 形态）。
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// 录制驱动：createTexture 返回真实句柄（VertexLutTexture::create 的判空通过），
+// setTextureData 捕获上传字节/尺寸——verbatim 直传断言的数据源（形态照
+// VertexLutTextureTest.RecordingDriver 先例，无 GL 上下文，hermetic）。
+class RecordingLutDriver final : public dqRender::rhi::NullDriver {
+public:
+    dqRender::rhi::TextureHandle createTexture(dqRender::rhi::SamplerType, uint8_t,
+                                               dqRender::rhi::TextureFormat, uint32_t, uint32_t,
+                                               uint32_t, dqRender::rhi::TextureUsage) noexcept override
+    {
+        return m_allocator.allocate<dqRender::rhi::HwTexture>();
+    }
+
+    void setTextureData(dqRender::rhi::TextureHandle, uint32_t, uint32_t, uint32_t, uint32_t,
+                        uint32_t width, uint32_t height, uint32_t,
+                        dqRender::rhi::PixelBufferDescriptor&& data) noexcept override
+    {
+        m_lastWidth = width;
+        m_lastHeight = height;
+        auto const* b = static_cast<uint8_t const*>(data.buffer());
+        m_lastBytes.assign(b, b + data.size());
+    }
+
+    uint32_t lastWidth() const noexcept { return m_lastWidth; }
+    uint32_t lastHeight() const noexcept { return m_lastHeight; }
+    std::vector<uint8_t> const& lastBytes() const noexcept { return m_lastBytes; }
+
+private:
+    dqRender::rhi::HandleAllocator m_allocator;
+    uint32_t m_lastWidth = 0;
+    uint32_t m_lastHeight = 0;
+    std::vector<uint8_t> m_lastBytes;
+};
+
+// 桩 RenderSystem：driver() 指向录制驱动（createImdlLutGraphics 的 RHI 通道）。
+// 形态照 ImdlTileTreeTest.ReadContentStubSystem（本目录 ImdlTileTreeTest.cpp:45）。
+class LutStubSystem final : public dqRender::RenderSystem {
+public:
+    explicit LutStubSystem(dqRender::rhi::Driver& d) : m_driver(&d) {}
+
+    bool isValid() const noexcept override { return true; }
+    std::unique_ptr<dqRender::RenderTarget> createTarget(void*, uint32_t, uint32_t) override
+    {
+        return nullptr;
+    }
+    std::unique_ptr<dqRender::GraphicBuilder> createGraphicBuilder(
+        const dqRender::GraphicBuilderOptions&) override
+    {
+        return nullptr;
+    }
+    dqRender::GraphicBranch* createBranch(bool = true) override { return nullptr; }
+    dqRender::RenderGraphic* createBranchGraphic(dqRender::GraphicBranch*) override
+    {
+        return nullptr;
+    }
+    dqRender::RenderGraphic* createGraphicList(
+        std::vector<dqRender::RenderGraphic*>) override
+    {
+        return nullptr;
+    }
+    dqRender::RenderGraphicOwner* createGraphicOwner(dqRender::RenderGraphic*) override
+    {
+        return nullptr;
+    }
+    dqRender::rhi::Driver* driver() noexcept override { return m_driver; }
+
+private:
+    dqRender::rhi::Driver* m_driver;
+};
+
+}  // namespace
+
+// LUT 直传形态 + verbatim 字节断言。
+// Ported from: itwinjs-core VertexTable.ts computeDimensions (:53-81) 语义 +
+//              VertexLUT.ts createFromVertexTable (:93-99 直传形态) +
+//              ParseImdlDocument.ts parseVertexTable (:1029-1042——JSON
+//              width/height 原样进 VertexTable)。
+//              数值断言 Authored（录制 fixture 的 vertices 元数据从 JSON
+//              读得——count/numRgbaPerVertex/width/decodedMin/Max，测试内
+//              自洽；夹具 bytes 只读，§11.11）。
+// 夹具：dqRender::fixtures::V1_1::rectangleBytes（TileIOFixtures.h）+
+//       本文件 parseFull 解析先例（:120 区）。
+TEST(ImdlGraphicsTest, LutPathUploadsVertexTableVerbatim)
+{
+    dqRender::ImdlByteStream stream(V1_1::rectangleBytes, V1_1::rectangleSize);
+    auto const header = dqRender::ImdlHeader::readFrom(stream);
+    ASSERT_TRUE(header.isValid());
+    auto const desc = dqRender::decodeImdlContentDescription(header, stream);
+    ASSERT_TRUE(desc.has_value());
+    auto doc = dqRender::parseImdlDocument(stream);
+    ASSERT_TRUE(doc.has_value());
+
+    RecordingLutDriver driver;
+    LutStubSystem system(driver);
+    auto graphics = dqRender::createImdlLutGraphics(*doc, system);
+    ASSERT_EQ(graphics.size(), 1u) << "rectangle = 1 mesh primitive（1 graphic）";
+    // 形态：LUT 量化几何（MeshGraphic → SurfaceGeometry）。
+    auto* mesh = static_cast<dqRender::MeshGraphic*>(graphics[0]);
+    ASSERT_NE(mesh, nullptr);
+    ASSERT_EQ(mesh->getSurfaces().size(), 1u);
+    dqRender::SurfaceGeometry const* surf = mesh->getSurfaces()[0].get();
+    ASSERT_NE(surf, nullptr);
+    EXPECT_TRUE(surf->usesQuantizedPositions());
+
+    // LUT 参数：numVertices/numRgbaPerVert == JSON vertices.count/numRgbaPerVertex
+    // （ParseImdlDocument.ts:1039-1040）。
+    auto const& lut = surf->getLut();
+    auto const& p = lut.getParams();
+    EXPECT_EQ(p.numVertices, 4u);
+    EXPECT_EQ(p.numRgbaPerVert, 4u);
+    // 纹理尺寸 == JSON vertices.width/height（:1033-1034 原样；本夹具与
+    // computeDimensions(4,4,0,2048) 自洽一致：nRgba=16 ≤ maxSize → 16×1）。
+    EXPECT_EQ(p.texWidth, 16u);
+    EXPECT_EQ(p.texHeight, 1u);
+    EXPECT_EQ(driver.lastWidth(), 16u);
+    EXPECT_EQ(driver.lastHeight(), 1u);
+
+    // 量化参数：QParams3d.fromRange（ParseImdlDocument.ts:1013-1018——
+    // origin=decodedMin，scale=(decodedMax-decodedMin)/65535，逐分量）。
+    double const dmin[3] = {-2.5003749999999996, -5.000749999999999, -0.000500075};
+    double const dmax[3] = {2.5003749999999996, 5.000749999999999, 0.000500075};
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_EQ(lut.getQOrigin()[i], static_cast<float>(dmin[i])) << "qOrigin[" << i << "]";
+        EXPECT_EQ(lut.getQScale()[i],
+                  static_cast<float>((dmax[i] - dmin[i]) / 65535.0))
+            << "qScale[" << i << "]";
+    }
+
+    // 24-bit 索引流：6 索引（bvindices0Surface byteLength 18 / 3）。
+    EXPECT_EQ(surf->getNumIndices(), 6u);
+
+    // 均匀色：u_color 源（glsl/Color.ts:51-60 ← lutGeom.getColor；fixture
+    // uniformColor=65280=绿，TileIO.data.ts "a green rectangle"）。
+    EXPECT_EQ(surf->getColor().getTbgr(), 65280u);
+
+    // Verbatim 直传证据：上传字节 == wire bufferView 字节逐字节相等
+    // （VertexLUT.ts:93-99 createForData(vt.width, vt.height, vt.data)——
+    // vt.data 即线上 bufferView（ParseImdlDocument.ts:1005-1008））。
+    auto json = dqRender::tilejson::parseJsonDocument(doc->sceneJson);
+    ASSERT_NE(json, nullptr);
+    auto prims = dqRender::tilejson::parseImdlMeshPrimitives(*json);
+    ASSERT_EQ(prims.size(), 1u);
+    ASSERT_FALSE(prims[0].vertices.bufferView.empty());
+    auto const* views = json->find("bufferViews");
+    ASSERT_NE(views, nullptr);
+    auto const* view = views->find(prims[0].vertices.bufferView.c_str());
+    ASSERT_NE(view, nullptr);
+    auto const* off = view->find("byteOffset");
+    auto const* len = view->find("byteLength");
+    ASSERT_NE(off, nullptr);
+    ASSERT_NE(len, nullptr);
+    size_t const wireOff = static_cast<size_t>(off->number);
+    size_t const wireLen = static_cast<size_t>(len->number);
+    ASSERT_EQ(wireLen, prims[0].vertices.count * prims[0].vertices.numRgbaPerVertex * 4u);
+    ASSERT_EQ(driver.lastBytes().size(), wireLen);
+    EXPECT_EQ(std::memcmp(driver.lastBytes().data(), doc->binary.data() + wireOff, wireLen), 0)
+        << "LUT upload must be the wire vertex table verbatim (zero CPU decoding)";
+
+    // 资源释放（graphics 为裸指针所有权——readContent 交 createGraphicList）。
+    delete graphics[0];
+}
+
+// U7 内存形态收益：LUT 路径每顶点 16B（numRgba×4）+ 每索引 3B（24-bit 流），
+// 对照旧 VBO 路径 PolyfaceGraphic 每角 sizeof(Vertex)=52B + 每索引 4B。
+// Authored: 参考无对应数值测试（行为收益条目 U7，取证
+//           docs/itwinjs-tile-vertexLUT机制深挖-2026-09-24.md §5）；数值由
+//           录制 fixture 自洽驱动。
+TEST(ImdlGraphicsTest, LutPathUsesLessGpuMemoryThanVboPath)
+{
+    dqRender::ImdlByteStream stream(V1_1::rectangleBytes, V1_1::rectangleSize);
+    auto const header = dqRender::ImdlHeader::readFrom(stream);
+    ASSERT_TRUE(header.isValid());
+    auto const desc = dqRender::decodeImdlContentDescription(header, stream);
+    ASSERT_TRUE(desc.has_value());
+    auto doc = dqRender::parseImdlDocument(stream);
+    ASSERT_TRUE(doc.has_value());
+
+    // LUT 路径字节（fixture：4 顶点 × 4 rgba × 4B + 6 索引 × 3B）。
+    RecordingLutDriver driver;
+    LutStubSystem system(driver);
+    auto graphics = dqRender::createImdlLutGraphics(*doc, system);
+    ASSERT_EQ(graphics.size(), 1u);
+    auto* mesh = static_cast<dqRender::MeshGraphic*>(graphics[0]);
+    ASSERT_EQ(mesh->getSurfaces().size(), 1u);
+    dqRender::SurfaceGeometry const* surf = mesh->getSurfaces()[0].get();
+    auto const& p = surf->getLut().getParams();
+    uint64_t const lutBytes = uint64_t(p.numVertices) * p.numRgbaPerVert * 4u
+        + uint64_t(surf->getNumIndices()) * 3u;
+    uint64_t const lutBytesPerVertex = uint64_t(p.numRgbaPerVert) * 4u;
+
+    // 旧 VBO 路径字节（同 fixture 的 polyface 解码产物：buildFromPolyface
+    // 逐角展开——每角 52B + 每角索引 4B；fixture 全三角面 → 角数 =
+    // FacetCount×3。52B = PolyfaceGraphic::Vertex（私有 struct，布局
+    // position3+normal3+color4+texCoord2 floats + featureId u32 = 13×4B，
+    // PolyfaceGraphic.h:109-115））。
+    auto meshes = dqRender::decodeImdlGraphics(*doc);
+    ASSERT_EQ(meshes.size(), 1u);
+    constexpr uint64_t kVboBytesPerCorner = 13u * 4u;  // sizeof(Vertex)=52
+    uint64_t const vboCorners = uint64_t(meshes[0]->FacetCount()) * 3u;
+    uint64_t const vboBytes = vboCorners * (kVboBytesPerCorner + sizeof(uint32_t));
+
+    // 每顶点/每角：16B vs 52B（LUT < VBO/2）。
+    EXPECT_LT(lutBytesPerVertex, kVboBytesPerCorner / 2u);
+    // 总量（fixture 顶点数驱动）：LUT < VBO 一半。
+    EXPECT_LT(lutBytes, vboBytes / 2u)
+        << "lut=" << lutBytes << " vbo=" << vboBytes;
+
+    delete graphics[0];
 }

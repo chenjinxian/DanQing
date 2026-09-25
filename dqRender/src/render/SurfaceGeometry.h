@@ -44,10 +44,15 @@ public:
     // PolylineGeometry。`lutIndexBuffer` 即 a_qPosition 的 24-bit 索引流
     // （UBYTE3，stride 3，由创建点 Task 5 upload 后经此传入）；primitive（VAO，
     // 内绑 a_qPosition → m_lutIndexBuffer）由创建点 setPrimitive 设置。
+    // `lutVertexBuffer`/`lutVertexBufferInfo` = a_qPosition VAO 的 RHI 顶点缓冲
+    // 句柄（bindRenderPrimitive 每次绑定都从 vbh 重建 attrib 指针，句柄必须与
+    // 几何同寿；析构清单对齐 PolylineGeometry::~PolylineGeometry）。
     SurfaceGeometry(rhi::Driver& driver, VertexLutTexture lut,
                     rhi::BufferObjectHandle lutIndexBuffer,
                     uint32_t numIndices, SurfaceType surfaceType,
-                    bool isPlanar, bool hasTextures);
+                    bool isPlanar, bool hasTextures,
+                    rhi::VertexBufferHandle lutVertexBuffer = {},
+                    rhi::VertexBufferInfoHandle lutVertexBufferInfo = {});
     ~SurfaceGeometry() override;
 
     // --- Casting accessors (Ported from: itwinjs-core CachedGeometry.ts asSurface/asMesh) ---
@@ -128,6 +133,8 @@ private:
     // LUT 形态成员（VBO 形态下 m_lut 为空、m_lutIndexBuffer 为 nullid）：
     VertexLutTexture m_lut;                    // 顶点 LUT 纹理（按值持有，仅 LUT 形态非空）
     rhi::BufferObjectHandle m_lutIndexBuffer;  // a_qPosition 24-bit 索引流
+    rhi::VertexBufferHandle m_lutVertexBuffer;       // a_qPosition VAO 顶点缓冲句柄
+    rhi::VertexBufferInfoHandle m_lutVertexBufferInfo;  // attribute 布局（UBYTE3@0）
     bool m_usesQuantizedPositions = false;
     dqCommon::ColorDef m_color = dqCommon::ColorDef::create();  // u_color 均匀色（默认黑——对齐 ColorDef.create()）
 };
