@@ -33,6 +33,10 @@
 
 BEGIN_DQ_RENDER_NAMESPACE
 
+namespace rhi {
+class Driver;
+}
+
 // GPU profiling result node: label + elapsed nanoseconds + nested children.
 // Ported from: itwinjs-core GLTimerResult (RenderSystemDebugControl.ts:20-30).
 struct GLTimerResult {
@@ -80,6 +84,13 @@ public:
 
     // Whether the system is valid/initialized.
     virtual bool isValid() const noexcept = 0;
+
+    // The RHI driver backing this system, or nullptr for stub/headless systems.
+    // C++ adaptation (§3.4): itwinjs graphic-creation code (ImdlGraphicsCreator)
+    // reaches the GL context through the concrete WebGL System; DanQing's
+    // abstract RenderSystem exposes the equivalent through this accessor —
+    // consumed by createImdlLutGraphics (imdl LUT 直传 upload path).
+    virtual rhi::Driver* driver() noexcept { return nullptr; }
 
     // Create a render target.
     virtual std::unique_ptr<RenderTarget> createTarget(void* nativeWindow, uint32_t width, uint32_t height) = 0;
