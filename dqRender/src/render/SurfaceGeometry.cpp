@@ -21,16 +21,42 @@ SurfaceGeometry::SurfaceGeometry(rhi::Driver& driver, rhi::IndexBufferHandle ibh
 {
 }
 
+// LUT 形态（量化 imdl 网格）。Ported from: itwinjs-core SurfaceGeometry.ts ——
+// 参考侧构造（:378-387）以 BuffersContainer + a_pos 24-bit UBYTE3 索引 attribute
+// 承载全部顶点引用；LUT 本体由 MeshData.lut 持有（MeshGeometry.ts:40），此处
+// C++ 形态 LUT 由几何体按值持有（PolylineGeometry 模板，VertexLutTexture 移动构造）。
+// setLut(&m_lut) 让基类 MeshGeometry::getQOrigin/getQScale（MeshGeometry.h:73-80）
+// 转发到本 LUT —— 1:1 CachedGeometry.ts:208-209（LUTGeometry.qOrigin/qScale ← this.lut）。
+SurfaceGeometry::SurfaceGeometry(rhi::Driver& driver, VertexLutTexture lut,
+                                 rhi::BufferObjectHandle lutIndexBuffer,
+                                 uint32_t numIndices, SurfaceType surfaceType,
+                                 bool isPlanar, bool hasTextures)
+    : MeshGeometry(numIndices, surfaceType, FillFlags::Lit, isPlanar, hasTextures, true)
+    , m_driver(driver)
+    , m_numIndices(numIndices)
+    , m_lut(std::move(lut))
+    , m_lutIndexBuffer(lutIndexBuffer)
+    , m_usesQuantizedPositions(true)
+{
+    setLut(&m_lut);
+}
+
 // Release this geometry's GL resources. Safe unconditionally:
 // HandleAllocator::deallocate (HandleAllocator.h:81) and handle_cast early-return
 // on a nullid handle, so destroy({}) is a no-op on every Driver. Unguarded
 // (no `if (m_ibh)`) so the release path is uniform and unit-testable with a
 // NullDriver-based mock (whose createXxx return {} ).
 // Mirrors PolyfaceGraphic::~PolyfaceGraphic (PolyfaceGraphic.cpp:24-30).
+// LUT 形态追加 m_lut.destroy + destroyBufferObject(m_lutIndexBuffer)（资源清单对齐
+// PolylineGeometry::~PolylineGeometry (本文件下方)：VBO 形态下
+// m_lut 为空（VertexLutTexture::destroy 内做 nullid 守卫并同步失效 m_texture，
+// VertexLutTexture.cpp:55-61）且 m_lutIndexBuffer 为 nullid，两行为空调用。
 SurfaceGeometry::~SurfaceGeometry()
 {
     m_driver.destroyIndexBuffer(m_ibh);
     m_driver.destroyRenderPrimitive(m_primitive);
+    m_lut.destroy(m_driver);
+    m_driver.destroyBufferObject(m_lutIndexBuffer);
 }
 
 // Ported from: itwinjs-core MeshGeometry.computeSurfaceFlags()
@@ -105,11 +131,19 @@ RenderOrder SurfaceGeometry::getRenderOrder() const noexcept
     return RenderOrder::LitSurface;
 }
 
+// Ported from: itwinjs-core SurfaceGeometry.ts _draw (:150-162)。VBO 形态走
+// drawElements（draw2，VAO 带 element index buffer）；LUT 形态无 element index
+// buffer——24-bit 顶点索引是 a_qPosition attribute 流，gl.drawArrays(TRIANGLES,
+// 0, numIndices)，对齐 PolylineGeometry::draw（Polyline.ts:133-140）。LUT 纹理
+// 的 sampler 绑定由 SceneCompositorImpl Surface 分支（u_vertLUT）完成。
 void SurfaceGeometry::draw(rhi::Driver& driver)
 {
     if (m_primitive) {
         driver.bindRenderPrimitive(m_primitive);
-        driver.draw2(0, m_numIndices, 0);
+        if (m_usesQuantizedPositions)
+            driver.drawArrays(0, m_numIndices, 0);
+        else
+            driver.draw2(0, m_numIndices, 0);
     }
 }
 

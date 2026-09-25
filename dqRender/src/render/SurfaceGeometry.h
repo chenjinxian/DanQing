@@ -34,6 +34,20 @@ public:
     // in the dtor; the render primitive is set via setPrimitive after construction).
     SurfaceGeometry(rhi::Driver& driver, rhi::IndexBufferHandle ibh,
                     uint32_t numIndices, SurfaceType surfaceType, bool isPlanar, bool hasTextures);
+
+    // LUT 形态（量化 imdl 网格）。
+    // Ported from: itwinjs-core SurfaceGeometry.ts —— 构造的 BuffersContainer 以
+    // a_pos 24-bit UBYTE3 索引 attribute 承载全部顶点引用（:378-387，参考
+    // BufferParameters.create(attrPos.location, 3, UnsignedByte, ...)）；
+    // _draw 走 gl.drawArrays（无 element index buffer，:150-162）。LUT 持有/
+    // 析构对齐 CachedGeometry.ts LUTGeometry 的 lut 字段（:195-210）+ 在仓模板
+    // PolylineGeometry。`lutIndexBuffer` 即 a_qPosition 的 24-bit 索引流
+    // （UBYTE3，stride 3，由创建点 Task 5 upload 后经此传入）；primitive（VAO，
+    // 内绑 a_qPosition → m_lutIndexBuffer）由创建点 setPrimitive 设置。
+    SurfaceGeometry(rhi::Driver& driver, VertexLutTexture lut,
+                    rhi::BufferObjectHandle lutIndexBuffer,
+                    uint32_t numIndices, SurfaceType surfaceType,
+                    bool isPlanar, bool hasTextures);
     ~SurfaceGeometry() override;
 
     // --- Casting accessors (Ported from: itwinjs-core CachedGeometry.ts asSurface/asMesh) ---
@@ -49,6 +63,28 @@ public:
     RenderOrder getRenderOrder() const noexcept override;
     void draw(rhi::Driver& driver) override;
     void collectStatistics(RenderMemory::Statistics& stats) const override;
+
+    // LUT 形态为 true，VBO 形态为 false。
+    // Ported from: itwinjs-core CachedGeometry.ts:98 + :207（LUTGeometry.
+    // usesQuantizedPositions ← this.lut.usesQuantizedPositions）——覆盖
+    // MeshGeometry 的 false 约定（PolyfaceGraphic/MeshRenderGeometry 非量化路径）。
+    bool usesQuantizedPositions() const noexcept override { return m_usesQuantizedPositions; }
+
+    // 绘制绑定入口（SceneCompositorImpl Surface 分支的 u_vertLUT/u_vertParams 源）。
+    // Ported from: itwinjs-core MeshGeometry.ts:40（get lut()）+ glsl/Vertex.ts:229-246
+    //（u_vertLUT/u_vertParams 的 GraphicUniform 绑定）。
+    // NOTE: 按名隐藏 MeshGeometry::getLut()（非拥有 const* 观察位）——LUT 形态下
+    // LUT 由本几何体按值持有（PolylineGeometry 同款）；基类版本当前无调用方。
+    VertexLutTexture const& getLut() const noexcept { return m_lut; }
+    // a_qPosition 24-bit 索引流句柄（VAO 绑定于创建点 Task 5）。
+    rhi::BufferObjectHandle getLutIndexBuffer() const noexcept { return m_lutIndexBuffer; }
+
+    // u_color（量化路径均匀色）：量化 Surface shader 无 a_color attribute，
+    // v_color 取自 u_color uniform（Color.ts:51-60 ← lutGeom.getColor(target)；
+    // 非均匀色表的 LUT color-table 采样为登记 TODO）。
+    // 对齐 PolylineGeometry::getColor（Polyline.ts:129-131）。
+    dqCommon::ColorDef getColor() const noexcept { return m_color; }
+    void setColor(dqCommon::ColorDef color) { m_color = color; }
 
     /// Check if this surface is lit.
     bool isLit() const noexcept { return getSurfaceType() != SurfaceType::Unknown; }
@@ -89,6 +125,11 @@ private:
     rhi::RenderPrimitiveHandle m_primitive;
     rhi::TextureHandle m_texture;
     uint32_t m_numIndices = 0;
+    // LUT 形态成员（VBO 形态下 m_lut 为空、m_lutIndexBuffer 为 nullid）：
+    VertexLutTexture m_lut;                    // 顶点 LUT 纹理（按值持有，仅 LUT 形态非空）
+    rhi::BufferObjectHandle m_lutIndexBuffer;  // a_qPosition 24-bit 索引流
+    bool m_usesQuantizedPositions = false;
+    dqCommon::ColorDef m_color = dqCommon::ColorDef::create();  // u_color 均匀色（默认黑——对齐 ColorDef.create()）
 };
 
 // ---------------------------------------------------------------------------
