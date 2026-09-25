@@ -78,7 +78,10 @@ def main():
         cap = cpp_name(ver)
         for sc, data in scenarios.items():
             arr = ", ".join(f"0x{b:02x}" for b in data["bytes"])
-            out.append(f"uint8_t const {cap}::{sc}Bytes[] = {{ {arr} }};")
+            # `inline` (C++17 inline variables): the header stays single-file
+            # while remaining includable from more than one translation unit
+            # (definitions may appear in multiple TUs, linker folds them).
+            out.append(f"inline uint8_t const {cap}::{sc}Bytes[] = {{ {arr} }};")
     out.append("}}  // namespace fixtures, dqRender")
     (HERE / "TileIOFixtures.h").write_text("\n".join(out), encoding="utf-8", newline="\n")
     print("TileIOFixtures.h written")

@@ -20,6 +20,11 @@
 
 BEGIN_DQ_RENDER_NAMESPACE
 
+// Internal scene-graph node (src/render/Batch.h), forward-declared so the
+// public surface stays SDK-clean; callers outside the engine see an opaque
+// pointer (engine internals + tests include Batch.h for the definition).
+class Batch;
+
 // Abstract representation of a renderable object.
 // Ported from: itwinjs-core RenderGraphic
 class DQ_RENDER_EXPORT RenderGraphic {
@@ -41,6 +46,12 @@ public:
     // Internal Graphics (Primitive, CachedGeometry, etc.) return false.
     // Ported from: itwinjs-core uses instanceof checks; we use virtual dispatch.
     virtual bool isBranch() const noexcept { return false; }
+
+    // Return this if the graphic is a Batch, else nullptr — the -fno-rtti
+    // equivalent of the reference's `graphic instanceof Batch` checks
+    // (e.g. PlanarClassifier.ts:374). Default for non-batched graphics.
+    // Ported from: itwinjs-core Graphic.ts Batch (instanceof Batch checks)
+    virtual Batch* asBatch() noexcept { return nullptr; }
 };
 
 // An array of RenderGraphics.

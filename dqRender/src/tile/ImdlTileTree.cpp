@@ -7,6 +7,8 @@
 //              _loadChildren; :90-131 request/read content)
 #include "dqRender/tile/ImdlTileTree.h"
 
+#include <dqCommon/PackedFeatureTable.h>
+
 #include "dqRender/RenderGraphic.h"
 #include "dqRender/RenderSystem.h"
 #include "dqRender/tile/ImdlHeader.h"
@@ -18,6 +20,7 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -176,9 +179,11 @@ bool ImdlTile::requestContent()
 
 TileContent ImdlTile::readContent(uint8_t const* data, size_t dataSize)
 {
-    // Ported from: IModelTile.readContent (IModelTile.ts:94-131) — magic
-    // check then the imdl decode chain (header → description → document →
-    // graphics; metadata verified by the ImdlDocument/ImdlGraphics suites).
+    // Ported from: IModelTile.readContent (IModelTile.ts:90-131) + ImdlReader
+    // (.ts:104-123 — decode → convertFeatureTable → createBatch). DanQing
+    // synchronous subset: no worker/async; rtcCenter not consumed this pass
+    // (the offline fixtures carry none — JSON scene has no rtcCenter field;
+    // TODO: rtcCenter branch, ImdlReader.ts:126-130).
     TileContent content;
     if (!data || dataSize < 4)
         return content;
@@ -190,13 +195,34 @@ TileContent ImdlTile::readContent(uint8_t const* data, size_t dataSize)
     if (!header.isValid())
         return content;
 
-    auto const desc = decodeImdlContentDescription(header, stream);
+    // Feature table: read the 12-byte header + the packed words (3×u32/feature
+    // + 2×u32/subcategory tail) instead of skipping them — the stream ends up
+    // at the same position as the reference's skip-then-seek-back.
+    // Ported from: ParseImdlDocument.ts:1278-1284 (ftStartPos +
+    // FeatureTableHeader.readFrom + seek to ftStartPos + length) +
+    // FeatureTableHeader.ts layout (length includes the 12-byte header).
+    ImdlFeatureTableHeader ftHeader;
+    if (!ImdlFeatureTableHeader::readFrom(stream, ftHeader))
+        return content;  // InvalidFeatureTable (ParseImdlDocument.ts:1281-1282)
+    std::vector<uint32_t> featureWords;
+    size_t const ftBodyBytes = ftHeader.length >= ImdlFeatureTableHeader::sizeInBytes
+        ? ftHeader.length - ImdlFeatureTableHeader::sizeInBytes : 0;
+    if (ftBodyBytes > 0) {
+        featureWords.resize(ftBodyBytes / sizeof(uint32_t));
+        stream.readBytes(featureWords.data(), featureWords.size() * sizeof(uint32_t));
+        if (stream.isPastTheEnd())
+            return content;
+    }
+
+    // Header-only description (the caller consumed the feature table — the
+    // leaf heuristic derives purely from the imdl header).
+    auto const desc = decodeImdlContentDescriptionHeaderOnly(header);
     if (!desc.has_value())
         return content;
     content.contentRange = desc->contentRange;
     content.isLeaf = desc->isLeaf;
 
-    auto doc = parseImdlDocument(stream);
+    auto doc = parseImdlDocument(stream, &ftHeader, &featureWords);
     if (!doc.has_value())
         return content;
 
@@ -213,8 +239,34 @@ TileContent ImdlTile::readContent(uint8_t const* data, size_t dataSize)
         if (auto* graphic = system->createGraphicFromPolyface(polyface.Get(), 0xFFFFFFFFu, 0))
             graphics.push_back(graphic);
     }
-    if (!graphics.empty())
-        content.graphic.reset(system->createGraphicList(std::move(graphics)));
+    if (graphics.empty())
+        return content;
+    RenderGraphic* list = system->createGraphicList(std::move(graphics));
+
+    // convertFeatureTable (ParseImdlDocument.ts:1259-1266): on-the-wire words
+    // → PackedFeatureTable (DanQing single-model subset: BatchType::Primary,
+    // modelId 0 — offline tilesets carry no model semantics).
+    // TODO(deferred): MultiModelPackedFeatureTable — when
+    // ImdlFlags::MultiModelFeatureTable is set the reference builds a
+    // multi-model table; until then such tiles fall through to the unbatched
+    // path below (registered, mirrors the reference's branch at
+    // ParseImdlDocument.ts:1260-1262).
+    bool const multiModel =
+        0 != (static_cast<uint32_t>(header.flags)
+              & static_cast<uint32_t>(ImdlFlags::MultiModelFeatureTable));
+    if (!multiModel && doc->featureCount > 0 && !doc->featureData.empty()) {
+        dqCommon::PackedFeatureTable packed(doc->featureData, /*modelId*/ 0,
+                                            doc->featureCount,
+                                            dqCommon::BatchType::Primary);
+        content.featureTable =
+            std::make_unique<dqCommon::FeatureTable>(packed.unpack());
+        // ImdlReader.ts:122-123: graphic = system.createBatch(graphic,
+        // featureTable, content.contentRange).
+        content.graphic.reset(system->createBatch(list, content.featureTable.get(),
+                                                  content.contentRange));
+    } else {
+        content.graphic.reset(list);
+    }
     return content;
 }
 

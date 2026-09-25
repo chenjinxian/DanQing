@@ -142,6 +142,11 @@ public:
     /// Ported from: itwinjs-core Batch.isPickable (line 311)
     bool isPickable() const override { return true; }
 
+    /// Returns this — the -fno-rtti equivalent of `graphic instanceof Batch`
+    /// (PlanarClassifier.ts:374).
+    /// Ported from: itwinjs-core Graphic.ts Batch (instanceof Batch checks)
+    Batch* asBatch() noexcept override { return this; }
+
     /// Batch context accessor.
     BatchContext const& getContext() const noexcept { return m_context; }
 

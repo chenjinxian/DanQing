@@ -60,6 +60,12 @@ public:
     /// Whether this graphic is pickable (should appear in pick buffer).
     /// Ported from: itwinjs-core Graphic.ts isPickable
     virtual bool isPickable() const { return false; }
+
+    /// Return the Batch if this graphic is a Batch, else nullptr.
+    /// The internal-chain default mirrors RenderGraphic::asBatch (non-batched
+    /// nodes return nullptr; Batch overrides to return this).
+    /// Ported from: itwinjs-core Graphic.ts Batch (instanceof Batch checks)
+    Batch* asBatch() noexcept override { return nullptr; }
 };
 
 // ---------------------------------------------------------------------------
