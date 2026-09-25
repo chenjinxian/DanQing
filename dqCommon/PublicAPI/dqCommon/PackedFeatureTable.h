@@ -33,6 +33,16 @@ public:
     // Ported from: itwinjs-core PackedFeatureTable.pack()
     static PackedFeatureTable pack(const FeatureTable& table);
 
+    // Default construction (used by pack()).
+    PackedFeatureTable() = default;
+
+    // Construct directly from imdl wire packed words (3×u32/feature + 2×u32
+    // per subcategory tail). Ported from: itwinjs-core PackedFeatureTable
+    // constructor (PackedFeatureTable.ts:35-58 — data carries the subcategory
+    // tail; numSubCategories derives from data length).
+    PackedFeatureTable(std::vector<uint32_t> data, uint64_t modelId,
+                       uint32_t numFeatures, BatchType type);
+
     // ── Data access ───────────────────────────────────────────────
     const uint32_t* getData() const noexcept { return m_data.data(); }
     size_t getDataSize() const noexcept { return m_data.size(); }
