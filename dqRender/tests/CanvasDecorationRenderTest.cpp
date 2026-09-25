@@ -23,7 +23,7 @@
 #include "render/OpenGLRenderSystem.h"  // 内部头（测试可访问，dqRenderTest 有 src include）
 #include "render/TechniqueImpl.h"       // Techniques（空集即可渲染背景 clear）
 #include "platform/PlatformFactory.h"   // createPlatform（平台无关工厂）
-#include "rhi/opengl/GlLoader.h"        // Windows: zogl::init 运行时符号装载
+#include "rhi/opengl/GlLoader.h"        // Windows: dqgl::init 运行时符号装载
 
 #include <dqCommon/ColorDef.h>
 #include <dqGeom/Point2d.h>
@@ -47,7 +47,7 @@ struct Canvas2dRenderEnv {
     bool init() {
 #if defined(_WIN32)
         // bluegl 机制：先解析全部 GL 符号（失败=无 GPU/驱动，测试环境不可用）
-        if (!zogl::init())
+        if (!dqgl::init())
             return false;
 #endif
         platform.reset(rhi::createPlatform());

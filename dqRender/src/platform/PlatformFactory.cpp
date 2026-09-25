@@ -5,7 +5,7 @@
 
 #ifdef _WIN32
 #include "PlatformWgl.h"
-#include "rhi/opengl/GlLoader.h" // zogl::init —— Windows GL 运行时符号装载
+#include "rhi/opengl/GlLoader.h" // dqgl::init —— Windows GL 运行时符号装载
 #elif defined(__linux__)
 #include "PlatformGlx.h"
 #endif
@@ -23,7 +23,7 @@ OpenGLPlatform* createPlatform()
 #if defined(__APPLE__)
     return createPlatformCocoaGl();
 #elif defined(_WIN32)
-    zogl::init(); // bluegl 机制：任何 GL 调用前解析全部 glXxx 函数指针
+    dqgl::init(); // bluegl 机制：任何 GL 调用前解析全部 glXxx 函数指针
     return new PlatformWgl();
 #elif defined(__linux__)
     return new PlatformGlx();

@@ -3,7 +3,7 @@
 // Ported from: itwinjs-core core/frontend/src/internal/render/webgl/GLTimer.ts
 #include "GLTimer.h"
 
-#include "rhi/opengl/GlLoader.h"   // zogl* 查询函数指针（glGenQueries/glBeginQuery/...）
+#include "rhi/opengl/GlLoader.h"   // dqgl* 查询函数指针（glGenQueries/glBeginQuery/...）
 
 #include <cassert>
 
@@ -19,9 +19,9 @@ class GLTimerQueryExtension : public TimerQueryExtension {
 public:
     bool isSupported() const override
     {
-        return zoglGenQueries != nullptr && zoglDeleteQueries != nullptr
-            && zoglBeginQuery != nullptr && zoglEndQuery != nullptr
-            && zoglGetQueryObjectuiv != nullptr && zoglGetQueryObjectui64v != nullptr;
+        return dqglGenQueries != nullptr && dqglDeleteQueries != nullptr
+            && dqglBeginQuery != nullptr && dqglEndQuery != nullptr
+            && dqglGetQueryObjectuiv != nullptr && dqglGetQueryObjectui64v != nullptr;
     }
 
     uint32_t createQuery() override

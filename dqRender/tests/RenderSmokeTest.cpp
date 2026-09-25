@@ -20,7 +20,7 @@
 #include "render/TechniqueImpl.h"       // Techniques
 #include "render/TechniqueRegistry.h"   // createDefaultTechniques（与 RenderPipeline 同注册路径）
 #include "platform/PlatformFactory.h"   // createPlatform（平台无关工厂）
-#include "rhi/opengl/GlLoader.h"        // Windows: zogl::init 运行时符号装载
+#include "rhi/opengl/GlLoader.h"        // Windows: dqgl::init 运行时符号装载
 #include "dqRender/PlanarGridProps.h"   // PlanarGridProps（程序网格设置）
 #include "render/PolyfaceGraphic.h"     // PolyfaceGraphic（hilite 用例的 feature 载体）
 #include "render/Graphic.h"             // Primitive（CachedGeometry → Graphic 包装）
@@ -70,7 +70,7 @@ struct OffscreenRenderEnv {
     bool init() {
 #if defined(_WIN32)
         // bluegl 机制：先解析全部 GL 符号（失败=无 GPU/驱动，测试环境不可用）
-        if (!zogl::init())
+        if (!dqgl::init())
             return false;
 #endif
         platform.reset(rhi::createPlatform());

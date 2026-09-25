@@ -47,7 +47,7 @@ struct GridEnv {
 
     bool init() {
 #if defined(_WIN32)
-        if (!zogl::init())
+        if (!dqgl::init())
             return false;
 #endif
         platform.reset(rhi::createPlatform());

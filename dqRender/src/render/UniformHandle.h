@@ -7,7 +7,7 @@
 // The handle owns its GL uniform location (resolved at compile from the linked
 // program) and every dirty set* dispatches directly to glUniform* — the 1:1
 // reference behavior (UniformHandle.ts:90-138; the ambient TS WebGL context
-// maps to zogl/OpenGL calls on the current context).
+// maps to dqgl/OpenGL calls on the current context).
 //
 // The type discriminator (UniformType) resolves the mat3 vs vec3×3 ambiguity:
 // both are 9 floats, but mat3 needs glUniformMatrix3fv while vec3[3] needs
