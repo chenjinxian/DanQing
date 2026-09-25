@@ -107,9 +107,12 @@ decodeImdlGraphics(ImdlDocument const& doc);
 // 所有权交调用方（readContent → system.createGraphicList）。
 // system.driver() == nullptr（桩/无 GL 系统）→ 返回空，调用方回退 polyface 路径。
 // TODO（后续里程碑，ParseImdlDocument.ts:969-1003）：meshopt 压缩顶点表
-// （compressedSize 分支）；surface.uvParams → textured 变体（hasTextures）；
-// json.featureID uniform 语义（uniformFeatureID :1011）与非均匀 featureIndexType
-// 的 LUT 颜色表采样。
+// （compressedSize 分支）；surface.uvParams → textured 变体（hasTextures，
+// TexturedLitMeshBuilder 布局 octNormal@6-7/qUV@12-15，
+// VertexTableBuilder.ts:346-383）；12B SimpleBuilder 无光照网格（numRgba=3，
+// 量化 shader pre-read 会采到下一顶点 texel0，需 unlit 变体配合）；
+// json.featureID uniform 语义（uniformFeatureID :1011）与非均匀
+// featureIndexType 的 LUT 颜色表采样。
 std::vector<RenderGraphic*> DQ_RENDER_EXPORT
 createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system);
 
