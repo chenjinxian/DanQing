@@ -87,10 +87,14 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
     addSurfaceFlags(builder, withFeatureOverrides, /*withFeatureColor*/true);
 
     // --- Surface normals ---
-    // Ported from: itwinjs-core Surface.ts addNormal() (line 529-566)
-    addNormal(builder);
+    // Ported from: itwinjs-core Surface.ts addNormal() (line 529-566) —
+    // the reference derives `quantized` from builder.vert.positionType
+    // (:532); DanQing passes the flag explicitly. Quantized: oct normal
+    // from the LUT (g_vertLutData3.xy / g_vertLutData1.zw, getComputeNormal
+    // (true) :396-406), no a_normal attribute.
+    addNormal(builder, quantized);
 
-    // --- Surface texture (a_texCoord) ---
+    // --- Surface texture ---
     // Ported from: itwinjs-core Surface.ts addTexture() (line 571-687)
     // addTexture owns the full texture pipeline including the constant-LOD path
     // (v_uvCustom, u_constantLod*, constantLodTextureLookup, sampleSurfaceTexture,
@@ -98,7 +102,10 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
     // constantLod pieces separately, duplicating addTexture's basic versions (no
     // dedup) and breaking compilation. addFunction dedups exact strings now, so
     // any re-add would be a no-op regardless.
-    addTexture(builder);
+    // Quantized: v_texCoord decoded from the LUT (g_vertLutData3 u16 qUV pairs +
+    // unquantize2d(u_qTexCoordParams), getComputeTexCoord(true) :460-467), no
+    // a_texCoord attribute.
+    addTexture(builder, quantized);
 
     // NOTE: finalizeNormal's full body (prelude + normalMap TBN + postlude) and
     // getSurfaceColor are now owned by addNormal / addTexture respectively (their
@@ -106,12 +113,14 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
     // they were re-added here as standalone functions, duplicating the slot
     // definitions (no dedup) and breaking compilation.
 
-    // --- Vertex color (a_color) ---
+    // --- Vertex color ---
     // Ported from: itwinjs-core Color.ts addColor() (line 51-70).
     // Attribute locations are bound explicitly (setAttributeMap below +
     // glBindAttribLocation-before-link in OpenGLProgram::compile), so declaration
     // order here is free — matches itwinjs's composition (addColor after addTexture).
-    addColor(builder);
+    // Quantized: v_color from the u_color uniform (color-table LUT sampling is a
+    // registered TODO — getComputeElementColor Color.ts:16-26), no a_color attribute.
+    addColor(builder, quantized);
 
     // --- Lighting ---
     // Ported from: itwinjs-core Lighting.ts addLighting()
@@ -164,12 +173,27 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
         auto& vert = builder.getVertexBuilder();
         auto& frag = builder.getFragmentBuilder();
 
-        // Feature ID attribute + varying
+        // Feature ID source: attribute (a_featureId VBO slot) for non-LUT
+        // geometry vs LUT for quantized geometry. The reference has no
+        // attribute at all for LUT geometry — the feature index travels in
+        // the vertex table: computeVertexPosition copies texel2 into
+        // g_featureAndMaterialIndex (Vertex.ts:35-41), and getFeatureIndex
+        // decodes it with decodeUInt24(g_featureAndMaterialIndex.xyz)
+        // (FeatureSymbology.ts:79-86). NOTE ordering within main(): the
+        // pre-read initializers + adjustRawPosition (which invokes
+        // computeVertexPosition) run BEFORE computeFeatureOverrides
+        // (ShaderBuilder function-call main), so g_featureAndMaterialIndex
+        // is populated by the time this component executes.
+        bool const lutFeatures = quantized;
+
+        // Feature ID attribute (non-LUT geometry only) + varying
         // The attribute stays Uint (PolyfaceGraphic packs a_featureId as UINT), but
         // the VARYING must be float — GLSL requires flat interpolation for integer
         // varyings (the reference declares v_feature_id as Vec4; a bare `out uint`
         // without `flat` fails to compile on desktop GL).
-        vert.addVariable({"a_featureId", VariableType::Uint, VariableScope::Attribute, 0});
+        if (!lutFeatures) {
+            vert.addVariable({"a_featureId", VariableType::Uint, VariableScope::Attribute, 0});
+        }
         builder.addVarying("v_featureId", VariableType::Float);
 
         // Vertex: the feature id carries DIFFERENT values per mode, matching the
@@ -183,8 +207,14 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
         //     single-feature LUT (garbage flags → no hilite / spurious discard).
         vert.addVariable({"u_batchId", VariableType::Float, VariableScope::Uniform, 0});
         if (featureMode == FeatureMode::Pick) {
+            // Ported from: itwinjs-core FeatureSymbology.ts computeIdVert
+            // (:514 — pick = featureIndex + u_batchId; LUT path decodes the
+            // index from g_featureAndMaterialIndex.xyz per getFeatureIndex
+            // :79-86).
             vert.setVertexComponent(VertexShaderComponent::ComputeFeatureOverrides,
-                                    "    v_featureId = float(a_featureId) + u_batchId;\n");
+                lutFeatures
+                    ? "    v_featureId = decodeUInt24(g_featureAndMaterialIndex.xyz) + u_batchId;\n"
+                    : "    v_featureId = float(a_featureId) + u_batchId;\n");
         } else {
             // Overrides: the reference's computeFeatureOverrides PROLOGUE —
             // feature_rgb/feature_alpha start at "not overridden" sentinels
@@ -194,10 +224,14 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
             // replaced by the vertex color (blue-dot/chroma regressions).
             // The LUT-driven overrides are applied in the fragment
             // (OverrideFeatureId slot); DanQing's split of the reference body.
+            // LUT path: local feature index = decodeUInt24(g_featureAndMaterialIndex.xyz)
+            // (getFeatureIndex FeatureSymbology.ts:79-86).
             vert.setVertexComponent(VertexShaderComponent::ComputeFeatureOverrides,
-                                    "    v_featureId = float(a_featureId);\n"
-                                    "    feature_rgb = vec3(-1.0);\n"
-                                    "    feature_alpha = -1.0;\n");
+                lutFeatures
+                    ? "    v_featureId = decodeUInt24(g_featureAndMaterialIndex.xyz);\n"
+                      "    feature_rgb = vec3(-1.0);\n    feature_alpha = -1.0;\n"
+                    : "    v_featureId = float(a_featureId);\n"
+                      "    feature_rgb = vec3(-1.0);\n    feature_alpha = -1.0;\n");
         }
 
         if (featureMode == FeatureMode::Pick) {
@@ -333,17 +367,27 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
 
     // Explicit attribute locations — bound via glBindAttribLocation BEFORE link
     // (Program::attributeLocation → ShaderProgram::compile → OpenGLProgram::compile).
-    // Matches PolyfaceGraphic's VAO (0=pos,1=normal,2=color,3=texCoord,4=featureId).
-    // Without this, GL auto-assigns locations unpredictably and the cube's a_color
-    // reads the wrong VBO slot (invisible cube). Ported from: itwinjs-core
-    // AttributeMap (explicit per-technique attribute name→location mapping).
-    prog.setAttributeMap({
-        {"a_position", 0},
-        {"a_normal", 1},
-        {"a_color", 2},
-        {"a_texCoord", 3},
-        {"a_featureId", 4},
-    });
+    // Quantized LUT geometry carries a single 24-bit vertex-index attribute
+    // ("a_qPosition", the addVertexTable default — VertexTable.h); all other
+    // channels arrive via the u_vertLUT texture (Task 4's VAO binds location 0
+    // to the index VBO). Non-quantized matches PolyfaceGraphic's VAO
+    // (0=pos,1=normal,2=color,3=texCoord,4=featureId). Without this, GL
+    // auto-assigns locations unpredictably and the cube's a_color reads the
+    // wrong VBO slot (invisible cube). Ported from: itwinjs-core AttributeMap
+    // (explicit per-technique attribute name→location mapping; LUT-based
+    // techniques use the DEFAULT map — AttributeMap.ts :64 posOnly =
+    // [["a_pos", 0, Vec3]], a single index attribute at location 0).
+    if (quantized) {
+        prog.setAttributeMap({{"a_qPosition", 0}});
+    } else {
+        prog.setAttributeMap({
+            {"a_position", 0},
+            {"a_normal", 1},
+            {"a_color", 2},
+            {"a_texCoord", 3},
+            {"a_featureId", 4},
+        });
+    }
 
     // --- Attach uniform bindings ---
     // The modular helpers (addFrustum, wireModelViewMatrix, etc.) registered
