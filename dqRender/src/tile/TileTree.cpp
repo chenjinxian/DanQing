@@ -28,36 +28,20 @@ void TileTree::collectStatistics(RenderMemory::Statistics& stats)
         m_rootTile->collectStatistics(stats, true);
 }
 
-void TileTree::selectTiles(TileDrawArgs& args)
+void TileTree::selectTiles(TileDrawArgs& args, std::vector<Tile*>& selected)
 {
     if (!m_rootTile) return;
 
-    // Ported from: TileTree.selectTiles (TileTree.ts:136-142) + the tree
-    // shells' _selectTiles (IModelTileTree.ts:435-445 — the root tile's own
-    // selectTiles drives the recursion, numSkipped starts at 0). The selected
-    // tiles' request/display effects flow through args' missing/ready sets
-    // (TileDrawArgs.insertMissing/markReady); the TileAdmin report
-    // (TileTree.ts:139 addTilesForUser) is batched at the frame tail —
-    // registered adaptation at SceneContext.h (TileDrawArgs cannot reach the
-    // TileUser; dqApp Viewport::CreateScene feeds addTilesForUser +
-    // requestTiles from the collected sets).
-    // OMISSION registered (fix round 1, deferred to the Task 5/6 shell work):
-    // IModelTileTree._selectTiles also opens with `args.markUsed(this._rootTile)`
-    // (IModelTileTree.ts:436 — the root's usage marker stamped every selection).
-    // Not ported here: this shell serves the Reality/3D Tiles path whose
-    // behavior is frozen at zero-change; land it with the shell's per-tree
-    // addTilesForUser when the batched-report adaptation is retired.
-    // GAP（M-B 终审登记；代码迁移归 M-C——draw 侧改从 selected 取图形，对齐
-    // 参考）：参考的 draw 从 selectTiles 返回的 tiles 绘制
-    // （IModelTileTree.ts:447-449 `const tiles = this.selectTiles(args);
-    // this._rootTile.draw(args, tiles, ...)`）；DanQing 的 TileTree::draw 改从
-    // ready 集取图形（本文件 draw）——SelectParent 协议路径的 push
-    // （IModelTile.ts:250 孩子 / :319 自身）不 markReady，协议选中的瓦既不上屏
-    // 也不进保活集。后果：多层 imdl 树细化过渡期整树空白。当前无生产消费面：
-    // 全部夹具单叶/3D Tiles/glTF 走基类 BatchedTile 形态（Tile::selectTiles
-    // 默认体——其可画瓦经 markReady 落 ready 集，两集重合）；ImdlTile 协议
-    // （U9(3)）当前仅 SelectTilesProtocolTest 消费。
-    std::vector<Tile*> selected;
+    // Ported from: IModelTileTree.ts:435-449（含 root markUsed 与
+    // draw-from-tiles）—— _selectTiles 开头 `args.markUsed(this._rootTile)`
+    // （:436，每次选择的根使用标记）+ selected 集穿根瓦 selectTiles 递归
+    // （:437-438，numSkipped = 0）；TileTree.selectTiles 的汇报契约
+    // （TileTree.ts:136-142）。选中瓦的请求/显示效应流经 args 的 missing/ready
+    // 集（TileDrawArgs.insertMissing/markReady）；TileAdmin 汇报
+    // （TileTree.ts:139 addTilesForUser）批量在帧尾——registered adaptation
+    // 见 SceneContext.h（TileDrawArgs 够不到 TileUser；dqApp
+    // Viewport::CreateScene 从收集集喂 addTilesForUser + requestTiles）。
+    args.markUsed(m_rootTile.get());
     m_rootTile->selectTiles(selected, args, /*numSkipped=*/0);
 }
 
@@ -65,15 +49,20 @@ void TileTree::draw(TileDrawArgs& args)
 {
     if (!m_rootTile) return;
 
-    // Select tiles first
-    selectTiles(args);
-
-    // Collect graphics from ready tiles
-    for (auto* tile : args.getReadyTiles()) {
-        if (tile->isDisplayable()) {
+    // Ported from: IModelTileTree.draw (IModelTileTree.ts:447-449 —
+    // `const tiles = this.selectTiles(args); this._rootTile.draw(args, tiles,
+    // ...)`; IModelTileTreeRoot.draw :263-272 iterates the tiles and
+    // Tile.drawGraphics Tile.ts:503-512 adds each tile's graphic). DanQing
+    // hosts that iteration in the tree shell: draw collects the SELECTED
+    // tiles' graphics (not the ready set — the SelectParent protocol pushes
+    // stand-ins without markReady, IModelTile.ts:250/:319). The isDisplayable
+    // filter is the graphic-presence half of Tile.drawGraphics' undefined
+    // check (Tile.h's registered Ready+graphic sense).
+    std::vector<Tile*> selected;
+    selectTiles(args, selected);
+    for (Tile* tile : selected)
+        if (tile && tile->isDisplayable())
             args.graphics.push_back(tile->getGraphic());
-        }
-    }
 }
 
 void TileTree::freeContents()

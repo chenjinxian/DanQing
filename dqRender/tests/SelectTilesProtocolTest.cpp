@@ -332,6 +332,55 @@ TEST(SelectTilesProtocolTest, RepeatedSelectionKeepsChildIdentity)
     EXPECT_EQ(root.getChildren().front()->getLoadStatus(), TileLoadStatus::Ready);
 }
 
+// draw-from-selected 迁移的过渡态场景锁（M-B 终审登记的缺口）：根 Visible
+// 未就绪（:216-217 insertMissing）且 !hasGraphics，全孩子就绪 hasGraphics →
+// 协议 :243-253 只把入选孩子 push 进 selected、**不 markReady**（TileDrawArgs
+// 的 markReady 只在 :221）→ 迁移前 TileTree::draw 从 ready 集取图形 →
+// args.graphics 为空（多层树细化过渡期整树空白的缺口实锤）；迁移后 draw 从
+// selected 取图（IModelTileTree.ts:447-449）→ graphics 含孩子 graphic。
+// 场景杠杆（同文件既有形态）：树自带根（contentId "0/0/0/0" → 非 leaf、
+// maximumSize=tileScreenSize 512 → Visible，同 NotReadyVisible… 的根位形）。
+// Ported from: IModelTileTree.draw (:447-449 — draw 从 selectTiles 的 tiles
+//              取图) + IModelTile.ts:250（父 Visible 未就绪时就绪孩子入选）。
+// Authored: 场景自写（M-B 终审 draw-from-selected 缺口的回归锁）。
+TEST(SelectTilesProtocolTest, DrawCollectsProtocolSelectedTransitionalChildren)
+{
+    ProtocolTree tree;
+    Tile* root = tree.getRootTile();
+    ASSERT_NE(root, nullptr);
+    ASSERT_FALSE(root->isReady());      // 前置：根未就绪（树构造的根无内容）
+    ASSERT_FALSE(root->hasGraphics());
+
+    // 两个孩子：可见（setContent isLeaf → Visible 早退）、Ready、有 graphic。
+    auto kid0 = std::make_unique<ImdlTile>(tree, root, "1/0/0/0",
+                                           box(0, 0, 0, 4, 4, 4), 0.0, 512.0);
+    auto kid1 = std::make_unique<ImdlTile>(tree, root, "1/1/1/1",
+                                           box(4, 4, 4, 8, 8, 8), 0.0, 512.0);
+    Tile* kid0Ptr = kid0.get();
+    Tile* kid1Ptr = kid1.get();
+    kid0->setContent(readyContent());
+    kid1->setContent(readyContent());
+    std::vector<std::unique_ptr<Tile>> kids;
+    kids.push_back(std::move(kid0));
+    kids.push_back(std::move(kid1));
+    root->setChildren(std::move(kids));
+
+    TileDrawArgs args;
+    tree.draw(args);
+
+    // 选择面不变（协议语义）：根进 missing（:216-217），孩子只入选不 markReady。
+    ASSERT_EQ(args.getMissingTiles().size(), 1u);
+    EXPECT_EQ(args.getMissingTiles().front(), root);
+    EXPECT_FALSE(args.isTileReady(kid0Ptr));   // :243-253 只 push 不 markReady
+    EXPECT_FALSE(args.isTileReady(kid1Ptr));
+    // draw 面（迁移判据）：graphics 非空且含两孩子的 graphic（迁移前为空）。
+    ASSERT_EQ(args.graphics.size(), 2u)
+        << "draw did not collect the protocol-selected children (pre-migration "
+           "gap: draw pulled from the ready set)";
+    EXPECT_EQ(args.graphics[0], kid0Ptr->getGraphic());
+    EXPECT_EQ(args.graphics[1], kid1Ptr->getGraphic());
+}
+
 // undisplayable root 特例：根瓦 maximumSize==0（isDisplayable = `0 < maximumSize`
 // 为假，Tile.ts:231）时，孩子返 Yes（"等所有孩子"）不触发独占回滚——参考
 // :290 的注释（"or else we would draw nothing"）：undisplayable root 下画

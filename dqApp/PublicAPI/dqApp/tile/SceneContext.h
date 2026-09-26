@@ -91,7 +91,16 @@ public:
     std::vector<dqRender::RenderGraphic*> const& graphics() const noexcept { return m_graphics; }
     std::vector<dqRender::Tile*> const& missingTiles() const noexcept { return m_missingTiles; }
     std::vector<dqRender::Tile*> const& selectedTiles() const noexcept { return m_selectedTiles; }
-    bool hasMissingTiles() const noexcept { return !m_missingTiles.empty() || !m_selectedTiles.empty(); }
+    /// SceneContext.hasMissingTiles semantics: the children-loading flag OR a
+    /// non-empty missing set. DanQing's SceneContext carries no
+    /// _missingChildTiles face (that flag lives on TileDrawArgs,
+    /// TileDrawArgs.h areChildrenLoading) — the missing set is the half this
+    /// class hosts. A non-empty selected set is NOT "missing" (the extra
+    /// disjunct previously registered here is gone — the selected tiles are
+    /// the ones being drawn/reported, ViewContext.ts:386-388 knows nothing of
+    /// them).
+    /// Ported from: SceneContext.hasMissingTiles (ViewContext.ts:386-388).
+    bool hasMissingTiles() const noexcept { return !m_missingTiles.empty(); }
 
 private:
     Viewport& m_viewport;
