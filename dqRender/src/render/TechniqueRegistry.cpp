@@ -57,6 +57,16 @@ std::unique_ptr<Techniques> createDefaultTechniques(rhi::Driver& driver)
     silhouetteTechnique->compileShaders(driver);
     techniques->registerTechnique(TechniqueId::SilhouetteEdge, std::move(silhouetteTechnique));
 
+    // Register IndexedEdge technique (multi-variant, IndexedEdge builder)——
+    // EdgeVariantCompiler 的第三个参数化实例。Ported from: itwinjs-core
+    // Technique.ts:1100 `_list[TechniqueId.IndexedEdge] = new EdgeTechnique(gl,
+    // "IndexedEdge")`（U11(3)：此前未注册 → indexed 边缘绘制 use() 失败被静默
+    // 跳过）。
+    auto indexedCompiler = std::make_unique<EdgeVariantCompiler>(EdgeBuilderType::IndexedEdge);
+    auto indexedTechnique = std::make_unique<MultiVariantTechnique>(std::move(indexedCompiler));
+    indexedTechnique->compileShaders(driver);
+    techniques->registerTechnique(TechniqueId::IndexedEdge, std::move(indexedTechnique));
+
     // Register post-process techniques
     auto oitClearTechnique = std::make_unique<OitClearTechnique>();
     oitClearTechnique->compileShaders(driver);

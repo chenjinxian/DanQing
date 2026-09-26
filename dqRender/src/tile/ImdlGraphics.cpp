@@ -19,6 +19,7 @@
 #include "render/MeshGraphic.h"
 #include "render/LineCode.h"
 #include "render/SurfaceGeometry.h"
+#include "render/IndexedEdgeGeometry.h"
 #include "render/VertexLutTexture.h"
 #include "render/VertexTableBuilder.h"
 
@@ -417,6 +418,62 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
                     g->setPrimitive(segPrim);
                     g->setVbhResources(segVbh, segVbih);
                     meshGraphic->addEdge(std::move(g));
+                }
+            }
+
+            // ---------------------------------------------------------------
+            // U11(3)：indexed edges → EdgeLUT 纹理 + 索引 BO + IndexedEdgeGeometry
+            //（compact 兜底展开已在 parseImdlEdges 内完成——ParseImdlDocument.ts
+            // :719-720）。
+            // Ported from: itwinjs-core Mesh.ts:64-65（indexedEdges 与 surface/
+            // segments/silhouettes 同一 MeshRenderGeometry，创建序最后）+
+            // IndexedEdgeGeometry.ts create (:98-102——indexBuffer =
+            // createArrayBuffer(params.indices.data)、lut = EdgeLUT.create(
+            // params.edges)、numIndices = params.indices.length) + EdgeLUT.create
+            // (:46-49 TextureHandle.createForData(table.width, table.height,
+            // table.data)) + ctor (:74-86——a_pos UBYTE3 单流 VAO、width/lineCode
+            // ← appearance ?? MeshData.edgeWidth/edgeLineCode、colorInfo ←
+            // mesh.lut.colorInfo)。
+            // ---------------------------------------------------------------
+            if (edges->indexed) {
+                auto const& ix = *edges->indexed;
+                size_t const ixVertCount = ix.indices.byteLength / 3;
+                if (ixVertCount > 0 && ix.indices.byteLength % 3 == 0) {
+                    auto edgeLut = EdgeLUT::create(
+                        *driver, ix.edges.data.data, ix.edges.width, ix.edges.height,
+                        ix.edges.numSegments, ix.edges.silhouettePadding);
+                    if (edgeLut.isValid()) {
+                        auto const ixBo = uploadBo(ix.indices);
+                        rhi::AttributeArray ixAttrs = {};
+                        ixAttrs[0].buffer = 0;  // a_pos = 24-bit 边查找表索引
+                        ixAttrs[0].offset = 0;
+                        ixAttrs[0].type = rhi::ElementType::UBYTE3;
+                        auto const ixVbih = driver->createVertexBufferInfo(1, 1, ixAttrs);
+                        auto const ixVbh = driver->createVertexBuffer(
+                            static_cast<uint32_t>(ixVertCount), ixVbih);
+                        driver->setVertexBufferObject(ixVbh, 0, ixBo);
+                        auto const ixPrim = driver->createRenderPrimitive(
+                            ixVbh, rhi::IndexBufferHandle{}, rhi::PrimitiveType::TRIANGLES);
+                        // colorInfo ← mesh.lut.colorInfo（IndexedEdgeGeometry.ts:83）
+                        // ——DanQing imdl 通路顶点表为均匀色（ColorInfo uniform 路径
+                        // 与参考 ColorInfo.createFromVertexTable 的 uniform 分支等价；
+                        // 非均匀色表登记 TODO，Surface 量化变体同策略）。
+                        dqCommon::ColorComponents const mc = meshColor.getColors();
+                        ColorInfo const colorInfo = ColorInfo::fromUniform(
+                            (static_cast<uint32_t>(mc.r) << 16)
+                                | (static_cast<uint32_t>(mc.g) << 8)
+                                | static_cast<uint32_t>(mc.b),
+                            static_cast<uint8_t>(255 - mc.t));
+                        auto g = std::make_unique<IndexedEdgeGeometry>(
+                            *driver, std::move(edgeLut), ixBo,
+                            static_cast<uint32_t>(ixVertCount), lutView,
+                            static_cast<float>(edges->weight),
+                            LineCode::valueFromLinePixels(edges->linePixels), colorInfo,
+                            prim.isPlanar);
+                        g->setPrimitive(ixPrim);
+                        g->setVbhResources(ixVbh, ixVbih);
+                        meshGraphic->addIndexedEdge(std::move(g));
+                    }
                 }
             }
         }

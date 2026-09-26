@@ -9,6 +9,7 @@
 #include "Graphic.h"
 #include "MeshData.h"
 #include "SurfaceGeometry.h"
+#include "IndexedEdgeGeometry.h"
 #include "dqRender/rhi/Driver.h"
 #include "dqRender/rhi/Handle.h"
 
@@ -47,6 +48,15 @@ public:
         m_edges.push_back(std::move(edge));
     }
 
+    /// add an indexed edge geometry to this mesh.
+    /// Ported from: Mesh.ts:36（indexedEdges?: IndexedEdgeGeometry——独立字段）
+    /// + :141（addPrimitive(geometry.indexedEdges)——排在 segmentEdges/
+    /// silhouetteEdges 之后、polylineEdges 之前）。
+    void addIndexedEdge(std::unique_ptr<IndexedEdgeGeometry> edge)
+    {
+        m_indexedEdges.push_back(std::move(edge));
+    }
+
     /// add a polyline geometry to this mesh.
     void addPolyline(std::unique_ptr<PolylineGeometry> polyline)
     {
@@ -77,6 +87,12 @@ public:
         return m_edges;
     }
 
+    /// Get indexed edge geometries.（Mesh.ts:36 indexedEdges 独立字段。）
+    std::vector<std::unique_ptr<IndexedEdgeGeometry>> const& getIndexedEdges() const noexcept
+    {
+        return m_indexedEdges;
+    }
+
     /// Get polyline geometries.
     std::vector<std::unique_ptr<PolylineGeometry>> const& getPolylines() const noexcept
     {
@@ -98,8 +114,8 @@ public:
     /// Check if this mesh has any geometry.
     bool isEmpty() const noexcept
     {
-        return m_surfaces.empty() && m_edges.empty() && m_polylines.empty() && m_pointStrings.empty()
-            && m_pointClouds.empty();
+        return m_surfaces.empty() && m_edges.empty() && m_indexedEdges.empty()
+            && m_polylines.empty() && m_pointStrings.empty() && m_pointClouds.empty();
     }
 
     /// Wire the shared vertex-side GL resources (vbo + vbih + vbh) created once by
@@ -124,6 +140,11 @@ public:
         for (auto& edge : m_edges) {
             if (edge) commands.addPrimitive(edge.get());
         }
+        // Mesh.ts:141 addPrimitive(geometry.indexedEdges)——segment/silhouette
+        // 之后、polylines 之前。
+        for (auto& edge : m_indexedEdges) {
+            if (edge) commands.addPrimitive(edge.get());
+        }
         for (auto& polyline : m_polylines) {
             if (polyline) commands.addPrimitive(polyline.get());
         }
@@ -142,6 +163,7 @@ private:
     rhi::VertexBufferHandle m_vbh;
     std::vector<std::unique_ptr<SurfaceGeometry>> m_surfaces;
     std::vector<std::unique_ptr<EdgeGeometry>> m_edges;
+    std::vector<std::unique_ptr<IndexedEdgeGeometry>> m_indexedEdges;
     std::vector<std::unique_ptr<PolylineGeometry>> m_polylines;
     std::vector<std::unique_ptr<PointStringGeometry>> m_pointStrings;
     std::vector<std::unique_ptr<PointCloudGeometry>> m_pointClouds;
