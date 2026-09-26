@@ -116,12 +116,13 @@ struct TileDrawArgs {
     void markChildrenLoading() noexcept { m_missingChildTiles = true; }
 
     /// Indicate that the specified tile is being used for some purpose by the
-    /// viewport (typically "displayed"). Marks the tile's usage timestamp and
-    /// records it in the touched set ("keep in memory" — fed to the LRU via
-    /// TileAdmin.addTilesForUser, TileAdmin.ts:519-520).
+    /// viewport (typically "displayed"). Marks the tile's usage timestamp.
     /// Ported from: TileDrawArgs.markUsed (TileDrawArgs.ts:412-414 —
-    /// tile.usageMarker.mark(viewport, now); DanQing's usage-marker face is
-    /// the per-tile timestamp, Tile.h:82-87).
+    /// tile.usageMarker.mark(viewport, now) ONLY; DanQing's usage-marker face
+    /// is the per-tile timestamp, Tile.h:82-87, and the per-user "in use" half
+    /// lives in TileAdmin's LRU selection sets). The reference's touchedTiles
+    /// set is a separate tree-authored keep-alive collection — markUsed never
+    /// writes it.
     void markUsed(Tile* tile);
 
     /// Indicate that the specified tile should be displayed and that its
@@ -151,7 +152,11 @@ struct TileDrawArgs {
         return m_readyTiles;
     }
 
-    /// The touched set ("used for some purpose"; keep-in-memory marker).
+    /// The touched set — tree-authored "keep in memory" collection.
+    /// Ported from: TileDrawArgs.touchedTiles (TileDrawArgs.ts:112-115; the
+    /// reference's sole writer is the tree-side BatchedTile.ts:83 keep-alive,
+    /// NOT markUsed — DanQing's protocol writer lands with the Task-4
+    /// selectTiles port).
     std::vector<Tile*> const& getTouchedTiles() const noexcept
     {
         return m_touchedTiles;
@@ -190,9 +195,11 @@ struct TileDrawArgs {
     /// closest to the camera.
     /// Ported from: TileDrawArgs.computePixelSizeInMetersAtClosestPoint
     /// (TileDrawArgs.ts:190-211 — the worldToViewMap transform0/transform1
-    /// round-trip collapsed to the standard pinhole formula; the clamp keeps
-    /// tiles overlapping the near plane finite, matching the reference's
-    /// near-front-plane guard at :194-196). EQUIVALENCE registration at the
+    /// round-trip collapsed to the standard pinhole formula). The reference's
+    /// near-front-plane guard (:194-196) evaluates at the near-plane point;
+    /// the DanQing pinhole form clamps the closest distance to a constant
+    /// instead — NOT numerically equivalent, finite-value guarantee only
+    /// (retained 2026-09-21 adaptation). EQUIVALENCE registration at the
     /// definition (TileDrawArgs.cpp).
     double computePixelSizeInMetersAtClosestPoint(dqGeom::Point3d const& center,
                                                   double radius) const;
@@ -211,7 +218,8 @@ private:
     std::vector<Tile*> m_readyTiles;
 
     /// Tiles whose contents should be kept in memory regardless of whether
-    /// they are selected for display (deduped).
+    /// they are selected for display (deduped). Tree-authored keep-alive —
+    /// the sole reference writer is BatchedTile.ts:83 (Task-4 protocol port).
     /// Ported from: TileDrawArgs.touchedTiles (TileDrawArgs.ts:115 — Set).
     std::vector<Tile*> m_touchedTiles;
 

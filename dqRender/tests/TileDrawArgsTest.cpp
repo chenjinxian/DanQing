@@ -127,27 +127,32 @@ TEST(TileDrawArgsTest, GetPixelSizeSpherePath)
         EXPECT_NEAR(args.getPixelSize(tile), r / ((10.0 - r) * s), 1e-6);
     }
 
-    // 近平面夹冲分支（参考 :194-196“球与近平面重叠”守卫的 DanQing pinhole
-    // 等价）：眼距 < 半径 → 夹紧生效，值有限（不发散）。
+    // 近平面夹冲分支：眼距 < 半径 → 夹紧生效。参考 :194-196 是“求值点替换为
+    // 近平面前中心”（metersPerPixel 在近平面距求值）——DanQing 为常数夹紧
+    //（0.01，TileDrawArgs.cpp kMinimumClosestPointDistance），**非数值等价**
+    //（仅保证有限值；2026-09-21 预存适配）。本组用当前常数钉死夹紧行为：
+    // pixelSize = r / (0.01 · s)——夹紧常数变动即红。
     {
         TileDrawArgs args;
         args.cameraOn = true;
         args.cameraEye[0] = 0.0f;
         args.cameraEye[1] = 0.0f;
         args.cameraEye[2] = 0.5f;  // dist = 0.5 < r
-        args.perspectiveScale = 0.25f;
+        float const s = 0.25f;
+        args.perspectiveScale = s;
         double const v = args.getPixelSize(tile);
         EXPECT_TRUE(std::isfinite(v)) << v;
         EXPECT_GT(v, 0.0);
+        EXPECT_NEAR(v, r / (0.01 * s), 1e-6);
     }
 }
 
-// Ported from: TileDrawArgs.ts markUsed (:412-414) —— 参考为
-// tile.usageMarker.mark(viewport, now)；DanQing 的 usage-marker 时间戳面 =
-// Tile.markUsed(nowSeconds)（Tile.h:82-87）+ touched 集（参考 touchedTiles，
-// TileDrawArgs.ts:112-115——“内容保留在内存”的标记，经 TileAdmin.addTilesForUser
-// 的 LRU markUsed 生效，TileAdmin.ts:519-520）。
-TEST(TileDrawArgsTest, MarkUsedRecordsTimestampAndTouchedSet)
+// Ported from: TileDrawArgs.ts markUsed (:412-414) —— 参考仅
+// tile.usageMarker.mark(viewport, now)（时间戳）；DanQing 的 usage-marker
+// 时间戳面 = Tile.markUsed(nowSeconds)（Tile.h:82-87）。参考 touchedTiles
+//（TileDrawArgs.ts:112-115）是独立的树创作型“保活”集合（全仓唯一写点
+// BatchedTile.ts:83）——markUsed **不**写它（评审回合 1 修正：删除凭空多写）。
+TEST(TileDrawArgsTest, MarkUsedRecordsTimestamp)
 {
     StubTree tree;
     StubTile tile(tree, dqGeom::Range3d::CreateXYZXYZ(-1, -1, -1, 1, 1, 1));
@@ -157,9 +162,9 @@ TEST(TileDrawArgsTest, MarkUsedRecordsTimestampAndTouchedSet)
     args.markUsed(&tile);
     TileAdmin::clearNowOverrideForTest();
 
-    EXPECT_EQ(args.getTouchedTiles().size(), 1u);
-    EXPECT_EQ(args.getTouchedTiles()[0], &tile);
     EXPECT_DOUBLE_EQ(tile.getLastUsedTime(), 123.0);
+    // markUsed 不写 touched 集（参考语义——保活集的写点在树侧协议，Task 4）。
+    EXPECT_TRUE(args.getTouchedTiles().empty());
 }
 
 // Ported from: itwinjs-core TileDrawArgs field defaults —— parentsAndChildrenExclusive

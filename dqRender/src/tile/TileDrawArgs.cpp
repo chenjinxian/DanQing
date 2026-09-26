@@ -41,16 +41,14 @@ void TileDrawArgs::insertMissing(Tile* tile)
 void TileDrawArgs::markUsed(Tile* tile)
 {
     // Ported from: TileDrawArgs.markUsed (TileDrawArgs.ts:412-414) —
-    // tile.usageMarker.mark(viewport, now). DanQing's usage-marker face is the
-    // per-tile timestamp (Tile.h:82-87); the per-user "in use" half lives in
-    // TileAdmin's LRU selection sets. touchedTiles (TileDrawArgs.ts:112-115)
-    // records the keep-in-memory marker.
+    // tile.usageMarker.mark(viewport, now) ONLY. DanQing's usage-marker face
+    // is the per-tile timestamp (Tile.h:82-87); the per-user "in use" half
+    // lives in TileAdmin's LRU selection sets. The reference's touchedTiles
+    // set is a separate tree-authored keep-alive collection (sole writer:
+    // BatchedTile.ts:83) — markUsed never writes it.
     if (!tile)
         return;
     tile->markUsed(TileAdmin::nowSeconds());
-    if (std::find(m_touchedTiles.begin(), m_touchedTiles.end(), tile) ==
-        m_touchedTiles.end())
-        m_touchedTiles.push_back(tile);
 }
 
 void TileDrawArgs::markReady(Tile* tile)
@@ -110,10 +108,15 @@ double TileDrawArgs::computePixelSizeInMetersAtClosestPoint(
     // transform0/transform1 回程：view 点与其 +1px 邻点的世界距）；
     // 发散=DanQing 无 worldToViewMap，按针孔模型折算——正交段均匀比例 =
     // pixelSizeRatio；透视段 = 最近点距 × perspectiveScale（2·tan(lens/2)/
-    // 视口像素高）；参考 :191-196 的“近平面重叠/眼后取近平面前中心”守卫以
-    // kMinimumClosestPointDistance 夹紧等价（保有限值）；
-    // 验证法=TileDrawArgsTest.GetPixelSizeSpherePath 三组数值锁 + TileTreeRender
-    // 像素锁（SSE 判定行为不变）。
+    // 视口像素高）。
+    // 另一处发散（非数值等价，仅保证有限值）：参考 :194-196 在球与近平面
+    // 重叠/眼后时把求值点替换为近平面前中心（metersPerPixel 在【近平面距】
+    // 求值，通常 >> 0.01 → pixelSize 偏小 → 少细化）；DanQing 把最近点距
+    // 夹到 kMinimumClosestPointDistance=0.01（metersPerPixel 极小 →
+    // pixelSize 极大 → 恒细化）。这是保留的 2026-09-21 预存适配（本次迁移
+    // 行为未变），跨近平面 tile 两者数值发散——非等价主张。
+    // 验证法=TileDrawArgsTest.GetPixelSizeSpherePath 三组数值锁（第三组钉住
+    // 当前夹紧常数）+ TileTreeRender 像素锁（SSE 判定行为不变）。
     if (cameraOn && perspectiveScale > 0.0f) {
         // Point on the bounding sphere closest to the eye (:198-204).
         double const dx = static_cast<double>(center.x) - cameraEye[0];
