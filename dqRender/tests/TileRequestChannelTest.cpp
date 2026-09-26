@@ -104,8 +104,9 @@ TEST(TileRequestChannel, TreePriorityDominatesRequestPriority)
     channel.process(0);
 
     // Tree key 5 (Dynamic) < 40 (Context) → B dispatches first; A stays
-    // pending (concurrency 1, and B's failed fetch frees the slot only after
-    // this process pass has popped its single request).
+    // pending (concurrency 1, and B's initiated fetch completes（探针同步交付）
+    // frees the slot only after this process pass has popped its single
+    // request).
     EXPECT_EQ(tileB.dispatchOrder, 1);
     EXPECT_EQ(tileA.dispatchOrder, 0);
     EXPECT_EQ(channel.getPendingCount(), 1u);
