@@ -5,6 +5,7 @@
 #include "dqRender/RenderGraphic.h"
 #include "dqRender/tile/TileAdmin.h"  // onTileContentLoaded/Disposed（LRU 入/出册）
 
+#include <algorithm>
 #include <vector>
 
 BEGIN_DQ_RENDER_NAMESPACE
@@ -32,7 +33,8 @@ namespace {
 // the virtual entry point Tile::selectTiles seeds it with nullptr at the
 // root, matching the former TileTree::selectTiles call).
 void selectTilesBatchedForm(TileDrawArgs& args, Tile& tile,
-                            Tile* closestDisplayableAncestor)
+                            Tile* closestDisplayableAncestor,
+                            std::vector<Tile*>& selected)
 {
     Tile* closest = tile.isDisplayable() ? &tile : closestDisplayableAncestor;
 
@@ -47,7 +49,7 @@ void selectTilesBatchedForm(TileDrawArgs& args, Tile& tile,
         if (!tile.getChildren().empty()) {
             for (auto* child : tile.getChildren())
                 if (child)
-                    selectTilesBatchedForm(args, *child, closest);
+                    selectTilesBatchedForm(args, *child, closest, selected);
             return;
         }
     }
@@ -59,20 +61,33 @@ void selectTilesBatchedForm(TileDrawArgs& args, Tile& tile,
     // :402-404/:419-421).
     if (!tile.isDisplayable())
         args.insertMissing(&tile);
-    if (closest && closest->isDisplayable())
+    if (closest && closest->isDisplayable()) {
+        // Dual write (the BatchedTile form's two collections): markReady keeps
+        // the ready set as the selection-report/LRU face (TileAdmin sees it at
+        // the frame tail, unchanged); selected is what the tree shell draws
+        // from (BatchedTile.ts:108-109 `selected.add(closestDisplayableAncestor)`
+        // — the stand-in enters selected, the requested tile enters missing).
+        // The reference's selected is a Set — siblings sharing a stand-in add
+        // it once; DanQing hosts the collection as a deduplicated vector (the
+        // TileDrawArgs sets' convention) so the draw list matches 1:1.
         args.markReady(closest);
+        if (std::find(selected.begin(), selected.end(), closest) == selected.end())
+            selected.push_back(closest);
+    }
 }
 
 }  // namespace
 
 // Base default = the BatchedTile form (see selectTilesBatchedForm above). The
 // SelectParent protocol surface (selected/numSkipped/return value) is
-// IModelTile's — unused here; the form's drawables land in args' ready set
-// (the former TileTree::selectTilesRecursive behavior, unchanged).
-SelectParent Tile::selectTiles(std::vector<Tile*>& /*selected*/,
+// IModelTile's — unused here; the form's drawables land in BOTH the ready set
+// (the report face, the former TileTree::selectTilesRecursive behavior) and
+// `selected` (the draw face, BatchedTile.ts:108-109).
+SelectParent Tile::selectTiles(std::vector<Tile*>& selected,
                                TileDrawArgs& args, uint32_t /*numSkipped*/)
 {
-    selectTilesBatchedForm(args, *this, /*closestDisplayableAncestor=*/nullptr);
+    selectTilesBatchedForm(args, *this, /*closestDisplayableAncestor=*/nullptr,
+                           selected);
     return SelectParent::No;
 }
 

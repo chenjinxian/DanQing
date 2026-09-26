@@ -74,12 +74,14 @@ public:
     /// TileTree.selectTiles → _selectTiles → the root tile's own selectTiles,
     /// TileTree.ts:136-142 + IModelTileTree.ts:435-445) and populates the
     /// args missing/ready sets via TileDrawArgs.insertMissing/markReady
-    /// (TileDrawArgs.ts:402-421). DanQing reports the selection to the
+    /// (TileDrawArgs.ts:402-421) plus the tiles selected for display into
+    /// `selected` (IModelTileTree.ts:437-438 — the collection the tree's
+    /// draw draws from, :447-449). DanQing reports the selection to the
     /// TileAdmin batched at the frame tail (Viewport::CreateScene →
     /// addTilesForUser/requestTiles — the per-tree report of TileTree.ts:139
     /// is a registered adaptation, see SceneContext.h: TileDrawArgs cannot
     /// reach the TileUser).
-    void selectTiles(TileDrawArgs& args);
+    void selectTiles(TileDrawArgs& args, std::vector<Tile*>& selected);
 
     /// Draw the tree (select tiles + collect graphics)
     void draw(TileDrawArgs& args);
