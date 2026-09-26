@@ -68,6 +68,10 @@ public:
 
     // --- User management ---
     void registerUser(TileUser& user);
+    // Cease tracking the user; requests of interest only to the departing
+    // user are canceled immediately (forgetUser → onUserIModelClosed,
+    // TileAdmin.ts:560-563 → :925-940 — `1 === request.users.length`).
+    // Ported from: TileAdmin.forgetUser (TileAdmin.ts:560-563).
     void forgetUser(TileUser& user);
 
     // --- Tile selection ---
@@ -217,12 +221,17 @@ public:
     // — response data → tile.readContent → tile.setContent → channel.recordCompletion).
     // In the reference the promise resolves inside TileRequest.dispatch; DanQing's
     // polling ITileFetcher delivers on a later process() cycle, so the sink lives
-    // on TileAdmin and settles the in-flight request via the tile's request hook.
+    // on TileAdmin and resolves the in-flight request via the channel's active
+    // set (the tile hook is the fallback). A request canceled while its fetch
+    // ran drops the response here (TileRequest.ts:109-110) and merely releases
+    // its concurrency slot — cancel is a mark, the fetch itself is not aborted
+    // (TileRequestChannel.ts:250 NB).
     void deliverTileContent(Tile& tile, std::vector<uint8_t> const& data);
 
     // Fetch-failure sink: settle the request and mark the tile NotFound.
-    // Ported from: TileRequest.ts:169-178 (error → tile.setNotFound) +
-    // channel failure accounting.
+    // Ported from: TileRequest.ts:94-103/:148-153 (error → setFailed →
+    // tile.setNotFound + recordFailure; unconditional, even for a request
+    // canceled in flight).
     void reportTileFetchError(Tile& tile, std::string const& error);
 
     // --- Async fetcher ---
@@ -285,6 +294,14 @@ private:
 
     /// Prune expired tiles and purge unused trees
     void pruneAndPurge();
+
+    // Non-registering construction for instance()'s lazy default object.
+    // The public constructor registers itself (sInstance = this); the lazy
+    // static in instance() must NOT hijack a live instance's registration
+    // when it constructs first. DanQing singleton plumbing — the reference
+    // has no counterpart (IModelApp.tileAdmin is set up explicitly).
+    enum class DefaultInstanceTag : uint8_t { Default };
+    explicit TileAdmin(DefaultInstanceTag);
 
     TileRequestChannels m_channels;
     std::unique_ptr<ITileFetcher> m_fetcher;

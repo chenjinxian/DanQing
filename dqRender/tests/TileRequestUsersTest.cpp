@@ -8,6 +8,12 @@
 //   tile joins the existing request via addUser instead of building a
 //   duplicate; a queued, userless request is re-enqueued).
 //
+// M-C Task 3 adds the TileAdminTest suite here: forgetUser's immediate cancel
+// of sole-user requests (TileAdmin.ts:925-940 via :560-563), the shared-request
+// non-cancel face, and the end-to-end lock that a still-wanted queued request
+// survives the frame boundary through the clearAll → swapPending → re-enqueue
+// chain (TileAdmin.ts:827-841).
+//
 // Authored: 参考无 channel/users 级单测（该面覆盖在 TileAdmin 集成与
 //   Viewport 生命周期里——TileAdmin.test.ts 只驱动统计面）；场景自写，
 //   场景与断言值取自参考源码的分支结构（TileAdmin.ts:899-920）。
@@ -34,6 +40,10 @@ namespace {
 // fetch (a rebuilt request would fetch twice, TileAdmin.ts:899-905).
 int g_requestContentCount = 0;
 
+// Read probe for the cancel-drop path (M-C Task 3): a canceled request's late
+// response must be discarded before decode (TileRequest.ts:109-110).
+int g_readContentCount = 0;
+
 class ProbeTile : public Tile {
 public:
     explicit ProbeTile(TileTree& tree)
@@ -49,7 +59,11 @@ public:
         // across assertions.
         return true;
     }
-    TileContent readContent(uint8_t const*, size_t) override { return {}; }
+    TileContent readContent(uint8_t const*, size_t) override
+    {
+        ++g_readContentCount;
+        return {};
+    }
     void loadChildren() override {}
 };
 
@@ -168,10 +182,12 @@ TEST(TileRequestUsers, LoadingStateOverridesEmptyUsers)
     EXPECT_FALSE(request.isCanceled());  // Loading 豁免（TileRequest.ts:59-60）
 }
 
-// Ported from: TileAdmin.ts:914-915（isQueued && users 空 → channel.append 重
-// 入队）——重入队不得复制所有权/重复 dispatch。
-// Authored: 参考无直接单测；锁 DanQing unique_ptr 所有权下的重入队接缝
-// （swapPending 归 Task 3，届时同一接缝负责跨队列搬运）。
+// Ported from: TileAdmin.ts:913-917（isQueued && users 空 → channel.append 重
+// 入队 + addUser）——重入队不得复制所有权/重复 dispatch。
+// Authored: 参考无直接单测；锁 DanQing unique_ptr 所有权下的重入队接缝。
+//           M-C Task 3 更新：swapPending 落地后取消面激活——users 空的排队
+//           请求会被取消（TileRequestChannel.ts:242-245），故重入队之后必须
+//           像参考调用方一样 addUser（TileAdmin.ts:917），dispatch 才会发生。
 TEST(TileRequestUsers, QueuedUserlessRequestReenqueuedNotDuplicated)
 {
     g_requestContentCount = 0;
@@ -188,12 +204,150 @@ TEST(TileRequestUsers, QueuedUserlessRequestReenqueuedNotDuplicated)
     channel.forgetUser(user);  // users 空（UniqueTileUserSets.forgetUser 角色）
     EXPECT_TRUE(raw->getUsers().empty());
 
-    // 共享请求门的重入队分支（TileAdmin.ts:914-915）。
+    // 共享请求门的重入队分支（TileAdmin.ts:913-915）+ 调用方回填 user (:917)。
     channel.append(*raw);
+    raw->addUser(user);
     channel.process(0);
 
     EXPECT_EQ(g_requestContentCount, 1);  // 一次 dispatch——重入队未复制请求
     EXPECT_EQ(channel.getPendingCount(), 0u);
     EXPECT_EQ(channel.getActiveCount(), 1u);
     EXPECT_FALSE(raw->isQueued());
+    EXPECT_FALSE(raw->isCanceled());
+}
+
+// Ported from: TileAdmin.forgetUser (TileAdmin.ts:560-563 —
+//              onUserIModelClosed → _users.delete) + onUserIModelClosed
+//              (:925-940 — 独占请求立即取消) + TileRequest.cancel
+//              (TileRequest.ts:122-131)。
+// Authored: 参考无 TileAdmin 级取消单测（TileAdmin.test.ts 只测统计面）；
+//           场景按 onUserIModelClosed 的 `1 === request.users.length` 分支
+//           自写。
+TEST(TileAdminTest, ForgetUserCancelsSoleRequestImmediately)
+{
+    g_requestContentCount = 0;
+    g_readContentCount = 0;
+    AdminFixture f;
+    StubTree tree;
+    ProbeTile tile(tree);
+    StubUser user(1);
+
+    f.admin.registerUser(user);
+    f.admin.requestTiles(user, {&tile});
+    f.admin.process();  // 请求建立并 dispatch（channel 并发 10，槽位充足）
+    TileRequest* raw = tile.getRequest();
+    ASSERT_NE(raw, nullptr);
+    EXPECT_TRUE(raw->isActive());  // 飞行中
+
+    // 独占请求：唯一 user 离开 → 立即取消，不等下帧（TileAdmin.ts:928-940）。
+    f.admin.forgetUser(user);
+    EXPECT_EQ(raw->getState(), TileRequest::State::Failed);  // cancel → Failed (:130)
+    EXPECT_TRUE(raw->isCanceled());
+    EXPECT_EQ(tile.getRequest(), nullptr);  // 钩子已释放（TileRequest.ts:145）
+
+    // 取消只标记，不中止 fetch（TileRequestChannel.ts:250 NB）——content 迟到
+    // 时丢弃并释放并发槽（TileRequest.ts:109-110）。
+    f.admin.deliverTileContent(tile, {0x11, 0x22, 0x33, 0x44});
+    EXPECT_EQ(g_readContentCount, 0);  // 不 decode
+    EXPECT_EQ(g_requestContentCount, 1);  // 不重新取数
+    EXPECT_EQ(tile.getLoadStatus(), TileLoadStatus::Loading);  // cancel 不触碰 tile 状态 (:122)
+}
+
+// Ported from: TileAdmin.onUserIModelClosed (TileAdmin.ts:928-940) —
+//              `1 === request.users.length` 门：多 user 共享的请求不取消。
+// Authored: 参考无直接单测；锁"不误伤仍有关注者的共享请求"。
+TEST(TileAdminTest, ForgetUserKeepsSharedRequestForOtherUsers)
+{
+    g_requestContentCount = 0;
+    g_readContentCount = 0;
+    AdminFixture f;
+    StubTree tree;
+    ProbeTile tile(tree);
+    StubUser userA(1);
+    StubUser userB(2);
+
+    f.admin.registerUser(userA);
+    f.admin.registerUser(userB);
+    f.admin.requestTiles(userA, {&tile});
+    f.admin.requestTiles(userB, {&tile});
+    f.admin.process();
+    TileRequest* raw = tile.getRequest();
+    ASSERT_NE(raw, nullptr);
+    EXPECT_EQ(raw->getUsers().size(), 2u);
+
+    f.admin.forgetUser(userA);
+    EXPECT_FALSE(raw->isCanceled());        // B 仍关注 → 不取消
+    EXPECT_EQ(tile.getRequest(), raw);      // 钩子原样
+    EXPECT_EQ(raw->getUsers().size(), 1u);
+
+    // content 到达 → 正常交付（settle + decode + setContent）。
+    f.admin.deliverTileContent(tile, {0x01, 0x02, 0x03, 0x04});
+    EXPECT_EQ(g_readContentCount, 1);
+    EXPECT_EQ(tile.getLoadStatus(), TileLoadStatus::Ready);
+}
+
+// Ported from: TileAdmin.processQueue (TileAdmin.ts:827-841 —
+//              clearAll → channels.swapPending → processRequests) +
+//              processRequests 的重入队分支 (:913-915)。
+// Authored: 参考无直接单测；端到端锁"跨帧仍被关注的排队请求经
+//           swapPending/重入队链存活"——若重入队搬运缺失，请求会在
+//           previouslyPending 清空时被销毁、tile 重建新请求（指针不同）。
+TEST(TileAdminTest, QueuedRequestSurvivesFrameBoundaryViaReenqueue)
+{
+    g_requestContentCount = 0;
+    AdminFixture f;
+    StubTree tree;
+    StubUser user(1);
+
+    // channel 并发 10（getChannel("default") 默认）：12 块瓦 → 10 dispatched
+    // + 2 queued，制造"跨帧排队"状态。
+    std::vector<std::unique_ptr<ProbeTile>> tiles;
+    std::vector<Tile*> raws;
+    for (int i = 0; i < 12; ++i) {
+        tiles.push_back(std::make_unique<ProbeTile>(tree));
+        raws.push_back(tiles.back().get());
+    }
+    f.admin.registerUser(user);
+    f.admin.requestTiles(user, raws);
+    f.admin.process();
+    ASSERT_EQ(g_requestContentCount, 10);
+    ASSERT_EQ(f.admin.getPendingRequestCount(), 2u);
+
+    // 选一块仍排队的瓦作观察对象。
+    ProbeTile* subject = nullptr;
+    for (auto& t : tiles)
+        if (t->getRequest() && t->getRequest()->isQueued()) {
+            subject = t.get();
+            break;
+        }
+    ASSERT_NE(subject, nullptr);
+    TileRequest* const subjectAddr = subject->getRequest();  // 仅比对地址值
+
+    // 帧 2：clearAll 清空 user 集 → swapPending（请求随队列进入
+    // previouslyPending）→ 重入队分支把它搬回 m_pending（TileAdmin.ts:913-915）。
+    f.admin.process();
+    EXPECT_EQ(f.admin.getPendingRequestCount(), 2u);  // 槽位满，仍排队
+    EXPECT_EQ(subject->getRequest(), subjectAddr);    // 同一请求存活（非重建）
+    TileRequest* live = subject->getRequest();
+    ASSERT_EQ(live, subjectAddr);  // 仅在同址时解引用（搬运缺失时不解悬垂指针）
+    EXPECT_FALSE(live->isCanceled());
+
+    // 释放两个并发槽（正常交付两块飞行中的瓦）。
+    int settled = 0;
+    for (auto& t : tiles) {
+        if (settled == 2)
+            break;
+        TileRequest* r = t->getRequest();
+        if (r && r->isActive() && !r->isQueued()) {
+            f.admin.deliverTileContent(*t, {0x01, 0x02, 0x03, 0x04});
+            ++settled;
+        }
+    }
+    ASSERT_EQ(settled, 2);
+
+    // 帧 3：槽位释放 → 排队请求（含观察对象）获得 dispatch。
+    f.admin.process();
+    EXPECT_EQ(g_requestContentCount, 12);
+    EXPECT_EQ(subject->getRequest(), subjectAddr);
+    EXPECT_FALSE(subject->getRequest()->isQueued());
 }
