@@ -163,6 +163,54 @@ TEST(FeatureTable, MakeFeatureTable)
     }
 }
 
+// Ported from: itwinjs-core FeatureTable（GC 语义的 C++ 表达——参考无
+//              析构概念；测试按值语义契约自写）。
+// Authored: no reference test exists in itwinjs-core for C++ value semantics
+//           (destructor/move/copy) — TS is garbage-collected.
+//           DqId 断言取值方式按 DqId.h 实际 API（operator== 逐位比较，现有测试同式）；
+//           场景与 brief 逐值一致。拷贝赋值/自赋值断言为 rule-of-5 契约的补充面
+//           （brief 注释「移动赋值 + 自赋值安全（copy-and-swap 形态下天然安全）」）。
+TEST(FeatureTableTest, ValueSemanticsMoveAndCopy)
+{
+    FeatureTable a(2, DqId{0x11}, BatchType::Primary);
+    Feature const f{DqId{0x22}, DqId{0x33}, GeometryClass::Primary};
+    a.insertWithIndex(f, 0);
+    a.insertWithIndex(f, 1);
+
+    // 深拷贝独立：改 b 不影响 a。
+    FeatureTable b = a;  // copy ctor
+    ASSERT_TRUE(b.findFeature(0).has_value());
+    EXPECT_EQ(b.findFeature(0)->elementId, DqId(0x22));
+    // 拷贝后源仍完整（无别名）：
+    ASSERT_TRUE(a.findFeature(1).has_value());
+
+    // 移动窃取：源置空安全（析构不 double-free 的可观测面）。
+    FeatureTable c = std::move(a);  // move ctor
+    ASSERT_TRUE(c.findFeature(0).has_value());
+    EXPECT_EQ(a.getSize(), 0);         // moved-from 空态
+    EXPECT_EQ(a.getArray(), nullptr);  // 指针已窃走（getArray 现有 :139）
+
+    // 移动赋值 + 自赋值安全（copy-and-swap 形态下天然安全）。
+    FeatureTable d(1);
+    d = std::move(b);
+    EXPECT_EQ(d.getSize(), 2);
+
+    // 拷贝赋值（copy-and-swap）：目标获得源完整状态。
+    FeatureTable e(4);
+    e = c;
+    EXPECT_EQ(e.getSize(), 2);
+    EXPECT_EQ(e.getMaxFeatures(), 2);
+    ASSERT_TRUE(e.findFeature(1).has_value());
+    EXPECT_EQ(e.findFeature(1)->elementId, DqId(0x22));
+
+    // 自赋值安全（copy-and-swap 自赋值分支，经别名引用绕开 -Wself-assign）。
+    FeatureTable& cAlias = c;
+    c = cAlias;
+    EXPECT_EQ(c.getSize(), 2);
+    ASSERT_TRUE(c.findFeature(0).has_value());
+    EXPECT_EQ(c.getModelId(), DqId(0x11));
+}
+
 // Authored: no equivalent reference test in itwinjs-core for GeometryClass enum values
 //   (FeatureIndex.test.ts does not assert enum integer values);
 //   values verified against itwinjs-core Feature.ts GeometryClass enum.
