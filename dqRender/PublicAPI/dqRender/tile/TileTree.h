@@ -70,8 +70,15 @@ public:
     void collectStatistics(RenderMemory::Statistics& stats);
 
     /// Select tiles for rendering based on camera/LOD
-    /// Populates the args missing/ready sets via TileDrawArgs.insertMissing/
-    /// markReady (TileDrawArgs.ts:402-421)
+    /// Dispatches on the root tile's virtual selectTiles (the reference's
+    /// TileTree.selectTiles → _selectTiles → the root tile's own selectTiles,
+    /// TileTree.ts:136-142 + IModelTileTree.ts:435-445) and populates the
+    /// args missing/ready sets via TileDrawArgs.insertMissing/markReady
+    /// (TileDrawArgs.ts:402-421). DanQing reports the selection to the
+    /// TileAdmin batched at the frame tail (Viewport::CreateScene →
+    /// addTilesForUser/requestTiles — the per-tree report of TileTree.ts:139
+    /// is a registered adaptation, see SceneContext.h: TileDrawArgs cannot
+    /// reach the TileUser).
     void selectTiles(TileDrawArgs& args);
 
     /// Draw the tree (select tiles + collect graphics)
@@ -103,14 +110,6 @@ public:
     void setLoadStatus(TileTreeLoadStatus status) noexcept { m_loadStatus = status; }
 
     // --- Abstract methods ---
-
-protected:
-    /// Recursively select tiles starting from root.
-    /// `closestDisplayableAncestor` stands in for descendants whose content
-    /// has not loaded yet — Ported from: BatchedTile.selectTiles
-    /// (BatchedTile.ts:76-110, esp. :87 and :105-110).
-    void selectTilesRecursive(TileDrawArgs& args, Tile* tile,
-                              Tile* closestDisplayableAncestor);
 
 private:
     std::unique_ptr<Tile> m_rootTile;

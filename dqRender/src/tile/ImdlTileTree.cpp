@@ -156,6 +156,13 @@ ImdlTile::ImdlTile(ImdlTileTree& tree, Tile* parent,
         setIsLeaf(true);
 }
 
+ImdlTileTree& ImdlTile::iModelTree() const noexcept
+{
+    // Ported from: IModelTile.iModelTree (IModelTile.ts:76 —
+    // `return this.tree as IModelTileTree`).
+    return static_cast<ImdlTileTree&>(getTree());
+}
+
 bool ImdlTile::requestContent()
 {
     // Content acquisition: the reference routes through TileAdmin.
@@ -323,6 +330,190 @@ void ImdlTile::loadChildren()
     setChildren(std::move(childTiles));
 }
 
+// SelectParent 选择协议（U9(3)）。
+// Ported from: IModelTile.selectTiles (IModelTile.ts:205-334) — SelectParent
+// 协议：跳级计数（maxInitialTilesToSkip/maxTilesToSkip）、NotFound 回退、
+// 父子独占回滚、undisplayable root 特例。
+// EQUIVALENCE: 参考源=IModelTile.ts:276 loadChildren 异步（返回 Promise +
+//   TileTreeLoadStatus.Loading 态）；发散=DanQing loadChildren 同步执行
+//   （无异步源，Loading 态不可达）→ :282-287 的 markChildrenLoading/
+//   markUsed 分支以 canSkipThisTile 结构位保留（原门的前半——
+//   `canSkipThisTile && Loading`），markChildrenLoading 无调用点；验证法=
+//   SelectTilesProtocol 场景矩阵 + TileTreeRender 像素锁。
+//   另：参考 :211-213 的 debugMaxDepth 门（IModelTree.debugMaxDepth）DanQing
+//   无 debug 面——省略登记。
+//   另二：参考 :206 `this.computeVisibility(args)`（Tile 侧虚方法）；DanQing
+//   的 computeVisibility 在树侧（TileTree.h:84，前序任务的登记形态）——
+//   getTree().computeVisibility(args, this) 为同一判定的在仓宿主。
+//   另三：isDisplayable 位点（:235/:237/:270）取参考语义 `0 < maximumSize`
+//  （Tile.ts:231）——DanQing 预存 Tile::isDisplayable()（Ready && graphic，
+//   Tile.h DIVERGENCE 注）语义漂移，协议不得经它（场景 3 的计数路径即本
+//   登记的回归锁）。参考 :272 hasSizeMultiplier（`_sizeMultiplier !==
+//   undefined`，IModelTile.ts:81）以 DanQing 的 0=未设约定表达
+//  （m_sizeMultiplier > 0.0，ImdlTileTree.h:35 同约定）。
+//   另四：参考 :227-229 `iModelChildren === undefined`（children 未加载）
+//   以 hasLoadedChildren() 表达——DanQing 无 _childrenLoadStatus 态机，
+//   "已加载但为空数组"塌缩为 false（参考 Tile.ts:361-364 该形态置 leaf，
+//   ImdlTile::loadChildren 同此——发散不可达，登记）。
+// MSVC：参考 :232-241 的循环体两条路径都在首孩子上 return——C4702（代码
+// 生成期告警，pragma 须在函数入口前生效）把 range-for 的隐藏推进判为
+// unreachable。保留参考原形，函数级豁免 4702（登记：语义与参考逐字一致）。
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4702)
+#endif
+SelectParent ImdlTile::selectTiles(std::vector<Tile*>& selected, TileDrawArgs& args,
+                                   uint32_t numSkipped)
+{
+    TileVisibility vis = getTree().computeVisibility(args, this);
+    if (vis == TileVisibility::OutsideFrustum)
+        return SelectParent::No;
+
+    if (vis == TileVisibility::Visible) {
+        // This tile is of appropriate resolution to draw. If need loading or
+        // refinement, enqueue. (:214-217)
+        if (!isReady())
+            args.insertMissing(this);
+
+        if (hasGraphics()) {
+            // It can be drawn - select it. (:219-222)
+            args.markReady(this);
+            selected.push_back(this);
+        } else if (!isReady()) {
+            // It can't be drawn. Try to draw children in its place; otherwise
+            // draw the parent. Do not load/request the children for this
+            // purpose. (:223-229)
+            size_t const initialSize = selected.size();
+            if (!hasLoadedChildren())
+                return SelectParent::Yes;
+
+            // 参考 :227-237 的循环形态逐字保留（含"首孩子后无条件 return
+            // No"的参考原形——不"修正"它，§0）：(:231-241)。
+            if (getDepth() < iModelTree().getMaxInitialTilesToSkip()) {
+                for (auto* kid : getChildren()) {
+                    if (kid->selectTiles(selected, args, numSkipped) == SelectParent::Yes) {
+                        selected.resize(initialSize);
+                        return SelectParent::Yes;
+                    }
+                    return SelectParent::No;
+                }
+            }
+
+            // If all visible direct children can be drawn, draw them. (:243-253)
+            for (auto* kid : getChildren()) {
+                if (getTree().computeVisibility(args, kid) != TileVisibility::OutsideFrustum) {
+                    if (!kid->hasGraphics()) {
+                        selected.resize(initialSize);
+                        return SelectParent::Yes;
+                    }
+                    selected.push_back(kid);
+                }
+            }
+            args.markUsed(this);
+        }
+
+        // We're drawing either this tile, or its direct children. (:258-259)
+        return SelectParent::No;
+    }
+
+    // This tile is too coarse to draw. Try to draw something more appropriate.
+    // If it is not ready to draw, we may want to skip loading in favor of
+    // loading its descendants. If we previously loaded and later unloaded
+    // content for this tile to free memory, don't force it to reload its
+    // content - proceed to children. (:262-265)
+    bool canSkipThisTile = (m_hadGraphics && !hasGraphics())
+                           || getDepth() < iModelTree().getMaxInitialTilesToSkip();
+    if (canSkipThisTile) {
+        numSkipped = 1;                                                       // :267
+    } else {
+        canSkipThisTile = isReady() || isParentDisplayable()
+                          || getDepth() < iModelTree().getMaxInitialTilesToSkip(); // :269
+        if (canSkipThisTile && 0.0 < getMaximumSize()) {
+            // skipping an undisplayable tile doesn't count toward the maximum
+            // (:270; isDisplayable = `0 < maximumSize`，Tile.ts:231 —— 见函数
+            // 头 EQUIVALENCE 另三)。
+            // Some tiles do not sub-divide - they only facet the same geometry
+            // to a higher resolution. We can skip directly to the correct
+            // resolution. (:271-272)
+            bool const isNotReady = !isReady() && !hasGraphics()
+                                    && !(m_sizeMultiplier > 0.0);
+            if (isNotReady) {
+                if (numSkipped >= iModelTree().getMaxTilesToSkip())
+                    canSkipThisTile = false;                                  // :275
+                else
+                    numSkipped += 1;                                          // :277
+            }
+        }
+    }
+
+    // :282-287 —— loadChildren 的 Loading 分支以结构位保留（函数头
+    // EQUIVALENCE 登记：DanQing loadChildren 同步，Loading 不可达）。
+    loadChildren();   // NB: synchronous（参考 :282 asynchronous）
+    bool const haveChildren = canSkipThisTile && hasLoadedChildren();   // :283
+    if (canSkipThisTile /* && TileTreeLoadStatus::Loading == childrenLoadStatus
+                           —— 不可达，保留结构位 */)
+        args.markUsed(this);                                            // :286
+
+    if (haveChildren) {
+        // If we are the root tile and we are not displayable, then we want to
+        // draw *any* currently available children in our place, or else we
+        // would draw nothing. Otherwise, if we want to draw children in our
+        // place, we should wait for *all* of them to load, or else we would
+        // show missing chunks where not-yet-loaded children belong. (:289-291)
+        bool const undisplayableRoot = isUndisplayableRootTile();          // :292
+        args.markUsed(this);                                               // :293
+        bool drawChildren = true;
+        size_t const initialSize = selected.size();
+        for (auto* child : getChildren()) {
+            // NB: We must continue iterating children so that they can be
+            // requested if missing. (:297)
+            if (child->selectTiles(selected, args, numSkipped) == SelectParent::Yes) {
+                if (child->getLoadStatus() == TileLoadStatus::NotFound) {
+                    // At least one child we want to draw failed to load. e.g.,
+                    // we reached max depth of map tile tree. Draw parent
+                    // instead. (:299-301)
+                    drawChildren = canSkipThisTile = false;
+                } else {
+                    // At least one child we want to draw is not yet loaded.
+                    // Wait for it to load before drawing it and its siblings,
+                    // unless we have nothing to draw in their place. (:302-305)
+                    drawChildren = undisplayableRoot;
+                }
+            }
+        }
+
+        if (drawChildren)
+            return SelectParent::No;                                       // :309-310
+
+        // Some types of tiles (like maps) allow the ready children to be drawn
+        // on top of the parent while other children are not yet loaded. (:312-314)
+        if (args.parentsAndChildrenExclusive)
+            selected.resize(initialSize);
+    }
+
+    if (isReady()) {                                                       // :317-327
+        if (hasGraphics()) {
+            selected.push_back(this);
+            if (!canSkipThisTile) {
+                // This tile is too coarse, but we require loading it before we
+                // can start loading higher-res children. (:321)
+                args.markReady(this);
+            }
+        }
+
+        return SelectParent::No;
+    }
+
+    // This tile is not ready to be drawn. Request it *only* if we cannot skip
+    // it. (:329-331)
+    if (!canSkipThisTile)
+        args.insertMissing(this);
+    return isParentDisplayable() ? SelectParent::Yes : SelectParent::No;   // :333
+}
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+
 // ---------------------------------------------------------------------------
 // ImdlTileTree
 // ---------------------------------------------------------------------------
@@ -333,6 +524,12 @@ ImdlTileTree::ImdlTileTree(std::string treeId, std::string rootContentId,
     : TileTree(nullptr)
     , m_treeId(std::move(treeId))
     , m_metadata(treeMetadata)
+      // Ported from: IModelTileTree constructor (IModelTileTree.ts:390-391) —
+      // maxInitialTilesToSkip = params.maxInitialTilesToSkip ?? 0 (DanQing's
+      // offline tilesets carry no such props field → the ?? 0 default);
+      // maxTilesToSkip = IModelApp.tileAdmin.maximumLevelsToSkip.
+    , m_maxInitialTilesToSkip(0)
+    , m_maxTilesToSkip(TileAdmin::instance().maximumLevelsToSkip())
 {
     // Root tile from the tree props (the reference's requestTileTreeProps
     // rootTile; IModelTileTree constructor :396-410). maximumSize =

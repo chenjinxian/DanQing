@@ -32,46 +32,17 @@ void TileTree::selectTiles(TileDrawArgs& args)
 {
     if (!m_rootTile) return;
 
-    // Start recursive selection from root
-    selectTilesRecursive(args, m_rootTile.get(), /*closestDisplayableAncestor=*/nullptr);
-}
-
-void TileTree::selectTilesRecursive(TileDrawArgs& args, Tile* tile,
-                                    Tile* closestDisplayableAncestor)
-{
-    if (!tile) return;
-
-    // Ported from: BatchedTile.selectTiles (BatchedTile.ts:76-110) —
-    // the closest displayable ancestor stands in for descendants whose
-    // content has not loaded yet (:87 update, :105-110 stand-in), and a
-    // TooCoarse tile with available children is replaced by them (REPLACE).
-    Tile* closest = tile->isDisplayable() ? tile : closestDisplayableAncestor;
-
-    TileVisibility const vis = computeVisibility(args, tile);
-    if (vis == TileVisibility::OutsideFrustum)
-        return;
-
-    if (vis == TileVisibility::TooCoarse) {
-        if (!tile->hasLoadedChildren())
-            tile->loadChildren();
-
-        if (!tile->getChildren().empty()) {
-            for (auto* child : tile->getChildren())
-                selectTilesRecursive(args, child, closest);
-            return;
-        }
-    }
-
-    // We want to display this tile: request its content if not ready, and
-    // display the closest displayable ancestor meanwhile (BatchedTile.ts
-    // :105-110 — insertMissing + selected.add(closestDisplayableAncestor)).
-    // Ported from: TileDrawArgs.insertMissing/markReady (TileDrawArgs.ts
-    // :402-404/:419-421 — the reference's IModelTile.selectTiles calls these
-    // markers instead of writing raw vectors).
-    if (!tile->isDisplayable())
-        args.insertMissing(tile);
-    if (closest && closest->isDisplayable())
-        args.markReady(closest);
+    // Ported from: TileTree.selectTiles (TileTree.ts:136-142) + the tree
+    // shells' _selectTiles (IModelTileTree.ts:435-445 — the root tile's own
+    // selectTiles drives the recursion, numSkipped starts at 0). The selected
+    // tiles' request/display effects flow through args' missing/ready sets
+    // (TileDrawArgs.insertMissing/markReady); the TileAdmin report
+    // (TileTree.ts:139 addTilesForUser) is batched at the frame tail —
+    // registered adaptation at SceneContext.h (TileDrawArgs cannot reach the
+    // TileUser; dqApp Viewport::CreateScene feeds addTilesForUser +
+    // requestTiles from the collected sets).
+    std::vector<Tile*> selected;
+    m_rootTile->selectTiles(selected, args, /*numSkipped=*/0);
 }
 
 void TileTree::draw(TileDrawArgs& args)

@@ -153,10 +153,13 @@ struct TileDrawArgs {
     }
 
     /// The touched set — tree-authored "keep in memory" collection.
-    /// Ported from: TileDrawArgs.touchedTiles (TileDrawArgs.ts:112-115; the
-    /// reference's sole writer is the tree-side BatchedTile.ts:83 keep-alive,
-    /// NOT markUsed — DanQing's protocol writer lands with the Task-4
-    /// selectTiles port).
+    /// Ported from: TileDrawArgs.touchedTiles (TileDrawArgs.ts:112-115). The
+    /// reference's sole writer is the tree-side BatchedTile keep-alive
+    /// (frontend-tiles BatchedTile.ts:81-85, gated on that class's
+    /// `_unskippable` flag) — NOT markUsed, and NOT the IModelTile
+    /// SelectParent protocol (IModelTile.ts:205-334 writes no touched; the
+    /// Task-4 port verified this). The writer lands with the BatchedTile
+    /// selection port, not with the protocol.
     std::vector<Tile*> const& getTouchedTiles() const noexcept
     {
         return m_touchedTiles;
@@ -219,7 +222,9 @@ private:
 
     /// Tiles whose contents should be kept in memory regardless of whether
     /// they are selected for display (deduped). Tree-authored keep-alive —
-    /// the sole reference writer is BatchedTile.ts:83 (Task-4 protocol port).
+    /// the sole reference writer is BatchedTile.ts:81-85 (`_unskippable`
+    /// gate; the IModelTile SelectParent protocol writes no touched —
+    /// verified at the Task-4 port).
     /// Ported from: TileDrawArgs.touchedTiles (TileDrawArgs.ts:115 — Set).
     std::vector<Tile*> m_touchedTiles;
 

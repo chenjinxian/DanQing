@@ -5,7 +5,76 @@
 #include "dqRender/RenderGraphic.h"
 #include "dqRender/tile/TileAdmin.h"  // onTileContentLoaded/Disposed（LRU 入/出册）
 
+#include <vector>
+
 BEGIN_DQ_RENDER_NAMESPACE
+
+namespace {
+
+// The BatchedTile selection form: children REPLACE a too-coarse tile, and the
+// closest displayable ancestor stands in for descendants whose content has
+// not loaded yet.
+// Ported from: BatchedTile.selectTiles (frontend-tiles BatchedTile.ts:76-110,
+// esp. :87 closestDisplayableAncestor update and :105-110 stand-in) — the
+// pre-protocol selection the former TileTree::selectTilesRecursive hosted
+// (moved verbatim here; the reference has no Tile-base selectTiles — the
+// concrete tile classes carry their own and the tree shell dispatches on the
+// root tile's, IModelTileTree.ts:435-445). DanQing keeps it as the
+// Tile::selectTiles default so the Reality/3D Tiles path stays on the old
+// behavior while IModelTile's SelectParent protocol lives in
+// ImdlTile::selectTiles.
+//
+// The threaded `closestDisplayableAncestor` parameter is BatchedTile's third
+// parameter (BatchedTile.ts:76); DanQing's virtual signature carries
+// `numSkipped` instead (the IModelTile protocol's surface), so the ancestor
+// threads through this file-local helper — the recursion re-enters the helper
+// directly (the former selectTilesRecursive self-call, behavior identical;
+// the virtual entry point Tile::selectTiles seeds it with nullptr at the
+// root, matching the former TileTree::selectTiles call).
+void selectTilesBatchedForm(TileDrawArgs& args, Tile& tile,
+                            Tile* closestDisplayableAncestor)
+{
+    Tile* closest = tile.isDisplayable() ? &tile : closestDisplayableAncestor;
+
+    TileVisibility const vis = tile.getTree().computeVisibility(args, &tile);
+    if (vis == TileVisibility::OutsideFrustum)
+        return;
+
+    if (vis == TileVisibility::TooCoarse) {
+        if (!tile.hasLoadedChildren())
+            tile.loadChildren();
+
+        if (!tile.getChildren().empty()) {
+            for (auto* child : tile.getChildren())
+                if (child)
+                    selectTilesBatchedForm(args, *child, closest);
+            return;
+        }
+    }
+
+    // We want to display this tile: request its content if not ready, and
+    // display the closest displayable ancestor meanwhile (BatchedTile.ts
+    // :105-110 — insertMissing + selected.add(closestDisplayableAncestor)).
+    // Ported from: TileDrawArgs.insertMissing/markReady (TileDrawArgs.ts
+    // :402-404/:419-421).
+    if (!tile.isDisplayable())
+        args.insertMissing(&tile);
+    if (closest && closest->isDisplayable())
+        args.markReady(closest);
+}
+
+}  // namespace
+
+// Base default = the BatchedTile form (see selectTilesBatchedForm above). The
+// SelectParent protocol surface (selected/numSkipped/return value) is
+// IModelTile's — unused here; the form's drawables land in args' ready set
+// (the former TileTree::selectTilesRecursive behavior, unchanged).
+SelectParent Tile::selectTiles(std::vector<Tile*>& /*selected*/,
+                               TileDrawArgs& args, uint32_t /*numSkipped*/)
+{
+    selectTilesBatchedForm(args, *this, /*closestDisplayableAncestor=*/nullptr);
+    return SelectParent::No;
+}
 
 Tile::Tile(TileTree& tree, Tile* parent, dqGeom::Range3d const& range,
            uint32_t depth, double maximumSize)
@@ -44,6 +113,14 @@ void Tile::setContent(TileContent content)
     m_graphic = std::move(content.graphic);
     m_isLeaf = content.isLeaf;
 
+    // Ported from: Tile.setIsReady (Tile.ts:210-216) — the reference's
+    // `_hadGraphics` assignment point: `if (this.hasGraphics)
+    // this._hadGraphics = true;`. DanQing's setContent is the content-ready
+    // sink the reference's setIsReady serves (TileAdmin::deliverTileContent →
+    // readContent → setContent).
+    if (m_graphic)
+        m_hadGraphics = true;
+
     if (m_graphic) {
         m_loadStatus = TileLoadStatus::Ready;
     } else {
@@ -65,6 +142,15 @@ void Tile::setNotFound()
 void Tile::freeMemory()
 {
     // Ported from: itwinjs-core Tile.ts freeMemory
+    // Keep the "ever had graphics" flag for the SelectParent protocol's
+    // "previously loaded and later unloaded content" trigger (IModelTile.ts
+    // :264-265). Guarded: the reference only ever sets _hadGraphics when a
+    // graphic existed (Tile.ts:210-216), so a graphic-less tile must not gain
+    // it here (prune calls freeMemory unguarded on content-less children,
+    // TileTree.cpp pruneRecursive).
+    if (m_graphic)
+        m_hadGraphics = true;
+
     m_graphic.reset();
     m_loadStatus = TileLoadStatus::Abandoned;
     m_bytesUsed = 0;
