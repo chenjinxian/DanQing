@@ -172,21 +172,91 @@ EdgeGeometry::EdgeGeometry(uint32_t numIndices)
 {
 }
 
-EdgeGeometry::~EdgeGeometry() = default;
+// LUT 形态。Ported from: itwinjs-core EdgeGeometry.ts create (:42-47) + ctor
+// (:75-88)——两条索引流 BO（a_pos 24-bit / a_endPointAndQuadIndices 32-bit）、
+// numIndices = indices.length、symbology 来自 MeshData.edgeWidth/edgeLineCode
+// (MeshData.ts:93-94)、颜色 = mesh 均匀色；顶点 LUT 非拥有观察（setLut——
+// 参考 surface 与 edges 共享 MeshData.lut）。GL 资源（VAO/VBO/BO）由创建点
+// 组装后经 setPrimitive 注入；析构见 ~EdgeGeometry。
+EdgeGeometry::EdgeGeometry(rhi::Driver& driver, rhi::BufferObjectHandle indices,
+                           rhi::BufferObjectHandle endPointAndQuadIndices,
+                           uint32_t numIndices, VertexLutTexture const& lut,
+                           float edgeWeight, uint32_t edgeLineCode,
+                           dqCommon::ColorDef color, bool isPlanar)
+    : MeshGeometry(numIndices, SurfaceType::Unknown, FillFlags::None, isPlanar, false, false)
+    , m_driver(&driver)
+    , m_indices(indices)
+    , m_endPointAndQuadIndices(endPointAndQuadIndices)
+    , m_lutForm(true)
+    , m_numIndices(numIndices)
+    , m_color(color)
+{
+    setLut(&lut);
+    setEdgeWidth(edgeWeight);
+    setEdgeLineCode(edgeLineCode);
+}
 
+EdgeGeometry::~EdgeGeometry()
+{
+    // VBO 形态维持既有语义（无 driver、无自持资源可释放）。
+    if (!m_lutForm || m_driver == nullptr)
+        return;
+    // 派生类（SilhouetteEdgeGeometry）的析构先释放其专有 BO——基类析构随后。
+    m_driver->destroyRenderPrimitive(m_primitive);
+    m_driver->destroyVertexBuffer(m_vbh);
+    m_driver->destroyVertexBufferInfo(m_vbih);
+    m_driver->destroyBufferObject(m_indices);
+    m_driver->destroyBufferObject(m_endPointAndQuadIndices);
+}
+
+// Ported from: itwinjs-core EdgeGeometry.ts _draw (:54-60)——VAO bind +
+// drawArrays(Triangles, 0, numIndices)（无 element index buffer；索引流是
+// a_pos attribute）。LUT 形态走 drawArrays；VBO 形态维持既有 draw2。
 void EdgeGeometry::draw(rhi::Driver& driver)
 {
     if (m_primitive) {
         driver.bindRenderPrimitive(m_primitive);
-        driver.draw2(0, m_numIndices, 0);
+        if (m_lutForm)
+            driver.drawArrays(0, m_numIndices, 0);
+        else
+            driver.draw2(0, m_numIndices, 0);
     }
 }
 
 void EdgeGeometry::collectStatistics(RenderMemory::Statistics& stats) const
 {
-    // Ported from: itwinjs-core EdgeGeometry.ts collectStatistics
-    stats.addSurface( static_cast<uint64_t>(m_numIndices * 12));
-    stats.addSurface( static_cast<uint64_t>(m_numIndices * 4));
+    // Ported from: itwinjs-core EdgeGeometry.ts collectStatistics (:61-64)
+    // stats.addVisibleEdges(indices.bytesUsed + endPointAndQuadIndices.bytesUsed)
+    // ——两条流 = 每顶点 3B + 4B = 7B/顶点。
+    if (m_lutForm)
+        stats.addVisibleEdges(static_cast<uint64_t>(m_numIndices) * 7u);
+    else
+        stats.addSurface(static_cast<uint64_t>(m_numIndices * 12));
+}
+
+// ---------------------------------------------------------------------------
+// SilhouetteEdgeGeometry
+// ---------------------------------------------------------------------------
+// Ported from: itwinjs-core EdgeGeometry.ts createSilhouettes (:98-105) + ctor
+// (:125-133)——第三条流 a_normals（每顶点 4B oct-encoded normal 对）。
+SilhouetteEdgeGeometry::SilhouetteEdgeGeometry(rhi::Driver& driver,
+                                               rhi::BufferObjectHandle indices,
+                                               rhi::BufferObjectHandle endPointAndQuadIndices,
+                                               rhi::BufferObjectHandle normalPairs,
+                                               uint32_t numIndices,
+                                               VertexLutTexture const& lut,
+                                               float edgeWeight, uint32_t edgeLineCode,
+                                               dqCommon::ColorDef color, bool isPlanar)
+    : EdgeGeometry(driver, indices, endPointAndQuadIndices, numIndices, lut,
+                   edgeWeight, edgeLineCode, color, isPlanar)
+    , m_normalPairs(normalPairs)
+{
+}
+
+SilhouetteEdgeGeometry::~SilhouetteEdgeGeometry()
+{
+    if (m_lutForm && m_driver != nullptr)
+        m_driver->destroyBufferObject(m_normalPairs);
 }
 
 // ---------------------------------------------------------------------------

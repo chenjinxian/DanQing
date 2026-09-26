@@ -10,6 +10,7 @@
 #include "render/CommonShaders.h"       // addFrustum, addShaderFlags
 #include "render/EdgeShaderHelpers.h"   // addAdjustWidth, addLineCode
 #include "render/ShaderBindings.h"      // wireNormalMatrix
+#include "render/VertexTable.h"         // addVertexTable（顶点 LUT 接线）
 #include "render/ViewportShaders.h"     // addModelToWindowCoordinates, addViewport
 #include "render/VertexShaderModules.h" // addLineWeight, addSamplePosition, octDecodeNormal
 #include "shader/DecodeShaders.h"       // kDecodeUint24
@@ -152,7 +153,7 @@ static constexpr char const* kComputeIndexedQuantizedPosition = R"(
   else
     g_quadIndex = 3.0;
 
-  float fEdgeIndex = decodeUInt24(a_position);
+  float fEdgeIndex = decodeUInt24(a_pos);
   g_isSilhouette = fEdgeIndex >= u_edgeParams.z;
   int edgeIndex = int(fEdgeIndex);
   bool isEven = 0 == (edgeIndex & 1);
@@ -211,11 +212,17 @@ static ProgramBuilder createBase(EdgeBuilderType type, FeatureMode /*featureMode
     frag.setVersion("410 core");
 
     // --- Vertex attributes ---
-    vert.addVariable({"a_position", VariableType::Vec3, VariableScope::Attribute, 0});
-    vert.addVariable({"a_color", VariableType::Vec4, VariableScope::Attribute, 0});
+    // a_pos = 24-bit 顶点表索引（参考 AttributeMap edge 条目 :76-77——
+    // ["a_pos", 0, Vec3]；参考 vertex shader 经默认
+    // ComputeQuantizedPosition=`return a_pos;`（ShaderBuilder.ts:757）消费它，
+    // 本文件无裸 a_position attribute——边缘几何与 surface 共享顶点 LUT）。
+    // a_color 同样不存在：颜色走 u_color uniform 量化路径
+    // （createEdgeProgramBuilder 的 addColor 段，Color.ts:51-62）。
+    vert.addVariable({"a_pos", VariableType::Vec3, VariableScope::Attribute, 0});
 
     if (!isIndexed) {
         // Non-indexed: decode other endpoint from a_endPointAndQuadIndices
+        // （参考 AttributeMap edge 条目 :77 / silhouette 条目 :81——location 1）。
         vert.addVariable({"a_endPointAndQuadIndices", VariableType::Vec4, VariableScope::Attribute, 0});
     }
 
@@ -231,8 +238,22 @@ static ProgramBuilder createBase(EdgeBuilderType type, FeatureMode /*featureMode
     // Ported from: itwinjs-core Decode.ts
     vert.addFunction(std::string(kDecodeUint24));
 
-    // --- Sample position from LUT ---
-    // addSamplePosition adds samplePosition() function + u_vertLUT/u_vertParams/u_qOrigin/u_qScale
+    // --- Vertex LUT（本顶点位置 + 对端点采样的数据源）---
+    // Ported from: itwinjs-core Edge.ts createBase——参考 VertexShaderBuilder
+    // ctor :725 `addPosition(this, this.usesVertexTable=true)` 为所有 edge
+    // 变体接入 addPositionFromLUT（quantized 顶点表 pre-read +
+    // computeVertexPosition + u_vertLUT/u_vertParams/u_qOrigin/u_qScale），
+    // createBase 再 addSamplePosition 补对端点采样函数。DanQing 对应：
+    // addVertexTable（VertexTable.h，addPositionFromLUT 的移植）+
+    // addSamplePosition（VertexShaderModules.h——function-only，量化双 texel
+    // 解码 getSamplePositionQuantizedPostlude :71-79）。惯序：先 addVertexTable
+    // （提供 compute_vert_coords/g_vert_stepX/decodeUInt16/unquantizePosition）
+    // 再 addSamplePosition（samplePosition 函数体引用它们）。
+    // AdjustRawPosition 槽由 addVertexTable 置为
+    // `return computeVertexPosition(vec3(a_pos));`——即参考 main 的
+    // `qpos = computeQuantizedPosition(); rawPosition = computeVertexPosition(qpos);`
+    // （ShaderBuilder.ts:757-770）在 DanQing function-call 约定下的等价形。
+    addVertexTable(builder, /*quantized*/true, "a_pos");
     addSamplePosition(vert);
 
     if (isIndexed) {
@@ -363,13 +384,16 @@ ProgramBuilder createEdgeProgramBuilder(EdgeBuilderType type, FeatureMode featur
     addShaderFlags(builder);
 
     // Vertex color
-    // Ported from: itwinjs-core Color.ts addColor()
-    // Add v_color varying to pass vertex color to fragment shader.
+    // Ported from: itwinjs-core Color.ts addColor() (line 51-70)——edge 几何是
+    // LUT geometry（asLUT），颜色 = u_color uniform（uniformColor 路径，
+    // ColorInfo.isUniform 时 bind；非均匀色表的 LUT 采样为登记 TODO，Surface
+    // 量化变体同策略）。无 a_color attribute——参考 Edge 几何的 VAO 不供色。
     auto& vert = builder.getVertexBuilder();
     auto& frag = builder.getFragmentBuilder();
+    vert.addUniform("u_color", VariableType::Vec4, nullptr);
     builder.addVarying("v_color", VariableType::Vec4);
     vert.setVertexComponent(VertexShaderComponent::ComputeBaseColor,
-        "    return a_color;\n");
+        "    return u_color;\n");
     // Fragment: declare baseColor as a global so slot functions can access it.
     // buildFragmentMain() injects slot bodies as raw statements into void main(),
     // and slot functions (finalizeBaseColor, overrideFeatureId) reference baseColor.
@@ -400,7 +424,11 @@ vec4 reverseWhiteOnWhite(vec4 baseColor) {
 
     // Fragment output — define assignFragData function outside main().
     // buildFragmentMain() appends: assignFragData(baseColor);
-    frag.addVariable({"fragColor", VariableType::Vec4, VariableScope::Global, 0});
+    // fragColor 必须是真实的 fragment OUTPUT（参考 ShaderBuilder 对非 MRT
+    // technique 自动声明 `out vec4 fragColor`）——此前声明成普通 global，链接
+    // 通过但 framebuffer 无任何写入（U11(2) 边缘上屏为零的直接根因之一：
+    // 片元全部"画"进未定义变量）。
+    frag.addFragOutput("fragColor", -1);
     frag.addFunction("void assignFragData(vec4 bc) { fragColor = bc; }\n");
     frag.setFragmentComponent(FragmentShaderComponent::AssignFragData, "");
 

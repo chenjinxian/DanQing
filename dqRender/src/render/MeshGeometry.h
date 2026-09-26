@@ -91,6 +91,13 @@ protected:
     {
     }
 
+    // Edge symbology setters — reference MeshData ctor (MeshData.ts:93-94):
+    // `this.edgeWidth = edges ? edges.weight : 1; this.edgeLineCode =
+    // LineCode.valueFromLinePixels(edges ? edges.linePixels : LinePixels.Solid)`.
+    // EdgeGeometry 的 LUT 形态在创建点（ImdlGraphics）写入。
+    void setEdgeWidth(float width) noexcept { m_edgeWidth = width; }
+    void setEdgeLineCode(uint32_t lineCode) noexcept { m_edgeLineCode = lineCode; }
+
 private:
     uint32_t m_numIndices = 0;
     SurfaceType m_surfaceType = SurfaceType::Unknown;

@@ -32,9 +32,11 @@
 #include <dqRender/tile/TileAdmin.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <functional>
 #include <cstdio>
 #include <fstream>
+#include <system_error>
 #include <vector>
 
 #ifdef _WIN32
@@ -914,3 +916,194 @@ TEST(TileTreeRender, ImdlTilesetRendersRecordedFixture)
     spin3(200);
 }
 
+
+// ---------------------------------------------------------------------------
+// U11(2)：imdl segments 边缘上屏像素锁（SolidFill 对比色环）。
+//
+// Authored: no reference test exists in itwinjs-core for imdl edges rendering
+//           (参考在浏览器 WebGL 中无 edges 像素回归)。Authorized by CLAUDE.md
+//           §5(g)（渲染像素回归）+ §11.11（位置断言；资产为既有录制件
+//           minimal-imdl，不原地突变）。判据链：Edge.ts adjustContrast
+//           （SolidFill 时 bgi=背景亮度 → 绿色边缘对比为白）+
+//           EdgeSettings.wantContrastingColor（!overridden && SolidFill）+
+//           MeshGeometry.computeEdgePass（SolidFill 非 SmoothShade → 边缘画）。
+//           断言三维：绿色填充存活（面无回归）+ 环带白像素总量（边缘上屏）
+//           + 环带四侧分布（位置断言——边缘包围填充）。
+// ---------------------------------------------------------------------------
+TEST(TileTreeRender, ImdlEdgesRenderContrastingRingInSolidFill)
+{
+    // 派生测试资产（不改动录制原件，§11.11）：root.imdl 拷贝到 build 目录，
+    // 材质 lineWidth 1→5（等长字节补丁）——边缘权重 5 使对比环带 ~2.5px，
+    // weight=1 时环带亚像素不可稳定断言。
+    std::string const srcTileset = DANQING_TILE_ASSETS_DIR "/minimal-imdl/tileset.json";
+    std::string const srcImdl = DANQING_TILE_ASSETS_DIR "/minimal-imdl/root.imdl";
+    std::string const workDir = "build/imdl-w5";
+    std::string const tilesetPath = workDir + "/tileset.json";
+    {
+        std::error_code ec;
+        std::filesystem::create_directories(workDir, ec);
+        std::ifstream in(srcImdl, std::ios::binary);
+        ASSERT_TRUE(in.good()) << "cannot open " << srcImdl;
+        std::vector<uint8_t> imdl((std::istreambuf_iterator<char>(in)),
+                                  std::istreambuf_iterator<char>());
+        // "lineWidth" 后的第一个数字 1→5（等长补丁，头部长度/JSON 长度不变）。
+        static const uint8_t key[] = "\"lineWidth\"";
+        auto pos = std::search(imdl.begin(), imdl.end(), std::begin(key), std::end(key) - 1);
+        ASSERT_NE(pos, imdl.end()) << "lineWidth key not found in imdl JSON";
+        auto digit = pos + static_cast<long>(std::end(key) - std::begin(key) - 1);
+        while (digit != imdl.end() && (*digit == ' ' || *digit == ':'))
+            ++digit;
+        ASSERT_NE(digit, imdl.end());
+        ASSERT_EQ(*digit, '1') << "unexpected lineWidth value";
+        *digit = '5';
+        std::ofstream out(workDir + "/root.imdl", std::ios::binary);
+        ASSERT_TRUE(out.good());
+        out.write(reinterpret_cast<char const*>(imdl.data()),
+                  static_cast<std::streamsize>(imdl.size()));
+        // tileset.json 原样复制。
+        std::ifstream tin(srcTileset, std::ios::binary);
+        ASSERT_TRUE(tin.good());
+        std::ofstream tout(tilesetPath, std::ios::binary);
+        tout << tin.rdbuf();
+    }
+
+    auto& app = dqApp::Application::Get();
+    if (!app.isInitialized()) {
+        dqApp::Application::Options opts;
+        opts.applicationId = "TileTreeRender";
+        opts.applicationVersion = "1.0";
+        ASSERT_TRUE(app.Startup(opts));
+    }
+
+    std::unique_ptr<dqRender::RealityTileTree> tree;
+
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    view.resize(1000, 700);
+    view.show();
+    spin3(400);
+
+    {
+        std::ifstream in(tilesetPath, std::ios::binary);
+        ASSERT_TRUE(in.good()) << "cannot open " << tilesetPath;
+        std::vector<uint8_t> jsonBytes((std::istreambuf_iterator<char>(in)),
+                                        std::istreambuf_iterator<char>());
+        tree = dqRender::RealityTileTree::loadTileset(tilesetPath, jsonBytes.data(), jsonBytes.size());
+    }
+    ASSERT_NE(tree, nullptr);
+    view.getUeViewport()->AddTileTree(tree.get());
+
+    {
+        auto* view3d = view.getUeViewport()->GetView()->AsViewState3d();
+        ASSERT_NE(view3d, nullptr);
+        // 取景 2 倍于 ImdlTilesetRendersRecordedFixture 的体盒——矩形（±2.5/±5）
+        // 边界必须完整落在视口内，否则边缘环在屏外不可断言。
+        view3d->LookAtVolume(dqGeom::Range3d::CreateXYZXYZ(-9, -16.5, -3.6, 9, 16.5, 3.6));
+        view.getUeViewport()->InvalidateController();
+    }
+    {
+        auto& style = view.getUeViewport()->GetView()->GetDisplayStyle();
+        auto p = style.getViewFlags().Properties();
+        p.grid = false;
+        p.acsTriad = false;
+        p.renderMode = dqCommon::RenderMode::SolidFill;  // 对比色通道开关
+        style.setViewFlags(dqCommon::ViewFlags(p));
+    }
+    view.getUeViewport()->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+    {
+        auto* tool = new dqApp::StandardViewTool(view.getUeViewport(), dqApp::StandardViewId::Iso);
+        if (!tool->run())
+            delete tool;
+    }
+    spin3(1500);
+    view.getUeViewport()->RenderFrame();
+
+    std::vector<uint8_t> frame;
+    uint32_t w = 0, h = 0;
+    ASSERT_TRUE(view.getUeViewport()->ReadFrameForTest(frame, w, h));
+    {
+        FILE* f = fopen("build/tiletree-imdl-edges.bmp", "wb");
+        if (f) {
+            uint32_t const rowBytes = w * 4;
+            uint32_t const dataSize = rowBytes * h;
+            unsigned char head[54] = {};
+            head[0] = 'B'; head[1] = 'M';
+            *reinterpret_cast<uint32_t*>(&head[2]) = 54 + dataSize;
+            *reinterpret_cast<uint32_t*>(&head[10]) = 54;
+            *reinterpret_cast<uint32_t*>(&head[14]) = 40;
+            *reinterpret_cast<uint32_t*>(&head[18]) = w;
+            *reinterpret_cast<uint32_t*>(&head[22]) = h;
+            *reinterpret_cast<uint16_t*>(&head[26]) = 1;
+            *reinterpret_cast<uint16_t*>(&head[28]) = 32;
+            fwrite(head, 1, 54, f);
+            std::vector<unsigned char> row(rowBytes);
+            for (uint32_t y = 0; y < h; ++y) {
+                memcpy(row.data(), &frame[static_cast<size_t>(y) * rowBytes], rowBytes);
+                fwrite(row.data(), 1, rowBytes, f);
+            }
+            fclose(f);
+            printf("[TILE-IMDL-EDGE] frame dumped to build/tiletree-imdl-edges.bmp\n");
+        }
+    }
+
+    // (1) 绿色填充存活（fillColor 65280——surface 链无回归）。绿 bbox 自算
+    //（背景是暖色渐变 + 绿填充可能不达画幅边缘，contentBBox 不适用）。
+    auto isGreen = [](uint8_t const* p) {
+        return p[1] > 150 && p[0] < 100 && p[2] < 100;
+    };
+    uint32_t minX = w, maxX = 0, minY = h, maxY = 0;
+    long gn = 0;
+    for (uint32_t y = 0; y < h; ++y)
+        for (uint32_t x = 0; x < w; ++x) {
+            if (isGreen(&frame[(static_cast<size_t>(y) * w + x) * 4])) {
+                ++gn;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+    printf("[TILE-IMDL-EDGE] green bbox=(%u,%u)-(%u,%u) green=%ld\n",
+           minX, minY, maxX, maxY, gn);
+    ASSERT_GT(gn, 30) << "green rectangle fill not rendered in SolidFill";
+    ASSERT_LT(maxX - minX, w * 9 / 10) << "fill must sit inside the viewport for ring asserts";
+    ASSERT_LT(maxY - minY, h * 9 / 10) << "fill must sit inside the viewport for ring asserts";
+
+    // (2) 环带暗像素：绿色经 adjustContrast 在 SolidFill 下对比为黑
+    //（bgi=背景亮度≈1.0 → s=0 → vec4(0,0,0)）。判别器 = 明显暗于暖白背景
+    // (255,205,142) 与绿填充 (0,192,0) 的过渡色；weight=5 → 环带 ~2.5px。
+    auto isDarkRing = [](uint8_t const* p) {
+        return p[0] < 170 && p[1] < 150 && p[2] < 130;
+    };
+    // 环带 = 绿 bbox 各向外扩 6px（边缘四边形外半幅 + AA 弥散落在这里）。
+    uint32_t const band = 6;
+    long ringTotal = 0, leftSide = 0, rightSide = 0, topSide = 0, bottomSide = 0;
+    uint32_t const x0 = minX > band ? minX - band : 0;
+    uint32_t const x1 = maxX + band < w ? maxX + band : w - 1;
+    uint32_t const y0 = minY > band ? minY - band : 0;
+    uint32_t const y1 = maxY + band < h ? maxY + band : h - 1;
+    for (uint32_t y = y0; y <= y1; ++y) {
+        for (uint32_t x = x0; x <= x1; ++x) {
+            bool const inGreen = x >= minX && x <= maxX && y >= minY && y <= maxY;
+            if (inGreen) continue;  // 环带只看填充外侧（内侧被覆盖）
+            if (isDarkRing(&frame[(static_cast<size_t>(y) * w + x) * 4])) {
+                ++ringTotal;
+                if (x < minX) ++leftSide;
+                else if (x > maxX) ++rightSide;
+                else if (y < minY) ++topSide;
+                else if (y > maxY) ++bottomSide;
+            }
+        }
+    }
+    printf("[TILE-IMDL-EDGE] ring dark total=%ld L=%ld R=%ld T=%ld B=%ld\n",
+           ringTotal, leftSide, rightSide, topSide, bottomSide);
+
+    // (3) 总量 + 四侧位置断言（§11.11：边缘包围填充，四侧都要有）。
+    ASSERT_GT(ringTotal, 60) << "no contrasting edge ring around the imdl fill";
+    EXPECT_GE(leftSide, 5) << "edge ring missing on the left side";
+    EXPECT_GE(rightSide, 5) << "edge ring missing on the right side";
+    EXPECT_GE(topSide, 5) << "edge ring missing on the top side";
+    EXPECT_GE(bottomSide, 3) << "edge ring missing on the bottom side";
+
+    view.close();
+    spin3(200);
+}

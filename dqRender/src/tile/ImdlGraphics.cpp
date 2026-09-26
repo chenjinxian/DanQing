@@ -17,6 +17,7 @@
 #include "dqRender/RenderSystem.h"
 
 #include "render/MeshGraphic.h"
+#include "render/LineCode.h"
 #include "render/SurfaceGeometry.h"
 #include "render/VertexLutTexture.h"
 #include "render/VertexTableBuilder.h"
@@ -30,6 +31,8 @@
 #include <dqGeom/IndexedPolyface.h>
 
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <vector>
@@ -308,7 +311,116 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
         // 每 mesh primitive 一个 MeshGraphic（decodeImdlGraphics :414-437
         // 的 graphic 链等价；调用方 createGraphicList + createBatch 包裹）。
         auto* meshGraphic = new MeshGraphic(*driver);
+        // edge 几何以非拥有方式观察 surface 持有的 LUT（unique_ptr 迁移不改
+        // pointee 地址——观察引用跨 move 稳定；生命周期见 EdgeGeometry 注）。
+        VertexLutTexture const& lutView = geom->getLut();
+        dqCommon::ColorDef const meshColor = prim.vertices.hasUniformColor
+            ? dqCommon::ColorDef::create(prim.vertices.uniformColor)
+            : dqCommon::ColorDef::create(0xFFFFFFFFu);
         meshGraphic->addSurface(std::move(geom));
+
+        // -------------------------------------------------------------------
+        // U11(2)：edges → edge graphics（与 surface 并列，Batch 包裹不变）。
+        // Ported from: itwinjs-core Mesh.ts:47-53 MeshRenderGeometry ctor——
+        // silhouetteEdges 先于 segmentEdges 创建；EdgeGeometry.ts
+        // create/createSilhouettes（字节流原样入 BO，零 CPU 重排——形态同
+        // 顶点表 LUT 直传）+ MeshData.ts:93-94（edgeWidth/edgeLineCode）。
+        // -------------------------------------------------------------------
+        if (auto edges = tilejson::parseImdlEdges(*json, doc, prim)) {
+            if (getenv("DANQING_EDGE_TRACE"))
+                std::fprintf(stderr,
+                             "[EDGE] primitive edges: seg=%d sil=%d w=%u\n",
+                             edges->segments ? 1 : 0, edges->silhouettes ? 1 : 0,
+                             edges->weight);
+            // segment quad 展开的顶点数 = 索引流字节/3（每顶点 24-bit 索引）；
+            // 对端点流必须逐顶点 4B（24-bit 对端点索引 + 8-bit quad 角标），
+            // silhouette 的 normalPairs 逐顶点 4B（2×16-bit oct 法线对）。
+            // 参考侧由 VertexIndices 构造隐含对齐（EdgeParams.ts:100-141 展开
+            // 端每索引 3B/4B/4B）；线载荷不齐时丢弃该成员（参考 assert 语义的
+            // 生产侧防御——参考 dev assert 在 release 直接未定义，此处显式跳过）。
+            auto uploadBo = [&driver](ImdlByteView const& view) {
+                auto bo = driver->createBufferObject(
+                    static_cast<uint32_t>(view.byteLength),
+                    rhi::BufferObjectBinding::VERTEX, rhi::BufferUsage::STATIC);
+                driver->updateBufferObject(
+                    bo, rhi::BufferDescriptor(view.data, view.byteLength), 0);
+                return bo;
+            };
+
+            // silhouettes 先建（Mesh.ts:49）——SilhouetteEdgeGeometry：第三条
+            // a_normals 流 + SilhouetteEdge technique。
+            if (edges->silhouettes) {
+                auto const& sil = *edges->silhouettes;
+                size_t const silVertCount = sil.indices.byteLength / 3;
+                if (silVertCount > 0 && sil.indices.byteLength % 3 == 0
+                    && sil.endPointAndQuadIndices.byteLength == silVertCount * 4
+                    && sil.normalPairs.byteLength == silVertCount * 4) {
+                    auto const silIdxBo = uploadBo(sil.indices);
+                    auto const silEpqBo = uploadBo(sil.endPointAndQuadIndices);
+                    auto const silNpBo = uploadBo(sil.normalPairs);
+                    rhi::AttributeArray silAttrs = {};
+                    silAttrs[0].buffer = 0;  // a_pos（24-bit 顶点表索引）
+                    silAttrs[0].offset = 0;
+                    silAttrs[0].type = rhi::ElementType::UBYTE3;
+                    silAttrs[1].buffer = 1;  // a_endPointAndQuadIndices
+                    silAttrs[1].offset = 0;
+                    silAttrs[1].type = rhi::ElementType::UBYTE4;
+                    silAttrs[2].buffer = 2;  // a_normals（silhouette 专属）
+                    silAttrs[2].offset = 0;
+                    silAttrs[2].type = rhi::ElementType::UBYTE4;
+                    auto const silVbih = driver->createVertexBufferInfo(3, 3, silAttrs);
+                    auto const silVbh = driver->createVertexBuffer(
+                        static_cast<uint32_t>(silVertCount), silVbih);
+                    driver->setVertexBufferObject(silVbh, 0, silIdxBo);
+                    driver->setVertexBufferObject(silVbh, 1, silEpqBo);
+                    driver->setVertexBufferObject(silVbh, 2, silNpBo);
+                    auto const silPrim = driver->createRenderPrimitive(
+                        silVbh, rhi::IndexBufferHandle{}, rhi::PrimitiveType::TRIANGLES);
+                    auto g = std::make_unique<SilhouetteEdgeGeometry>(
+                        *driver, silIdxBo, silEpqBo, silNpBo,
+                        static_cast<uint32_t>(silVertCount), lutView,
+                        static_cast<float>(edges->weight),
+                        LineCode::valueFromLinePixels(edges->linePixels), meshColor,
+                        prim.isPlanar);
+                    g->setPrimitive(silPrim);
+                    g->setVbhResources(silVbh, silVbih);
+                    meshGraphic->addEdge(std::move(g));
+                }
+            }
+            // segments 后建（Mesh.ts:52）——EdgeGeometry：双流 + Edge technique。
+            if (edges->segments) {
+                auto const& seg = *edges->segments;
+                size_t const segVertCount = seg.indices.byteLength / 3;
+                if (segVertCount > 0 && seg.indices.byteLength % 3 == 0
+                    && seg.endPointAndQuadIndices.byteLength == segVertCount * 4) {
+                    auto const segIdxBo = uploadBo(seg.indices);
+                    auto const segEpqBo = uploadBo(seg.endPointAndQuadIndices);
+                    rhi::AttributeArray segAttrs = {};
+                    segAttrs[0].buffer = 0;
+                    segAttrs[0].offset = 0;
+                    segAttrs[0].type = rhi::ElementType::UBYTE3;
+                    segAttrs[1].buffer = 1;
+                    segAttrs[1].offset = 0;
+                    segAttrs[1].type = rhi::ElementType::UBYTE4;
+                    auto const segVbih = driver->createVertexBufferInfo(2, 2, segAttrs);
+                    auto const segVbh = driver->createVertexBuffer(
+                        static_cast<uint32_t>(segVertCount), segVbih);
+                    driver->setVertexBufferObject(segVbh, 0, segIdxBo);
+                    driver->setVertexBufferObject(segVbh, 1, segEpqBo);
+                    auto const segPrim = driver->createRenderPrimitive(
+                        segVbh, rhi::IndexBufferHandle{}, rhi::PrimitiveType::TRIANGLES);
+                    auto g = std::make_unique<EdgeGeometry>(
+                        *driver, segIdxBo, segEpqBo, static_cast<uint32_t>(segVertCount),
+                        lutView, static_cast<float>(edges->weight),
+                        LineCode::valueFromLinePixels(edges->linePixels), meshColor,
+                        prim.isPlanar);
+                    g->setPrimitive(segPrim);
+                    g->setVbhResources(segVbh, segVbih);
+                    meshGraphic->addEdge(std::move(g));
+                }
+            }
+        }
+
         graphics.push_back(meshGraphic);
     }
 

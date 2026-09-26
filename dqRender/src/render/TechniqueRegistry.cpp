@@ -39,14 +39,21 @@ std::unique_ptr<Techniques> createDefaultTechniques(rhi::Driver& driver)
     polylineTechnique->compileShaders(driver);
     techniques->registerTechnique(TechniqueId::Polyline, std::move(polylineTechnique));
 
-    // Register Edge technique (multi-variant)
-    auto edgeCompiler = std::make_unique<EdgeVariantCompiler>();
+    // Register Edge technique (multi-variant, SegmentEdge builder)
+    // Ported from: itwinjs-core Technique.ts:1088
+    //              `_list[TechniqueId.Edge] = new EdgeTechnique(gl, "SegmentEdge")`。
+    auto edgeCompiler = std::make_unique<EdgeVariantCompiler>(EdgeBuilderType::SegmentEdge);
     auto edgeTechnique = std::make_unique<MultiVariantTechnique>(std::move(edgeCompiler));
     edgeTechnique->compileShaders(driver);
     techniques->registerTechnique(TechniqueId::Edge, std::move(edgeTechnique));
 
-    // Register SilhouetteEdge technique
-    auto silhouetteTechnique = std::make_unique<SilhouetteEdgeTechnique>();
+    // Register SilhouetteEdge technique (multi-variant, Silhouette builder)——
+    // 同一 EdgeVariantCompiler 的第二个参数化实例（参考 Technique.ts:1089
+    // `_list[TechniqueId.SilhouetteEdge] = new EdgeTechnique(gl, "Silhouette")`；
+    // 此前登记的是无 shader 源的空 SingularTechnique，use() 恒失败 → silhouette
+    // 绘制被静默跳过——U11(2) imdl silhouettes 消费由此接活）。
+    auto silhouetteCompiler = std::make_unique<EdgeVariantCompiler>(EdgeBuilderType::Silhouette);
+    auto silhouetteTechnique = std::make_unique<MultiVariantTechnique>(std::move(silhouetteCompiler));
     silhouetteTechnique->compileShaders(driver);
     techniques->registerTechnique(TechniqueId::SilhouetteEdge, std::move(silhouetteTechnique));
 

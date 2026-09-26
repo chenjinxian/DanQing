@@ -142,25 +142,110 @@ private:
 // ---------------------------------------------------------------------------
 // EdgeGeometry — concrete edge geometry
 // (Ported from: itwinjs-core EdgeGeometry.ts)
+//
+// 两种形态（与 SurfaceGeometry 的 VBO/LUT 双形态同构）：
+//   - VBO 形态：EdgeGeometry(numIndices)（既有，无消费者）；
+//   - LUT 形态（U11(2)：量化 imdl 网格的 segment edges）——Ported from:
+//     EdgeGeometry.ts create (:42-47) + ctor (:75-88)。a_pos = 24-bit 顶点表
+//     索引流（UBYTE3，BO0）、a_endPointAndQuadIndices = 对端点索引+quad 角标
+//     （UBYTE4，BO1）；drawArrays(Triangles, 0, numIndices)（:54-60 _draw，
+//     无 element index buffer）；technique Edge；顶点 LUT 由 surface 几何持有、
+//     本几何经 MeshGeometry::setLut 非拥有观察（参考侧两者共享 MeshData.lut——
+//     glsl/Vertex.ts addPositionFromLUT 的 u_vertLUT 对 edge 变体同样生效）。
+//     生命周期：MeshGraphic 成员声明序 m_surfaces 先于 m_edges → 析构反序
+//     edges 先死，LUT（surface 持有）后死——观察指针无悬空窗口。
 // ---------------------------------------------------------------------------
 class EdgeGeometry : public MeshGeometry {
 public:
+    // VBO 形态（既有）。
     EdgeGeometry(uint32_t numIndices);
+    // LUT 形态。`lut` 为 surface 几何持有的顶点 LUT（非拥有观察——参考侧
+    // surface/segmentEdges/silhouetteEdges 共享同一 MeshData.lut）；
+    // `edgeWeight`/`edgeLineCode` = EdgeParams.weight/linePixels
+    // （MeshData.ts:93-94）；`color` = mesh 均匀色（u_color 源，
+    // ColorInfo.createFromVertexTable 的 uniform 路径）。
+    EdgeGeometry(rhi::Driver& driver, rhi::BufferObjectHandle indices,
+                 rhi::BufferObjectHandle endPointAndQuadIndices, uint32_t numIndices,
+                 VertexLutTexture const& lut, float edgeWeight, uint32_t edgeLineCode,
+                 dqCommon::ColorDef color, bool isPlanar);
     ~EdgeGeometry() override;
+
+    // --- Casting accessor (Ported from: itwinjs-core CachedGeometry.ts asEdge) ---
+    EdgeGeometry* asEdge() override { return this; }
 
     // --- CachedGeometry interface ---
     TechniqueId getTechniqueId() const noexcept override { return TechniqueId::Edge; }
     Pass getPass() const noexcept override { return Pass::OpaqueLinear; }
-    RenderOrder getRenderOrder() const noexcept override { return RenderOrder::Edge; }
+    // Ported from: itwinjs-core EdgeGeometry.ts renderOrder (:66)——
+    // isPlanar ? PlanarEdge : Edge。
+    RenderOrder getRenderOrder() const noexcept override
+    {
+        return isPlanar() ? RenderOrder::PlanarEdge : RenderOrder::Edge;
+    }
+    // LUT 形态为量化几何（与 surface 共享 Quantized 边缘变体）；VBO 形态沿用
+    // MeshGeometry 的 false。
+    bool usesQuantizedPositions() const noexcept override { return m_lutForm; }
     void draw(rhi::Driver& driver) override;
     void collectStatistics(RenderMemory::Statistics& stats) const override;
 
+    // u_color 源（mesh 均匀色——参考 lutGeom.getColor(target) 的 uniform 路径；
+    // EdgeSettings 的颜色覆盖在 dispatch 侧合并，EdgeGeometry.ts:68
+    // computeEdgeColor）。
+    dqCommon::ColorDef getColor() const noexcept { return m_color; }
+
     void setPrimitive(rhi::RenderPrimitiveHandle primitive) { m_primitive = primitive; }
     void setNumIndices(uint32_t count) { m_numIndices = count; }
+    // a_pos/a_endPointAndQuadIndices VAO 的 RHI 顶点缓冲（析构清单成员——
+    // 创建点组装后注入，PolylineGeometry cornerVbh/vbih 同款）。
+    void setVbhResources(rhi::VertexBufferHandle vbh, rhi::VertexBufferInfoHandle vbih)
+    {
+        m_vbh = vbh;
+        m_vbih = vbih;
+    }
+
+protected:
+    // LUT 形态共享资源（driver + BOs + VAO）。派生类 SilhouetteEdgeGeometry
+    // 先析构自己的 normalPairs，再由本基类析构共享资源（成员析构反序）。
+    rhi::Driver* m_driver = nullptr;  // VBO 形态为 nullptr（既有语义不变）
+    rhi::RenderPrimitiveHandle m_primitive;
+    rhi::VertexBufferHandle m_vbh;
+    rhi::VertexBufferInfoHandle m_vbih;
+    rhi::BufferObjectHandle m_indices;
+    rhi::BufferObjectHandle m_endPointAndQuadIndices;
+    bool m_lutForm = false;
+    uint32_t m_numIndices = 0;
+    dqCommon::ColorDef m_color = dqCommon::ColorDef::create();
+};
+
+// ---------------------------------------------------------------------------
+// SilhouetteEdgeGeometry — silhouette edge geometry
+// (Ported from: itwinjs-core EdgeGeometry.ts SilhouetteEdgeGeometry :92-133)
+//
+// segment edge 的第三条流：a_normals = 每顶点 2×16-bit oct-encoded normal 对
+// （UBYTE4，BO2——参考 :129-131 addBuffer(normalPairs, [location 2])）；
+// technique SilhouetteEdge、order Silhouette/PlanarSilhouette（:110-112）；
+// 视锥相关的可见性判定在 shader（Edge.ts checkForSilhouetteDiscard）。
+// ---------------------------------------------------------------------------
+class SilhouetteEdgeGeometry : public EdgeGeometry {
+public:
+    SilhouetteEdgeGeometry(rhi::Driver& driver, rhi::BufferObjectHandle indices,
+                           rhi::BufferObjectHandle endPointAndQuadIndices,
+                           rhi::BufferObjectHandle normalPairs, uint32_t numIndices,
+                           VertexLutTexture const& lut, float edgeWeight,
+                           uint32_t edgeLineCode, dqCommon::ColorDef color, bool isPlanar);
+    ~SilhouetteEdgeGeometry() override;
+
+    SilhouetteEdgeGeometry* asSilhouette() override { return this; }
+
+    // Ported from: itwinjs-core EdgeGeometry.ts :110-112。
+    TechniqueId getTechniqueId() const noexcept override { return TechniqueId::SilhouetteEdge; }
+    RenderOrder getRenderOrder() const noexcept override
+    {
+        return isPlanar() ? RenderOrder::PlanarSilhouette : RenderOrder::Silhouette;
+    }
 
 private:
-    rhi::RenderPrimitiveHandle m_primitive;
-    uint32_t m_numIndices = 0;
+    rhi::BufferObjectHandle m_normalPairs;
 };
 
 // ---------------------------------------------------------------------------
