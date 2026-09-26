@@ -305,6 +305,19 @@ TileContent ImdlTile::readContent(uint8_t const* data, size_t dataSize)
 
 void ImdlTile::loadChildren()
 {
+    // 重入门（评审回合 1 Critical 修复）：children 已加载（或已定形为 leaf）
+    // 即短路。参考 :282 对 loadChildren 的无条件调用以基类重入门为前提——
+    // Ported from: Tile.loadChildren (Tile.ts:353-356,
+    // `if (this._childrenLoadStatus !== TileTreeLoadStatus.NotLoaded)
+    // return this._childrenLoadStatus;`)。DanQing 无 _childrenLoadStatus 态
+    // 机，折叠为两态：Loaded-有子（hasLoadedChildren）/ Loaded-空（loadChildren
+    // 空结果置 leaf，Tile.ts:361-364 同型）；Loading 态同步执行不可达；
+    // NotFound 子代态 DanQing 无表示（登记）。无此门时每选择趟重算子代并
+    // setChildren 替换——销毁已加载 graphic、LRU onTileContentDisposed 震荡、
+    // 在途请求的 Tile* 悬空（RepeatedSelectionKeepsChildIdentity 锁）。
+    if (isLeaf() || hasLoadedChildren())
+        return;
+
     // Ported from: IModelTile._loadChildren (IModelTile.ts:153-169) — pure
     // frontend computation, no request.
     auto& tree = static_cast<ImdlTileTree&>(getTree());
@@ -343,7 +356,8 @@ void ImdlTile::loadChildren()
 //   另：参考 :211-213 的 debugMaxDepth 门（IModelTree.debugMaxDepth）DanQing
 //   无 debug 面——省略登记。
 //   另二：参考 :206 `this.computeVisibility(args)`（Tile 侧虚方法）；DanQing
-//   的 computeVisibility 在树侧（TileTree.h:84，前序任务的登记形态）——
+//   的 computeVisibility 在树侧（TileTree.h computeVisibility 纯虚，:91，
+//   前序任务的登记形态）——
 //   getTree().computeVisibility(args, this) 为同一判定的在仓宿主。
 //   另三：isDisplayable 位点（:235/:237/:270）取参考语义 `0 < maximumSize`
 //  （Tile.ts:231）——DanQing 预存 Tile::isDisplayable()（Ready && graphic，
@@ -351,10 +365,16 @@ void ImdlTile::loadChildren()
 //   登记的回归锁）。参考 :272 hasSizeMultiplier（`_sizeMultiplier !==
 //   undefined`，IModelTile.ts:81）以 DanQing 的 0=未设约定表达
 //  （m_sizeMultiplier > 0.0，ImdlTileTree.h:35 同约定）。
-//   另四：参考 :227-229 `iModelChildren === undefined`（children 未加载）
-//   以 hasLoadedChildren() 表达——DanQing 无 _childrenLoadStatus 态机，
-//   "已加载但为空数组"塌缩为 false（参考 Tile.ts:361-364 该形态置 leaf，
-//   ImdlTile::loadChildren 同此——发散不可达，登记）。
+//   另四：参考 :227-229 `iModelChildren === undefined`（children 未加载态）
+//   以 hasLoadedChildren() 表达——成立前提是 loadChildren 的重入门已移植
+//  （Tile.ts:353-356 → ImdlTile::loadChildren 头部折叠门：isLeaf() ||
+//   hasLoadedChildren() 短路；折叠登记见该函数头：Loading 同步不可达、
+//   NotFound 子代态无表示）。残留发散："已加载但空数组"（isLeaf=true，参考
+//   Tile.ts:361-364）塌缩为"未加载"→ :228-229 返 Yes 而非 markUsed+返 No
+//   ——不可达（leaf → computeVisibility 叶分支 → Visible → :214 段）。
+//   另五：:232-241 钻取循环当前死分支——maxInitialTilesToSkip 恒 0（树
+//   props 无该字段载体、无 setter，IModelTileTree.ts:390 的 ?? 0 缺省），
+//   循环体不可进入；参考原形忠实保留，props 载体/setter 归后续里程碑。
 // MSVC：参考 :232-241 的循环体两条路径都在首孩子上 return——C4702（代码
 // 生成期告警，pragma 须在函数入口前生效）把 range-for 的隐藏推进判为
 // unreachable。保留参考原形，函数级豁免 4702（登记：语义与参考逐字一致）。

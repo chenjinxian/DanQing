@@ -142,15 +142,13 @@ void Tile::setNotFound()
 void Tile::freeMemory()
 {
     // Ported from: itwinjs-core Tile.ts freeMemory
-    // Keep the "ever had graphics" flag for the SelectParent protocol's
-    // "previously loaded and later unloaded content" trigger (IModelTile.ts
-    // :264-265). Guarded: the reference only ever sets _hadGraphics when a
-    // graphic existed (Tile.ts:210-216), so a graphic-less tile must not gain
-    // it here (prune calls freeMemory unguarded on content-less children,
-    // TileTree.cpp pruneRecursive).
-    if (m_graphic)
-        m_hadGraphics = true;
-
+    // NB: m_hadGraphics is deliberately NOT touched here — the reference's
+    // unload path never assigns/clears it (the sole assignment point is
+    // setIsReady, Tile.ts:210-212 → DanQing setContent); the flag's persistence
+    // across unload is exactly the "previously loaded and later unloaded"
+    // trigger (IModelTile.ts:264-265). (The brief's freeMemory assignment was
+    // dropped at fix round 1: dead code — setContent already set it and
+    // nothing ever clears the flag; zero observable difference.)
     m_graphic.reset();
     m_loadStatus = TileLoadStatus::Abandoned;
     m_bytesUsed = 0;
