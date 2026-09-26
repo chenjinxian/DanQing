@@ -26,12 +26,46 @@ void TileRequestChannel::append(std::unique_ptr<TileRequest> request)
 void TileRequestChannel::process(uint32_t externalInFlight)
 {
     // Ported from: itwinjs-core TileRequestChannel.ts process() (:232-266)
-    // 1. Sort pending queue by priority (lower = higher priority)
+    // 1. Sort pending queue: tree loadPriority dominates, request priority
+    //    breaks ties (both ascending — lower = dispatched first).
+    // Ported from: TileRequestChannel.ts:13-20 — tree priority dominates;
+    // request priority breaks ties (both ascending: lower = dispatched first).
+    // EQUIVALENCE: 参考源=TileRequestChannel.ts:16-17（TileRequestQueue 比较器，
+    // 差值比较）；DanQing=std::sort 谓词（每帧 process 重排，等价于参考每帧
+    // _pending.sort() :240）。发散=std::sort 非稳定 vs 参考 Array.sort 稳定——
+    // 仅当两请求两级键全等时可达；键全等的请求互为可互换候选，调度序发散无可
+    // 观测语义（验证法=TileRequestChannelTest 两级键单测）。
     std::sort(m_pending.begin(), m_pending.end(),
         [](std::unique_ptr<TileRequest> const& a,
            std::unique_ptr<TileRequest> const& b) {
+            auto const lpA = a->getTile().getTree().getLoadPriority();
+            auto const lpB = b->getTile().getTree().getLoadPriority();
+            if (lpA != lpB)
+                return lpA < lpB;
             return a->getPriority() < b->getPriority();
         });
+
+    // REGISTERED ADAPTATION (not ported): the reference's per-frame request
+    // retirement has no DanQing counterpart yet —
+    //   · swapPending double buffer (:215-219) + "previously pending and now
+    //     userless → cancel" (:242-247);
+    //   · "active and userless → cancel" (:249-253) + processCancellations
+    //     (:256);
+    //   · TileAdmin.forgetUser → onUserIModelClosed canceling requests of
+    //     interest only to the departing user (TileAdmin.ts:560-563 → :925-940).
+    // All three rest on TileRequest.users / addUser / isQueued / cancel()
+    // (TileRequest.ts) — not ported; and on the processRequests dedup gate
+    // `undefined === tile.request` (TileAdmin.ts:899) that makes one shared
+    // request carry many users. DanQing requests carry no user set, and the
+    // per-frame feed rebuilds the request set from each user's requestTiles
+    // (TileAdmin::processRequestsForUser), so "userless" is not expressible
+    // here; a userless request's content simply completes and is never
+    // re-requested (LRU unselected → eviction/prune). Porting the users
+    // machinery is a standalone follow-up (M-C candidate), not a local patch.
+    // EQUIVALENCE: 参考源=TileRequestChannel.ts:242-253 + TileAdmin.ts:925-940；
+    // 发散=DanQing 残留请求不被取消而是完成加载（并发槽被无人关心的请求占用、
+    // 内容进 LRU 未选中分区）——验证法=调度序单测（TileRequestChannelTest）不
+    // 依赖取消面；取消面接线的回归锁待 users 机制移植时补。
 
     // 2. Dispatch pending requests up to the concurrency limit. The reference
     // dispatches by invoking `channel.requestContent(tile, isCanceled)` which
