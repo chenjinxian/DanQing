@@ -143,9 +143,21 @@ public:
     // Ported from: itwinjs-core FeatureTable.pack()
     PackedFeatureTable pack() const;
 
+    // Rule-of-5 (TD-21): the reference is GC'd; DanQing owns m_array.
+    // Ported from: itwinjs-core FeatureTable (value-object semantics —
+    // copy is deep, move steals, destructor releases).
+    ~FeatureTable();
+    FeatureTable(FeatureTable const& rhs);
+    FeatureTable& operator=(FeatureTable const& rhs);
+    FeatureTable(FeatureTable&& rhs) noexcept;
+    FeatureTable& operator=(FeatureTable&& rhs) noexcept;
+
 private:
     // Binary search for feature in sorted array
     int lowerBound(const Feature& feature) const;
+
+    // Copy-and-swap helper for operator= (TD-21): exchanges the full state.
+    void swap(FeatureTable& other) noexcept;
 
     dqBase::DqId m_modelId;
     BatchType m_type = BatchType::Primary;

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <utility>
 
 BEGIN_DQ_COMMON_NAMESPACE
 
@@ -20,6 +21,70 @@ FeatureTable::FeatureTable(int maxFeatures, const DqId& modelId, BatchType type)
     , m_size(0)
     , m_array(new IndexedFeature[static_cast<size_t>(maxFeatures)])
 {
+}
+
+// TD-21: reference is garbage-collected; C++ owns the array.
+FeatureTable::~FeatureTable() { delete[] m_array; }
+
+FeatureTable::FeatureTable(FeatureTable const& rhs)
+    : m_modelId(rhs.m_modelId)
+    , m_type(rhs.m_type)
+    , m_maxFeatures(rhs.m_maxFeatures)
+    , m_size(rhs.m_size)
+    , m_array(new IndexedFeature[static_cast<size_t>(rhs.m_maxFeatures)])
+{
+    // IndexedFeature (IndexedValue<Feature>) is trivially copyable; a moved-from
+    // source carries m_size == 0 with a null array, so guard the memcpy.
+    if (rhs.m_size > 0) {
+        std::memcpy(m_array, rhs.m_array,
+                    sizeof(IndexedFeature) * static_cast<size_t>(rhs.m_size));
+    }
+}
+
+FeatureTable& FeatureTable::operator=(FeatureTable const& rhs)
+{
+    if (this != &rhs) {
+        FeatureTable tmp(rhs);  // copy-and-swap: self-assign safe
+        swap(tmp);
+    }
+    return *this;
+}
+
+FeatureTable::FeatureTable(FeatureTable&& rhs) noexcept
+    : m_modelId(rhs.m_modelId)
+    , m_type(rhs.m_type)
+    , m_maxFeatures(rhs.m_maxFeatures)
+    , m_size(rhs.m_size)
+    , m_array(rhs.m_array)
+{
+    rhs.m_array = nullptr;
+    rhs.m_size = 0;
+    rhs.m_maxFeatures = 0;
+}
+
+FeatureTable& FeatureTable::operator=(FeatureTable&& rhs) noexcept
+{
+    if (this != &rhs) {
+        delete[] m_array;
+        m_modelId = rhs.m_modelId;
+        m_type = rhs.m_type;
+        m_maxFeatures = rhs.m_maxFeatures;
+        m_size = rhs.m_size;
+        m_array = rhs.m_array;
+        rhs.m_array = nullptr;
+        rhs.m_size = 0;
+        rhs.m_maxFeatures = 0;
+    }
+    return *this;
+}
+
+void FeatureTable::swap(FeatureTable& other) noexcept
+{
+    std::swap(m_modelId, other.m_modelId);
+    std::swap(m_type, other.m_type);
+    std::swap(m_maxFeatures, other.m_maxFeatures);
+    std::swap(m_size, other.m_size);
+    std::swap(m_array, other.m_array);
 }
 
 // Ported from: itwinjs-core FeatureTable.anyDefined

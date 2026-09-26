@@ -223,8 +223,8 @@ RenderGraphic* OpenGLRenderSystem::createRenderGraphic(void* cachedGeometry)
 // Ported from: itwinjs-core System.createBatch() (System.ts:445-463)
 //
 // The feature table maps per-vertex feature indices to element ids; the Batch
-// owns a copy (FeatureTable's raw-array ownership is non-copyable, so features
-// are re-inserted into a fresh table).
+// owns a copy. (Since TD-21 FeatureTable has deep-copy value semantics; this
+// fresh-table re-insert is the equivalent pre-existing form — kept as-is.)
 // ---------------------------------------------------------------------------
 RenderGraphic* OpenGLRenderSystem::createBatch(RenderGraphic* graphic,
                                                 dqCommon::FeatureTable const* featureTable,
