@@ -32,7 +32,9 @@ void TileRequestChannel::process(uint32_t externalInFlight)
     // request priority breaks ties (both ascending: lower = dispatched first).
     // EQUIVALENCE: 参考源=TileRequestChannel.ts:16-17（TileRequestQueue 比较器，
     // 差值比较）；DanQing=std::sort 谓词（每帧 process 重排，等价于参考每帧
-    // _pending.sort() :240）。发散=std::sort 非稳定 vs 参考 Array.sort 稳定——
+    // _pending.sort() :240——TileRequestQueue 继承 PriorityQueue，其 sort() 是
+    // 二叉堆自底向上建堆）。发散=std::sort 非稳定 vs 参考 PriorityQueue.sort()
+    // 二叉堆（core/bentley/src/PriorityQueue.ts:77-80 建堆——同样完全不稳定）——
     // 仅当两请求两级键全等时可达；键全等的请求互为可互换候选，调度序发散无可
     // 观测语义（验证法=TileRequestChannelTest 两级键单测）。
     std::sort(m_pending.begin(), m_pending.end(),
