@@ -41,6 +41,12 @@ void TileTree::selectTiles(TileDrawArgs& args)
     // registered adaptation at SceneContext.h (TileDrawArgs cannot reach the
     // TileUser; dqApp Viewport::CreateScene feeds addTilesForUser +
     // requestTiles from the collected sets).
+    // OMISSION registered (fix round 1, deferred to the Task 5/6 shell work):
+    // IModelTileTree._selectTiles also opens with `args.markUsed(this._rootTile)`
+    // (IModelTileTree.ts:436 — the root's usage marker stamped every selection).
+    // Not ported here: this shell serves the Reality/3D Tiles path whose
+    // behavior is frozen at zero-change; land it with the shell's per-tree
+    // addTilesForUser when the batched-report adaptation is retired.
     std::vector<Tile*> selected;
     m_rootTile->selectTiles(selected, args, /*numSkipped=*/0);
 }

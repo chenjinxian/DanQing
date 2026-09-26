@@ -237,10 +237,10 @@ protected:
 
     /// Whether this tile has EVER carried a graphic (the SelectParent
     /// protocol's "previously loaded and later unloaded content" trigger,
-    /// IModelTile.ts:264-265). Assigned where the reference assigns it —
-    /// content-set time with a graphic present (Tile.ts:210-216 setIsReady →
-    /// DanQing's setContent; also kept on the DanQing unload path freeMemory,
-    /// guarded so graphic-less tiles never gain the flag).
+    /// IModelTile.ts:264-265). Assigned at the reference's sole assignment
+    /// point — content-set time with a graphic present (Tile.ts:210-216
+    /// setIsReady → DanQing's setContent); never cleared or re-assigned at
+    /// unload (Tile.cpp freeMemory notes why).
     /// Ported from: itwinjs-core Tile._hadGraphics (Tile.ts:71).
     bool m_hadGraphics = false;
 
