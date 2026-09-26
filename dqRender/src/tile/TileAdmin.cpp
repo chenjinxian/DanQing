@@ -10,6 +10,7 @@
 #include <dqRender/RenderGraphic.h>  // TileContent::graphic unique_ptr 析构需完整类型
 
 #include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <optional>
 
@@ -92,7 +93,11 @@ void TileAdmin::processQueue()
 
 void TileAdmin::processRequestsForUser(TileUser& user)
 {
-    // Ported from: itwinjs-core TileAdmin.ts processRequests()
+    // Ported from: itwinjs-core TileAdmin.ts processRequests (:897-925) — the
+    // shared-request gate: the first user's pass creates the request and hooks
+    // it on the tile (tile.request, TileAdmin.ts:902) so every later user
+    // sharing the tile joins the existing request (addUser) instead of
+    // building a duplicate.
     auto it = m_requestedTiles.find(&user);
     if (it == m_requestedTiles.end()) return;
 
@@ -102,17 +107,36 @@ void TileAdmin::processRequestsForUser(TileUser& user)
     for (auto* tile : requestedTiles) {
         if (!tile) continue;
 
-        // Only create request if tile is not loaded and not already loading
-        if (tile->getLoadStatus() != TileLoadStatus::NotLoaded) continue;
+        TileRequest* request = tile->getRequest();
+        if (!request) {
+            // Ported from: TileAdmin.ts:899-908 — no request yet: only a
+            // NotLoaded tile gets one, and the tile hook is assigned at
+            // creation, before append, so same-frame users hit the share
+            // branch below (the reference's `tile.request = request`, :905).
+            // (assert(this.channels.has(request.channel)), :906 — the DanQing
+            // getChannel factory always returns a registered channel.)
+            if (tile->getLoadStatus() == TileLoadStatus::NotLoaded) {
+                auto owned = std::make_unique<TileRequest>(*tile, channel, user);
 
-        // Create a request for this tile
-        auto request = std::make_unique<TileRequest>(*tile, channel);
+                // Compute priority based on tile depth (reference recomputes
+                // per frame in channel process — TileRequestChannel.ts:237;
+                // the creation-time value is the pre-existing DanQing seam).
+                owned->setPriority(tile->computeLoadPriority());
 
-        // Compute priority based on tile depth
-        request->setPriority(tile->computeLoadPriority());
+                request = owned.get();
+                tile->setRequest(request);
+                channel.append(std::move(owned));  // ownership → channel
+            }
+        } else {
+            // Ported from: TileAdmin.ts:909-920.
+            // Request may already be dispatched (in channel's active requests)
+            // - if so do not re-enqueue! (TileAdmin.ts:913-915)
+            if (request->isQueued() && request->getUsers().empty())
+                channel.append(*request);
 
-        // Append to channel for dispatch
-        channel.append(std::move(request));
+            request->addUser(user);
+            assert(0 < request->getUsers().size());  // TileAdmin.ts:918
+        }
     }
 
     // Clear processed requests
@@ -126,6 +150,15 @@ void TileAdmin::registerUser(TileUser& user)
 
 void TileAdmin::forgetUser(TileUser& user)
 {
+    // Ported from: TileAdmin.forgetUser (TileAdmin.ts:560-563 — drop the
+    // feeds + the registration), plus the UniqueTileUserSets.forgetUser role
+    // (TileUserSet.ts:107-110 — remove the user from every request's user
+    // set; DanQing hosts the sets on the requests, so the walk is over the
+    // channels' live requests). The reference also cancels requests of
+    // interest only to the departing user (onUserIModelClosed,
+    // TileAdmin.ts:925-940) — the cancel() state machine is the follow-up
+    // task's scope (Task 3); TODO port with it.
+    m_channels.forgetUser(user);
     m_users.erase(&user);
     m_requestedTiles.erase(&user);
     m_selectedTiles.erase(&user);

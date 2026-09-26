@@ -160,9 +160,12 @@ public:
 
     /// Explicit load-status transition (Queued/Loading while a request is in
     /// flight). The reference composes this from `request.state` inside the
-    /// `loadStatus` getter (Tile.ts:271-295); DanQing stores it directly —
-    /// TileRequestChannel::process marks Loading at dispatch so
-    /// TileAdmin::processRequestsForUser does not re-request in-flight tiles.
+    /// `loadStatus` getter (Tile.ts:271-295); DanQing stores it directly.
+    /// TileRequestChannel::process marks Loading at dispatch; against
+    /// re-requesting, in-flight tiles are guarded by the request hook
+    /// (TileAdmin::processRequestsForUser's shared-request gate —
+    /// `undefined === tile.request` decides creation, TileAdmin.ts:899) with
+    /// the NotLoaded check inside that creation branch (TileAdmin.ts:901).
     void setLoadStatus(TileLoadStatus status) noexcept { m_loadStatus = status; }
 
     /// Disclose resources owned by this tile and (by default) all of its
