@@ -36,34 +36,6 @@
 
 BEGIN_DQ_RENDER_NAMESPACE
 
-namespace {
-
-// Locate a bufferView's byte span inside the imdl document's binary section.
-bool findBufferView(tilejson::JsonValue const& doc, std::string const& name,
-                    std::vector<uint8_t> const& binary,
-                    uint8_t const*& outData, size_t& outSize)
-{
-    tilejson::JsonValue const* views = doc.find("bufferViews");
-    if (!views)
-        return false;
-    tilejson::JsonValue const* view = views->find(name.c_str());
-    if (!view)
-        return false;
-    tilejson::JsonValue const* off = view->find("byteOffset");
-    tilejson::JsonValue const* len = view->find("byteLength");
-    if (!off || !len)
-        return false;
-    size_t const offset = static_cast<size_t>(off->number);
-    size_t const length = static_cast<size_t>(len->number);
-    if (offset + length > binary.size())
-        return false;
-    outData = binary.data() + offset;
-    outSize = length;
-    return true;
-}
-
-}  // namespace
-
 std::vector<dqBase::RefPtr<dqGeom::IndexedPolyface>> DQ_RENDER_EXPORT
 decodeImdlGraphics(ImdlDocument const& doc)
 {
@@ -79,7 +51,7 @@ decodeImdlGraphics(ImdlDocument const& doc)
     for (auto const& prim : primitives) {
         uint8_t const* vertData = nullptr;
         size_t vertSize = 0;
-        if (!findBufferView(*json, prim.vertices.bufferView, doc.binary, vertData, vertSize))
+        if (!tilejson::findBufferView(*json, prim.vertices.bufferView, doc.binary, vertData, vertSize))
             continue;
         size_t const bytesPerVertex = prim.vertices.numRgbaPerVertex * 4;
         if (bytesPerVertex == 0 || vertSize < prim.vertices.count * bytesPerVertex)
@@ -87,7 +59,7 @@ decodeImdlGraphics(ImdlDocument const& doc)
 
         uint8_t const* indexData = nullptr;
         size_t indexSize = 0;
-        if (!findBufferView(*json, prim.surface.indicesView, doc.binary, indexData, indexSize))
+        if (!tilejson::findBufferView(*json, prim.surface.indicesView, doc.binary, indexData, indexSize))
             continue;
         size_t const numIndices = indexSize / 3;  // 24-bit LE each
         if (numIndices < 3 || numIndices % 3 != 0)
@@ -217,7 +189,7 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
     for (auto const& prim : primitives) {
         uint8_t const* vertData = nullptr;
         size_t vertSize = 0;
-        if (!findBufferView(*json, prim.vertices.bufferView, doc.binary, vertData, vertSize))
+        if (!tilejson::findBufferView(*json, prim.vertices.bufferView, doc.binary, vertData, vertSize))
             continue;
         uint32_t const numRgba = prim.vertices.numRgbaPerVertex;
         uint32_t const count = prim.vertices.count;
@@ -283,7 +255,7 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
         // 无 element index buffer（SurfaceGeometry.ts:150-162）。
         uint8_t const* idxData = nullptr;
         size_t idxSize = 0;
-        if (!findBufferView(*json, prim.surface.indicesView, doc.binary, idxData, idxSize)
+        if (!tilejson::findBufferView(*json, prim.surface.indicesView, doc.binary, idxData, idxSize)
             || idxSize < 3u || idxSize % 3u != 0u) {
             lut.destroy(*driver);  // 半成品清理（§12.9：LUT 已建、几何未成）
             continue;

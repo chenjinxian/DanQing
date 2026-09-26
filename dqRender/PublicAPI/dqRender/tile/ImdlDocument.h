@@ -13,6 +13,7 @@
 #include "ImdlHeader.h"
 
 #include <dqBase/RefCounted.h>
+#include <dqCommon/LinePixels.h>
 #include <dqGeom/IndexedPolyface.h>
 #include <dqGeom/Range3d.h>
 
@@ -93,6 +94,70 @@ parseImdlDocument(ImdlByteStream& stream,
 // createImdlLutGraphics（U7 LUT 直传）。
 std::vector<dqBase::RefPtr<dqGeom::IndexedPolyface>> DQ_RENDER_EXPORT
 decodeImdlGraphics(ImdlDocument const& doc);
+
+// ---------------------------------------------------------------------------
+// U11(1)：imdl 边缘参数（字节区间形态——JSON 侧的 bufferView 名由
+// TilesetJson.h 的 parseImdlEdges 在解析期换入这里的数据）。
+// Ported from: itwinjs-core ImdlModel.ts:63-84（Imdl.SegmentEdgeParams/
+//              SilhouetteParams/IndexedEdgeParams/EdgeParams）+
+//              internal/render/EdgeParams.ts:22-111（同一组类型的消费侧
+//              定义——字段语义注释来源）。
+// ---------------------------------------------------------------------------
+
+// imdl bufferView 的字节区间（TS Uint8Array 的 C++ 形态，§3.4 适配——参考无
+// C++ 对应物；data 指入 ImdlDocument::binary，binary 存活期内有效）。
+struct DQ_RENDER_EXPORT ImdlByteView {
+    uint8_t const* data = nullptr;
+    size_t byteLength = 0;
+};
+
+// 一条硬边（mesh 顶点表中的两顶点连线，与视线无关恒可见）。
+// Ported from: ImdlModel.ts:63-66 SegmentEdgeParams（EdgeParams.ts:22-31——
+//              indices 为每 quad 顶点的 24-bit 索引；endPointAndQuadIndices
+//              每索引 4B：24-bit 段另一端点索引 + 8-bit quad 角标 [0..3]）。
+struct DQ_RENDER_EXPORT ImdlSegmentEdgeParams {
+    ImdlByteView indices;
+    ImdlByteView endPointAndQuadIndices;
+};
+
+// 曲面轮廓边（silhouette）——按边法线相对视线方向显隐。
+// Ported from: ImdlModel.ts:68-70 SilhouetteParams（extends SegmentEdgeParams；
+//              EdgeParams.ts:39-42——normalPairs 每索引 2×16-bit
+//              OctEncodedNormal 对）。
+struct DQ_RENDER_EXPORT ImdlSilhouetteParams : ImdlSegmentEdgeParams {
+    ImdlByteView normalPairs;
+};
+
+// 边查找表：下分区为简单段边、上分区为 silhouette 边；两分区之间可能存在
+// 一行混合 + 对齐填充字节。
+// Ported from: ImdlModel.ts:74 EdgeTable（EdgeParams.ts:53-64——data/width/
+//              height/numSegments/silhouettePadding）。
+struct DQ_RENDER_EXPORT ImdlEdgeTable {
+    ImdlByteView data;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint32_t numSegments = 0;
+    uint32_t silhouettePadding = 0;
+};
+
+// 以查找表描述的边（每边 6 个相同索引构成 quad）。
+// Ported from: ImdlModel.ts:72-75 IndexedEdgeParams（EdgeParams.ts:70-76）。
+struct DQ_RENDER_EXPORT ImdlIndexedEdgeParams {
+    ImdlByteView indices;
+    ImdlEdgeTable edges;
+};
+
+// 一个 mesh 的边参数（weight = displayParams.width 像素宽；linePixels 线型）。
+// Ported from: ImdlModel.ts:77-84 EdgeParams（EdgeParams.ts:98-111）；
+//              polylineGroups（EdgeParams.ts:108 polyline 边）随 polyline
+//              图元落 Task 6（TODO ParseImdlDocument.ts:716）。
+struct DQ_RENDER_EXPORT ImdlEdgeParams {
+    uint32_t weight = 0;
+    dqCommon::LinePixels linePixels = dqCommon::LinePixels::Solid;
+    std::optional<ImdlSegmentEdgeParams> segments;
+    std::optional<ImdlSilhouetteParams> silhouettes;
+    std::optional<ImdlIndexedEdgeParams> indexed;
+};
 
 // imdl 量化顶点表的 LUT 直传创建（零 CPU 逐顶点解码——线上 RGBA8 顶点表
 // 即 LUT texel 布局，JSON width/height 选纹理尺寸后原样上传；

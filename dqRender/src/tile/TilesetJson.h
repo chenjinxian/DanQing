@@ -14,6 +14,10 @@
 
 #include <dqRender/tile/RealityTile.h>
 #include <dqRender/tile/RealityTileTree.h>
+#include <dqCommon/LinePixels.h>
+#include <dqRender/tile/ImdlDocument.h>
+
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -311,11 +315,75 @@ struct ImdlSurfaceProps {
     uint32_t type = 0;
 };
 
+// ---------------------------------------------------------------------------
+// U11(1)：ImdlMeshEdges 四形态（JSON 侧——视图持 bufferView 名，字节区间由
+// parseImdlEdges 解析期换入 ImdlDocument.h 的 ImdlEdgeParams 族）。
+// Ported from: itwinjs-core ImdlSchema.ts:195-286（字段名逐一 1:1）。
+// ---------------------------------------------------------------------------
+
+// Ported from: ImdlSchema.ts:195-202 ImdlSegmentEdges（:197 indices / :201
+//              endPointAndQuadIndices——bufferView 名 → *View 后缀，照本文件
+//              ImdlSurfaceProps.indicesView 先例）。
+struct ImdlSegmentEdgesProps {
+    std::string indicesView;
+    std::string endPointAndQuadIndicesView;
+};
+
+// Ported from: ImdlSchema.ts:209-212 ImdlSilhouetteEdges（extends
+//              ImdlSegmentEdges + :211 normalPairs）。
+struct ImdlSilhouetteEdgesProps : ImdlSegmentEdgesProps {
+    std::string normalPairsView;
+};
+
+// Ported from: ImdlSchema.ts:219-232 ImdlIndexedEdges（:221 indices / :223
+//              edges / :225 width / :227 height / :229 numSegments / :231
+//              silhouettePadding）。
+struct ImdlIndexedEdgesProps {
+    std::string indicesView;
+    std::string edgeTableView;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint32_t numSegments = 0;
+    uint32_t silhouettePadding = 0;
+};
+
+// Ported from: ImdlSchema.ts:257-272 ImdlCompactEdges（:262 visibility /
+//              :267 normalPairs?——无 silhouette 时 undefined / :271
+//              numVisible）。
+struct ImdlCompactEdgesProps {
+    std::string visibilityView;
+    std::optional<std::string> normalPairsView;
+    uint32_t numVisible = 0;
+};
+
+// Ported from: ImdlSchema.ts:277-286 ImdlMeshEdges（:285 polylines 随
+//              polyline 图元落 Task 6——TODO ParseImdlDocument.ts:716
+//              parseTesselatedPolyline）。
+struct ImdlMeshEdgesProps {
+    std::optional<ImdlSegmentEdgesProps> segments;
+    std::optional<ImdlSilhouetteEdgesProps> silhouettes;
+    std::optional<ImdlIndexedEdgesProps> indexed;
+    std::optional<ImdlCompactEdgesProps> compact;
+};
+
 struct ImdlPrimitiveProps {
     ImdlVertexTableProps vertices;
     ImdlSurfaceProps surface;
     bool isPlanar = false;  // ImdlSchema.ts:177 mesh primitive isPlanar → 参考侧
                             // 决定 OpaquePlanar pass 归属（Task 5 LUT 路径）
+    std::string material;   // ImdlSchema.ts:173 material——关联 ImdlDisplayParams 的 Id
+    std::optional<ImdlMeshEdgesProps> edges;  // ImdlSchema.ts:277-286（mesh primitive）
+
+    // DisplayParams 子集（width/linePixels）——materials[material] 的
+    // lineWidth/linePixels（parsePrimitive ParseImdlDocument.ts:800-802 +
+    // parseDisplayParams :1206-1207；ImdlEdgeParams.weight/linePixels 的来源
+    // :730-731）。默认值照 DisplayParams 构造（DisplayParams.ts:36——width=0、
+    // linePixels=Solid）。参考 :803 无 displayParams 的 primitive 整体丢弃——
+    // 丢弃决策归消费方（Task 5/6 图形 pass），本提取层不丢（hasDisplayParams
+    // 记录 materials[material] 是否存在）。
+    uint32_t width = 0;
+    dqCommon::LinePixels linePixels = dqCommon::LinePixels::Solid;
+    bool hasDisplayParams = false;
 };
 
 inline std::vector<ImdlPrimitiveProps> parseImdlMeshPrimitives(JsonValue const& doc)
@@ -324,6 +392,9 @@ inline std::vector<ImdlPrimitiveProps> parseImdlMeshPrimitives(JsonValue const& 
     JsonValue const* meshes = doc.find("meshes");
     if (!meshes)
         return out;
+    // displayParams 查找源（parsePrimitive ParseImdlDocument.ts:801——
+    // this._document.materials[materialName]）。
+    JsonValue const* materials = doc.find("materials");
     for (auto const& meshEntry : meshes->obj) {
         JsonValue const* primitives = meshEntry.second.find("primitives");
         if (!primitives)
@@ -362,9 +433,170 @@ inline std::vector<ImdlPrimitiveProps> parseImdlMeshPrimitives(JsonValue const& 
             }
             if (JsonValue const* pl = prim.find("isPlanar"))
                 props.isPlanar = pl->boolean;
+            // material + displayParams（parsePrimitive ParseImdlDocument.ts
+            // :800-802——materialName 为空则无 displayParams）。
+            if (JsonValue const* mat = prim.find("material"))
+                props.material = mat->str;
+            if (materials) {
+                if (JsonValue const* dp = materials->find(props.material.c_str())) {
+                    props.hasDisplayParams = true;
+                    if (JsonValue const* w = dp->find("lineWidth"))
+                        props.width = static_cast<uint32_t>(w->number);
+                    if (JsonValue const* lp = dp->find("linePixels"))
+                        props.linePixels =
+                            static_cast<dqCommon::LinePixels>(static_cast<uint32_t>(lp->number));
+                }
+            }
+            // ImdlSchema.ts:277-286 edges 四形态（字段逐一）。
+            if (JsonValue const* edgesJson = prim.find("edges")) {
+                ImdlMeshEdgesProps edges;
+                if (JsonValue const* seg = edgesJson->find("segments")) {  // :278
+                    ImdlSegmentEdgesProps s;
+                    if (JsonValue const* v = seg->find("indices"))
+                        s.indicesView = v->str;
+                    if (JsonValue const* v = seg->find("endPointAndQuadIndices"))
+                        s.endPointAndQuadIndicesView = v->str;
+                    edges.segments = std::move(s);
+                }
+                if (JsonValue const* sil = edgesJson->find("silhouettes")) {  // :279
+                    ImdlSilhouetteEdgesProps s;
+                    if (JsonValue const* v = sil->find("indices"))
+                        s.indicesView = v->str;
+                    if (JsonValue const* v = sil->find("endPointAndQuadIndices"))
+                        s.endPointAndQuadIndicesView = v->str;
+                    if (JsonValue const* v = sil->find("normalPairs"))
+                        s.normalPairsView = v->str;
+                    edges.silhouettes = std::move(s);
+                }
+                if (JsonValue const* idx = edgesJson->find("indexed")) {  // :283
+                    ImdlIndexedEdgesProps s;
+                    if (JsonValue const* v = idx->find("indices"))
+                        s.indicesView = v->str;
+                    if (JsonValue const* v = idx->find("edges"))
+                        s.edgeTableView = v->str;
+                    if (JsonValue const* v = idx->find("width"))
+                        s.width = static_cast<uint32_t>(v->number);
+                    if (JsonValue const* v = idx->find("height"))
+                        s.height = static_cast<uint32_t>(v->number);
+                    if (JsonValue const* v = idx->find("numSegments"))
+                        s.numSegments = static_cast<uint32_t>(v->number);
+                    if (JsonValue const* v = idx->find("silhouettePadding"))
+                        s.silhouettePadding = static_cast<uint32_t>(v->number);
+                    edges.indexed = std::move(s);
+                }
+                if (JsonValue const* cmp = edgesJson->find("compact")) {  // :284
+                    ImdlCompactEdgesProps s;
+                    if (JsonValue const* v = cmp->find("visibility"))
+                        s.visibilityView = v->str;
+                    if (JsonValue const* v = cmp->find("normalPairs"))
+                        s.normalPairsView = v->str;
+                    if (JsonValue const* v = cmp->find("numVisible"))
+                        s.numVisible = static_cast<uint32_t>(v->number);
+                    edges.compact = std::move(s);
+                }
+                props.edges = std::move(edges);
+            }
             out.push_back(std::move(props));
         }
     }
+    return out;
+}
+
+// Locate a bufferView's byte span inside the imdl document's binary section.
+// （原 ImdlGraphics.cpp 匿名 namespace 既有实现——U11(1) 起为 JSON 层共享，
+// parseImdlEdges 与图形创建路径共用同一视图语义。）
+inline bool findBufferView(JsonValue const& doc, std::string const& name,
+                           std::vector<uint8_t> const& binary,
+                           uint8_t const*& outData, size_t& outSize)
+{
+    JsonValue const* views = doc.find("bufferViews");
+    if (!views)
+        return false;
+    JsonValue const* view = views->find(name.c_str());
+    if (!view)
+        return false;
+    JsonValue const* off = view->find("byteOffset");
+    JsonValue const* len = view->find("byteLength");
+    if (!off || !len)
+        return false;
+    size_t const offset = static_cast<size_t>(off->number);
+    size_t const length = static_cast<size_t>(len->number);
+    if (offset + length > binary.size())
+        return false;
+    outData = binary.data() + offset;
+    outSize = length;
+    return true;
+}
+
+// parseImdlEdges——imdl 边缘 JSON → 字节区间参数（Task 5/6 消费）。
+// Ported from: ParseImdlDocument.ts:710-727 parseEdges（优先级与归零语义）：
+//   - segments/silhouettes 直取（:714-715 → parseSegmentEdges :665-669 /
+//     parseSilhouetteEdges :671-675——bufferView 缺失 → 该成员 undefined）；
+//   - indexed 直取（:718 → parseIndexedEdges :677-693）；
+//   - compact 兜底展开（:719-720 → parseCompactEdges :695-708 →
+//     CompactEdges.ts indexedEdgeParamsFromCompactEdges）——TODO(Task 6)：
+//     需 surface.indices（:720 VertexIndices）与本文件未解析的
+//     maxVertexTableSize option；本层只解析不展开，仅 compact 时归零。
+//   - 四形态全空 → undefined/nullopt（:722-723）；
+//   - weight = displayParams.width、linePixels 直传（:730-731）。
+inline std::optional<ImdlEdgeParams> parseImdlEdges(JsonValue const& doc,
+                                                    ImdlDocument const& imdl,
+                                                    ImdlPrimitiveProps const& props)
+{
+    if (!props.edges)
+        return std::nullopt;  // :711-712（imdl undefined）
+    ImdlMeshEdgesProps const& edges = *props.edges;
+
+    // findBuffer 视图语义（ParseImdlDocument.ts findBuffer——bufferView 名 →
+    // 字节区间；DanQing 侧等价物 findBufferView）。
+    auto resolve = [&doc, &imdl](ImdlByteView& out, std::string const& name) {
+        uint8_t const* data = nullptr;
+        size_t size = 0;
+        if (!findBufferView(doc, name, imdl.binary, data, size))
+            return false;
+        out = ImdlByteView{data, size};
+        return true;
+    };
+
+    ImdlEdgeParams out;
+    out.weight = props.width;
+    out.linePixels = props.linePixels;
+
+    if (edges.segments) {  // parseSegmentEdges :665-669（双视图全需）
+        ImdlSegmentEdgeParams s;
+        if (resolve(s.indices, edges.segments->indicesView)
+            && resolve(s.endPointAndQuadIndices, edges.segments->endPointAndQuadIndicesView))
+            out.segments = std::move(s);
+    }
+
+    if (edges.silhouettes) {  // parseSilhouetteEdges :671-675（segments && normalPairs）
+        ImdlSilhouetteParams s;
+        if (resolve(s.indices, edges.silhouettes->indicesView)
+            && resolve(s.endPointAndQuadIndices,
+                       edges.silhouettes->endPointAndQuadIndicesView)
+            && resolve(s.normalPairs, edges.silhouettes->normalPairsView))
+            out.silhouettes = std::move(s);
+    }
+
+    if (edges.indexed) {  // parseIndexedEdges :677-693（双视图全需 + 尺寸字段原样）
+        ImdlIndexedEdgeParams ix;
+        if (resolve(ix.indices, edges.indexed->indicesView)
+            && resolve(ix.edges.data, edges.indexed->edgeTableView)) {
+            ix.edges.width = edges.indexed->width;
+            ix.edges.height = edges.indexed->height;
+            ix.edges.numSegments = edges.indexed->numSegments;
+            ix.edges.silhouettePadding = edges.indexed->silhouettePadding;
+            out.indexed = std::move(ix);
+        }
+    }
+
+    // TODO(Task 6)：compact 兜底展开（parseCompactEdges ParseImdlDocument.ts
+    // :695-708 → CompactEdges.ts indexedEdgeParamsFromCompactEdges——2-bit
+    // visibility 展开 + silhouette normalPairs，需 surface.indices 顶点索引与
+    // maxVertexTableSize 上限）。
+
+    if (!out.segments && !out.silhouettes && !out.indexed)
+        return std::nullopt;  // :722-723
     return out;
 }
 
