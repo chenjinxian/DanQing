@@ -61,6 +61,10 @@ struct DQ_RENDER_EXPORT ImdlChildTileProps {
     dqGeom::Range3d range;
     bool isLeaf = false;
     double sizeMultiplier = 0.0;
+    // Every child's maximumSize = root.tileScreenSize (:795 magnification /
+    // :847 subdivision — the SSE criterion's per-tile operand,
+    // Tile.ts:459-463).
+    double maximumSize = 0.0;
 };
 std::vector<ImdlChildTileProps> DQ_RENDER_EXPORT
 computeImdlChildTileProps(ImdlTileMetadata const& parent,
@@ -84,10 +88,20 @@ class DQ_RENDER_EXPORT ImdlTile : public Tile {
 public:
     ImdlTile(ImdlTileTree& tree, Tile* parent,
              std::string contentId, dqGeom::Range3d const& range,
-             double sizeMultiplier);
+             double sizeMultiplier, double maximumSize);
 
     std::string const& getContentId() const noexcept { return m_contentId; }
     double getSizeMultiplier() const noexcept { return m_sizeMultiplier; }
+
+    // Ported from: itwinjs-core IModelTile.maximumSize (IModelTile.ts:81-83)
+    // — super.maximumSize * (this.sizeMultiplier ?? 1.0). The reference's
+    // sizeMultiplier is `number | undefined`; DanQing's 0.0 stands for
+    // "not set" (ImdlTileMetadata.sizeMultiplier same convention).
+    double getMaximumSize() const noexcept override
+    {
+        return Tile::getMaximumSize()
+               * (m_sizeMultiplier > 0.0 ? m_sizeMultiplier : 1.0);
+    }
 
     // --- Tile overrides ---
     bool requestContent() override;

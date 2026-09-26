@@ -18,7 +18,6 @@
 #include "dqRender/tile/ITileFetcher.h"
 #include "dqRender/tile/TileAdmin.h"
 
-#include <cmath>
 #include <cstdlib>
 #include <memory>
 #include <sstream>
@@ -94,6 +93,7 @@ std::vector<ImdlChildTileProps> computeImdlChildTileProps(
         child.range = parent.range;
         child.sizeMultiplier = multiplier;
         child.isLeaf = false;
+        child.maximumSize = static_cast<double>(root.tileScreenSize);  // :795
         children.push_back(std::move(child));
         return children;
     }
@@ -132,6 +132,7 @@ std::vector<ImdlChildTileProps> computeImdlChildTileProps(
                 ImdlChildTileProps child;
                 child.contentId = formatImdlContentId(childSpec);
                 child.range = range;
+                child.maximumSize = static_cast<double>(root.tileScreenSize);  // :847
                 children.push_back(std::move(child));
             }
         }
@@ -146,8 +147,8 @@ std::vector<ImdlChildTileProps> computeImdlChildTileProps(
 
 ImdlTile::ImdlTile(ImdlTileTree& tree, Tile* parent,
                    std::string contentId, dqGeom::Range3d const& range,
-                   double sizeMultiplier)
-    : Tile(tree, parent, range, parent ? parent->getDepth() + 1 : 0)
+                   double sizeMultiplier, double maximumSize)
+    : Tile(tree, parent, range, parent ? parent->getDepth() + 1 : 0, maximumSize)
     , m_contentId(std::move(contentId))
     , m_sizeMultiplier(sizeMultiplier)
 {
@@ -277,6 +278,21 @@ TileContent ImdlTile::readContent(uint8_t const* data, size_t dataSize)
     } else {
         content.graphic.reset(list);
     }
+
+    // maximumSize 回填：内容到达且从未获得 maximumSize（0 = undisplayable）
+    // 时取树的 tileScreenSize。
+    // Ported from: IModelTile.setContent (IModelTile.ts:140-142):
+    //   if (undefined !== content.graphic && 0 === this.maximumSize)
+    //     this._maximumSize = this.iModelTree.tileScreenSize;
+    // DanQing adaptation: the backfill lives here (readContent) — TileAdmin::
+    // deliverTileContent runs readContent immediately before setContent and
+    // setContent is non-virtual, so the reference's IModelTile.setContent
+    // override has no C++ dispatch path; the observable state at the point of
+    // consumption is the same.
+    if (content.graphic && 0.0 == getMaximumSize()) {
+        auto& imdlTree = static_cast<ImdlTileTree&>(getTree());
+        m_maximumSize = static_cast<double>(imdlTree.metadata().tileScreenSize);
+    }
     return content;
 }
 
@@ -301,7 +317,8 @@ void ImdlTile::loadChildren()
     std::vector<std::unique_ptr<Tile>> childTiles;
     for (auto const& child : children) {
         childTiles.push_back(std::make_unique<ImdlTile>(
-            tree, this, child.contentId, child.range, child.sizeMultiplier));
+            tree, this, child.contentId, child.range, child.sizeMultiplier,
+            child.maximumSize));
     }
     setChildren(std::move(childTiles));
 }
@@ -318,21 +335,21 @@ ImdlTileTree::ImdlTileTree(std::string treeId, std::string rootContentId,
     , m_metadata(treeMetadata)
 {
     // Root tile from the tree props (the reference's requestTileTreeProps
-    // rootTile; IModelTileTree constructor :396-410).
+    // rootTile; IModelTileTree constructor :396-410). maximumSize =
+    // tileScreenSize: the children fill the same value (TileMetadata.ts:795/
+    // :847 maximumSize: root.tileScreenSize) and the reference's root props
+    // carry it via requestTileTreeProps — DanQing's id-encoded props have no
+    // separate carrier for a root maximumSize, so tileScreenSize stands in
+    // (the same value IModelTile.setContent backfills, IModelTile.ts:140-142).
     auto root = std::make_unique<ImdlTile>(*this, nullptr,
                                            std::move(rootContentId),
-                                           rootRange, 0.0);
+                                           rootRange, 0.0,
+                                           static_cast<double>(treeMetadata.tileScreenSize));
     setRootTile(std::move(root));
 }
 
 TileVisibility ImdlTileTree::computeVisibility(TileDrawArgs& args, Tile* tile)
 {
-    // Same SSE metric as the reality tree (RealityTile.ts:535-542) — the
-    // iModel tree's substitute metric (maximumSize/pixelSize, Tile.ts
-    // meetsScreenSpaceError :459-463) maps to the same SSE form via
-    // tileScreenSize; DanQing uses the geometric-error form directly with the
-    // root content range diagonal-derived error (registered simplification
-    // until tree props carry real geometric errors).
     if (!tile)
         return TileVisibility::OutsideFrustum;
     if (!tile->hasContent())
@@ -347,25 +364,19 @@ TileVisibility ImdlTileTree::computeVisibility(TileDrawArgs& args, Tile* tile)
             return TileVisibility::OutsideFrustum;
     }
 
+    // Leaf branch retained per reference computeVisibility (Tile.ts:445-449):
+    // a leaf passes culling → Visible (after content culling, which DanQing's
+    // subset does not port yet) — it never takes the SSE branch.
     if (tile->isLeaf())
         return TileVisibility::Visible;
 
-    // Depth-based error: each level halves the world error; compare against
-    // the SSE threshold via pixelSize (approximation of the reference's
-    // maximumSize test — registered; see header note).
-    float pixelSize = args.getPixelSizeRatio();
-    if (args.cameraOn && args.perspectiveScale > 0.0f) {
-        auto const& bs = tile->getBoundingSphere();
-        float const dx = bs.center[0] - args.cameraEye[0];
-        float const dy = bs.center[1] - args.cameraEye[1];
-        float const dz = bs.center[2] - args.cameraEye[2];
-        float const dist = std::sqrt(dx * dx + dy * dy + dz * dz);
-        pixelSize = std::max(dist - bs.radius, 0.01f) * args.perspectiveScale;
-    }
-    double const depth = tile->getDepth();
-    double const geometricError = m_metadata.tileScreenSize / (1u << std::min<uint32_t>(static_cast<uint32_t>(depth), 20u));
-    double const sse = pixelSize > 0.0f ? geometricError / pixelSize : 0.0;
-    return sse <= TileDrawArgs::kMaximumScreenSpaceError
+    // Ported from: Tile.ts meetsScreenSpaceError (:459-463):
+    //   pixelSize = args.getPixelSize(this) * args.pixelSizeScaleFactor;
+    //   maxSize = this.maximumSize * args.tileSizeModifier;
+    //   return pixelSize <= maxSize;
+    double const pixelSize = args.getPixelSize(*tile) * args.pixelSizeScaleFactor;
+    double const maxSize = tile->getMaximumSize() * args.tileSizeModifier;
+    return pixelSize <= maxSize
         ? TileVisibility::Visible
         : TileVisibility::TooCoarse;
 }

@@ -41,7 +41,7 @@ struct BoundingSphere {
 class Tile {
 public:
     Tile(TileTree& tree, Tile* parent, dqGeom::Range3d const& range,
-         uint32_t depth = 0);
+         uint32_t depth = 0, double maximumSize = 0.0);
     virtual ~Tile();
 
     Tile(Tile const&) = delete;
@@ -54,6 +54,14 @@ public:
     BoundingSphere const& getBoundingSphere() const noexcept { return m_boundingSphere; }
     uint32_t getDepth() const noexcept { return m_depth; }
     TileLoadStatus getLoadStatus() const noexcept { return m_loadStatus; }
+
+    /// The maximum size in pixels this tile can be drawn. If the size of the
+    /// tile on screen exceeds this maximum, a higher-resolution tile should be
+    /// drawn in its place.
+    /// Ported from: itwinjs-core Tile.ts:233 (public get maximumSize).
+    /// Virtual: every TS member is virtual and IModelTile redefines it
+    /// (IModelTile.ts:81-83) — the SSE criterion (Tile.ts:461) must dispatch.
+    virtual double getMaximumSize() const noexcept { return m_maximumSize; }
 
     /// Get the loaded graphic (nullptr if not ready)
     RenderGraphic* getGraphic() const noexcept { return m_graphic.get(); }
@@ -153,6 +161,13 @@ protected:
 
     /// Set bytes used
     void setBytesUsed(size_t bytes) noexcept { m_bytesUsed = bytes; }
+
+    /// The maximum size in pixels this tile can be drawn (Tile.ts:233).
+    /// Protected (the reference keeps `_maximumSize` private and IModelTile's
+    /// content backfill writes it from the subclass — IModelTile.ts:142;
+    /// DanQing's setContent is non-virtual, so the backfill runs in
+    /// ImdlTile::readContent and needs this access path).
+    double m_maximumSize = 0.0;
 
 private:
     TileTree& m_tree;
