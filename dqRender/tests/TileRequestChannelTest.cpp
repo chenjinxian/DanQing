@@ -17,6 +17,7 @@
 #include "dqRender/RenderGraphic.h"  // TileContent::graphic unique_ptr 析构需完整类型
 #include "dqRender/tile/TileRequestChannel.h"
 #include "dqRender/tile/Tile.h"
+#include "dqRender/tile/TileAdmin.h"  // TileUser（TileRequest 构造需 user）
 #include "dqRender/tile/TileTree.h"
 #include "dqRender/tile/RealityTileTree.h"
 
@@ -73,6 +74,15 @@ public:
     }
 };
 
+// TileUser stub — the reference constructor seeds the request's user set with
+// the requesting user (TileRequest.ts:34-39), so a user is required to build
+// one. Id is arbitrary here (no sharing asserted by these ordering tests).
+class StubUser : public TileUser {
+public:
+    uint32_t getTileUserId() const override { return 1; }
+    void discloseTileTrees(std::vector<TileTree*>&) override {}
+};
+
 }  // namespace
 
 // Ported from: TileRequestChannel.ts:13-20 —— 树优先级先于请求优先级。
@@ -93,10 +103,11 @@ TEST(TileRequestChannel, TreePriorityDominatesRequestPriority)
     // Concurrency 1 → exactly one dispatch per process(); whichever request
     // sorts first is the only one dispatched.
     TileRequestChannel channel(1);
+    StubUser user;
 
-    auto requestA = std::make_unique<TileRequest>(tileA, channel);
+    auto requestA = std::make_unique<TileRequest>(tileA, channel, user);
     requestA->setPriority(0);
-    auto requestB = std::make_unique<TileRequest>(tileB, channel);
+    auto requestB = std::make_unique<TileRequest>(tileB, channel, user);
     requestB->setPriority(9);
     channel.append(std::move(requestA));
     channel.append(std::move(requestB));
@@ -125,10 +136,11 @@ TEST(TileRequestChannel, RequestPriorityBreaksTiesWithinTree)
     OrderProbeTile highPriorityTile(tree);
 
     TileRequestChannel channel(1);
+    StubUser user;
 
-    auto requestLow = std::make_unique<TileRequest>(lowPriorityTile, channel);
+    auto requestLow = std::make_unique<TileRequest>(lowPriorityTile, channel, user);
     requestLow->setPriority(0);
-    auto requestHigh = std::make_unique<TileRequest>(highPriorityTile, channel);
+    auto requestHigh = std::make_unique<TileRequest>(highPriorityTile, channel, user);
     requestHigh->setPriority(9);
     // Append the higher request key first — append order is ignored by the
     // reference ("Ordering is ignored - the queue will be re-sorted later",

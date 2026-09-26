@@ -23,6 +23,35 @@ void TileRequestChannel::append(std::unique_ptr<TileRequest> request)
     m_pending.push_back(std::move(request));
 }
 
+void TileRequestChannel::append(TileRequest& request)
+{
+    // See the owning header for the EQUIVALENCE registration (reference
+    // Queue.append re-enqueues by reference — TileRequestChannel.ts:224-227;
+    // unique_ptr single-slot ownership reduces "re-enqueue" to move-to-back
+    // until swapPending lands).
+    for (auto it = m_pending.begin(); it != m_pending.end(); ++it) {
+        if (it->get() == &request) {
+            std::rotate(it, it + 1, m_pending.end());  // vector 随机访问迭代器
+            return;
+        }
+    }
+    // A queued request is always in the live pending queue while swapPending
+    // is unported; the cross-queue move arrives with it (Task 3).
+}
+
+void TileRequestChannel::forgetUser(TileUser& user)
+{
+    // Ported from: UniqueTileUserSets.forgetUser (TileUserSet.ts:107-110 —
+    // "for each set, remove(user)"); DanQing's sets live on the requests, so
+    // the walk covers both the pending and the active requests.
+    for (auto& request : m_pending)
+        if (request)
+            request->removeUser(user);
+    for (auto& request : m_active)
+        if (request)
+            request->removeUser(user);
+}
+
 void TileRequestChannel::process(uint32_t externalInFlight)
 {
     // Ported from: itwinjs-core TileRequestChannel.ts process() (:232-266)
@@ -55,19 +84,21 @@ void TileRequestChannel::process(uint32_t externalInFlight)
     //     (:256);
     //   · TileAdmin.forgetUser → onUserIModelClosed canceling requests of
     //     interest only to the departing user (TileAdmin.ts:560-563 → :925-940).
-    // All three rest on TileRequest.users / addUser / isQueued / cancel()
-    // (TileRequest.ts) — not ported; and on the processRequests dedup gate
-    // `undefined === tile.request` (TileAdmin.ts:899) that makes one shared
-    // request carry many users. DanQing requests carry no user set, and the
-    // per-frame feed rebuilds the request set from each user's requestTiles
-    // (TileAdmin::processRequestsForUser), so "userless" is not expressible
-    // here; a userless request's content simply completes and is never
-    // re-requested (LRU unselected → eviction/prune). Porting the users
-    // machinery is a standalone follow-up (M-C candidate), not a local patch.
+    // The faces these rest on ARE ported now — TileRequest.users / addUser /
+    // isQueued / isCanceled (TileRequest.ts:25-77) and the processRequests
+    // dedup gate `undefined === tile.request` (TileAdmin.ts:897-925) that
+    // makes one shared request carry many users. What is still missing is the
+    // cancel() state machine + the per-frame clearAll/swapPending cycle
+    // (TileAdmin.ts:829-841) that empties the sets each frame: a request whose
+    // users all depart is removed from the sets by TileRequestChannel::
+    // forgetUser but keeps loading, and a userless queued request is not yet
+    // canceled here. Porting that retirement cycle is the follow-up task
+    // (Task 3), not a local patch.
     // EQUIVALENCE: 参考源=TileRequestChannel.ts:242-253 + TileAdmin.ts:925-940；
     // 发散=DanQing 残留请求不被取消而是完成加载（并发槽被无人关心的请求占用、
     // 内容进 LRU 未选中分区）——验证法=调度序单测（TileRequestChannelTest）不
-    // 依赖取消面；取消面接线的回归锁待 users 机制移植时补。
+    // 依赖取消面；取消面接线的回归锁由 Task 3 补（TileRequestUsersTest 已锁
+    // users/isCanceled 面）。
 
     // 2. Dispatch pending requests up to the concurrency limit. The reference
     // dispatches by invoking `channel.requestContent(tile, isCanceled)` which
@@ -161,6 +192,15 @@ TileRequestChannel& TileRequestChannels::getChannel(char const* name)
     auto* ptr = channel.get();
     m_channels.push_back({name, std::move(channel)});
     return *ptr;
+}
+
+void TileRequestChannels::forgetUser(TileUser& user)
+{
+    // See TileRequestChannel::forgetUser (the UniqueTileUserSets.forgetUser
+    // role — TileUserSet.ts:107-110).
+    for (auto& entry : m_channels) {
+        entry.channel->forgetUser(user);
+    }
 }
 
 void TileRequestChannels::process(uint32_t externalInFlight)

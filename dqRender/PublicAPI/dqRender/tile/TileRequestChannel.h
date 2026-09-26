@@ -33,6 +33,27 @@ public:
     /// Append a request to the pending queue
     void append(std::unique_ptr<TileRequest> request);
 
+    /// Re-enqueue form of append — the shared-request gate's
+    /// "req.channel.append(req)" (TileAdmin.ts:906-908): the channel already
+    /// owns the queued request, so re-appending moves the owning handle to the
+    /// back of the live pending queue. EQUIVALENCE: 参考源=TileRequestChannel
+    /// .ts:224-227（Queue.append 按引用再入队——同一请求可同时在
+    /// _previouslyPending 与 _pending 两队列）；发散=DanQing unique_ptr 单槽
+    /// 位所有权使一请求只占一个槽位，swapPending 未移植（Task 3）前 queued
+    /// 请求必在存活队列中，"再入队"退化为移到队尾（process 每帧重排
+    /// TileRequestChannel.ts:240，位置无可观测语义）；Task 3 移植
+    /// swapPending 后此处负责把句柄从 _previouslyPending 搬入 _pending。
+    /// 验证法=TileRequestUsersTest.QueuedUserlessRequestReenqueuedNotDuplicated。
+    void append(TileRequest& request);
+
+    /// Remove a user from every live request's user set (pending + active) —
+    /// the UniqueTileUserSets.forgetUser role (TileUserSet.ts:107-110 —
+    /// "for each set, remove(user)"): whenever a user is unregistered there is
+    /// no need to track down every associated tile request, the user is just
+    /// removed from its user sets. DanQing hosts the sets on the requests (no
+    /// pool), so the walk is over the channel's requests.
+    void forgetUser(TileUser& user);
+
     /// Process pending queue: sort by priority, dispatch up to concurrency limit.
     /// @param externalInFlight  In-flight fetches outside this channel (the
     ///         fetcher's active count) — DanQing's polling fetcher owns the real
@@ -73,6 +94,10 @@ public:
 
     /// Get or create a channel by name
     TileRequestChannel& getChannel(char const* name);
+
+    /// Remove a user from every live request's user set, across all channels
+    /// (see TileRequestChannel::forgetUser).
+    void forgetUser(TileUser& user);
 
     /// Process all channels (see TileRequestChannel::process).
     void process(uint32_t externalInFlight = 0);
