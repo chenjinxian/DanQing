@@ -177,7 +177,7 @@ TEST(ImdlTileTree, EmptyMaskSkipsSubVolumes)
     }
 }
 
-// 模型域拒绝：子范围与 contentRange 不相交 → 跳过（:841-845）。
+// 模型域拒绝：子范围与 contentRange 不相交 → 跳过（:836-840）。
 TEST(ImdlTileTree, RejectsChildrenOutsideModelRange)
 {
     dqRender::ImdlTileMetadata parent;

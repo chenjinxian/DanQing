@@ -121,7 +121,7 @@ std::vector<ImdlChildTileProps> computeImdlChildTileProps(
                     bisectRange(range, 2, 0 == k);
 
                 if (testContentRange && !range.IntersectsRange(root.contentRange))
-                    continue;  // outside model range (:841-845)
+                    continue;  // outside model range (:836-840)
 
                 ImdlContentIdSpec childSpec = parentSpec;
                 childSpec.depth = parentSpec.depth + 1;

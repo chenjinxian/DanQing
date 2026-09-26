@@ -15,7 +15,7 @@
 //    的存活靠 loadChildren 重入门（Tile.ts:353-356 折叠门）的 isLeaf() 短路
 //   （经 computeImdlChildTileProps 的 leaf 早退，TileMetadata.ts:781-783）；
 //    本文件树的远 contentRange 只是兜底（非叶瓦的剖分子全被模型域拒绝，
-//    TileMetadata.ts:841-845）。生产形态瓦（contentId 非空、非叶、contentRange
+//    TileMetadata.ts:836-840）。生产形态瓦（contentId 非空、非叶、contentRange
 //    包容——真实子分树）两道兜底都不成立，子代身份由重入门负责：
 //    RepeatedSelectionKeepsChildIdentity 即该门的 RED-GREEN 锁（无门时每选择
 //    趟重算子代并 setChildren 替换——销毁已加载 graphic、LRU 震荡、在途请求
@@ -330,4 +330,90 @@ TEST(SelectTilesProtocolTest, RepeatedSelectionKeepsChildIdentity)
     // 无内容，必有 graphic 丢失/状态回落）。
     EXPECT_TRUE(root.getChildren().front()->hasGraphics());
     EXPECT_EQ(root.getChildren().front()->getLoadStatus(), TileLoadStatus::Ready);
+}
+
+// undisplayable root 特例：根瓦 maximumSize==0（isDisplayable = `0 < maximumSize`
+// 为假，Tile.ts:231）时，孩子返 Yes（"等所有孩子"）不触发独占回滚——参考
+// :290 的注释（"or else we would draw nothing"）：undisplayable root 下画
+// 当前可画的任何孩子。
+// 场景杠杆（确定性）：
+// - 根未就绪 + 可跳级（:283 haveChildren 的前提）= m_hadGraphics 路由
+//  （:264-265 "previously loaded and later unloaded"——setContent 后 freeMemory；
+//   maximumSize==0 + 无父时其余两项不可达：isParentDisplayable 需父、
+//   maxInitialTilesToSkip 恒 0）。
+// - 根 TooCoarse 走 hasContent 门（空 contentId——同 TooCoarseSkips… 的在文件
+//   杠杆），maximumSize 只进 undisplayable 判定，不进可见性。
+// Ported from: IModelTile.ts:292/:304（isUndisplayableRootTile 特例——
+//              undisplayable root 下 drawChildren 恒 true）。
+// Authored: 参考无 IModelTile.selectTiles 直接单测（§5(f)——同文件矩阵）。
+TEST(SelectTilesProtocolTest, UndisplayableRootDrawsReadyChildrenDespiteSiblingYes)
+{
+    ProtocolTree tree;
+
+    // 根形态：maximumSize 是 ImdlTile 构造尾参；曾载后卸制造未就绪 + 可跳级。
+    auto makeRoot = [&tree](double maximumSize) {
+        auto root = std::make_unique<ImdlTile>(tree, nullptr, "",
+                                               box(0, 0, 0, 8, 8, 8), 0.0,
+                                               maximumSize);
+        root->setContent(readyContent());  // _hadGraphics 置位（Tile.ts:210-216）
+        root->freeMemory();                // 卸载 → 未就绪 + :264-265 可跳级
+        return root;
+    };
+    // kidReady：叶（setContent isLeaf）→ 确定 Visible → :219-222 push+markReady。
+    // kidNotReady：可见（SSE，maximumSize 512）+ 未就绪无孩子 → :216-217
+    // insertMissing + :226-229 返 Yes（"等所有孩子"的触发源）。
+    auto makeKids = [&tree](Tile& root) {
+        auto kidReady = std::make_unique<ImdlTile>(tree, &root, "1/0/0/0",
+                                                   box(0, 0, 0, 4, 4, 4), 0.0,
+                                                   512.0);
+        kidReady->setContent(readyContent());
+        auto kidNotReady = std::make_unique<ImdlTile>(tree, &root, "1/1/1/1",
+                                                      box(4, 4, 4, 8, 8, 8), 0.0,
+                                                      512.0);
+        Tile* readyPtr = kidReady.get();
+        Tile* notReadyPtr = kidNotReady.get();
+        std::vector<std::unique_ptr<Tile>> kids;
+        kids.push_back(std::move(kidReady));
+        kids.push_back(std::move(kidNotReady));
+        root.setChildren(std::move(kids));
+        return std::make_pair(readyPtr, notReadyPtr);
+    };
+
+    {
+        // undisplayable root（maximumSize 0）：:304 = true → :309 提前返 No，
+        // :313-314 的独占回滚不可达 → 就绪孩子保留在 selected。
+        auto root = makeRoot(/*maximumSize=*/0.0);
+        ASSERT_TRUE(root->isUndisplayableRootTile());
+        auto const [readyPtr, notReadyPtr] = makeKids(*root);
+
+        TileDrawArgs args;
+        std::vector<Tile*> selected;
+        auto const result = root->selectTiles(selected, args, /*numSkipped=*/0);
+
+        EXPECT_EQ(result, SelectParent::No);
+        ASSERT_EQ(selected.size(), 1u);
+        EXPECT_EQ(selected.front(), readyPtr);
+        EXPECT_TRUE(args.isTileReady(readyPtr));  // :221（回滚只作用于 selected）
+        EXPECT_TRUE(contains(args.getMissingTiles(), notReadyPtr));
+        // 根可跳级（曾载后卸）→ 不重请求（:330 的 !canSkipThisTile 门）。
+        EXPECT_FALSE(contains(args.getMissingTiles(), root.get()));
+    }
+    {
+        // 对照（同形态、根可显示 maximumSize 512）：:304 = false → 独占回滚
+        //（:313-314）丢弃就绪孩子；根自身未就绪（Abandoned）:317 不入选 →
+        // selected 空。两块对锁 :304 的两个取值方向。
+        auto root = makeRoot(/*maximumSize=*/512.0);
+        ASSERT_FALSE(root->isUndisplayableRootTile());
+        auto const [readyPtr, notReadyPtr] = makeKids(*root);
+
+        TileDrawArgs args;
+        std::vector<Tile*> selected;
+        auto const result = root->selectTiles(selected, args, /*numSkipped=*/0);
+
+        EXPECT_EQ(result, SelectParent::No);
+        EXPECT_TRUE(selected.empty());
+        EXPECT_FALSE(contains(selected, readyPtr));
+        EXPECT_TRUE(args.isTileReady(readyPtr));
+        EXPECT_TRUE(contains(args.getMissingTiles(), notReadyPtr));
+    }
 }

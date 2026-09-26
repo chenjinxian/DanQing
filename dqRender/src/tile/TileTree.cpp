@@ -47,6 +47,16 @@ void TileTree::selectTiles(TileDrawArgs& args)
     // Not ported here: this shell serves the Reality/3D Tiles path whose
     // behavior is frozen at zero-change; land it with the shell's per-tree
     // addTilesForUser when the batched-report adaptation is retired.
+    // GAP（M-B 终审登记；代码迁移归 M-C——draw 侧改从 selected 取图形，对齐
+    // 参考）：参考的 draw 从 selectTiles 返回的 tiles 绘制
+    // （IModelTileTree.ts:447-449 `const tiles = this.selectTiles(args);
+    // this._rootTile.draw(args, tiles, ...)`）；DanQing 的 TileTree::draw 改从
+    // ready 集取图形（本文件 draw）——SelectParent 协议路径的 push
+    // （IModelTile.ts:250 孩子 / :319 自身）不 markReady，协议选中的瓦既不上屏
+    // 也不进保活集。后果：多层 imdl 树细化过渡期整树空白。当前无生产消费面：
+    // 全部夹具单叶/3D Tiles/glTF 走基类 BatchedTile 形态（Tile::selectTiles
+    // 默认体——其可画瓦经 markReady 落 ready 集，两集重合）；ImdlTile 协议
+    // （U9(3)）当前仅 SelectTilesProtocolTest 消费。
     std::vector<Tile*> selected;
     m_rootTile->selectTiles(selected, args, /*numSkipped=*/0);
 }
