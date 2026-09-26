@@ -505,10 +505,17 @@ inline std::vector<ImdlPrimitiveProps> parseImdlMeshPrimitives(JsonValue const& 
 // Locate a bufferView's byte span inside the imdl document's binary section.
 // （原 ImdlGraphics.cpp 匿名 namespace 既有实现——U11(1) 起为 JSON 层共享，
 // parseImdlEdges 与图形创建路径共用同一视图语义。）
+// 守卫对齐参考 findBuffer（ParseImdlDocument.ts:1093-1100）：
+//   - 视图名为空 → undefined（:1094 `0 === bufferViewId.length`——C++ 侧
+//     参数已无类型区分，仅空名对应参考的 typeof/length 双检）；
+//   - byteLength === 0 → undefined（:1099-1100）——0 长视图不是合法字节
+//     区间（2026-09-27 U11(2) 补齐，评审 ②）。
 inline bool findBufferView(JsonValue const& doc, std::string const& name,
                            std::vector<uint8_t> const& binary,
                            uint8_t const*& outData, size_t& outSize)
 {
+    if (name.empty())
+        return false;  // :1094
     JsonValue const* views = doc.find("bufferViews");
     if (!views)
         return false;
@@ -521,6 +528,8 @@ inline bool findBufferView(JsonValue const& doc, std::string const& name,
         return false;
     size_t const offset = static_cast<size_t>(off->number);
     size_t const length = static_cast<size_t>(len->number);
+    if (length == 0)
+        return false;  // :1099-1100
     if (offset + length > binary.size())
         return false;
     outData = binary.data() + offset;
@@ -594,9 +603,19 @@ inline std::optional<ImdlEdgeParams> parseImdlEdges(JsonValue const& doc,
     // :695-708 → CompactEdges.ts indexedEdgeParamsFromCompactEdges——2-bit
     // visibility 展开 + silhouette normalPairs，需 surface.indices 顶点索引与
     // maxVertexTableSize 上限）。
+    // TODO(Task 6+)：polylines 形态（:716 `imdl.polylines ?
+    // parseTesselatedPolyline(imdl.polylines) : undefined` → :722 全空析取含
+    // polylines）。参考 parseEdges 的全空检查是**四形态析取**
+    // （:722 `!segments && !silhouettes && !indexed && !polylines`）——本层
+    // 未解析 polylines（:711-716 的 parseTesselatedPolyline 三视图
+    // indices/prevIndices/nextIndicesAndParams），故析取缺 polylines 极。
+    // 注意：polylines 是 EdgeParams.polylines（TesselatedPolyline 视图，
+    // EdgeParams.ts PolylineEdgeGroup 的 tesselate 输入是它而非本层视图），
+    // 消费在 createEdgeParams（EdgeParams.ts:396-410 tesselatePolylineList），
+    // 与 segments 直通不同——接线时按参考消费链评估，勿从 segments 旁路合成。
 
     if (!out.segments && !out.silhouettes && !out.indexed)
-        return std::nullopt;  // :722-723
+        return std::nullopt;  // :722-723（参考析取含 polylines——见上 TODO）
     return out;
 }
 

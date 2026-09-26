@@ -175,18 +175,24 @@ inline void addLineCodeUniform(ShaderBuilder& vert)
 // For the full LUT path (Surface), use addVertexTable() instead.
 // ---------------------------------------------------------------------------
 
-/// GLSL: samplePosition() — read position from vertex LUT texture
-/// Ported from: itwinjs-core Vertex.ts getSamplePosition (line 65-90)
+/// GLSL: samplePosition() — on-demand QUANTIZED position sampler (vertex LUT).
+/// Ported from: itwinjs-core Vertex.ts getSamplePositionPrelude (:65-67) +
+///              getSamplePositionQuantizedPostlude (:71-79)。
+/// 量化顶点表的位置跨 2 个 texel（texel0.xy=qx、texel0.zw=qy、texel1.xy=qz，
+/// 各 decodeUInt16）——旧实现读单 texel raw.xyz 是对参考布局的误读（量化
+/// 顶点表首 texel 的 zw 是 qy 而非 qz，边缘几何的对端点会解到错误顶点）。
+/// REQUIRES: compute_vert_coords + g_vert_stepX + decodeUInt16 +
+/// unquantizePosition + u_vertLUT/u_vertParams/u_qOrigin/u_qScale 已由
+/// addVertexTable 接线（参考侧同构：uniforms 来自 ctor 的 addPositionFromLUT，
+/// samplePosition 函数体来自 createBase 的 addSamplePosition）。
 inline constexpr char const* kSamplePositionFunction = R"(
 vec4 samplePosition(float index) {
-  float texWidth = u_vertParams.x;
-  float numRgbaPerVert = u_vertParams.z;
-  float vertIndex = index * numRgbaPerVert;
-  float row = floor(vertIndex / texWidth);
-  float col = vertIndex - row * texWidth;
-  vec2 uv = (vec2(col, row) + 0.5) / vec2(texWidth, u_vertParams.y);
-  vec4 raw = TEXTURE(u_vertLUT, uv);
-  return unquantizePosition(raw.xyz, u_qOrigin, u_qScale);
+  vec2 tc = compute_vert_coords(index);
+  vec4 e0 = floor(TEXTURE(u_vertLUT, tc) * 255.0 + 0.5);
+  tc.x += g_vert_stepX;
+  vec4 e1 = floor(TEXTURE(u_vertLUT, tc) * 255.0 + 0.5);
+  vec3 qpos = vec3(decodeUInt16(e0.xy), decodeUInt16(e0.zw), decodeUInt16(e1.xy));
+  return unquantizePosition(qpos, u_qOrigin, u_qScale);
 }
 )";
 
@@ -220,20 +226,18 @@ vec4 samplePosition(float index) {
 }
 )";
 
-/// add samplePosition function + LUT uniforms for Edge/Polyline.
-/// Ported from: itwinjs-core Vertex.ts addSamplePosition() (line 61-63)
+/// add ONLY the on-demand quantized samplePosition() function — NO uniforms,
+/// NO unquantizePosition. Ported from: itwinjs-core Vertex.ts addSamplePosition()
+/// (line 61-63 — `vert.addFunction(getSamplePosition(vert.positionType))`,
+/// function-only; the LUT uniforms come from the constructor's
+/// addPositionFromLUT). REQUIRES addVertexTable to have wired
+/// u_vertLUT/u_vertParams/u_qOrigin/u_qScale/compute_vert_coords/g_vert_stepX/
+/// decodeUInt16/unquantizePosition first — otherwise the shader references
+/// undeclared identifiers and fails to compile. (Edge 是唯一调用方：先
+/// addVertexTable 再 addSamplePosition，与参考的 VertexShaderBuilder ctor +
+/// createBase 组装顺序一致。)
 inline void addSamplePosition(ShaderBuilder& vert)
 {
-    // LUT uniforms (nullptr bindings — uploaded by draw loop)
-    vert.addUniform("u_vertLUT", VariableType::Sampler2D, nullptr);
-    vert.addUniform("u_vertParams", VariableType::Vec4, nullptr);
-    vert.addUniform("u_qOrigin", VariableType::Vec3, nullptr);
-    vert.addUniform("u_qScale", VariableType::Vec3, nullptr);
-
-    // unquantizePosition function
-    vert.addFunction(std::string(getUnquantizePosition()));
-
-    // samplePosition function
     vert.addFunction(std::string(kSamplePositionFunction));
 }
 

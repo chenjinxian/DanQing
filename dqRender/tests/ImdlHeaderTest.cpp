@@ -13,9 +13,11 @@
 
 #include "rhi/DriverBase.h"
 #include "rhi/HandleAllocator.h"
+#include "dqRender/rhi/BufferDescriptor.h"
 #include "render/MeshGraphic.h"
 #include "render/PolyfaceGraphic.h"
 #include "render/SurfaceGeometry.h"
+#include "render/shader/EdgeShaderBuilder.h"
 #include "tile/TilesetJson.h"
 #include "tile-sample-assets/imdl-fixtures/TileIOFixtures.h"
 #include <dqCommon/LinePixels.h>
@@ -26,6 +28,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -344,7 +347,7 @@ namespace {
 // 录制驱动：createTexture 返回真实句柄（VertexLutTexture::create 的判空通过），
 // setTextureData 捕获上传字节/尺寸——verbatim 直传断言的数据源（形态照
 // VertexLutTextureTest.RecordingDriver 先例，无 GL 上下文，hermetic）。
-class RecordingLutDriver final : public dqRender::rhi::NullDriver {
+class RecordingLutDriver : public dqRender::rhi::NullDriver {
 public:
     dqRender::rhi::TextureHandle createTexture(dqRender::rhi::SamplerType, uint8_t,
                                                dqRender::rhi::TextureFormat, uint32_t, uint32_t,
@@ -854,4 +857,419 @@ TEST(ImdlGraphicsTest, SimpleBuilder12BLayoutSkipsOctNormalGuarded)
     auto graphics = dqRender::createImdlLutGraphics(doc, system);
     EXPECT_TRUE(graphics.empty())
         << "12B SimpleBuilder (unlit) tables are rejected by the LUT path";
+}
+
+// ---------------------------------------------------------------------------
+// U11(2)：segments/silhouettes 边缘消费（Task 4 评审项 ②③ + Task 5 图形创建）。
+//
+// findBufferView 守卫（Task 4 评审 ②）：
+// Ported from: ParseImdlDocument.ts:1093-1100 findBuffer——
+//              `typeof bufferViewId !== "string" || 0 === bufferViewId.length`
+//              → undefined；`0 === byteLength` → undefined。DanQing 侧
+//              findBufferView 此前缺这两个守卫（空名/0 长视图会被当作合法
+//              字节区间送入图形创建）。
+//
+// 图形创建（Task 5）：readContent 的 LUT 主路径为每个 imdl mesh primitive 的
+// edges 产出 edge graphic（与 surface graphic 并列，Batch 包裹不变）。
+// Ported from: itwinjs-core Mesh.ts:47-53 MeshRenderGeometry（silhouetteEdges
+//              先于 segmentEdges 创建；两几何与 surface 共享同一顶点 LUT——
+//              MeshData.lut）+ EdgeGeometry.ts create/:42-47 + :75-88 ctor
+//              （a_pos 24-bit UBYTE3 索引流 + a_endPointAndQuadIndices UBYTE4，
+//              drawArrays(Triangles, 0, numIndices)；SilhouetteEdgeGeometry
+//              另加 a_normals UBYTE4，technique SilhouetteEdge）+
+//              MeshData.ts:93-94（edgeWidth = edges.weight、edgeLineCode =
+//              LineCode.valueFromLinePixels(edges.linePixels)）。
+// 数值断言 Authored: no reference test exists in itwinjs-core for imdl edges
+//           graphics（TileIO.test.ts/ImdlParser.test.ts 无对应场景，
+//           2026-09-26 检索）——数值钉死自录制夹具 JSON 离线解码（bytes/
+//           offset 与 ImdlEdges.SegmentEdgesFromRecordedRectangle 等既有
+//           解析锁同源），布局断言照参考创建函数的结构。
+// ---------------------------------------------------------------------------
+
+// Task 4 评审 ③：假 bufferView 名 → 该形态成员被丢弃（findBuffer :1095-1097
+// ——bufferViews 里查不到 → undefined）。segments 名假 + 其余形态缺 → 全空 →
+// parseEdges :722-723 undefined。Authored: no reference test exists for imdl
+// edges parsing（同上区块说明）。
+TEST(ImdlEdges, FakeBufferViewNameDropsEdgeMember)
+{
+    // 变体 1：segments 视图名假 → 全空 → nullopt。
+    dqRender::ImdlDocument doc;
+    doc.sceneJson = R"json({
+        "meshes": {"Mesh_Root": {"primitives": [{
+            "material": "Mat",
+            "edges": {"segments": {"indices": "bvNope", "endPointAndQuadIndices": "bvAlsoNope"}}
+        }]}},
+        "bufferViews": {}
+    })json";
+    auto json = dqRender::tilejson::parseJsonDocument(doc.sceneJson);
+    ASSERT_NE(json, nullptr);
+    auto prims = dqRender::tilejson::parseImdlMeshPrimitives(*json);
+    ASSERT_EQ(prims.size(), 1u);
+    ASSERT_TRUE(prims[0].edges.has_value());
+    auto edges = dqRender::tilejson::parseImdlEdges(*json, doc, prims[0]);
+    EXPECT_FALSE(edges.has_value())
+        << "unresolvable segment views drop the member → all-empty → undefined (:722-723)";
+
+    // 变体 2：segments 可解析 + silhouettes 的 normalPairs 名假 → silhouettes
+    // 单独丢弃、segments 存活（parseEdges :714-715 各形态独立解析）。
+    dqRender::ImdlDocument doc2;
+    doc2.sceneJson = R"json({
+        "meshes": {"Mesh_Root": {"primitives": [{
+            "material": "Mat",
+            "edges": {
+                "segments": {"indices": "bvSegIdx", "endPointAndQuadIndices": "bvSegEpq"},
+                "silhouettes": {"indices": "bvSilIdx", "endPointAndQuadIndices": "bvSilEpq",
+                                "normalPairs": "bvNope"}
+            }
+        }]}},
+        "bufferViews": {
+            "bvSegIdx": {"buffer": "binary_glTF", "byteOffset": 0, "byteLength": 18},
+            "bvSegEpq": {"buffer": "binary_glTF", "byteOffset": 18, "byteLength": 24}
+        }
+    })json";
+    doc2.binary.assign(42u, 0x00u);
+    auto json2 = dqRender::tilejson::parseJsonDocument(doc2.sceneJson);
+    ASSERT_NE(json2, nullptr);
+    auto prims2 = dqRender::tilejson::parseImdlMeshPrimitives(*json2);
+    ASSERT_EQ(prims2.size(), 1u);
+    auto edges2 = dqRender::tilejson::parseImdlEdges(*json2, doc2, prims2[0]);
+    ASSERT_TRUE(edges2.has_value());
+    EXPECT_TRUE(edges2->segments.has_value()) << "resolvable segments survive";
+    EXPECT_FALSE(edges2->silhouettes.has_value())
+        << "bogus normalPairs view drops silhouettes only (parseSilhouetteEdges :671-675)";
+}
+
+// Task 4 评审 ②：byteLength 0 的 bufferView → 成员丢弃（findBuffer
+// :1099-1100 `if (0 === byteLength) return undefined`）。
+// Authored: no reference test exists for imdl edges parsing（同上区块说明）。
+TEST(ImdlEdges, ZeroLengthBufferViewDropsEdgeMember)
+{
+    dqRender::ImdlDocument doc;
+    doc.sceneJson = R"json({
+        "meshes": {"Mesh_Root": {"primitives": [{
+            "material": "Mat",
+            "edges": {"segments": {"indices": "bvIdx", "endPointAndQuadIndices": "bvEpq"}}
+        }]}},
+        "bufferViews": {
+            "bvIdx": {"buffer": "binary_glTF", "byteOffset": 0, "byteLength": 0},
+            "bvEpq": {"buffer": "binary_glTF", "byteOffset": 0, "byteLength": 24}
+        }
+    })json";
+    doc.binary.assign(24u, 0x00u);
+    auto json = dqRender::tilejson::parseJsonDocument(doc.sceneJson);
+    ASSERT_NE(json, nullptr);
+    auto prims = dqRender::tilejson::parseImdlMeshPrimitives(*json);
+    ASSERT_EQ(prims.size(), 1u);
+    auto edges = dqRender::tilejson::parseImdlEdges(*json, doc, prims[0]);
+    EXPECT_FALSE(edges.has_value())
+        << "zero-length bufferView is not a legal edge byte span (findBuffer :1099-1100)";
+}
+
+// ---------------------------------------------------------------------------
+// 边缘图形创建的录制驱动——在 RecordingLutDriver 之上补 BO/VBO/VAO/drawArrays
+// 捕获（布局断言的数据源；形态照其"录制驱动 + 桩 RenderSystem"先例）。
+// ---------------------------------------------------------------------------
+namespace {
+
+class EdgeRecordingDriver final : public RecordingLutDriver {
+public:
+    // -- buffer objects：分配真实句柄并按 handle id 记录上传字节 --
+    dqRender::rhi::BufferObjectHandle createBufferObject(
+        uint32_t byteCount, dqRender::rhi::BufferObjectBinding binding,
+        dqRender::rhi::BufferUsage usage) noexcept override
+    {
+        auto h = m_allocator.allocate<dqRender::rhi::HwBufferObject>();
+        if (h) {
+            auto* bo = m_allocator.handle_cast<dqRender::rhi::HwBufferObject,
+                                               dqRender::rhi::HwBufferObject>(h);
+            if (bo) {
+                bo->byteCount = byteCount;
+                bo->bindingType = binding;
+                bo->usage = usage;
+            }
+            m_boBytes[h.getId()] = {};
+        }
+        return h;
+    }
+
+    void updateBufferObject(dqRender::rhi::BufferObjectHandle h,
+                            dqRender::rhi::BufferDescriptor&& data,
+                            uint32_t byteOffset) noexcept override
+    {
+        auto it = m_boBytes.find(h.getId());
+        if (it != m_boBytes.end() && byteOffset == 0) {
+            auto const* b = static_cast<uint8_t const*>(data.buffer());
+            it->second.assign(b, b + data.size());
+        }
+        dqRender::rhi::NullDriver::updateBufferObject(h, std::move(data), byteOffset);
+    }
+
+    // -- VBO/VAO：分配真实句柄（createImdlLutGraphics 以 vbh id 关联槽位）--
+    dqRender::rhi::VertexBufferInfoHandle createVertexBufferInfo(
+        uint8_t bufferCount, uint8_t attributeCount,
+        dqRender::rhi::AttributeArray const& attrs) noexcept override
+    {
+        m_lastBufferCount = bufferCount;
+        m_lastAttributeCount = attributeCount;
+        for (uint8_t i = 0; i < attributeCount; ++i)
+            m_lastAttrs[i] = attrs[i];
+        return m_allocator.allocate<dqRender::rhi::HwVertexBufferInfo>();
+    }
+
+    dqRender::rhi::VertexBufferHandle createVertexBuffer(
+        uint32_t /*vertexCount*/, dqRender::rhi::VertexBufferInfoHandle) noexcept override
+    {
+        return m_allocator.allocate<dqRender::rhi::HwVertexBuffer>();
+    }
+
+    dqRender::rhi::RenderPrimitiveHandle createRenderPrimitive(
+        dqRender::rhi::VertexBufferHandle vbh, dqRender::rhi::IndexBufferHandle ibh,
+        dqRender::rhi::PrimitiveType pt) noexcept override
+    {
+        m_lastPrimVbh = vbh.getId();
+        m_lastPrimHasIbo = static_cast<bool>(ibh);
+        m_lastPrimType = pt;
+        return m_allocator.allocate<dqRender::rhi::HwRenderPrimitive>();
+    }
+
+    // -- LUT 上传计数（共享断言：surface + edges 只允许一次直传）--
+    void setTextureData(dqRender::rhi::TextureHandle h, uint32_t l0, uint32_t l1, uint32_t l2,
+                        uint32_t l3, uint32_t width, uint32_t height, uint32_t l4,
+                        dqRender::rhi::PixelBufferDescriptor&& data) noexcept override
+    {
+        ++m_textureUploads;
+        RecordingLutDriver::setTextureData(h, l0, l1, l2, l3, width, height, l4, std::move(data));
+    }
+
+    // -- vertex layout --
+    void setVertexBufferObject(dqRender::rhi::VertexBufferHandle vbh, uint32_t index,
+                               dqRender::rhi::BufferObjectHandle bo) noexcept override
+    {
+        m_vbhSlots[vbh.getId()][index] = bo.getId();
+        dqRender::rhi::NullDriver::setVertexBufferObject(vbh, index, bo);
+    }
+
+    // 观测口。
+    std::vector<uint8_t> const* boBytes(uint32_t id) const
+    {
+        auto it = m_boBytes.find(id);
+        return it == m_boBytes.end() ? nullptr : &it->second;
+    }
+    uint32_t textureUploads() const noexcept { return m_textureUploads; }
+    uint8_t lastAttributeCount() const noexcept { return m_lastAttributeCount; }
+    dqRender::rhi::AttributeArray const& lastAttrs() const noexcept { return m_lastAttrs; }
+    uint32_t lastPrimVbh() const noexcept { return m_lastPrimVbh; }
+    bool lastPrimHasIbo() const noexcept { return m_lastPrimHasIbo; }
+    dqRender::rhi::PrimitiveType lastPrimType() const noexcept { return m_lastPrimType; }
+    uint32_t vbhSlotBuffer(uint32_t vbhId, uint32_t slot) const
+    {
+        auto const& slots = m_vbhSlots.at(vbhId);
+        auto it = slots.find(slot);
+        return it == slots.end() ? dqRender::rhi::HandleBase::nullid : it->second;
+    }
+
+private:
+    dqRender::rhi::HandleAllocator m_allocator;
+    std::map<uint32_t, std::vector<uint8_t>> m_boBytes;
+    uint32_t m_textureUploads = 0;
+    uint8_t m_lastBufferCount = 0;
+    uint8_t m_lastAttributeCount = 0;
+    // AttributeArray 是 C 数组（DriverEnums.h:518）——不可赋值，逐元素拷贝。
+    dqRender::rhi::AttributeArray m_lastAttrs{};
+    uint32_t m_lastPrimVbh = 0;
+    bool m_lastPrimHasIbo = false;
+    dqRender::rhi::PrimitiveType m_lastPrimType = dqRender::rhi::PrimitiveType::TRIANGLES;
+    std::map<uint32_t, std::map<uint32_t, uint32_t>> m_vbhSlots;
+};
+
+}  // namespace
+
+// LUT 主路径的 segment edges graphic（rectangle 录制夹具：4 segments）。
+// 断言 technique/attribute 布局 + BO 字节 verbatim + LUT 共享（不重传）。
+// Ported from: EdgeGeometry.ts create/ctor（buffer/attribute 结构）+ Mesh.ts
+//              :52（segmentEdges 与 surface 同属一个 mesh graphic）。
+TEST(ImdlGraphicsTest, LutPathProducesSegmentEdgeGraphics)
+{
+    auto doc = parseFull(V1_1::rectangleBytes, V1_1::rectangleSize);
+    ASSERT_TRUE(doc.has_value());
+
+    EdgeRecordingDriver driver;
+    LutStubSystem system(driver);
+    auto graphics = dqRender::createImdlLutGraphics(*doc, system);
+    ASSERT_EQ(graphics.size(), 1u);
+    auto* mesh = static_cast<dqRender::MeshGraphic*>(graphics[0]);
+    ASSERT_EQ(mesh->getSurfaces().size(), 1u);
+    dqRender::SurfaceGeometry const* surf = mesh->getSurfaces()[0].get();
+
+    // edges graphic 与 surface 并列（reference Mesh.ts:52 segmentEdges）。
+    ASSERT_EQ(mesh->getEdges().size(), 1u);
+    dqRender::EdgeGeometry const* edge = mesh->getEdges()[0].get();
+    ASSERT_NE(edge, nullptr);
+
+    // technique/量化形态：Edge technique + 量化 LUT 几何（与 surface 共享
+    // 顶点表——MeshData.lut）。
+    EXPECT_EQ(edge->getTechniqueId(), dqRender::TechniqueId::Edge);
+    EXPECT_EQ(edge->getPass(), dqRender::Pass::OpaqueLinear);
+    EXPECT_TRUE(edge->usesQuantizedPositions());
+    ASSERT_NE(edge->getLut(), nullptr);
+    EXPECT_EQ(edge->getLut()->getTexture().getId(), surf->getLut().getTexture().getId())
+        << "edge geometry must observe the surface's vertex LUT (MeshData.lut), not a copy";
+
+    // attribute 布局（EdgeGeometry.ts :81-85——a_pos UBYTE3 索引流 location 0
+    // + a_endPointAndQuadIndices UBYTE4 location 1；drawArrays 无 element
+    // index buffer）。
+    EXPECT_EQ(driver.lastPrimType(), dqRender::rhi::PrimitiveType::TRIANGLES);
+    EXPECT_FALSE(driver.lastPrimHasIbo());
+    EXPECT_EQ(driver.lastAttributeCount(), 2u);
+    EXPECT_EQ(driver.lastAttrs()[0].buffer, 0u);
+    EXPECT_EQ(driver.lastAttrs()[0].type, dqRender::rhi::ElementType::UBYTE3);
+    EXPECT_EQ(driver.lastAttrs()[0].offset, 0u);
+    EXPECT_EQ(driver.lastAttrs()[1].buffer, 1u);
+    EXPECT_EQ(driver.lastAttrs()[1].type, dqRender::rhi::ElementType::UBYTE4);
+    EXPECT_EQ(driver.lastAttrs()[1].offset, 0u);
+
+    // 顶点数：indices 字节 72 / 3 = 24 顶点（4 segments × 6 顶点四边形）；
+    // endPointAndQuadIndices 96B == 4B/顶点。
+    EXPECT_EQ(edge->getNumIndices(), 24u);
+
+    // 边缘 symbology（MeshData.ts:93-94——edgeWidth = edges.weight、
+    // edgeLineCode = valueFromLinePixels(Solid)=0；parseEdges :730-731）。
+    EXPECT_FLOAT_EQ(edge->getEdgeWidth(), 1.0f);
+    EXPECT_EQ(edge->getEdgeLineCode(), 0u);
+
+    // LUT 仅上传一次（surface 与 edges 共享——reference 无第二次
+    // createForData 调用）。
+    EXPECT_EQ(driver.textureUploads(), 1u);
+    EXPECT_EQ(driver.lastWidth(), 16u);
+    EXPECT_EQ(driver.lastHeight(), 1u);
+
+    // BO 字节 verbatim：edge VAO 两条 VBO 的上传字节 == 线上 bufferView 字节
+    // （EdgeGeometry.ts :43-44 createArrayBuffer(edges.indices.data /
+    // edges.endPointAndQuadIndices)——零 CPU 重排，形态同顶点表直传锁）。
+    auto json = dqRender::tilejson::parseJsonDocument(doc->sceneJson);
+    ASSERT_NE(json, nullptr);
+    auto prims = dqRender::tilejson::parseImdlMeshPrimitives(*json);
+    ASSERT_EQ(prims.size(), 1u);
+    ASSERT_TRUE(prims[0].edges.has_value());
+    ASSERT_TRUE(prims[0].edges->segments.has_value());
+    auto const* views = json->find("bufferViews");
+    ASSERT_NE(views, nullptr);
+    auto resolveWire = [&](std::string const& name) -> std::vector<uint8_t> {
+        auto const* view = views->find(name.c_str());
+        EXPECT_NE(view, nullptr) << name;
+        if (!view) return {};
+        size_t off = static_cast<size_t>(view->find("byteOffset")->number);
+        size_t len = static_cast<size_t>(view->find("byteLength")->number);
+        return std::vector<uint8_t>(doc->binary.begin() + off, doc->binary.begin() + off + len);
+    };
+    auto const wireIdx = resolveWire(prims[0].edges->segments->indicesView);
+    auto const wireEpq = resolveWire(prims[0].edges->segments->endPointAndQuadIndicesView);
+    uint32_t const edgeVbh = driver.lastPrimVbh();
+    ASSERT_NE(edgeVbh, dqRender::rhi::HandleBase::nullid)
+        << "edges are created after the surface → last primitive is the edge VAO";
+    auto const* idxBytes = driver.boBytes(driver.vbhSlotBuffer(edgeVbh, 0));
+    auto const* epqBytes = driver.boBytes(driver.vbhSlotBuffer(edgeVbh, 1));
+    ASSERT_NE(idxBytes, nullptr);
+    ASSERT_NE(epqBytes, nullptr);
+    EXPECT_EQ(*idxBytes, wireIdx) << "a_pos stream = wire indices verbatim";
+    EXPECT_EQ(*epqBytes, wireEpq) << "a_endPointAndQuadIndices stream = wire bytes verbatim";
+
+    delete graphics[0];
+}
+
+// cylinder 录制夹具：segments + silhouettes 双 edge graphic（silhouette 先建
+// ——Mesh.ts:49-52 顺序；a_normals 第三条 UBYTE4 流 + SilhouetteEdge
+// technique）。
+TEST(ImdlGraphicsTest, LutPathProducesSilhouetteEdgeGraphics)
+{
+    auto doc = parseFull(V1_1::cylinderBytes, V1_1::cylinderSize);
+    ASSERT_TRUE(doc.has_value());
+
+    EdgeRecordingDriver driver;
+    LutStubSystem system(driver);
+    auto graphics = dqRender::createImdlLutGraphics(*doc, system);
+    ASSERT_EQ(graphics.size(), 1u);
+    auto* mesh = static_cast<dqRender::MeshGraphic*>(graphics[0]);
+    ASSERT_EQ(mesh->getSurfaces().size(), 1u);
+    dqRender::SurfaceGeometry const* surf = mesh->getSurfaces()[0].get();
+
+    // 两个 edge graphic：silhouettes 先、segments 后（Mesh.ts:49-52）。
+    ASSERT_EQ(mesh->getEdges().size(), 2u);
+    auto* sil = mesh->getEdges()[0].get();
+    auto* seg = mesh->getEdges()[1].get();
+    ASSERT_NE(sil, nullptr);
+    ASSERT_NE(seg, nullptr);
+
+    // technique/order（EdgeGeometry.ts :110-112——SilhouetteEdge + Silhouette
+    // order；cylinder 非 planar）。
+    EXPECT_EQ(sil->getTechniqueId(), dqRender::TechniqueId::SilhouetteEdge);
+    EXPECT_EQ(sil->getRenderOrder(), dqRender::RenderOrder::Silhouette);
+    EXPECT_EQ(seg->getTechniqueId(), dqRender::TechniqueId::Edge);
+    EXPECT_EQ(seg->getRenderOrder(), dqRender::RenderOrder::Edge);
+    EXPECT_TRUE(sil->usesQuantizedPositions());
+
+    // LUT 共享：三几何同一纹理句柄。
+    ASSERT_NE(sil->getLut(), nullptr);
+    EXPECT_EQ(sil->getLut()->getTexture().getId(), surf->getLut().getTexture().getId());
+
+    // 顶点数（夹具 bytes：sil indices 648/3=216、segments indices 1296/3=432；
+    // normalPairs 864 == 4B×216）。
+    EXPECT_EQ(sil->getNumIndices(), 216u);
+    EXPECT_EQ(seg->getNumIndices(), 432u);
+
+    // symbology：cylinder 材质 lineWidth（解析锁 ImdlEdges.
+    // SilhouetteEdgesFromRecordedCylinder 同源）。
+    EXPECT_FLOAT_EQ(sil->getEdgeWidth(), 1.0f);
+
+    delete graphics[0];
+}
+
+// Edge 变体 shader 结构锁：量化 LUT 消费 + attribute 期望。
+// Ported from: itwinjs-core Edge.ts createBase（addPositionFromLUT 经
+//              VertexShaderBuilder ctor :725 addPosition(this,
+//              usesVertexTable=true)、decodeEndPointAndQuadIndices :26-30、
+//              addColor → getComputeElementColor 量化 u_color 路径）+
+//              Vertex.ts getSamplePositionQuantizedPostlude :71-79（对端点
+//              采样 = 双 texel decodeUInt16，非单 texel raw.xyz）。
+// Authored: no reference shader-snapshot test exists（参考无 shader 源串
+//           测试——DanQing 无 macOS 之外的离线 GLSL 编译 harness，结构断言
+//           为 Windows 下可行的最强锁；GlslCompileHarness 平台限制见其头注）。
+TEST(EdgeShaderVariant, QuantizedVariantConsumesVertexLut)
+{
+    auto builder = dqRender::createEdgeProgramBuilder(
+        dqRender::EdgeBuilderType::SegmentEdge, dqRender::FeatureMode::None,
+        dqRender::PositionType::Quantized);
+    std::string const vert = builder.getVertexBuilder().buildSourceWithComponents();
+
+    // a_pos 24-bit 索引 attribute（参考 AttributeMap edge 条目名）+ 对端点
+    // 解码 initializer（Edge.ts decodeEndPointAndQuadIndices :26-30）。
+    EXPECT_NE(vert.find("decodeUInt24(a_pos)"), std::string::npos)
+        << "vertex LUT key decode (initializeVertLUTCoords) must read a_pos";
+    EXPECT_NE(vert.find("g_otherIndex = decodeUInt24(a_endPointAndQuadIndices.xyz)"),
+              std::string::npos);
+    EXPECT_NE(vert.find("g_otherPos = samplePosition(g_otherIndex)"), std::string::npos)
+        << "other endpoint position is sampled on demand";
+
+    // 本顶点位置经 pre-read LUT 解码（Vertex.ts computeVertexPositionFromLUT
+    // :35-41——quantized 双 texel uint16）。
+    EXPECT_NE(vert.find("decodeUInt16(g_vertLutData0.xy)"), std::string::npos);
+
+    // 对端点采样 = 双 texel decodeUInt16（Vertex.ts
+    // getSamplePositionQuantizedPostlude :71-79）——不是单 texel raw.xyz。
+    EXPECT_NE(vert.find("decodeUInt16(e0.xy)"), std::string::npos)
+        << "samplePosition must decode the quantized position across texels e0/e1";
+
+    // 颜色：u_color uniform 量化路径（Color.ts addColor :51-62），无 a_color
+    // attribute（参考 Edge 几何不供色 attribute）。
+    EXPECT_NE(vert.find("u_color"), std::string::npos);
+    EXPECT_EQ(vert.find("a_color"), std::string::npos)
+        << "edge geometry carries no color attribute — reference addColor path";
+
+    // silhouette 变体：a_normals attribute + 早退 discard（Edge.ts
+    // checkForSilhouetteDiscardNonIndexed :132-136）。
+    auto silBuilder = dqRender::createEdgeProgramBuilder(
+        dqRender::EdgeBuilderType::Silhouette, dqRender::FeatureMode::None,
+        dqRender::PositionType::Quantized);
+    std::string const silVert = silBuilder.getVertexBuilder().buildSourceWithComponents();
+    EXPECT_NE(silVert.find("octDecodeNormal(a_normals.xy)"), std::string::npos);
 }

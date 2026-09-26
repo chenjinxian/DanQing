@@ -9,6 +9,7 @@
 #pragma once
 
 #include "MultiVariantTechnique.h"
+#include "render/shader/EdgeShaderBuilder.h"  // EdgeBuilderType（EdgeVariantCompiler 参数）
 
 #ifndef BEGIN_DQ_RENDER_NAMESPACE
 #define BEGIN_DQ_RENDER_NAMESPACE namespace dqRender {
@@ -34,11 +35,21 @@ public:
 // ---------------------------------------------------------------------------
 class EdgeVariantCompiler : public VariantShaderCompiler {
 public:
-    /// Build one Edge variant: set GLSL source (flat strings; no uniform
-    /// bindings — the legacy upload path covers Edge's u_mvp).
+    /// @param type which edge builder variant this technique compiles.
+    /// Ported from: itwinjs-core Technique.ts:494-509 EdgeTechnique——同一
+    /// EdgeTechnique 类按 EdgeBuilderType 参数化，注册三种：
+    /// TechniqueId.Edge←"SegmentEdge"（:1088）、SilhouetteEdge←"Silhouette"
+    /// （:1089）、IndexedEdge←"IndexedEdge"（:1100）。
+    explicit EdgeVariantCompiler(EdgeBuilderType type) : m_type(type) {}
+
+    /// Build one Edge variant: set GLSL source + attribute map (flat strings;
+    /// uniform bindings ride the legacy upload path for u_mvp/u_viewport etc.).
     void buildProgram(ShaderProgram& prog, TechniqueFlags const& flags) override;
 
     char const* getDescription() const override { return "Edge"; }
+
+private:
+    EdgeBuilderType m_type;
 };
 
 END_DQ_RENDER_NAMESPACE

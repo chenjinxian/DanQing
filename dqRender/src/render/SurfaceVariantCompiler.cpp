@@ -401,19 +401,40 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
 // Ported from: itwinjs-core Edge.ts createEdgeBuilder() (line 306-313).
 // Uses modular EdgeShaderBuilder to compose the full edge shader with
 // modelToWindowCoordinates, perpendicular offset, line code, and edge contrast.
+// 本 technique 编译的变体由 m_type 决定（EdgeTechnique 的 EdgeBuilderType
+// 参数——Technique.ts:1088-1089）。
 // ---------------------------------------------------------------------------
 void EdgeVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags const& flags)
 {
     FeatureMode featureMode = flags.featureMode;
     PositionType posType = flags.positionType;
 
-    auto builder = createEdgeProgramBuilder(EdgeBuilderType::SegmentEdge, featureMode, posType);
+    auto builder = createEdgeProgramBuilder(m_type, featureMode, posType);
 
     std::string vert = builder.getVertexBuilder().buildSourceWithComponents();
     std::string frag = builder.getFragmentBuilder().buildSourceWithComponents();
 
     std::string description = std::string("Edge-") + flags.buildDescription();
     prog.setSource(std::move(vert), std::move(frag), std::move(description));
+
+    // Explicit attribute locations — bound via glBindAttribLocation BEFORE link
+    //（与 Surface 变体同一机制；bindRenderPrimitive 以 VAO attribute 下标为
+    // location，两边必须一致否则边缘顶点读到错位字节）。1:1 参考 AttributeMap
+    // edge/silhouette 条目（AttributeMap.ts:75-83）：a_pos@0（Vec3，24-bit
+    // 顶点表索引）、a_endPointAndQuadIndices@1（Vec4）、a_normals@2（仅
+    // silhouette）。
+    if (m_type == EdgeBuilderType::Silhouette) {
+        prog.setAttributeMap({
+            {"a_pos", 0},
+            {"a_endPointAndQuadIndices", 1},
+            {"a_normals", 2},
+        });
+    } else {
+        prog.setAttributeMap({
+            {"a_pos", 0},
+            {"a_endPointAndQuadIndices", 1},
+        });
+    }
 
     // Transfer uniform bindings
     builder.getVertexBuilder().addBindings(prog);

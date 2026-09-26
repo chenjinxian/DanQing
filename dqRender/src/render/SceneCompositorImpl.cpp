@@ -36,6 +36,64 @@ BEGIN_DQ_RENDER_NAMESPACE
 // mv is a 16-float column-major mat4; outNm is a 9-float column-major mat3.
 // Used by the live draw loop to set DrawParams::setNormalMatrix() (u_normalMatrix).
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// invertMat4ColMajor / multiplyMat4ColMajor — 列主序 4x4 工具（out = a*b、
+// out = a⁻¹）。U11(2) 边缘 dispatch 从 branch 变换提取当前投影
+// （proj = mvp * mv⁻¹）所用——语义与取值依据见 Edge dispatch 分支内的
+// EQUIVALENCE 登记。
+// Authored: 参考无对应 CPU 工具（参考侧 u_proj 由 target 统一提供，无需
+//           提取）；DanQing branch-stack 结构下的等价实现。
+// ---------------------------------------------------------------------------
+static void invertMat4ColMajor(float const* m, float* out)
+{
+    double a[4][8];
+    for (int c = 0; c < 4; ++c)
+        for (int r = 0; r < 4; ++r) {
+            a[r][c] = m[c * 4 + r];
+            a[r][4 + c] = (r == c) ? 1.0 : 0.0;
+        }
+    for (int col = 0; col < 4; ++col) {
+        int piv = col;
+        for (int r = col + 1; r < 4; ++r)
+            if (std::abs(a[r][col]) > std::abs(a[piv][col]))
+                piv = r;
+        if (std::abs(a[piv][col]) < 1e-12) {
+            for (int i = 0; i < 16; ++i)
+                out[i] = 0.0f;
+            return;
+        }
+        if (piv != col)
+            for (int k = 0; k < 8; ++k)
+                std::swap(a[col][k], a[piv][k]);
+        double const d = a[col][col];
+        for (int k = 0; k < 8; ++k)
+            a[col][k] /= d;
+        for (int r = 0; r < 4; ++r) {
+            if (r == col)
+                continue;
+            double const f = a[r][col];
+            if (f == 0.0)
+                continue;
+            for (int k = 0; k < 8; ++k)
+                a[r][k] -= f * a[col][k];
+        }
+    }
+    for (int c = 0; c < 4; ++c)
+        for (int r = 0; r < 4; ++r)
+            out[c * 4 + r] = static_cast<float>(a[r][4 + c]);
+}
+
+static void multiplyMat4ColMajor(float const* a, float const* b, float* out)
+{
+    for (int c = 0; c < 4; ++c)
+        for (int r = 0; r < 4; ++r) {
+            float s = 0.0f;
+            for (int k = 0; k < 4; ++k)
+                s += a[k * 4 + r] * b[c * 4 + k];
+            out[c * 4 + r] = s;
+        }
+}
+
 static void computeNormalMatrixFromMv(float const* mv, float* outNm)
 {
     // mat3(mv): M[row][col], mv is column-major (mv[col*4 + row]).
@@ -1072,6 +1130,9 @@ void SceneCompositor::activateProgram(ShaderProgram* shader, rhi::Driver& driver
     if (m_activeProgram)
         m_activeProgram->endUse(driver);
     m_activeProgram = (shader && shader->use(driver, params)) ? shader : nullptr;
+    if (getenv("DANQING_EDGE_TRACE") && shader && !m_activeProgram) {
+        std::fprintf(stderr, "[EDGE] program use() FAILED on this variant\n");
+    }
     // 换程序分支同样要上传名值 params——use() 只绑程序+ProgramUniforms，不触
     // params 名值映射（u_batchId/u_renderPass 等）。此前只有同程序分支刷新，
     // 程序切换后的首绘 u_batchId 从未上传 → pick 输出 uint(0+0.5)=0（拾取
@@ -1324,6 +1385,12 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     }
                 }
 
+                // Edge/Silhouette 分支的可见性门（computeEdgePass 的 "none"
+                // 语义——SmoothShade 且未开 visibleEdges 时边缘整体不画）。
+                // 以分支内置位、draw 点统一跳过（geometry->draw 在 if(shader)
+                // 块外，门必须活到那里）。
+                bool skipPrimitiveDraw = false;
+
                 if (shader) {
                     ShaderProgramParams params = m_frameParams;
                     // TEMP-DIAG（拾取 saga，env 门控）：本图元的变体选择证据。
@@ -1494,13 +1561,169 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                         params.setMatrix4("u_mvpMatrix", m_branchStack.getCurrentMvp().data());
                     } else if (techniqueId == TechniqueId::Edge ||
                                techniqueId == TechniqueId::SilhouetteEdge) {
+                        // 边缘 dispatch（U11(2) 重写——此前只传 u_viewport/
+                        // u_lineWeight=1/u_bgIntensity=1，量化边缘几何的 LUT
+                        // 采样无数据源，程序编译后采样空纹理）。
+                        // Ported from: itwinjs-core 绘制期绑定：
+                        //   - u_vertLUT/u_vertParams/u_qOrigin/u_qScale ←
+                        //     glsl/Vertex.ts:229-272 addPositionFromLUT 的
+                        //     GraphicUniform（geometry.asLUT.lut）；
+                        //   - u_color ← Color.ts:51-62 addColor
+                        //     (lutGeom.getColor → uniform 路径) + EdgeGeometry
+                        //     computeEdgeColor 的 EdgeSettings 覆盖合并；
+                        //   - u_lineWeight ← Vertex.ts addLineWeight
+                        //     (geometry.getLineWeight = CachedGeometry.ts:140-150
+                        //     clamp(1..31) + viewFlags.weights 门，基重 =
+                        //     EdgeSettings.getWeight(pass) ?? mesh.edgeWidth
+                        //     [MeshGeometry._getLineWeight])；
+                        //   - u_bgIntensity ← Edge.ts:202-214 addEdgeContrast
+                        //     (isEdge && wantContrastingColor(renderMode) 时取
+                        //     backgroundIntensity[StyleUniforms.ts:49 =
+                        //     背景色亮度 0.3/0.59/0.11]，否则 -1 = 不做对比)；
+                        //   - 可见性门 ← MeshGeometry.ts:58-70 computeEdgePass：
+                        //     SmoothShade 且 !visibleEdges → pass "none"（不画）。
+                        auto const* edgeGeom = geometry->asEdge();
                         float viewport[2] = {
                             static_cast<float>(m_target.getViewRect().width()),
                             static_cast<float>(m_target.getViewRect().height())
                         };
                         params.setVec2("u_viewport", viewport);
-                        params.setFloat("u_lineWeight", 1.0f);
-                        params.setFloat("u_bgIntensity", 1.0f);
+
+                        // 当前分支的 edge settings（BranchStack 逐分支携带，
+                        // changeRenderPlan 时重置为默认——BranchState 同参考
+                        // BranchState.edgeSettings；参考 target.currentEdgeSettings
+                        // 即此链路）。
+                        EdgeSettings const& edgeSettings = m_branchStack.getTop().getEdgeSettings();
+                        auto const& vf = m_target.getCurrentViewFlags();
+                        dqCommon::ViewFlags const commonVf(vf);
+
+                        if (edgeGeom != nullptr && edgeGeom->usesQuantizedPositions()) {
+                            auto const* lut = edgeGeom->getLut();
+                            if (lut != nullptr && lut->isValid()) {
+                                // 纹理单元 5 = GL::TextureUnit::VertexLUT
+                                //（与 Surface 量化分支一致；每分支绘制前重绑）。
+                                constexpr int32_t kEdgeLutTexUnit = 5;
+                                driver.bindTexture(kEdgeLutTexUnit, lut->getTexture());
+                                params.setInt("u_vertLUT", kEdgeLutTexUnit);
+                                auto const& lp = lut->getParams();
+                                float vertParams[4] = {
+                                    static_cast<float>(lp.texWidth),
+                                    static_cast<float>(lp.texHeight),
+                                    static_cast<float>(lp.numRgbaPerVert),
+                                    static_cast<float>(lp.numVertices),
+                                };
+                                params.setVec4("u_vertParams", vertParams);
+                                if (float const* qo = edgeGeom->getQOrigin())
+                                    params.setVec3("u_qOrigin", qo);
+                                if (float const* qs = edgeGeom->getQScale())
+                                    params.setVec3("u_qScale", qs);
+                            }
+
+                            // u_color：EdgeSettings 覆盖优先，否则 mesh 均匀色。
+                            dqCommon::ColorComponents cc = edgeGeom->getColor().getColors();
+                            if (FloatRgba const* overrideColor = edgeSettings.getColor(commonVf)) {
+                                cc.r = static_cast<uint8_t>(overrideColor->r * 255.0f + 0.5f);
+                                cc.g = static_cast<uint8_t>(overrideColor->g * 255.0f + 0.5f);
+                                cc.b = static_cast<uint8_t>(overrideColor->b * 255.0f + 0.5f);
+                            }
+                            float edgeColor[4] = {
+                                static_cast<float>(cc.r) / 255.0f,
+                                static_cast<float>(cc.g) / 255.0f,
+                                static_cast<float>(cc.b) / 255.0f,
+                                static_cast<float>(255 - cc.t) / 255.0f,
+                            };
+                            params.setVec4("u_color", edgeColor);
+
+                            // u_lineWeight：viewFlags.weights 门 + clamp(1..31)，
+                            // 基重 = EdgeSettings 覆盖 ?? edgeWidth。
+                            float baseWeight = edgeGeom->getEdgeWidth();
+                            if (auto w = edgeSettings.getWeight(pass, commonVf))
+                                baseWeight = static_cast<float>(*w);
+                            float weight = 1.0f;
+                            if (vf.weights) {
+                                weight = baseWeight < 1.0f ? 1.0f : baseWeight;
+                                weight = weight > 31.0f ? 31.0f : weight;
+                            }
+                            params.setFloat("u_lineWeight", weight);
+
+                            // u_bgIntensity：仅 SolidFill 且无颜色覆盖时做对比
+                            //（背景亮度）；其余 -1 = 直通（Edge.ts adjustContrast
+                            // 的 bgi<0 早退）。
+                            float const bgLuminance =
+                                m_target.getBackgroundColor()[0] * 0.3f +
+                                m_target.getBackgroundColor()[1] * 0.59f +
+                                m_target.getBackgroundColor()[2] * 0.11f;
+                            float const bgi =
+                                edgeSettings.wantContrastingColor(vf.renderMode)
+                                    ? bgLuminance : -1.0f;
+                            params.setFloat("u_bgIntensity", bgi);
+
+                            // computeEdgePass 的 "none"：SmoothShade 且未开
+                            // visibleEdges → 边缘不画。
+                            if (vf.renderMode == RenderMode::SmoothShade && !vf.visibleEdges)
+                                skipPrimitiveDraw = true;
+                        } else {
+                            // 非量化（VBO 形态）既有缺省——量化参数不可得，
+                            // 维持旧行为（权重 1、无对比）。
+                            params.setFloat("u_lineWeight", 1.0f);
+                            params.setFloat("u_bgIntensity", 1.0f);
+                        }
+                        if (getenv("DANQING_EDGE_TRACE"))
+                            std::fprintf(stderr,
+                                         "[EDGE] dispatch pass=%d tech=%d quantized=%d edge=%p "
+                                         "skip=%d lutValid=%d\n",
+                                         static_cast<int>(pass),
+                                         static_cast<int>(techniqueId),
+                                         edgeGeom ? edgeGeom->usesQuantizedPositions() : -1,
+                                         static_cast<void const*>(edgeGeom), skipPrimitiveDraw,
+                                         (edgeGeom && edgeGeom->getLut())
+                                             ? edgeGeom->getLut()->isValid() : -1);
+                        // modelToWindowCoordinates 消费 u_proj/u_viewportTransformation/
+                        // u_frustum。u_mv 走 wireModelViewMatrix 的 per-draw 上传
+                        // （上方公共段），此处补齐其余：
+                        // EQUIVALENCE 登记（§11.10）：参考侧 u_proj/u_viewportTransformation
+                        // = target.proj/viewRect 的当前取景矩阵（全体 technique 共享）；
+                        // DanQing 的 branch-stack 每分支自带完整 MVP，而 target 级
+                        // FrustumUniforms/viewRect 不随 branch 变换刷新（本任务
+                        // [EDGE-GL] 探针取证：u_proj=0.00107 的旧 fit 值把边缘几何
+                        // 全部压到画面中心 → 零片元；u_viewportTransformation=identity）。
+                        // 参考语义（当前取景的投影/视口矩阵）在 DanQing 的等价状态：
+                        //   proj = mvp * mv⁻¹（branch 自带）；viewport = NDC→window
+                        //   （ViewRect 尺寸，ViewRectUniforms::buildViewportMatrix 同式）。
+                        // 发散=与 polyline 分支同款的 target 级矩阵（若后续
+                        // FrustumUniforms 接线到 branch 变换则收敛）；验证法=
+                        // TileTreeRender.ImdlEdgesRenderContrastingRingInSolidFill
+                        // （位置断言：四侧环带）。
+                        {
+                            auto const& branchMvp = m_branchStack.getCurrentMvp();
+                            auto const& branchMv = m_branchStack.getCurrentMv();
+                            float inv[16] = {};
+                            float proj[16] = {};
+                            invertMat4ColMajor(branchMv.data(), inv);
+                            multiplyMat4ColMajor(branchMvp.data(), inv, proj);
+                            params.setMatrix4("u_proj", proj);
+
+                            ViewRect const& vr = m_target.getViewRect();
+                            float const hw = vr.width() * 0.5f;
+                            float const hh = vr.height() * 0.5f;
+                            float const vm[16] = {
+                                hw, 0.0f, 0.0f, 0.0f,
+                                0.0f, hh, 0.0f, 0.0f,
+                                0.0f, 0.0f, 0.5f, 0.0f,
+                                static_cast<float>(vr.left) + hw,
+                                static_cast<float>(vr.top) + hh,
+                                0.5f, 1.0f,
+                            };
+                            params.setMatrix4("u_viewportTransformation", vm);
+                        }
+                        float const edgeFrustum[3] = {
+                            m_target.getFrustumUniforms().getNearPlane(),
+                            m_target.getFrustumUniforms().getFarPlane(),
+                            static_cast<float>(static_cast<int>(
+                                m_target.getFrustumUniforms().getType())),
+                        };
+                        params.setVec3("u_frustum", edgeFrustum);
+
                     } else if (techniqueId == TechniqueId::SkySphereGradient) {
                         // Faithful itwinjs SkySphere gradient uniforms. The skybox
                         // graphic carries the colors + the per-frame worldPos
@@ -1773,7 +1996,8 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     shader->uploadUniforms(driver, params);
                 }
 
-                geometry->draw(driver);
+                if (!skipPrimitiveDraw)
+                    geometry->draw(driver);
 
                 break;
             }
