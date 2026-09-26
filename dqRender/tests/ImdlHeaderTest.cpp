@@ -18,6 +18,7 @@
 #include "render/SurfaceGeometry.h"
 #include "tile/TilesetJson.h"
 #include "tile-sample-assets/imdl-fixtures/TileIOFixtures.h"
+#include <dqCommon/LinePixels.h>
 #include <dqRender/RenderSystem.h>
 #include <dqRender/tile/ImdlDocument.h>
 #include <dqRender/tile/ImdlHeader.h>
@@ -547,6 +548,258 @@ TEST(ImdlGraphicsTest, LutPathUsesLessGpuMemoryThanVboPath)
         << "lut=" << lutBytes << " vbo=" << vboBytes;
 
     delete graphics[0];
+}
+
+// ---------------------------------------------------------------------------
+// U11(1)：imdl 边缘 JSON 解析层（ImdlMeshEdges 四形态 + DisplayParams
+// width/linePixels）。
+// Ported from: itwinjs-core ParseImdlDocument.ts:665-727（parseSegmentEdges/
+//              parseSilhouetteEdges/parseIndexedEdges/parseEdges——findBuffer
+//              视图语义：bufferView 名 → 字节区间）+ ImdlSchema.ts:195-286
+//              （四形态 schema 字段名逐一）。
+// 场景数据（Step 0 探测，2026-09-26 离线解码 TileIOFixtures.h 的 JSON 段）：
+// 录制夹具 5 版本×5 场景中 rectangle/triangles/cylinder 带 edges 字段——
+// segments 形态（cylinder 另有 silhouettes+normalPairs）；indexed/compact
+// 两形态无夹具 → 合成 doc。断言数值 Authored: no reference test exists in
+// itwinjs-core for imdl edges parsing（TileIO.test.ts/ImdlParser.test.ts
+// 检索无 edges 解析场景，2026-09-26）——数值钉死自夹具 JSON 离线解码。
+// ---------------------------------------------------------------------------
+
+// rectangle（v1.1 录制夹具）：segments 形态 + DisplayParams width/linePixels。
+// Ported from: ParseImdlDocument.ts:665-669 parseSegmentEdges + :710-727
+//              parseEdges（断言数值 Authored——参考无 edges 解析测试，
+//              数值钉死自夹具 JSON 离线解码，见上区块注释）。
+// 夹具 JSON：material="Material0"、lineWidth=1、linePixels=0(Solid)；
+// edges.segments={indices:"bvindices0Segments", endPointAndQuadIndices:
+// "bvendPointAndQuadIndices0Segments"}；bufferViews @84 len 72 / @156 len 96。
+TEST(ImdlEdges, SegmentEdgesFromRecordedRectangle)
+{
+    auto doc = parseFull(V1_1::rectangleBytes, V1_1::rectangleSize);
+    ASSERT_TRUE(doc.has_value());
+    auto json = dqRender::tilejson::parseJsonDocument(doc->sceneJson);
+    ASSERT_NE(json, nullptr);
+    auto prims = dqRender::tilejson::parseImdlMeshPrimitives(*json);
+    ASSERT_EQ(prims.size(), 1u);
+
+    // ImdlSchema.ts:173 material（关联 ImdlDisplayParams 的 Id）+:278 segments
+    // （视图名 1:1 照夹具 JSON）。
+    EXPECT_EQ(prims[0].material, "Material0");
+    ASSERT_TRUE(prims[0].edges.has_value());
+    ASSERT_TRUE(prims[0].edges->segments.has_value());
+    EXPECT_FALSE(prims[0].edges->silhouettes.has_value());
+    EXPECT_FALSE(prims[0].edges->indexed.has_value());
+    EXPECT_FALSE(prims[0].edges->compact.has_value());
+    EXPECT_EQ(prims[0].edges->segments->indicesView, "bvindices0Segments");
+    EXPECT_EQ(prims[0].edges->segments->endPointAndQuadIndicesView,
+              "bvendPointAndQuadIndices0Segments");
+
+    // DisplayParams.width/linePixels（parseDisplayParams ParseImdlDocument.ts
+    // :1206-1207——json.lineWidth=1、json.linePixels=0=Solid 默认同值）。
+    EXPECT_EQ(prims[0].width, 1u);
+    EXPECT_EQ(prims[0].linePixels, dqCommon::LinePixels::Solid);
+
+    // parseEdges（:710-727）→ segments 字节区间（parseSegmentEdges :665-669
+    // ——bufferView 名 → binary 区间）；weight/linePixels 来自 displayParams
+    //（:730-731 weight = displayParams.width）。
+    auto edges = dqRender::tilejson::parseImdlEdges(*json, *doc, prims[0]);
+    ASSERT_TRUE(edges.has_value());
+    EXPECT_EQ(edges->weight, 1u);
+    EXPECT_EQ(edges->linePixels, dqCommon::LinePixels::Solid);
+    ASSERT_TRUE(edges->segments.has_value());
+    EXPECT_FALSE(edges->silhouettes.has_value());
+    EXPECT_FALSE(edges->indexed.has_value());
+    EXPECT_EQ(edges->segments->indices.data, doc->binary.data() + 84);
+    EXPECT_EQ(edges->segments->indices.byteLength, 72u);
+    EXPECT_EQ(edges->segments->endPointAndQuadIndices.data, doc->binary.data() + 156);
+    EXPECT_EQ(edges->segments->endPointAndQuadIndices.byteLength, 96u);
+}
+
+// cylinder（v1.1 录制夹具）：segments + silhouettes（含 normalPairs）双形态。
+// Ported from: ParseImdlDocument.ts:671-675 parseSilhouetteEdges（断言数值
+//              Authored——参考无 edges 解析测试，数值钉死自夹具 JSON 离线
+//              解码，见上区块注释）。
+// 夹具 JSON：silhouettes={indices:"bvindices0Silhouettes" @6656 len 648,
+// endPointAndQuadIndices:"bvendPointAndQuadIndices0Silhouettes" @7304 len 864,
+// normalPairs:"bvnormalPairs0Silhouettes" @8168 len 864}；segments @3632/1296
+// + @4928/1728；normalPairs 每索引 4B = 2×16-bit oct-encoded normal 对。
+TEST(ImdlEdges, SilhouetteEdgesFromRecordedCylinder)
+{
+    auto doc = parseFull(V1_1::cylinderBytes, V1_1::cylinderSize);
+    ASSERT_TRUE(doc.has_value());
+    auto json = dqRender::tilejson::parseJsonDocument(doc->sceneJson);
+    ASSERT_NE(json, nullptr);
+    auto prims = dqRender::tilejson::parseImdlMeshPrimitives(*json);
+    ASSERT_EQ(prims.size(), 1u);
+
+    // ImdlSchema.ts:279 silhouettes（:209-212 ImdlSilhouetteEdges——继承
+    // segments 三字段 + normalPairs :211）。
+    ASSERT_TRUE(prims[0].edges.has_value());
+    ASSERT_TRUE(prims[0].edges->segments.has_value());
+    ASSERT_TRUE(prims[0].edges->silhouettes.has_value());
+    EXPECT_EQ(prims[0].edges->silhouettes->indicesView, "bvindices0Silhouettes");
+    EXPECT_EQ(prims[0].edges->silhouettes->endPointAndQuadIndicesView,
+              "bvendPointAndQuadIndices0Silhouettes");
+    EXPECT_EQ(prims[0].edges->silhouettes->normalPairsView, "bvnormalPairs0Silhouettes");
+
+    // parseSilhouetteEdges（:671-675）——三视图全解析才产出（segments &&
+    // normalPairs 语义）。
+    auto edges = dqRender::tilejson::parseImdlEdges(*json, *doc, prims[0]);
+    ASSERT_TRUE(edges.has_value());
+    ASSERT_TRUE(edges->segments.has_value());
+    ASSERT_TRUE(edges->silhouettes.has_value());
+    EXPECT_EQ(edges->segments->indices.data, doc->binary.data() + 3632);
+    EXPECT_EQ(edges->segments->indices.byteLength, 1296u);
+    EXPECT_EQ(edges->segments->endPointAndQuadIndices.data, doc->binary.data() + 4928);
+    EXPECT_EQ(edges->segments->endPointAndQuadIndices.byteLength, 1728u);
+    EXPECT_EQ(edges->silhouettes->indices.data, doc->binary.data() + 6656);
+    EXPECT_EQ(edges->silhouettes->indices.byteLength, 648u);
+    EXPECT_EQ(edges->silhouettes->endPointAndQuadIndices.data, doc->binary.data() + 7304);
+    EXPECT_EQ(edges->silhouettes->endPointAndQuadIndices.byteLength, 864u);
+    EXPECT_EQ(edges->silhouettes->normalPairs.data, doc->binary.data() + 8168);
+    EXPECT_EQ(edges->silhouettes->normalPairs.byteLength, 864u);
+}
+
+// indexed 形态（合成 doc——Step 0 探测：录制夹具无 indexed 场景）。
+// Authored: no reference test exists in itwinjs-core for imdl edges parsing;
+//           字段照 ImdlSchema.ts:219-232 ImdlIndexedEdges 构造，解析语义照
+//           parseIndexedEdges（ParseImdlDocument.ts:677-693——indices + edges
+//           表 + width/height/numSegments/silhouettePadding 原样进 EdgeTable）。
+TEST(ImdlEdges, SyntheticIndexedEdgesResolution)
+{
+    dqRender::ImdlDocument doc;
+    doc.sceneJson = R"json({
+        "materials": {"Mat": {"fillColor": 65280, "lineWidth": 2, "linePixels": 3435973836}},
+        "meshes": {"Mesh_Root": {"primitives": [{
+            "material": "Mat",
+            "edges": {"indexed": {"indices": "bvEdgeIndices", "edges": "bvEdgeTable",
+                                  "width": 32, "height": 4, "numSegments": 7,
+                                  "silhouettePadding": 3}}
+        }]}},
+        "bufferViews": {
+            "bvEdgeIndices": {"buffer": "binary_glTF", "byteOffset": 16, "byteLength": 18},
+            "bvEdgeTable": {"buffer": "binary_glTF", "byteOffset": 34, "byteLength": 128}
+        }
+    })json";
+    doc.binary.assign(162u, 0x00u);
+    // 分区填充：可区分标记证明区间落在各自 bufferView 内（§11.11 位置断言）。
+    for (size_t i = 16; i < 34; ++i) doc.binary[i] = 0x11u;  // bvEdgeIndices
+    for (size_t i = 34; i < 162; ++i) doc.binary[i] = 0x22u; // bvEdgeTable
+
+    auto json = dqRender::tilejson::parseJsonDocument(doc.sceneJson);
+    ASSERT_NE(json, nullptr);
+    auto prims = dqRender::tilejson::parseImdlMeshPrimitives(*json);
+    ASSERT_EQ(prims.size(), 1u);
+
+    // ImdlSchema.ts:219-232 字段逐一。
+    ASSERT_TRUE(prims[0].edges.has_value());
+    ASSERT_TRUE(prims[0].edges->indexed.has_value());
+    EXPECT_EQ(prims[0].edges->indexed->indicesView, "bvEdgeIndices");
+    EXPECT_EQ(prims[0].edges->indexed->edgeTableView, "bvEdgeTable");
+    EXPECT_EQ(prims[0].edges->indexed->width, 32u);
+    EXPECT_EQ(prims[0].edges->indexed->height, 4u);
+    EXPECT_EQ(prims[0].edges->indexed->numSegments, 7u);
+    EXPECT_EQ(prims[0].edges->indexed->silhouettePadding, 3u);
+
+    // DisplayParams：lineWidth=2、linePixels=3435973836=HiddenLine(0xcccccccc)
+    // （dqCommon::LinePixels，core/common LinePixels.ts 同值）。
+    EXPECT_EQ(prims[0].width, 2u);
+    EXPECT_EQ(prims[0].linePixels, dqCommon::LinePixels::HiddenLine);
+
+    // parseIndexedEdges（:677-693）——EdgeTable 四尺寸字段原样 + 双区间。
+    auto edges = dqRender::tilejson::parseImdlEdges(*json, doc, prims[0]);
+    ASSERT_TRUE(edges.has_value());
+    EXPECT_EQ(edges->weight, 2u) << "EdgeParams.weight = displayParams.width (:730)";
+    EXPECT_EQ(edges->linePixels, dqCommon::LinePixels::HiddenLine) << "(:731)";
+    ASSERT_TRUE(edges->indexed.has_value());
+    EXPECT_FALSE(edges->segments.has_value());
+    EXPECT_FALSE(edges->silhouettes.has_value());
+    EXPECT_EQ(edges->indexed->indices.data, doc.binary.data() + 16);
+    EXPECT_EQ(edges->indexed->indices.byteLength, 18u);
+    EXPECT_EQ(edges->indexed->indices.data[0], 0x11u) << "indices span lands in bvEdgeIndices";
+    EXPECT_EQ(edges->indexed->edges.data.data, doc.binary.data() + 34);
+    EXPECT_EQ(edges->indexed->edges.data.byteLength, 128u);
+    EXPECT_EQ(edges->indexed->edges.data.data[0], 0x22u) << "table span lands in bvEdgeTable";
+    EXPECT_EQ(edges->indexed->edges.width, 32u);
+    EXPECT_EQ(edges->indexed->edges.height, 4u);
+    EXPECT_EQ(edges->indexed->edges.numSegments, 7u);
+    EXPECT_EQ(edges->indexed->edges.silhouettePadding, 3u);
+}
+
+// compact 形态（合成 doc——Step 0 探测：录制夹具无 compact 场景）：解析不展开
+// （compact → indexed 兜底展开留 Task 6——parseCompactEdges
+// ParseImdlDocument.ts:695-708 → CompactEdges.ts
+// indexedEdgeParamsFromCompactEdges；本层仅提取字段，仅 compact 时 parseEdges
+// 归零 nullopt（:722-723 四形态全空语义））。
+// Authored: no reference test exists in itwinjs-core for imdl edges parsing;
+//           字段照 ImdlSchema.ts:257-272 ImdlCompactEdges 构造。
+TEST(ImdlEdges, SyntheticCompactEdgesParseOnly)
+{
+    // 变体 1：visibility + numVisible（无 silhouette → normalPairs undefined，
+    // ImdlSchema.ts:265）。
+    dqRender::ImdlDocument doc;
+    doc.sceneJson = R"json({
+        "materials": {"Mat": {"lineWidth": 3}},
+        "meshes": {"Mesh_Root": {"primitives": [{
+            "material": "Mat",
+            "edges": {"compact": {"visibility": "bvVisibility", "numVisible": 11}}
+        }]}},
+        "bufferViews": {
+            "bvVisibility": {"buffer": "binary_glTF", "byteOffset": 0, "byteLength": 9}
+        }
+    })json";
+    doc.binary.assign(9u, 0x00u);
+
+    auto json = dqRender::tilejson::parseJsonDocument(doc.sceneJson);
+    ASSERT_NE(json, nullptr);
+    auto prims = dqRender::tilejson::parseImdlMeshPrimitives(*json);
+    ASSERT_EQ(prims.size(), 1u);
+    ASSERT_TRUE(prims[0].edges.has_value());
+    ASSERT_TRUE(prims[0].edges->compact.has_value());
+    EXPECT_EQ(prims[0].edges->compact->visibilityView, "bvVisibility");
+    EXPECT_EQ(prims[0].edges->compact->numVisible, 11u);
+    EXPECT_FALSE(prims[0].edges->compact->normalPairsView.has_value());
+
+    // 仅 compact、未展开 → 归零（Task 6 展开落地后此断言翻转为 indexed 产出
+    // ——登记 TODO ParseImdlDocument.ts:695-708）。
+    auto edges = dqRender::tilejson::parseImdlEdges(*json, doc, prims[0]);
+    EXPECT_FALSE(edges.has_value()) << "compact expansion is Task 6 — parse-only now";
+
+    // 变体 2：带 normalPairs（ImdlSchema.ts:267）。
+    dqRender::ImdlDocument doc2;
+    doc2.sceneJson = R"json({
+        "meshes": {"Mesh_Root": {"primitives": [{
+            "material": "Mat",
+            "edges": {"compact": {"visibility": "bvVisibility", "numVisible": 5,
+                                  "normalPairs": "bvNormalPairs"}}
+        }]}},
+        "bufferViews": {
+            "bvVisibility": {"buffer": "binary_glTF", "byteOffset": 0, "byteLength": 9},
+            "bvNormalPairs": {"buffer": "binary_glTF", "byteOffset": 9, "byteLength": 8}
+        }
+    })json";
+    doc2.binary.assign(17u, 0x00u);
+    auto json2 = dqRender::tilejson::parseJsonDocument(doc2.sceneJson);
+    ASSERT_NE(json2, nullptr);
+    auto prims2 = dqRender::tilejson::parseImdlMeshPrimitives(*json2);
+    ASSERT_EQ(prims2.size(), 1u);
+    ASSERT_TRUE(prims2[0].edges.has_value());
+    ASSERT_TRUE(prims2[0].edges->compact.has_value());
+    EXPECT_EQ(prims2[0].edges->compact->numVisible, 5u);
+    ASSERT_TRUE(prims2[0].edges->compact->normalPairsView.has_value());
+    EXPECT_EQ(prims2[0].edges->compact->normalPairsView.value(), "bvNormalPairs");
+
+    // 无 edges 的 primitive：props.edges 空 → parseEdges :711-712 undefined。
+    dqRender::ImdlDocument doc3;
+    doc3.sceneJson = R"json({
+        "meshes": {"Mesh_Root": {"primitives": [{"material": "Mat"}]}}
+    })json";
+    auto json3 = dqRender::tilejson::parseJsonDocument(doc3.sceneJson);
+    ASSERT_NE(json3, nullptr);
+    auto prims3 = dqRender::tilejson::parseImdlMeshPrimitives(*json3);
+    ASSERT_EQ(prims3.size(), 1u);
+    EXPECT_FALSE(prims3[0].edges.has_value());
+    auto edges3 = dqRender::tilejson::parseImdlEdges(*json3, doc3, prims3[0]);
+    EXPECT_FALSE(edges3.has_value());
 }
 
 // 12B SimpleBuilder（numRgbaPerVertex=3）布局守卫回归。
