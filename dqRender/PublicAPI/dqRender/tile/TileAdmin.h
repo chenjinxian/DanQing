@@ -253,6 +253,22 @@ public:
     void setTileExpirationTime(double seconds) noexcept;
     double getTileExpirationTime() const noexcept { return m_tileExpirationTime; }
 
+    // For iModel tile trees, the maximum number of levels of the tree to skip
+    // loading when selecting tiles. When selecting tiles, if a given tile is
+    // too coarse to display and its graphics have not yet been loaded, we can
+    // skip loading its graphics and instead try to select one or more of its
+    // children - until we have skipped the specified maximum number of levels
+    // of the tree, at which point we will load the coarse tile's graphics
+    // before evaluating its children for selection. Increasing this value can
+    // reduce the amount of time before all tiles are ready when opening a
+    // zoomed-in view, but can also increase the number of tiles requested.
+    // Default value: 1. Minimum value: 0.
+    // Ported from: TileAdmin.maximumLevelsToSkip (TileAdmin.ts:154,
+    // :284-287 — `options.maximumLevelsToSkip` clamped `Math.max(0, …)` and
+    // floored, else the default 1; DanQing has no options plumbing yet, so
+    // only the default is exposed).
+    uint32_t maximumLevelsToSkip() const noexcept { return m_maximumLevelsToSkip; }
+
     // Test seam for time-based pruning (the reference tests use fake timers;
     // DanQing's clock funnels through nowSeconds()).
     // Authored: test affordance, no reference equivalent beyond sinon usage.
@@ -294,6 +310,9 @@ private:
     // "default" = 1GB; 0 = unlimited).
     size_t m_maxTotalTileContentBytes = 1024ull * 1024ull * 1024ull;
     double m_tileExpirationTime = 20.0;   // TileAdmin.ts:303 default
+    // Skip-level budget for the SelectParent selection protocol
+    // (TileAdmin.ts:287 default 1).
+    uint32_t m_maximumLevelsToSkip = 1;
     double m_nextPruneTime = 0.0;         // _nextPruneTime throttle (:313)
     static std::optional<double> s_nowOverride;  // test clock override
     [[maybe_unused]] float m_lastPruneTime = 0.0f;

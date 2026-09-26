@@ -4,6 +4,7 @@
 #pragma once
 
 #include "TileContent.h"
+#include "TileDrawArgs.h"
 #include "TileLoadPriority.h"
 #include "TileLoadStatus.h"
 
@@ -33,6 +34,17 @@ struct BoundingSphere {
     std::array<float, 3> center = {0.0f, 0.0f, 0.0f};
     float radius = 0.0f;
 };
+
+// ---------------------------------------------------------------------------
+// SelectParent — indicates whether a parent tile should be drawn in place of
+// a child tile.
+// Ported from: itwinjs-core SelectParent (IModelTile.ts:42-45 —
+// `export enum SelectParent { No, Yes }`). Declared here (the reference keeps
+// it in IModelTile.ts) because DanQing's base-class virtual selectTiles
+// signature needs it — the §3.4 adaptation the plan mandates (the reference
+// has no Tile-base selectTiles at all; see Tile::selectTiles).
+// ---------------------------------------------------------------------------
+enum class SelectParent : uint8_t { No, Yes };
 
 // ---------------------------------------------------------------------------
 // Tile — abstract base class for a single tile in the hierarchy
@@ -70,8 +82,47 @@ public:
     std::vector<Tile*> const& getChildren() const noexcept { return m_children; }
 
     /// Check if tile has a graphic ready to display
+    /// DIVERGENCE (pre-existing, registered): the reference's `isDisplayable`
+    /// is `0 < this.maximumSize` (Tile.ts:231 — a resolution criterion, true
+    /// for any tile that can ever carry content); this method instead carries
+    /// the Ready+graphic combination (the reference's `hasGraphics` + `isReady`,
+    /// Tile.ts:257/:196). The SelectParent protocol's isDisplayable sites
+    /// (Tile.ts:235/:237/:270) use the reference expression — see
+    /// isParentDisplayable/isUndisplayableRootTile and
+    /// ImdlTile::selectTiles' EQUIVALENCE registration.
     bool isDisplayable() const noexcept {
         return m_loadStatus == TileLoadStatus::Ready && m_graphic != nullptr;
+    }
+
+    /// True if this tile has graphics ready to draw.
+    /// Ported from: itwinjs-core Tile.hasGraphics (Tile.ts:257 —
+    /// `undefined !== this._graphic`).
+    bool hasGraphics() const noexcept { return m_graphic != nullptr; }
+
+    /// True if this tile's content has been loaded and is ready to be drawn.
+    /// Ported from: itwinjs-core Tile.isReady (Tile.ts:196 —
+    /// `TileLoadStatus.Ready === this.loadStatus`; DanQing stores the status
+    /// directly — the Tile.ts:271-295 request-state composition is collapsed
+    /// into m_loadStatus, registered at setLoadStatus).
+    bool isReady() const noexcept { return m_loadStatus == TileLoadStatus::Ready; }
+
+    /// True if this tile's parent is displayable.
+    /// Ported from: itwinjs-core Tile.isParentDisplayable (Tile.ts:235 —
+    /// `undefined !== this.parent && this.parent.isDisplayable`; the
+    /// reference's isDisplayable is `0 < maximumSize`, Tile.ts:231 — see the
+    /// DIVERGENCE note on isDisplayable above).
+    bool isParentDisplayable() const noexcept
+    {
+        return m_parent != nullptr && 0.0 < m_parent->getMaximumSize();
+    }
+
+    /// True if this tile is the root of its tree and is not displayable.
+    /// Ported from: itwinjs-core Tile.isUndisplayableRootTile (Tile.ts:237 —
+    /// `undefined === this.parent && !this.isDisplayable`; isDisplayable =
+    /// `0 < maximumSize`, Tile.ts:231 — see the DIVERGENCE note above).
+    bool isUndisplayableRootTile() const noexcept
+    {
+        return m_parent == nullptr && !(0.0 < getMaximumSize());
     }
 
     /// Whether this tile has content that can be loaded and displayed.
@@ -149,6 +200,21 @@ public:
     /// Load child tiles (called when tile is selected for refinement)
     virtual void loadChildren() = 0;
 
+    /// Select this tile (and/or its descendants) for display, appending the
+    /// tiles to draw to `selected`. Returns whether a parent tile should be
+    /// drawn in place of this tile's subtree.
+    /// Ported from: IModelTile.selectTiles (IModelTile.ts:205-334 — the
+    /// SelectParent protocol; the reference's Tile base class has no
+    /// selectTiles — each concrete tile class carries its own, and the tree
+    /// shell dispatches on the root tile's, IModelTileTree.ts:435-445).
+    /// DanQing hosts a base-class virtual so the tree shell can dispatch on
+    /// any tile kind: the default body is the BatchedTile form
+    /// (frontend-tiles BatchedTile.ts:76-110 — the pre-protocol behavior,
+    /// unchanged for the Reality/3D Tiles path); IModelTile's protocol lives
+    /// in ImdlTile::selectTiles.
+    virtual SelectParent selectTiles(std::vector<Tile*>& selected,
+                                     TileDrawArgs& args, uint32_t numSkipped);
+
     /// Check if children have been loaded
     virtual bool hasLoadedChildren() const { return !m_children.empty(); }
 
@@ -168,6 +234,15 @@ protected:
     /// DanQing's setContent is non-virtual, so the backfill runs in
     /// ImdlTile::readContent and needs this access path).
     double m_maximumSize = 0.0;
+
+    /// Whether this tile has EVER carried a graphic (the SelectParent
+    /// protocol's "previously loaded and later unloaded content" trigger,
+    /// IModelTile.ts:264-265). Assigned where the reference assigns it —
+    /// content-set time with a graphic present (Tile.ts:210-216 setIsReady →
+    /// DanQing's setContent; also kept on the DanQing unload path freeMemory,
+    /// guarded so graphic-less tiles never gain the flag).
+    /// Ported from: itwinjs-core Tile._hadGraphics (Tile.ts:71).
+    bool m_hadGraphics = false;
 
 private:
     TileTree& m_tree;

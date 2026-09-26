@@ -93,6 +93,13 @@ public:
     std::string const& getContentId() const noexcept { return m_contentId; }
     double getSizeMultiplier() const noexcept { return m_sizeMultiplier; }
 
+    /// This tile's tree, typed as the iModel tree (the SelectParent protocol's
+    /// skip-budget access goes through it).
+    /// Ported from: IModelTile.iModelTree (IModelTile.ts:76 —
+    /// `return this.tree as IModelTileTree`). Defined in the .cpp (the
+    /// reference cast needs the complete ImdlTileTree type).
+    ImdlTileTree& iModelTree() const noexcept;
+
     // Ported from: itwinjs-core IModelTile.maximumSize (IModelTile.ts:81-83)
     // — super.maximumSize * (this.sizeMultiplier ?? 1.0). The reference's
     // sizeMultiplier is `number | undefined`; DanQing's 0.0 stands for
@@ -108,6 +115,13 @@ public:
     TileContent readContent(uint8_t const* data, size_t dataSize) override;
     void loadChildren() override;
     bool hasContent() const noexcept override { return !m_contentId.empty(); }
+
+    /// The SelectParent selection protocol: skip counting
+    /// (maxInitialTilesToSkip/maxTilesToSkip), NotFound fallback,
+    /// parent/children exclusivity, undisplayable-root special case.
+    /// Ported from: IModelTile.selectTiles (IModelTile.ts:205-334).
+    SelectParent selectTiles(std::vector<Tile*>& selected, TileDrawArgs& args,
+                             uint32_t numSkipped) override;
 
 private:
     std::string m_contentId;
@@ -133,6 +147,20 @@ public:
     std::string const& getTreeId() const noexcept { return m_treeId; }
     ImdlTreeMetadata const& metadata() const noexcept { return m_metadata; }
 
+    /// How many levels may be skipped past while selecting until
+    /// maxInitialTilesToSkip is exhausted (the SelectParent protocol's
+    /// per-tree budgets).
+    /// Ported from: IModelTileTree.maxInitialTilesToSkip / maxTilesToSkip
+    /// (IModelTileTree.ts:361-362 — maxInitialTilesToSkip = tree-props field
+    /// ?? 0 (:390); maxTilesToSkip = TileAdmin.maximumLevelsToSkip (:391)).
+    /// DanQing's offline tilesets carry no maxInitialTilesToSkip field → the
+    /// props default 0 applies.
+    uint32_t getMaxInitialTilesToSkip() const noexcept
+    {
+        return m_maxInitialTilesToSkip;
+    }
+    uint32_t getMaxTilesToSkip() const noexcept { return m_maxTilesToSkip; }
+
     TileVisibility computeVisibility(TileDrawArgs& args, Tile* tile) override;
 
     // Child computation for a tile of this tree (computeImdlChildTileProps
@@ -149,6 +177,9 @@ public:
 private:
     std::string m_treeId;
     ImdlTreeMetadata m_metadata;
+    // SelectParent 协议的树级跳级预算（IModelTileTree.ts:361-362/:390-391）。
+    uint32_t m_maxInitialTilesToSkip = 0;  // :390 — props ?? 0
+    uint32_t m_maxTilesToSkip = 1;         // :391 — TileAdmin.maximumLevelsToSkip
 };
 
 END_DQ_RENDER_NAMESPACE
