@@ -11,26 +11,6 @@
 
 BEGIN_DQ_RENDER_NAMESPACE
 
-// ---------------------------------------------------------------------------
-// TileDrawArgs::computeScreenSize — approximate screen-space size of a tile
-// Ported from: itwinjs-core TileDrawArgs.computeScreenSize()
-// ---------------------------------------------------------------------------
-float TileDrawArgs::computeScreenSize(Tile const& tile) const
-{
-    // Simple distance-based approximation:
-    // screenSize = boundingSphere.diameter * pixelSizeRatio / distance
-    auto const& bs = tile.getBoundingSphere();
-    float dx = bs.center[0] - eyePos[0];
-    float dy = bs.center[1] - eyePos[1];
-    float dz = bs.center[2] - eyePos[2];
-    float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
-
-    if (dist < 1e-6f)
-        return 1e6f;  // Very close — very large screen size.
-
-    return (bs.radius * 2.0f * pixelSizeRatio) / dist;
-}
-
 RealityTileTree::RealityTileTree(std::unique_ptr<Tile> rootTile,
                                  std::string const& tilesetUrl)
     : TileTree(std::move(rootTile))
@@ -101,21 +81,17 @@ TileVisibility RealityTileTree::computeVisibility(TileDrawArgs& args, Tile* tile
     if (realityTile->isLeaf())
         return TileVisibility::Visible;
 
-    // Pixel size: world-units-per-pixel at the closest point of the tile's
+    // Pixel size: meters-per-pixel at the closest point of the tile's
     // bounding sphere. Orthographic: uniform pixelSizeRatio. Perspective
     // (camera on): dist(closest sphere point to eye) * perspectiveScale —
     // Ported from: TileDrawArgs.computePixelSizeInMetersAtClosestPoint
-    // (TileDrawArgs.ts:190-206; near-plane clamp keeps near tiles finite).
-    float pixelSize = args.getPixelSizeRatio();
-    if (args.cameraOn && args.perspectiveScale > 0.0f) {
-        auto const& bs = realityTile->getBoundingSphere();
-        float const dx = bs.center[0] - args.cameraEye[0];
-        float const dy = bs.center[1] - args.cameraEye[1];
-        float const dz = bs.center[2] - args.cameraEye[2];
-        float const dist = std::sqrt(dx * dx + dy * dy + dz * dz);
-        float const closest = std::max(dist - bs.radius, 0.01f);
-        pixelSize = closest * args.perspectiveScale;
-    }
+    // (TileDrawArgs.ts:190-211; near-plane clamp keeps near tiles finite).
+    // The pinhole formula moved into TileDrawArgs (2026-09-26); this call site
+    // keeps the bounding-sphere center/radius inputs it always used.
+    auto const& bs = realityTile->getBoundingSphere();
+    float const pixelSize = static_cast<float>(args.computePixelSizeInMetersAtClosestPoint(
+        dqGeom::Point3d(bs.center[0], bs.center[1], bs.center[2]),
+        static_cast<double>(bs.radius)));
 
     float const sse = pixelSize > 0.0f
         ? realityTile->getGeometricError() / pixelSize

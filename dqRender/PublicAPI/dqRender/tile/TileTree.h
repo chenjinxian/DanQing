@@ -70,7 +70,8 @@ public:
     void collectStatistics(RenderMemory::Statistics& stats);
 
     /// Select tiles for rendering based on camera/LOD
-    /// Populates args.requestedTiles and args.readyTiles
+    /// Populates the args missing/ready sets via TileDrawArgs.insertMissing/
+    /// markReady (TileDrawArgs.ts:402-421)
     void selectTiles(TileDrawArgs& args);
 
     /// Draw the tree (select tiles + collect graphics)

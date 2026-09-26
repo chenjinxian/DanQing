@@ -20,7 +20,7 @@ void TileTreeReference::addToScene(SceneContext& context)
     draw(*args);
     for (auto* graphic : args->graphics)
         context.outputGraphic(graphic);
-    context.collectSelection(args->readyTiles, args->requestedTiles);
+    context.collectSelection(args->getReadyTiles(), args->getMissingTiles());
 }
 
 std::unique_ptr<dqRender::TileDrawArgs> TileTreeReference::createDrawArgs(SceneContext& context)

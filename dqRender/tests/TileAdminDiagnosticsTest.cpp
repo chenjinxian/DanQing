@@ -185,17 +185,21 @@ TEST(TileAdminDiagnostics, GetNumRequestsForUser)
     EXPECT_EQ(f.admin.getNumRequestsForUser(user), 0u);
 
     MockTileTree tree;
-    MockTile t1(tree, 100);  // NotLoaded → queued by addTilesForUser
+    MockTile t1(tree, 100);  // NotLoaded → queued via requestTiles
     MockTile t2(tree, 200);
     std::vector<Tile*> selected{ &t1, &t2 };
-    f.admin.addTilesForUser(user, selected, {}, {});
+    // Requests enter through requestTiles (the reference feed —
+    // TileAdmin.ts:498-500; the scene's missing set arrives here at the
+    // frame tail, Viewport.ts:2656 → ViewContext.ts:432-434).
+    f.admin.requestTiles(user, selected);
 
     TileAdmin::ExternalTileStatistics external;
     external.requested = 3;
     f.admin.addExternalTilesForUser(user, external);
 
-    // NOTE: addTilesForUser queues only NotLoaded tiles (2 here — both start
-    // NotLoaded) + external.requested (3).
+    // NOTE: the pending request set (2 here — both start NotLoaded; the
+    // NotLoaded gate applies again in processRequests, TileAdmin.ts:903)
+    // + external.requested (3).
     EXPECT_EQ(f.admin.getNumRequestsForUser(user), 5u);
 }
 

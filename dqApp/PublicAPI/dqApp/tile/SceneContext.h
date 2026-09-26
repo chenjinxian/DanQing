@@ -18,6 +18,7 @@
 #include <dqRender/tile/Tile.h>
 #include <dqRender/tile/TileDrawArgs.h>
 
+#include <algorithm>
 #include <vector>
 
 #ifndef BEGIN_DQ_APP_NAMESPACE
@@ -53,19 +54,38 @@ public:
     /// Ported from: SceneContext.outputGraphic (ViewContext.ts:406-418).
     void outputGraphic(dqRender::RenderGraphic* graphic) { m_graphics.push_back(graphic); }
 
-    /// Record a tile whose content is not yet loaded.
+    /// Record a tile whose content is not yet loaded. A request to load its
+    /// contents will later be enqueued (frame-tail requestTiles).
     /// Ported from: SceneContext.insertMissingTile (ViewContext.ts:421-429 —
-    /// only NotLoaded/Queued/Loading states; DanQing collects as reported).
-    void insertMissingTile(dqRender::Tile& tile) { m_missingTiles.push_back(&tile); }
+    /// only NotLoaded/Queued/Loading enter the missing set; Set semantics —
+    /// DanQing hosts the set as a deduplicated vector).
+    void insertMissingTile(dqRender::Tile& tile)
+    {
+        switch (tile.getLoadStatus()) {
+        case dqRender::TileLoadStatus::NotLoaded:
+        case dqRender::TileLoadStatus::Queued:
+        case dqRender::TileLoadStatus::Loading:
+            if (std::find(m_missingTiles.begin(), m_missingTiles.end(), &tile) ==
+                m_missingTiles.end())
+                m_missingTiles.push_back(&tile);
+            break;
+        default:
+            break;
+        }
+    }
 
     /// Record the tiles a tree selected for display this frame (ready +
-    /// requested) — feeds the batched TileAdmin selection report.
+    /// requested) — feeds the batched TileAdmin selection report. The
+    /// requested (not-yet-ready) tiles enter the missing set through
+    /// insertMissingTile's reference load-status gate.
     void collectSelection(std::vector<dqRender::Tile*> const& ready,
                           std::vector<dqRender::Tile*> const& requested)
     {
         m_selectedTiles.insert(m_selectedTiles.end(), ready.begin(), ready.end());
         m_selectedTiles.insert(m_selectedTiles.end(), requested.begin(), requested.end());
-        m_missingTiles.insert(m_missingTiles.end(), requested.begin(), requested.end());
+        for (auto* tile : requested)
+            if (tile)
+                insertMissingTile(*tile);
     }
 
     std::vector<dqRender::RenderGraphic*> const& graphics() const noexcept { return m_graphics; }

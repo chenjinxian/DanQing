@@ -1935,6 +1935,13 @@ void Viewport::CreateScene()
             *this, /*selected=*/context.selectedTiles(),
             /*ready=*/{}, /*touched=*/{});
 
+        // Frame-tail request feed: the scene's missing tiles REPLACE this
+        // user's pending request set. Ported from: Viewport.ts:2656
+        // context.requestMissingTiles() → SceneContext.requestMissingTiles
+        // (ViewContext.ts:432-434) → TileAdmin.requestTiles
+        // (TileAdmin.ts:498-500 — set-replace).
+        dqRender::TileAdmin::instance().requestTiles(*this, context.missingTiles());
+
         // Collected graphics -> scene foreground.
         for (auto* graphic : context.graphics()) {
             if (graphic)
