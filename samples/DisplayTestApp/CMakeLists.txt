@@ -273,6 +273,7 @@ if(TARGET gtest_main AND TARGET dqApp)
     target_include_directories(DisplayTestAppDtaTest PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/Gui
         ${CMAKE_CURRENT_SOURCE_DIR}/stubs      # Gui::Application 需要 Base/App 桩头
+        ${CMAKE_SOURCE_DIR}/third_party        # TileIOFixtures.h（cylinder 录制夹具——U11(3) silhouette 像素锁的派生资产源）
     )
     # Khronos glTF-Sample-Assets vendor 目录（GltfTexturePixelTest 加载 BoxTextured）。
     # samples/DisplayTestApp → 仓库根 = 两级（../../）；brief 原文 ../../../ 会落到

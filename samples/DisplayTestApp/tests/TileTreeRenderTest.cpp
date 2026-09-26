@@ -30,6 +30,7 @@
 #include <dqApp/tile/SimpleTileTreeReference.h>
 #include <dqApp/tile/TiledGraphicsProvider.h>
 #include <dqRender/tile/TileAdmin.h>
+#include "tile-sample-assets/imdl-fixtures/TileIOFixtures.h"  // cylinder 录制夹具（U11(3) silhouette 像素锁派生资产源）
 
 #include <algorithm>
 #include <filesystem>
@@ -81,6 +82,8 @@ static bool const s_tileCrashHook = [] {
 
 namespace { struct QtEnvR4 { QtEnvR4() { if (!qApp) { static int argc = 1; static char n[] = "t"; static char* av[] = {n, nullptr}; new QApplication(argc, av); } } }; }
 static QtEnvR4 s_qtR4;
+
+using namespace dqRender::fixtures;  // V1_1::cylinderBytes（TileIOFixtures.h）
 
 namespace {
 void spin3(int ms)
@@ -1103,6 +1106,202 @@ TEST(TileTreeRender, ImdlEdgesRenderContrastingRingInSolidFill)
     EXPECT_GE(rightSide, 5) << "edge ring missing on the right side";
     EXPECT_GE(topSide, 5) << "edge ring missing on the top side";
     EXPECT_GE(bottomSide, 3) << "edge ring missing on the bottom side";
+
+    view.close();
+    spin3(200);
+}
+
+// ---------------------------------------------------------------------------
+// U11(3)/Task 5 评审裁定：silhouette 渲染路径的窗口级像素锁（朝向剔除机制）。
+//
+// Authored: no reference test exists in itwinjs-core for silhouette edge
+//           rendering pixels（参考在浏览器 WebGL 中无 edges 像素回归）。
+//           Authorized by CLAUDE.md §5(g)（渲染像素回归）+ §11.11（位置断言；
+//           cylinder 录制件只读——派生资产 = build 目录拷贝 + lineWidth 1→5
+//           等长字节补丁，照 ImdlEdgesRenderContrastingRingInSolidFill 的
+//           imdl-w5 先例；tileset.json 由内容包围盒在测试内生成）。
+//
+// 判据链（checkForSilhouetteDiscard，Edge.ts:107-145——DanQing 移植于
+// EdgeShaderBuilder.cpp kCheckForSilhouetteDiscard）：silhouette 边仅在两侧
+// 面法线相对视线异侧（dot0*dot1 ≤ perpTol）时绘制。36 棱柱圆柱侧面观测：
+//   - 丢弃位形（机制正确）：仅左右切线附近的 1-2 条竖直 silhouette 线绘制，
+//     落在内容包围盒左右边缘带；面内部（中央带）无边。
+//   - 全画位形（剔除失效）：36 条竖直边全部绘制，中央带被边线淹没。
+// 断言 = 绿填充存活 + 左右边缘带边缘像素存在（位置断言）+ 中央带（扣除
+// 顶/底盖圆弧的竖直中段）边缘像素趋零（剔除机制的方向性对比）。
+// ---------------------------------------------------------------------------
+TEST(TileTreeRender, ImdlSilhouetteEdgesRenderAtExtremesAndCulledOnFace)
+{
+    // 派生资产：cylinder 录制夹具（V1_1，36 棱柱 + 上下盖；segments=盖圆、
+    // silhouettes=36 竖直棱边+normalPairs）拷入 build 目录，lineWidth 1→5
+    // 等长补丁（环带 ~2.5px 可测，§11.11 不突变原件）。
+    std::string const workDir = "build/imdl-cyl-w5";
+    std::string const tilesetPath = workDir + "/tileset.json";
+    {
+        std::error_code ec;
+        std::filesystem::create_directories(workDir, ec);
+        std::vector<uint8_t> imdl(V1_1::cylinderBytes,
+                                  V1_1::cylinderBytes + V1_1::cylinderSize);
+        static const uint8_t key[] = "\"lineWidth\"";
+        auto pos = std::search(imdl.begin(), imdl.end(), std::begin(key), std::end(key) - 1);
+        ASSERT_NE(pos, imdl.end()) << "lineWidth key not found in imdl JSON";
+        auto digit = pos + static_cast<long>(std::end(key) - std::begin(key) - 1);
+        while (digit != imdl.end() && (*digit == ' ' || *digit == ':'))
+            ++digit;
+        ASSERT_NE(digit, imdl.end());
+        ASSERT_EQ(*digit, '1') << "unexpected lineWidth value";
+        *digit = '5';
+        std::ofstream out(workDir + "/root.imdl", std::ios::binary);
+        ASSERT_TRUE(out.good());
+        out.write(reinterpret_cast<char const*>(imdl.data()),
+                  static_cast<std::streamsize>(imdl.size()));
+        // tileset.json：包围盒取自录制件的 decodedMin/Max（±2, ±2, ±3.00045
+        // ——Z 轴圆柱），5% 余量。
+        double const r = 2.0004 * 1.05, hz = 3.0005 * 1.05;
+        std::ofstream tout(tilesetPath);
+        ASSERT_TRUE(tout.good());
+        tout << "{\n  \"asset\": {\"version\": \"1.1\"},\n"
+             << "  \"geometricError\": 200,\n  \"root\": {\n"
+             << "    \"boundingVolume\": {\"box\": [0,0,0, " << r << ",0,0, 0," << r
+             << ",0, 0,0," << hz << "]},\n"
+             << "    \"geometricError\": 0.01,\n    \"refine\": \"REPLACE\",\n"
+             << "    \"content\": {\"uri\": \"root.imdl\"}\n  }\n}\n";
+    }
+
+    auto& app = dqApp::Application::Get();
+    if (!app.isInitialized()) {
+        dqApp::Application::Options opts;
+        opts.applicationId = "TileTreeRender";
+        opts.applicationVersion = "1.0";
+        ASSERT_TRUE(app.Startup(opts));
+    }
+
+    std::unique_ptr<dqRender::RealityTileTree> tree;
+
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    view.resize(1000, 700);
+    view.show();
+    spin3(400);
+
+    {
+        std::ifstream in(tilesetPath, std::ios::binary);
+        ASSERT_TRUE(in.good()) << "cannot open " << tilesetPath;
+        std::vector<uint8_t> jsonBytes((std::istreambuf_iterator<char>(in)),
+                                        std::istreambuf_iterator<char>());
+        tree = dqRender::RealityTileTree::loadTileset(tilesetPath, jsonBytes.data(), jsonBytes.size());
+    }
+    ASSERT_NE(tree, nullptr);
+    view.getUeViewport()->AddTileTree(tree.get());
+
+    {
+        auto* view3d = view.getUeViewport()->GetView()->AsViewState3d();
+        ASSERT_NE(view3d, nullptr);
+        // 取景 1.5 倍于圆柱内容盒（±2/±2/±3）——柱体完整在屏内。
+        view3d->LookAtVolume(dqGeom::Range3d::CreateXYZXYZ(-6, -6, -6, 6, 6, 6));
+        view.getUeViewport()->InvalidateController();
+    }
+    {
+        auto& style = view.getUeViewport()->GetView()->GetDisplayStyle();
+        auto p = style.getViewFlags().Properties();
+        p.grid = false;
+        p.acsTriad = false;
+        p.renderMode = dqCommon::RenderMode::SolidFill;  // 对比色通道开关
+        style.setViewFlags(dqCommon::ViewFlags(p));
+    }
+    view.getUeViewport()->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+    {
+        auto* tool = new dqApp::StandardViewTool(view.getUeViewport(), dqApp::StandardViewId::Iso);
+        if (!tool->run())
+            delete tool;
+    }
+    spin3(1500);
+    view.getUeViewport()->RenderFrame();
+
+    std::vector<uint8_t> frame;
+    uint32_t w = 0, h = 0;
+    ASSERT_TRUE(view.getUeViewport()->ReadFrameForTest(frame, w, h));
+    {
+        FILE* f = fopen("build/tiletree-imdl-cyl-sil.bmp", "wb");
+        if (f) {
+            uint32_t const rowBytes = w * 4;
+            uint32_t const dataSize = rowBytes * h;
+            unsigned char head[54] = {};
+            head[0] = 'B'; head[1] = 'M';
+            *reinterpret_cast<uint32_t*>(&head[2]) = 54 + dataSize;
+            *reinterpret_cast<uint32_t*>(&head[10]) = 54;
+            *reinterpret_cast<uint32_t*>(&head[14]) = 40;
+            *reinterpret_cast<uint32_t*>(&head[18]) = w;
+            *reinterpret_cast<uint32_t*>(&head[22]) = h;
+            *reinterpret_cast<uint16_t*>(&head[26]) = 1;
+            *reinterpret_cast<uint16_t*>(&head[28]) = 32;
+            fwrite(head, 1, 54, f);
+            std::vector<unsigned char> row(rowBytes);
+            for (uint32_t y = 0; y < h; ++y) {
+                memcpy(row.data(), &frame[static_cast<size_t>(y) * rowBytes], rowBytes);
+                fwrite(row.data(), 1, rowBytes, f);
+            }
+            fclose(f);
+            printf("[TILE-CYL-SIL] frame dumped to build/tiletree-imdl-cyl-sil.bmp\n");
+        }
+    }
+
+    // 内容包围盒（contentBBox 以首像素为背景基准）。
+    uint32_t minX = w, maxX = 0, minY = h, maxY = 0;
+    ASSERT_TRUE(contentBBox(frame, w, h, minX, maxX, minY, maxY))
+        << "cylinder content rendered nothing";
+    printf("[TILE-CYL-SIL] bbox=(%u,%u)-(%u,%u)\n", minX, minY, maxX, maxY);
+
+    // (1) 绿填充存活（fillColor 65280——surface 链无回归）。填充族含受光照
+    // 阴影的暗绿（实测 (0,83..129,0) 连续渐变）——判别按绿族（r/g/b 结构）
+    // 而非亮度阈值。
+    auto isFill = [](uint8_t const* p) {
+        return p[1] > 60 && p[0] < 30 && p[2] < 30;
+    };
+    long fillCount = 0;
+    for (uint32_t y = minY; y <= maxY; ++y)
+        for (uint32_t x = minX; x <= maxX; ++x)
+            if (isFill(&frame[(static_cast<size_t>(y) * w + x) * 4]))
+                ++fillCount;
+    printf("[TILE-CYL-SIL] fill=%ld\n", fillCount);
+    ASSERT_GT(fillCount, 1000) << "green cylinder fill not rendered";
+
+    // 边缘判别器：SolidFill 对比通道把边画成黑（实测 weight-5 silhouette 线 =
+    // (0,0,0) 3px；填充族为绿、背景暖白——近黑像素唯一来源是对比边）。
+    auto isEdge = [](uint8_t const* p) {
+        return p[0] < 40 && p[1] < 40 && p[2] < 40;
+    };
+
+    // 竖直中段（扣除顶/底盖圆弧）：y ∈ [minY+35%, maxY-35%]。
+    uint32_t const bh = maxY - minY, bw = maxX - minX;
+    uint32_t const y0 = minY + bh * 35 / 100;
+    uint32_t const y1 = maxY - bh * 35 / 100;
+    ASSERT_GT(y1, y0) << "content too small for band analysis";
+    // 左右边缘带 = [minX, minX+30%w] / [maxX-30%w, maxX]；中央带 = 其余中段。
+    uint32_t const leftX1 = minX + bw * 30 / 100;
+    uint32_t const rightX0 = maxX - bw * 30 / 100;
+    long leftEdges = 0, rightEdges = 0, centerEdges = 0;
+    for (uint32_t y = y0; y <= y1; ++y) {
+        for (uint32_t x = minX; x <= maxX; ++x) {
+            if (!isEdge(&frame[(static_cast<size_t>(y) * w + x) * 4]))
+                continue;
+            if (x <= leftX1) ++leftEdges;
+            else if (x >= rightX0) ++rightEdges;
+            else ++centerEdges;
+        }
+    }
+    printf("[TILE-CYL-SIL] midband edges: L=%ld R=%ld center=%ld (y %u..%u)\n",
+           leftEdges, rightEdges, centerEdges, y0, y1);
+
+    // (2) 位置断言：silhouette 线在左右切线处绘制（各 ≥ 一条竖线的量；
+    // 实测 ~3px × 中段高 ≈ 1000px/侧）。
+    EXPECT_GE(leftEdges, 60) << "no silhouette edge pixels at the left tangent";
+    EXPECT_GE(rightEdges, 60) << "no silhouette edge pixels at the right tangent";
+
+    // (3) 朝向剔除机制断言：中央带（柱面内部投影区）无边线——丢弃位形。
+    // 全画位形（checkForSilhouetteDiscard 失效）会让 36 条竖直棱边全绘，
+    // 中央带像素以千计。
+    EXPECT_LT(centerEdges, 50) << "face-interior silhouette edges drawn — "
+                                  "checkForSilhouetteDiscard is not culling";
 
     view.close();
     spin3(200);

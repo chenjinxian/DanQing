@@ -728,14 +728,13 @@ TEST(ImdlEdges, SyntheticIndexedEdgesResolution)
     EXPECT_EQ(edges->indexed->edges.silhouettePadding, 3u);
 }
 
-// compact 形态（合成 doc——Step 0 探测：录制夹具无 compact 场景）：解析不展开
-// （compact → indexed 兜底展开留 Task 6——parseCompactEdges
-// ParseImdlDocument.ts:695-708 → CompactEdges.ts
-// indexedEdgeParamsFromCompactEdges；本层仅提取字段，仅 compact 时 parseEdges
-// 归零 nullopt（:722-723 四形态全空语义））。
+// compact 形态（合成 doc——Step 0 探测：录制夹具无 compact 场景）：
+// U11(3) 起 parseEdges 对 compact 做兜底展开（ParseImdlDocument.ts:719-720 →
+// parseCompactEdges :695-708 → CompactEdges.ts indexedEdgeParamsFromCompactEdges
+// ——此前 Task 4 只提取字段并归零，本测试的 parse-only 断言随展开落地翻转）。
 // Authored: no reference test exists in itwinjs-core for imdl edges parsing;
 //           字段照 ImdlSchema.ts:257-272 ImdlCompactEdges 构造。
-TEST(ImdlEdges, SyntheticCompactEdgesParseOnly)
+TEST(ImdlEdges, SyntheticCompactEdgesFieldExtraction)
 {
     // 变体 1：visibility + numVisible（无 silhouette → normalPairs undefined，
     // ImdlSchema.ts:265）。
@@ -762,10 +761,11 @@ TEST(ImdlEdges, SyntheticCompactEdgesParseOnly)
     EXPECT_EQ(prims[0].edges->compact->numVisible, 11u);
     EXPECT_FALSE(prims[0].edges->compact->normalPairsView.has_value());
 
-    // 仅 compact、未展开 → 归零（Task 6 展开落地后此断言翻转为 indexed 产出
-    // ——登记 TODO ParseImdlDocument.ts:695-708）。
+    // 仅 compact + surface.indices 缺失 → 展开无法入链（parseCompactEdges :704
+    // 需顶点索引）→ 全空 → 归零（:722-723）。
     auto edges = dqRender::tilejson::parseImdlEdges(*json, doc, prims[0]);
-    EXPECT_FALSE(edges.has_value()) << "compact expansion is Task 6 — parse-only now";
+    EXPECT_FALSE(edges.has_value())
+        << "compact without surface.indices cannot expand (parseCompactEdges :704)";
 
     // 变体 2：带 normalPairs（ImdlSchema.ts:267）。
     dqRender::ImdlDocument doc2;
@@ -1038,6 +1038,11 @@ public:
                         dqRender::rhi::PixelBufferDescriptor&& data) noexcept override
     {
         ++m_textureUploads;
+        // U11(3)：按纹理句柄分别捕获（顶点表与边表是两张纹理——surface LUT 与
+        // EdgeLUT 各上传一次，需要各自的字节/尺寸断言）。
+        auto const* b = static_cast<uint8_t const*>(data.buffer());
+        m_texBytes[h.getId()].assign(b, b + data.size());
+        m_texDims[h.getId()] = {width, height};
         RecordingLutDriver::setTextureData(h, l0, l1, l2, l3, width, height, l4, std::move(data));
     }
 
@@ -1056,6 +1061,21 @@ public:
         return it == m_boBytes.end() ? nullptr : &it->second;
     }
     uint32_t textureUploads() const noexcept { return m_textureUploads; }
+    std::vector<uint8_t> const* texBytes(uint32_t texId) const
+    {
+        auto it = m_texBytes.find(texId);
+        return it == m_texBytes.end() ? nullptr : &it->second;
+    }
+    uint32_t texWidth(uint32_t texId) const
+    {
+        auto it = m_texDims.find(texId);
+        return it == m_texDims.end() ? 0u : it->second.first;
+    }
+    uint32_t texHeight(uint32_t texId) const
+    {
+        auto it = m_texDims.find(texId);
+        return it == m_texDims.end() ? 0u : it->second.second;
+    }
     uint8_t lastAttributeCount() const noexcept { return m_lastAttributeCount; }
     dqRender::rhi::AttributeArray const& lastAttrs() const noexcept { return m_lastAttrs; }
     uint32_t lastPrimVbh() const noexcept { return m_lastPrimVbh; }
@@ -1071,6 +1091,8 @@ public:
 private:
     dqRender::rhi::HandleAllocator m_allocator;
     std::map<uint32_t, std::vector<uint8_t>> m_boBytes;
+    std::map<uint32_t, std::vector<uint8_t>> m_texBytes;
+    std::map<uint32_t, std::pair<uint32_t, uint32_t>> m_texDims;
     uint32_t m_textureUploads = 0;
     uint8_t m_lastBufferCount = 0;
     uint8_t m_lastAttributeCount = 0;
@@ -1272,4 +1294,563 @@ TEST(EdgeShaderVariant, QuantizedVariantConsumesVertexLut)
         dqRender::PositionType::Quantized);
     std::string const silVert = silBuilder.getVertexBuilder().buildSourceWithComponents();
     EXPECT_NE(silVert.find("octDecodeNormal(a_normals.xy)"), std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// U11(3)：indexed/compact 边缘消费。
+//
+// (a) calculateEdgeTableParams 参数矩阵——移植参考测试的 9 行
+//     (numSegments, numSilhouettes, expectedPadding, expectedWidth,
+//      expectedHeight) 表。
+//     Ported from: itwinjs-core core/frontend/src/test/render/webgl/
+//                  IndexedEdges.test.ts
+//                  describe(IndexedEdgeParams > when enabled >
+//                  "inserts padding between segments and silhouettes when
+//                  required")（:246-287 的 testCases 表——参考侧经
+//                  buildIndexedEdges 驱动，DanQing 直接对展开共用的
+//                  calculateEdgeTableParams 断言；参考测试的字节内容半部依赖
+//                  MeshArgs/MeshEdge 生产链，DanQing 无该通路，未移植——
+//                  内容锁由下方 compact 展开数值锁承担）。
+//     maxSize=15 与参考一致（makeEdgeParams(args, 15)）。
+// ---------------------------------------------------------------------------
+TEST(CompactEdges, EdgeTableParamsMatchReferenceMatrix)
+{
+    static constexpr struct {
+        uint32_t numSegments;
+        uint32_t numSilhouettes;
+        uint32_t expectedPadding;
+        uint32_t expectedWidth;
+        uint32_t expectedHeight;
+    } kCases[] = {
+        // bad
+        {330, 101, 0, 30, 25},
+        {64, 32, 6, 15, 12},
+        {126, 63, 4, 30, 12},
+        {288, 80, 2, 30, 22},
+        {102, 51, 8, 30, 10},
+        // good
+        {80, 40, 0, 15, 15},
+        {100, 50, 0, 30, 10},
+        {258, 65, 2, 30, 19},
+        {74, 37, 6, 15, 14},
+    };
+
+    for (auto const& tc : kCases) {
+        auto const info = dqRender::calculateEdgeTableParams(
+            tc.numSegments, tc.numSilhouettes, 15);
+        EXPECT_EQ(info.silhouettePadding, tc.expectedPadding)
+            << "segs=" << tc.numSegments << " sils=" << tc.numSilhouettes;
+        EXPECT_EQ(info.width, tc.expectedWidth)
+            << "segs=" << tc.numSegments << " sils=" << tc.numSilhouettes;
+        EXPECT_EQ(info.height, tc.expectedHeight)
+            << "segs=" << tc.numSegments << " sils=" << tc.numSilhouettes;
+        // EdgeParams.ts:118 silhouetteStartByteIndex = numSegmentEdges * 6。
+        EXPECT_EQ(info.silhouetteStartByteIndex, tc.numSegments * 6u);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// (b) compact 展开数值锁——合成 visibility 流（Visible/Hidden/Silhouette/
+//     VisibleDuplicate 四态混合）断言展开的 edge 表字节与索引流。
+//     Authored: no reference test exists for indexedEdgeParamsFromCompactEdges
+//     (IndexedEdges.test.ts 只覆盖 buildIndexedEdges——MeshArgs 通路；
+//     CompactEdges.ts 全文检索无对应测试，2026-09-27)。
+//     数值钉死自参考算法逐行手算（CompactEdges.ts:44-129 + EdgeParams.ts:114-149）：
+//     4 三角形扇形 (0,1,2)(0,2,3)(0,3,4)(0,4,5) → 12 条边，可见性
+//     [V,H,S,V,D,H,V,S,V,H,V,S] → numVisibleEdges=5 + 3 silhouettes；
+//     maxSize=2048（≥ nRgba=15 → 单行 15×1、pad=0、silStart=30）。
+// ---------------------------------------------------------------------------
+TEST(CompactEdges, ExpandsMixedVisibilityStreamToEdgeTable)
+{
+    // 顶点索引（surface.indices）：4 三角形 = 12 个 24-bit 索引。
+    std::vector<uint8_t> cornerIndices;
+    {
+        static constexpr uint32_t kCorners[12] = {0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5};
+        cornerIndices.resize(12 * 3);
+        for (uint32_t i = 0; i < 12; ++i)
+            dqRender::VertexIndices::encodeIndex(kCorners[i], cornerIndices, i * 3);
+    }
+
+    // 可见性流（2-bit/边，LSB 在前）：e0=Visible e1=Hidden e2=Silhouette
+    // e3=Visible e4=VisibleDuplicate e5=Hidden e6=Visible e7=Silhouette
+    // e8=Visible e9=Hidden e10=Visible e11=Silhouette。
+    uint8_t const visibilityBytes[3] = {
+        2 | (0 << 2) | (1 << 4) | (2 << 6),  // e0..e3  = 0x92
+        3 | (0 << 2) | (2 << 4) | (1 << 6),  // e4..e7  = 0x63
+        2 | (0 << 2) | (2 << 4) | (1 << 6),  // e8..e11 = 0x62
+    };
+    // silhouette 法线对（u32 = normal1 | normal2<<16，ImdlSchema.ts:264）。
+    uint32_t const normalPairValues[3] = {0x11223344u, 0x55667788u, 0x99AABBCCu};
+    std::vector<uint8_t> normalPairBytes;
+    for (uint32_t v : normalPairValues)
+        for (uint32_t b = 0; b < 4; ++b)
+            normalPairBytes.push_back(static_cast<uint8_t>((v >> (b * 8)) & 0xFFu));
+
+    dqRender::CompactEdgeParams compact;
+    compact.numVisibleEdges = 5;
+    compact.visibility = dqRender::ImdlByteView{visibilityBytes, sizeof(visibilityBytes)};
+    compact.vertexIndices = dqRender::VertexIndices(cornerIndices);
+    compact.normalPairs = dqRender::ImdlByteView{normalPairBytes.data(), normalPairBytes.size()};
+    compact.maxEdgeTableDimension = 2048;
+
+    auto result = dqRender::indexedEdgeParamsFromCompactEdges(compact);
+    ASSERT_TRUE(result.has_value()) << "numTotalEdges=8 > 0 (:87-88)";
+
+    // 表参数：nRgba = ceil(1.5*5 + 2.5*3) = 15 < maxSize → 15×1、pad=0。
+    EXPECT_EQ(result->edges.width, 15u);
+    EXPECT_EQ(result->edges.height, 1u);
+    EXPECT_EQ(result->edges.numSegments, 5u);
+    EXPECT_EQ(result->edges.silhouettePadding, 0u);
+
+    // 查找表字节（下分区 5 段边 ×6B + 上分区 3 silhouettes ×10B）。
+    static constexpr uint8_t kExpectedTable[60] = {
+        0, 0, 0, 1, 0, 0,          // seg0  = e0  (0,1)
+        0, 0, 0, 2, 0, 0,          // seg1  = e3  (0,2)
+        0, 0, 0, 3, 0, 0,          // seg2  = e6  (0,3)
+        4, 0, 0, 0, 0, 0,          // seg3  = e8  (4,0)
+        4, 0, 0, 5, 0, 0,          // seg4  = e10 (4,5)
+        2, 0, 0, 0, 0, 0,          // sil0  = e2  (2,0)
+        0x44, 0x33, 0x22, 0x11,    //       normals 0x11223344
+        3, 0, 0, 4, 0, 0,          // sil1  = e7  (3,4)
+        0x88, 0x77, 0x66, 0x55,    //       normals 0x55667788
+        5, 0, 0, 0, 0, 0,          // sil2  = e11 (5,0)
+        0xCC, 0xBB, 0xAA, 0x99,    //       normals 0x99AABBCC
+    };
+    ASSERT_EQ(result->edges.data.byteLength, 60u);
+    EXPECT_EQ(std::memcmp(result->edges.data.data, kExpectedTable, 60), 0)
+        << "edge table bytes must match the hand-expanded reference algorithm";
+
+    // 索引流：8 边 × 6 顶点 × 24-bit——每边六个相同索引（:90-94）。
+    ASSERT_EQ(result->indices.byteLength, 8u * 6u * 3u);
+    for (uint32_t edge = 0; edge < 8; ++edge)
+        for (uint32_t j = 0; j < 6; ++j)
+            EXPECT_EQ((result->indices.data[(edge * 6 + j) * 3])
+                          | (static_cast<uint32_t>(result->indices.data[(edge * 6 + j) * 3 + 1]) << 8)
+                          | (static_cast<uint32_t>(result->indices.data[(edge * 6 + j) * 3 + 2]) << 16),
+                      edge)
+                << "edge " << edge << " quad corner " << j;
+}
+
+// ---------------------------------------------------------------------------
+// (c) 分区对齐填充路径——nRgba ≥ maxSize 时 silhouette 上分区的起始字节含
+//     padding（CompactEdges.ts:109 的 silhouetteStartByteIndex + silhouettePadding）。
+//     Authored: 同上（参考无 compact 展开测试）；参数由 (a) 的参考矩阵行
+//     [74, 37, 6, 15, 14] 同式锁定——本用例 13 segs + 7 sils + maxSize=15 →
+//     silOffset=78%60=18 → pad=(60-18)%10=2、width=15、height=3。
+// ---------------------------------------------------------------------------
+TEST(CompactEdges, ExpandsWithPartitionPadding)
+{
+    // 7 三角形扇形 (0,1,2)..(0,7,8) → 21 条边：e0..e12 Visible（13）、
+    // e13..e19 Silhouette（7）、e20 Hidden。
+    std::vector<uint8_t> cornerIndices;
+    {
+        static constexpr uint32_t kCorners[21] = {0, 1, 2, 0, 2, 3, 0, 3, 4,
+                                                  0, 4, 5, 0, 5, 6, 0, 6, 7, 0, 7, 8};
+        cornerIndices.resize(21 * 3);
+        for (uint32_t i = 0; i < 21; ++i)
+            dqRender::VertexIndices::encodeIndex(kCorners[i], cornerIndices, i * 3);
+    }
+
+    // 可见性流（2-bit/边，LSB 在前，4 边/字节）：
+    //   byte0-2 = 0xAA ×3 —— e0..e11 全 Visible(2)；
+    //   byte3   = 2 | 1<<2 | 1<<4 | 1<<6 = 0x56 —— e12=V、e13..e15=S；
+    //   byte4   = 1 | 1<<2 | 1<<4 | 1<<6 = 0x55 —— e16..e19=S；
+    //   byte5   = 0 —— e20=Hidden（+2 bit 未用尾零）。
+    uint8_t const fixedVisibility[6] = {0xAA, 0xAA, 0xAA, 0x56, 0x55,
+                                        0 | (0 << 2) | (0 << 4) | (0 << 6)};
+
+    std::vector<uint8_t> normalPairBytes;
+    for (uint32_t j = 0; j < 7; ++j) {
+        uint32_t const v = 0xA000u | j;  // 各对可区分（LE: j, 0xA0, 0, 0）
+        for (uint32_t b = 0; b < 4; ++b)
+            normalPairBytes.push_back(static_cast<uint8_t>((v >> (b * 8)) & 0xFFu));
+    }
+
+    dqRender::CompactEdgeParams compact;
+    compact.numVisibleEdges = 13;
+    compact.visibility = dqRender::ImdlByteView{fixedVisibility, sizeof(fixedVisibility)};
+    compact.vertexIndices = dqRender::VertexIndices(cornerIndices);
+    compact.normalPairs = dqRender::ImdlByteView{normalPairBytes.data(), normalPairBytes.size()};
+    compact.maxEdgeTableDimension = 15;
+
+    auto result = dqRender::indexedEdgeParamsFromCompactEdges(compact);
+    ASSERT_TRUE(result.has_value());
+
+    // 表参数（(a) 矩阵同式手算）：nRgba=ceil(19.5+17.5)=37 ≥15 →
+    // width=ceil(√37)=7→+8=15、silOffset=78%60=18→pad=2、nRgba+=1=38、height=3。
+    EXPECT_EQ(result->edges.width, 15u);
+    EXPECT_EQ(result->edges.height, 3u);
+    EXPECT_EQ(result->edges.numSegments, 13u);
+    EXPECT_EQ(result->edges.silhouettePadding, 2u);
+    ASSERT_EQ(result->edges.data.byteLength, 15u * 3u * 4u);
+
+    uint8_t const* table = result->edges.data.data;
+    // seg0 = e0 (0,1) @0。
+    EXPECT_EQ(table[0], 0u);
+    EXPECT_EQ(table[3], 1u);
+    // seg12 = e12 (0,5) @72：24-bit 0 → bytes 72-74；24-bit 5 → bytes 75-77。
+    EXPECT_EQ(table[72], 0u);
+    EXPECT_EQ(table[75], 5u);
+    // 分区填充（silStart=78 + pad 2 → silhouettes 自 byte 80 起）。
+    EXPECT_EQ(table[78], 0u);
+    EXPECT_EQ(table[79], 0u);
+    // sil0 = e13 (5,6) @80 + normals (0xA000)。
+    EXPECT_EQ(table[80], 5u);
+    EXPECT_EQ(table[83], 6u);
+    EXPECT_EQ(table[86], 0x00u);
+    EXPECT_EQ(table[87], 0xA0u);
+    EXPECT_EQ(table[88], 0u);
+    EXPECT_EQ(table[89], 0u);
+    // sil6 = e19 (7,8) @140 + normals (0xA006)——e19: corner 19 = tri6 第二角
+    // (=7)、next = corner 20 (=8)。
+    EXPECT_EQ(table[140], 7u);
+    EXPECT_EQ(table[143], 8u);
+    EXPECT_EQ(table[146], 0x06u);
+    EXPECT_EQ(table[147], 0xA0u);
+    // sil6 之后（150..179）保持零填充。
+    for (uint32_t i = 150; i < 180; ++i)
+        EXPECT_EQ(table[i], 0u) << "byte " << i;
+
+    // 索引流：20 边（13+7）× 6。
+    EXPECT_EQ(result->indices.byteLength, 20u * 6u * 3u);
+}
+
+// 空展开：numVisibleEdges=0 且无 normalPairs → nullopt（:86-88 undefined）。
+TEST(CompactEdges, NoEdgesYieldsNullopt)
+{
+    uint8_t const visibilityBytes[1] = {0xFF};  // 全 Hidden/VisibleDuplicate
+    dqRender::CompactEdgeParams compact;
+    compact.numVisibleEdges = 0;
+    compact.visibility = dqRender::ImdlByteView{visibilityBytes, sizeof(visibilityBytes)};
+    compact.vertexIndices = dqRender::VertexIndices();
+    compact.maxEdgeTableDimension = 2048;
+    EXPECT_FALSE(dqRender::indexedEdgeParamsFromCompactEdges(compact).has_value());
+}
+
+// ---------------------------------------------------------------------------
+// (d) parseImdlEdges 的 compact 兜底展开（ParseImdlDocument.ts:719-720 →
+//     parseCompactEdges :695-708）。Authored: no reference test exists for imdl
+//     edges parsing（同 U11(1) 区块说明）——数值沿用 (b) 的手算展开。
+// ---------------------------------------------------------------------------
+TEST(ImdlEdges, SyntheticCompactEdgesExpandToIndexed)
+{
+    dqRender::ImdlDocument doc;
+    // BIN：bvIdx @0 len 36（12 corner 索引）、bvVisibility @36 len 3、
+    // bvNormalPairs @39 len 12。
+    doc.sceneJson = R"json({
+        "materials": {"Mat": {"fillColor": 65280, "lineWidth": 2, "linePixels": 0}},
+        "meshes": {"Mesh_Root": {"primitives": [{
+            "material": "Mat",
+            "surface": {"indices": "bvIdx", "type": 1},
+            "edges": {"compact": {"visibility": "bvVisibility",
+                                  "normalPairs": "bvNormalPairs", "numVisible": 5}}
+        }]}},
+        "bufferViews": {
+            "bvIdx": {"buffer": "binary_glTF", "byteOffset": 0, "byteLength": 36},
+            "bvVisibility": {"buffer": "binary_glTF", "byteOffset": 36, "byteLength": 3},
+            "bvNormalPairs": {"buffer": "binary_glTF", "byteOffset": 39, "byteLength": 12}
+        }
+    })json";
+    doc.binary.assign(51u, 0u);
+    {
+        static constexpr uint32_t kCorners[12] = {0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5};
+        for (uint32_t i = 0; i < 12; ++i) {
+            doc.binary[i * 3 + 0] = static_cast<uint8_t>(kCorners[i] & 0xFF);
+            doc.binary[i * 3 + 1] = 0;
+            doc.binary[i * 3 + 2] = 0;
+        }
+        doc.binary[36] = 0x92;
+        doc.binary[37] = 0x63;
+        doc.binary[38] = 0x62;
+        uint32_t const np[3] = {0x11223344u, 0x55667788u, 0x99AABBCCu};
+        for (uint32_t j = 0; j < 3; ++j)
+            for (uint32_t b = 0; b < 4; ++b)
+                doc.binary[39 + j * 4 + b] = static_cast<uint8_t>((np[j] >> (b * 8)) & 0xFFu);
+    }
+
+    auto json = dqRender::tilejson::parseJsonDocument(doc.sceneJson);
+    ASSERT_NE(json, nullptr);
+    auto prims = dqRender::tilejson::parseImdlMeshPrimitives(*json);
+    ASSERT_EQ(prims.size(), 1u);
+
+    auto edges = dqRender::tilejson::parseImdlEdges(*json, doc, prims[0]);
+    ASSERT_TRUE(edges.has_value()) << "compact expansion must produce indexed (:719-720)";
+    EXPECT_EQ(edges->weight, 2u);
+    EXPECT_EQ(edges->linePixels, dqCommon::LinePixels::Solid);
+    EXPECT_FALSE(edges->segments.has_value());
+    EXPECT_FALSE(edges->silhouettes.has_value());
+    ASSERT_TRUE(edges->indexed.has_value());
+    EXPECT_EQ(edges->indexed->edges.width, 15u);
+    EXPECT_EQ(edges->indexed->edges.height, 1u);
+    EXPECT_EQ(edges->indexed->edges.numSegments, 5u);
+    EXPECT_EQ(edges->indexed->edges.silhouettePadding, 0u);
+    EXPECT_EQ(edges->indexed->indices.byteLength, 48u * 3u);
+    // 展开产物为自有字节（非指入 doc.binary 的区间视图）——表首字节即 seg0。
+    ASSERT_NE(edges->indexed->edges.data.data, nullptr);
+    EXPECT_NE(edges->indexed->edges.data.data, doc.binary.data())
+        << "expanded table is owned storage, not a binary-section view";
+    EXPECT_EQ(edges->indexed->edges.data.data[0], 0u);
+    EXPECT_EQ(edges->indexed->edges.data.data[3], 1u);
+    EXPECT_EQ(edges->indexed->edges.data.data[36], 0x44u) << "sil0 normal u32 low byte";
+}
+
+// indexed 直取优先于 compact（:718-720——indexed 在先，compact 仅兜底）。
+TEST(ImdlEdges, DirectIndexedTakesPrecedenceOverCompact)
+{
+    dqRender::ImdlDocument doc;
+    doc.sceneJson = R"json({
+        "meshes": {"Mesh_Root": {"primitives": [{
+            "surface": {"indices": "bvIdx", "type": 1},
+            "edges": {
+                "indexed": {"indices": "bvEdgeIdx", "edges": "bvEdgeTable",
+                            "width": 4, "height": 1, "numSegments": 2,
+                            "silhouettePadding": 0},
+                "compact": {"visibility": "bvVisibility", "numVisible": 1}
+            }
+        }]}},
+        "bufferViews": {
+            "bvIdx": {"buffer": "binary_glTF", "byteOffset": 0, "byteLength": 9},
+            "bvEdgeIdx": {"buffer": "binary_glTF", "byteOffset": 9, "byteLength": 12},
+            "bvEdgeTable": {"buffer": "binary_glTF", "byteOffset": 21, "byteLength": 16},
+            "bvVisibility": {"buffer": "binary_glTF", "byteOffset": 37, "byteLength": 3}
+        }
+    })json";
+    doc.binary.assign(40u, 0x33u);
+
+    auto json = dqRender::tilejson::parseJsonDocument(doc.sceneJson);
+    ASSERT_NE(json, nullptr);
+    auto prims = dqRender::tilejson::parseImdlMeshPrimitives(*json);
+    ASSERT_EQ(prims.size(), 1u);
+    auto edges = dqRender::tilejson::parseImdlEdges(*json, doc, prims[0]);
+    ASSERT_TRUE(edges.has_value());
+    ASSERT_TRUE(edges->indexed.has_value());
+    // 直取形态：视图指入 doc.binary（非展开自有字节）+ JSON 尺寸原样。
+    EXPECT_EQ(edges->indexed->indices.data, doc.binary.data() + 9);
+    EXPECT_EQ(edges->indexed->edges.data.data, doc.binary.data() + 21);
+    EXPECT_EQ(edges->indexed->edges.width, 4u);
+    EXPECT_EQ(edges->indexed->edges.numSegments, 2u);
+}
+
+// ---------------------------------------------------------------------------
+// (e) indexed 消费锁——合成 indexed EdgeParams → EdgeLUT 纹理参数
+//     （width/height/numSegments/silhouettePadding）+ 索引计数 + BO 字节
+//     verbatim + 顶点 LUT 共享。
+//     Ported from: IndexedEdgeGeometry.ts create (:98-102) + EdgeLUT.create
+//     (:46-49) + ctor (:74-86) + Mesh.ts:64-65/141（同一 mesh graphic）。
+//     数值断言 Authored: no reference test exists for imdl edges graphics
+//     （同 U11(2) 区块说明）——表字节沿用 (b) 的手算展开。
+// ---------------------------------------------------------------------------
+TEST(ImdlGraphicsTest, LutPathProducesIndexedEdgeGraphics)
+{
+    dqRender::ImdlDocument doc;
+    // BIN 布局：bvIdx @0 len 9（1 三角形 0,1,2）、bvVtx @16 len 96（6 顶点 ×
+    // 16B LitMesh）、bvEdgeIdx @112 len 144（8 边 × 6 顶点 × 3B）、
+    // bvEdgeTable @256 len 60（15×1 RGBA）。
+    doc.sceneJson = R"json({
+        "materials": {"Mat": {"fillColor": 65280, "lineWidth": 3}},
+        "meshes": {"Mesh_Root": {"primitives": [{
+            "material": "Mat",
+            "surface": {"indices": "bvIdx", "type": 1},
+            "vertices": {"bufferView": "bvVtx", "count": 6, "width": 24, "height": 1,
+                         "numRgbaPerVertex": 4, "uniformColor": 65280,
+                         "params": {"decodedMin": [0, 0, 0], "decodedMax": [2, 2, 2]}},
+            "edges": {"indexed": {"indices": "bvEdgeIdx", "edges": "bvEdgeTable",
+                                  "width": 15, "height": 1, "numSegments": 5,
+                                  "silhouettePadding": 0}}
+        }]}},
+        "bufferViews": {
+            "bvIdx": {"buffer": "binary_glTF", "byteOffset": 0, "byteLength": 9},
+            "bvVtx": {"buffer": "binary_glTF", "byteOffset": 16, "byteLength": 96},
+            "bvEdgeIdx": {"buffer": "binary_glTF", "byteOffset": 112, "byteLength": 144},
+            "bvEdgeTable": {"buffer": "binary_glTF", "byteOffset": 256, "byteLength": 60}
+        }
+    })json";
+    doc.binary.assign(320u, 0u);
+    doc.binary[3] = 1u;  // bvIdx：三角形 (0,1,2)
+    doc.binary[6] = 2u;
+    for (uint32_t edge = 0; edge < 8; ++edge)
+        for (uint32_t j = 0; j < 6; ++j)
+            doc.binary[112 + (edge * 6 + j) * 3] = static_cast<uint8_t>(edge);
+    static constexpr uint8_t kTable[60] = {
+        0, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 3, 0, 0,
+        4, 0, 0, 0, 0, 0, 4, 0, 0, 5, 0, 0,
+        2, 0, 0, 0, 0, 0, 0x44, 0x33, 0x22, 0x11,
+        3, 0, 0, 4, 0, 0, 0x88, 0x77, 0x66, 0x55,
+        5, 0, 0, 0, 0, 0, 0xCC, 0xBB, 0xAA, 0x99,
+    };
+    std::memcpy(doc.binary.data() + 256, kTable, 60);
+
+    EdgeRecordingDriver driver;
+    LutStubSystem system(driver);
+    auto graphics = dqRender::createImdlLutGraphics(doc, system);
+    ASSERT_EQ(graphics.size(), 1u);
+    auto* mesh = static_cast<dqRender::MeshGraphic*>(graphics[0]);
+    ASSERT_EQ(mesh->getSurfaces().size(), 1u);
+    dqRender::SurfaceGeometry const* surf = mesh->getSurfaces()[0].get();
+
+    // indexed edges graphic 与 surface 并列（Mesh.ts:64-65/141）。
+    ASSERT_EQ(mesh->getIndexedEdges().size(), 1u);
+    dqRender::IndexedEdgeGeometry const* ix = mesh->getIndexedEdges()[0].get();
+    ASSERT_NE(ix, nullptr);
+
+    // technique/pass/order/量化形态（IndexedEdgeGeometry.ts :130/:131/:132）。
+    EXPECT_EQ(ix->getTechniqueId(), dqRender::TechniqueId::IndexedEdge);
+    EXPECT_EQ(ix->getPass(), dqRender::Pass::OpaqueLinear);
+    EXPECT_EQ(ix->getRenderOrder(), dqRender::RenderOrder::Edge);
+    EXPECT_TRUE(ix->usesQuantizedPositions());
+
+    // 顶点 LUT 共享（mesh.lut——非拥有观察）。
+    ASSERT_NE(ix->getLut(), nullptr);
+    EXPECT_EQ(ix->getLut()->getTexture().getId(), surf->getLut().getTexture().getId());
+
+    // EdgeLUT 参数（u_edgeParams 数据源，Edge.ts:255-258）。
+    EXPECT_EQ(ix->getEdgeLut().getWidth(), 15u);
+    EXPECT_EQ(ix->getEdgeLut().getHeight(), 1u);
+    EXPECT_EQ(ix->getEdgeLut().getNumSegments(), 5u);
+    EXPECT_EQ(ix->getEdgeLut().getSilhouettePadding(), 0u);
+    EXPECT_EQ(ix->getEdgeLut().getBytesUsed(), 60u);
+
+    // 索引计数（params.indices.length——:101）。
+    EXPECT_EQ(ix->getNumIndices(), 48u);
+
+    // 颜色（colorInfo ← mesh 均匀色 uniformColor=65280 绿）。
+    EXPECT_TRUE(ix->getColorInfo().isUniform());
+    EXPECT_EQ(ix->getColorInfo().getRgb(), 0x00FF00u);
+    EXPECT_EQ(ix->getColorInfo().getAlpha(), 255u);
+
+    // symbology（MeshData.ts:93-94——weight=displayParams.width=3、Solid→0）。
+    EXPECT_FLOAT_EQ(ix->getEdgeWidth(), 3.0f);
+    EXPECT_EQ(ix->getEdgeLineCode(), 0u);
+
+    // attribute 布局：单 UBYTE3 流（:80 UnsignedByte×3 @a_pos）、无 IBO、
+    // TRIANGLES（:112 drawArrays 形态）。
+    EXPECT_EQ(driver.lastAttributeCount(), 1u);
+    EXPECT_EQ(driver.lastAttrs()[0].buffer, 0u);
+    EXPECT_EQ(driver.lastAttrs()[0].type, dqRender::rhi::ElementType::UBYTE3);
+    EXPECT_FALSE(driver.lastPrimHasIbo());
+    EXPECT_EQ(driver.lastPrimType(), dqRender::rhi::PrimitiveType::TRIANGLES);
+
+    // 纹理上传：顶点表 + 边表各一次（EdgeLUT.create 独立纹理）。
+    EXPECT_EQ(driver.textureUploads(), 2u);
+    uint32_t const edgeTexId = ix->getEdgeLut().getTexture().getId();
+    ASSERT_NE(driver.texBytes(edgeTexId), nullptr)
+        << "edge LUT texture must be uploaded from the edge table bytes";
+    EXPECT_EQ(driver.texWidth(edgeTexId), 15u);
+    EXPECT_EQ(driver.texHeight(edgeTexId), 1u);
+    ASSERT_EQ(driver.texBytes(edgeTexId)->size(), 60u);
+    EXPECT_EQ(std::memcmp(driver.texBytes(edgeTexId)->data(), kTable, 60), 0)
+        << "edge LUT upload must be the wire edge table verbatim (EdgeLUT.create :46-49)";
+
+    // a_pos BO 字节 verbatim == 线上 indexed.indices（createArrayBuffer :99）。
+    uint32_t const ixVbh = driver.lastPrimVbh();
+    auto const* idxBytes = driver.boBytes(driver.vbhSlotBuffer(ixVbh, 0));
+    ASSERT_NE(idxBytes, nullptr);
+    ASSERT_EQ(idxBytes->size(), 144u);
+    for (uint32_t i = 0; i < 144; ++i)
+        EXPECT_EQ((*idxBytes)[i], doc.binary[112 + i]) << "a_pos byte " << i;
+
+    delete graphics[0];
+}
+
+// compact → indexed → graphic 全链锁（parseImdlEdges 兜底展开 + 上传 verbatim）。
+// Authored: 同上——展开数值沿用 (b)；链路断言照 (e) 的结构锁。
+TEST(ImdlGraphicsTest, LutPathExpandsCompactEdgesToIndexedGraphics)
+{
+    dqRender::ImdlDocument doc;
+    // BIN：bvIdx @0 len 36（12 corner 索引）、bvVtx @48 len 96、
+    // bvVisibility @144 len 3、bvNormalPairs @148 len 12。
+    doc.sceneJson = R"json({
+        "materials": {"Mat": {"fillColor": 65280, "lineWidth": 3}},
+        "meshes": {"Mesh_Root": {"primitives": [{
+            "material": "Mat",
+            "surface": {"indices": "bvIdx", "type": 1},
+            "vertices": {"bufferView": "bvVtx", "count": 6, "width": 24, "height": 1,
+                         "numRgbaPerVertex": 4, "uniformColor": 65280,
+                         "params": {"decodedMin": [0, 0, 0], "decodedMax": [2, 2, 2]}},
+            "edges": {"compact": {"visibility": "bvVisibility",
+                                  "normalPairs": "bvNormalPairs", "numVisible": 5}}
+        }]}},
+        "bufferViews": {
+            "bvIdx": {"buffer": "binary_glTF", "byteOffset": 0, "byteLength": 36},
+            "bvVtx": {"buffer": "binary_glTF", "byteOffset": 48, "byteLength": 96},
+            "bvVisibility": {"buffer": "binary_glTF", "byteOffset": 144, "byteLength": 3},
+            "bvNormalPairs": {"buffer": "binary_glTF", "byteOffset": 148, "byteLength": 12}
+        }
+    })json";
+    doc.binary.assign(160u, 0u);
+    {
+        static constexpr uint32_t kCorners[12] = {0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5};
+        for (uint32_t i = 0; i < 12; ++i) {
+            doc.binary[i * 3 + 0] = static_cast<uint8_t>(kCorners[i] & 0xFF);
+        }
+        doc.binary[144] = 0x92;
+        doc.binary[145] = 0x63;
+        doc.binary[146] = 0x62;
+        uint32_t const np[3] = {0x11223344u, 0x55667788u, 0x99AABBCCu};
+        for (uint32_t j = 0; j < 3; ++j)
+            for (uint32_t b = 0; b < 4; ++b)
+                doc.binary[148 + j * 4 + b] = static_cast<uint8_t>((np[j] >> (b * 8)) & 0xFFu);
+    }
+
+    EdgeRecordingDriver driver;
+    LutStubSystem system(driver);
+    auto graphics = dqRender::createImdlLutGraphics(doc, system);
+    ASSERT_EQ(graphics.size(), 1u);
+    auto* mesh = static_cast<dqRender::MeshGraphic*>(graphics[0]);
+    ASSERT_EQ(mesh->getSurfaces().size(), 1u);
+    ASSERT_EQ(mesh->getIndexedEdges().size(), 1u)
+        << "compact must expand into an indexed edge graphic (:719-720)";
+    ASSERT_EQ(mesh->getEdges().size(), 0u);
+    dqRender::IndexedEdgeGeometry const* ix = mesh->getIndexedEdges()[0].get();
+    ASSERT_NE(ix, nullptr);
+
+    EXPECT_EQ(ix->getTechniqueId(), dqRender::TechniqueId::IndexedEdge);
+    EXPECT_EQ(ix->getEdgeLut().getNumSegments(), 5u);
+    EXPECT_EQ(ix->getEdgeLut().getSilhouettePadding(), 0u);
+    EXPECT_EQ(ix->getEdgeLut().getWidth(), 15u);
+    EXPECT_EQ(ix->getEdgeLut().getHeight(), 1u);
+    EXPECT_EQ(ix->getNumIndices(), 48u) << "8 edges (5 visible + 3 silhouettes) × 6";
+
+    // 上传字节 == (b) 手算展开的查找表。
+    uint32_t const edgeTexId = ix->getEdgeLut().getTexture().getId();
+    auto const* uploaded = driver.texBytes(edgeTexId);
+    ASSERT_NE(uploaded, nullptr);
+    ASSERT_EQ(uploaded->size(), 60u);
+    EXPECT_EQ((*uploaded)[3], 1u) << "seg0 endpoint = vertex 1";
+    EXPECT_EQ((*uploaded)[30], 2u) << "sil0 index0 = vertex 2 (edge e2)";
+    EXPECT_EQ((*uploaded)[36], 0x44u) << "sil0 normal u32 low byte";
+
+    delete graphics[0];
+}
+
+// IndexedEdge 变体 shader 结构锁（边查找表采样 + silhouette 剔除 + renderOrder）。
+// Ported from: itwinjs-core Edge.ts createBase 的 isIndexed 分支
+//              (:236-269——u_edgeLUT/u_edgeParams、computeIndexedQuantizedPosition、
+//              initializeIndexed、computeIndexedRenderOrder、
+//              checkForSilhouetteDiscardIndexed)。
+// Authored: no reference shader-snapshot test exists（同 QuantizedVariant 检索说明）。
+TEST(EdgeShaderVariant, IndexedVariantConsumesEdgeLut)
+{
+    auto builder = dqRender::createEdgeProgramBuilder(
+        dqRender::EdgeBuilderType::IndexedEdge, dqRender::FeatureMode::None,
+        dqRender::PositionType::Quantized);
+    std::string const vert = builder.getVertexBuilder().buildSourceWithComponents();
+
+    // 边查找表 uniform（Edge.ts:243-261）+ 表坐标函数（addLookupTable "edge"）。
+    EXPECT_NE(vert.find("u_edgeLUT"), std::string::npos);
+    EXPECT_NE(vert.find("u_edgeParams"), std::string::npos);
+    EXPECT_NE(vert.find("compute_edge_coords"), std::string::npos);
+    // a_pos 是边表索引（decodeUInt24），且 silhouette 判定用 u_edgeParams.z。
+    EXPECT_NE(vert.find("decodeUInt24(a_pos)"), std::string::npos);
+    EXPECT_NE(vert.find("g_isSilhouette"), std::string::npos);
+    // 对端点索引/位置（initializeIndexed :94-97）。
+    EXPECT_NE(vert.find("g_otherIndex = decodeUInt24(g_otherIndexIndex)"), std::string::npos);
+    EXPECT_NE(vert.find("g_otherPos = samplePosition(g_otherIndex)"), std::string::npos);
+    // silhouette 剔除（indexed 形态读 g_normals :138-145）。
+    EXPECT_NE(vert.find("octDecodeNormal(g_normals.xy)"), std::string::npos);
+    // renderOrder varying（computeIndexedRenderOrder :100-105）。
+    EXPECT_NE(vert.find("v_renderOrder"), std::string::npos);
+    // 非 indexed 变体专属的 a_endPointAndQuadIndices 不应出现。
+    EXPECT_EQ(vert.find("a_endPointAndQuadIndices"), std::string::npos)
+        << "indexed variant reads endpoints from the edge LUT, not an attribute";
 }

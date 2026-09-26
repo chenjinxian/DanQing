@@ -185,6 +185,7 @@ target_sources(dqRender
         src/tile/BatchTableHierarchy.cpp
         src/tile/ImdlHeader.cpp
         src/tile/ImdlDocument.cpp
+        src/tile/CompactEdges.cpp
         src/tile/ImdlGraphics.cpp
         src/tile/ImdlTileTree.cpp
         src/tile/NullTileFetcher.cpp

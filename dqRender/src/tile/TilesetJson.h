@@ -17,6 +17,9 @@
 #include <dqCommon/LinePixels.h>
 #include <dqRender/tile/ImdlDocument.h>
 
+#include "CompactEdges.h"  // U11(3)：parseImdlEdges 的 compact 兜底展开
+                           //（ParseImdlDocument.ts:695-708 parseCompactEdges）
+
 #include <optional>
 #include <utility>
 #include <vector>
@@ -543,14 +546,16 @@ inline bool findBufferView(JsonValue const& doc, std::string const& name,
 //     parseSilhouetteEdges :671-675——bufferView 缺失 → 该成员 undefined）；
 //   - indexed 直取（:718 → parseIndexedEdges :677-693）；
 //   - compact 兜底展开（:719-720 → parseCompactEdges :695-708 →
-//     CompactEdges.ts indexedEdgeParamsFromCompactEdges）——TODO(Task 6)：
-//     需 surface.indices（:720 VertexIndices）与本文件未解析的
-//     maxVertexTableSize option；本层只解析不展开，仅 compact 时归零。
+//     CompactEdges.ts indexedEdgeParamsFromCompactEdges——U11(3) 落地：
+//     :720 `new VertexIndices(indices)` 的输入即 primitive 的 surface.indices
+//     （:710 parseEdges 的 indices 形参），maxEdgeTableDimension = 选项
+//     maxVertexTableSize（ImdlReader.ts:98 = renderSystem.maxTextureSize）；
+//     展开产物字节由 ImdlIndexedEdgeParams 的 owned 向量持有）。
 //   - 四形态全空 → undefined/nullopt（:722-723）；
 //   - weight = displayParams.width、linePixels 直传（:730-731）。
-inline std::optional<ImdlEdgeParams> parseImdlEdges(JsonValue const& doc,
-                                                    ImdlDocument const& imdl,
-                                                    ImdlPrimitiveProps const& props)
+inline std::optional<ImdlEdgeParams> parseImdlEdges(
+    JsonValue const& doc, ImdlDocument const& imdl, ImdlPrimitiveProps const& props,
+    uint32_t maxEdgeTableDimension = 2048)
 {
     if (!props.edges)
         return std::nullopt;  // :711-712（imdl undefined）
@@ -599,10 +604,32 @@ inline std::optional<ImdlEdgeParams> parseImdlEdges(JsonValue const& doc,
         }
     }
 
-    // TODO(Task 6)：compact 兜底展开（parseCompactEdges ParseImdlDocument.ts
-    // :695-708 → CompactEdges.ts indexedEdgeParamsFromCompactEdges——2-bit
-    // visibility 展开 + silhouette normalPairs，需 surface.indices 顶点索引与
-    // maxVertexTableSize 上限）。
+    if (!out.indexed && edges.compact) {  // :719-720（indexed 优先，compact 兜底）
+        // parseCompactEdges（:695-708）：visibility 必需（:696-698），normalPairs
+        // 可选（:700），顶点索引 = surface.indices（:720 的形参 indices）。
+        ImdlByteView visibility;
+        if (resolve(visibility, edges.compact->visibilityView)) {
+            std::optional<ImdlByteView> normalPairs;
+            {
+                ImdlByteView np;
+                if (edges.compact->normalPairsView
+                    && resolve(np, *edges.compact->normalPairsView))
+                    normalPairs = np;
+            }
+            ImdlByteView surfaceIndices;
+            if (resolve(surfaceIndices, props.surface.indicesView)) {
+                CompactEdgeParams compact;
+                compact.numVisibleEdges = edges.compact->numVisible;  // :702
+                compact.visibility = visibility;                      // :703
+                compact.vertexIndices = VertexIndices(surfaceIndices);  // :704/:720
+                compact.normalPairs = normalPairs;  // :705（Uint32Array 重解释 →
+                                                    // 展开内按 LE u32 读）
+                compact.maxEdgeTableDimension = maxEdgeTableDimension;  // :706
+                out.indexed = indexedEdgeParamsFromCompactEdges(compact);
+            }
+        }
+    }
+
     // TODO(Task 6+)：polylines 形态（:716 `imdl.polylines ?
     // parseTesselatedPolyline(imdl.polylines) : undefined` → :722 全空析取含
     // polylines）。参考 parseEdges 的全空检查是**四形态析取**

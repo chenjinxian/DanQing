@@ -22,6 +22,7 @@
 #include "shader/PostProcessShaders.h" // kFullscreenQuadVert
 #include "gl/GL.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -1560,10 +1561,12 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     } else if (techniqueId == TechniqueId::PlanarGrid) {
                         params.setMatrix4("u_mvpMatrix", m_branchStack.getCurrentMvp().data());
                     } else if (techniqueId == TechniqueId::Edge ||
-                               techniqueId == TechniqueId::SilhouetteEdge) {
+                               techniqueId == TechniqueId::SilhouetteEdge ||
+                               techniqueId == TechniqueId::IndexedEdge) {
                         // 边缘 dispatch（U11(2) 重写——此前只传 u_viewport/
                         // u_lineWeight=1/u_bgIntensity=1，量化边缘几何的 LUT
-                        // 采样无数据源，程序编译后采样空纹理）。
+                        // 采样无数据源，程序编译后采样空纹理；U11(3) 并入
+                        // IndexedEdge 变体）。
                         // Ported from: itwinjs-core 绘制期绑定：
                         //   - u_vertLUT/u_vertParams/u_qOrigin/u_qScale ←
                         //     glsl/Vertex.ts:229-272 addPositionFromLUT 的
@@ -1581,8 +1584,19 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                         //     backgroundIntensity[StyleUniforms.ts:49 =
                         //     背景色亮度 0.3/0.59/0.11]，否则 -1 = 不做对比)；
                         //   - 可见性门 ← MeshGeometry.ts:58-70 computeEdgePass：
-                        //     SmoothShade 且 !visibleEdges → pass "none"（不画）。
+                        //     SmoothShade 且 !visibleEdges → pass "none"（不画）；
+                        //   - indexed 专属（U11(3)）：
+                        //     u_edgeLUT ← Edge.ts:243-249（edge.edgeLut.texture →
+                        //     TextureUnit.EdgeLUT = TEXTURE12，RenderFlags.ts:186）
+                        //     + u_edgeParams ← Edge.ts:251-261（texture.width/
+                        //     height/numSegments/silhouettePadding）
+                        //     + u_renderOrder ← FeatureSymbology.ts:490-495
+                        //     addRenderOrder（geometry.renderOrder——Edge 或
+                        //     PlanarEdge，IndexedEdgeGeometry.ts:132）。
                         auto const* edgeGeom = geometry->asEdge();
+                        // IndexedEdgeGeometry.asIndexedEdge（IndexedEdgeGeometry.ts:72）
+                        auto const* indexedGeom =
+                            (edgeGeom == nullptr) ? geometry->asIndexedEdge() : nullptr;
                         float viewport[2] = {
                             static_cast<float>(m_target.getViewRect().width()),
                             static_cast<float>(m_target.getViewRect().height())
@@ -1597,7 +1611,99 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                         auto const& vf = m_target.getCurrentViewFlags();
                         dqCommon::ViewFlags const commonVf(vf);
 
-                        if (edgeGeom != nullptr && edgeGeom->usesQuantizedPositions()) {
+                        // computeEdgePass 的 "none"：SmoothShade 且未开
+                        // visibleEdges → 边缘不画（三变体同门）。
+                        if (vf.renderMode == RenderMode::SmoothShade && !vf.visibleEdges)
+                            skipPrimitiveDraw = true;
+
+                        if (indexedGeom != nullptr) {
+                            // ---- IndexedEdge 变体（U11(3)）----
+                            if (indexedGeom->usesQuantizedPositions()) {
+                                // 顶点 LUT：与 Edge/Silhouette 同链（samplePosition
+                                // 的数据源——Vertex.ts addPositionFromLUT 对全部
+                                // edge 变体生效，Edge.ts:234 addSamplePosition）。
+                                auto const* lut = indexedGeom->getLut();
+                                if (lut != nullptr && lut->isValid()) {
+                                    constexpr int32_t kEdgeVertLutTexUnit = 5;  // VertexLUT
+                                    driver.bindTexture(kEdgeVertLutTexUnit, lut->getTexture());
+                                    params.setInt("u_vertLUT", kEdgeVertLutTexUnit);
+                                    auto const& lp = lut->getParams();
+                                    float vertParams[4] = {
+                                        static_cast<float>(lp.texWidth),
+                                        static_cast<float>(lp.texHeight),
+                                        static_cast<float>(lp.numRgbaPerVert),
+                                        static_cast<float>(lp.numVertices),
+                                    };
+                                    params.setVec4("u_vertParams", vertParams);
+                                    if (float const* qo = indexedGeom->getQOrigin())
+                                        params.setVec3("u_qOrigin", qo);
+                                    if (float const* qs = indexedGeom->getQScale())
+                                        params.setVec3("u_qScale", qs);
+                                }
+
+                                // 边查找表（本变体专属）。Ported from: Edge.ts:243-261。
+                                auto const& elut = indexedGeom->getEdgeLut();
+                                if (elut.isValid()) {
+                                    constexpr int32_t kEdgeLutTexUnit = 12;  // TextureUnit.EdgeLUT
+                                                                             //（RenderFlags.ts:186 TEXTURE12）
+                                    driver.bindTexture(kEdgeLutTexUnit, elut.getTexture());
+                                    params.setInt("u_edgeLUT", kEdgeLutTexUnit);
+                                    float edgeLutParams[4] = {
+                                        static_cast<float>(elut.getWidth()),      // Edge.ts:255
+                                        static_cast<float>(elut.getHeight()),     // :256
+                                        static_cast<float>(elut.getNumSegments()),  // :257
+                                        static_cast<float>(elut.getSilhouettePadding()),  // :258
+                                    };
+                                    params.setVec4("u_edgeParams", edgeLutParams);
+                                }
+
+                                // u_renderOrder = geometry.renderOrder（Edge 或
+                                // PlanarEdge）。Ported from: FeatureSymbology.ts:490-495。
+                                params.setFloat(
+                                    "u_renderOrder",
+                                    static_cast<float>(static_cast<uint8_t>(indexedGeom->getRenderOrder())));
+
+                                // u_color：EdgeSettings 覆盖优先，否则 colorInfo
+                                // 均匀色（IndexedEdgeGeometry.ts:83 colorInfo +
+                                // :126-128 getColor → computeEdgeColor）。
+                                std::array<float, 4> rgba = indexedGeom->getColorInfo().getFloatRgba();
+                                if (FloatRgba const* overrideColor = edgeSettings.getColor(commonVf)) {
+                                    rgba[0] = overrideColor->r;
+                                    rgba[1] = overrideColor->g;
+                                    rgba[2] = overrideColor->b;
+                                }
+                                params.setVec4("u_color", rgba.data());
+
+                                // u_lineWeight：viewFlags.weights 门 + clamp(1..31)，
+                                // 基重 = EdgeSettings 覆盖 ?? edgeWidth。
+                                float baseWeight = indexedGeom->getEdgeWidth();
+                                if (auto w = edgeSettings.getWeight(pass, commonVf))
+                                    baseWeight = static_cast<float>(*w);
+                                float weight = 1.0f;
+                                if (vf.weights) {
+                                    weight = baseWeight < 1.0f ? 1.0f : baseWeight;
+                                    weight = weight > 31.0f ? 31.0f : weight;
+                                }
+                                params.setFloat("u_lineWeight", weight);
+
+                                // u_bgIntensity：仅 SolidFill 且无颜色覆盖时做对比
+                                //（背景亮度）；其余 -1 = 直通（Edge.ts adjustContrast
+                                // 的 bgi<0 早退）。
+                                float const bgLuminance =
+                                    m_target.getBackgroundColor()[0] * 0.3f +
+                                    m_target.getBackgroundColor()[1] * 0.59f +
+                                    m_target.getBackgroundColor()[2] * 0.11f;
+                                float const bgi =
+                                    edgeSettings.wantContrastingColor(vf.renderMode)
+                                        ? bgLuminance : -1.0f;
+                                params.setFloat("u_bgIntensity", bgi);
+                            } else {
+                                // 非量化 indexed 形态 DanQing 无生产者（imdl 顶点
+                                // 表恒量化）——缺省权重 1、无对比（VBO 形态同款防御）。
+                                params.setFloat("u_lineWeight", 1.0f);
+                                params.setFloat("u_bgIntensity", 1.0f);
+                            }
+                        } else if (edgeGeom != nullptr && edgeGeom->usesQuantizedPositions()) {
                             auto const* lut = edgeGeom->getLut();
                             if (lut != nullptr && lut->isValid()) {
                                 // 纹理单元 5 = GL::TextureUnit::VertexLUT
@@ -1657,11 +1763,6 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                                 edgeSettings.wantContrastingColor(vf.renderMode)
                                     ? bgLuminance : -1.0f;
                             params.setFloat("u_bgIntensity", bgi);
-
-                            // computeEdgePass 的 "none"：SmoothShade 且未开
-                            // visibleEdges → 边缘不画。
-                            if (vf.renderMode == RenderMode::SmoothShade && !vf.visibleEdges)
-                                skipPrimitiveDraw = true;
                         } else {
                             // 非量化（VBO 形态）既有缺省——量化参数不可得，
                             // 维持旧行为（权重 1、无对比）。
@@ -1675,7 +1776,8 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                                          static_cast<int>(pass),
                                          static_cast<int>(techniqueId),
                                          edgeGeom ? edgeGeom->usesQuantizedPositions() : -1,
-                                         static_cast<void const*>(edgeGeom), skipPrimitiveDraw,
+                                         static_cast<void const*>(edgeGeom ? static_cast<CachedGeometry const*>(edgeGeom) : static_cast<CachedGeometry const*>(indexedGeom)),
+                                         skipPrimitiveDraw,
                                          (edgeGeom && edgeGeom->getLut())
                                              ? edgeGeom->getLut()->isValid() : -1);
                         // modelToWindowCoordinates 消费 u_proj/u_viewportTransformation/

@@ -142,9 +142,18 @@ struct DQ_RENDER_EXPORT ImdlEdgeTable {
 
 // 以查找表描述的边（每边 6 个相同索引构成 quad）。
 // Ported from: ImdlModel.ts:72-75 IndexedEdgeParams（EdgeParams.ts:70-76）。
+// C++ 所有权适配（§3.4，U11(3)）：`indexed` 直取形态（parseIndexedEdges
+// ParseImdlDocument.ts:677-693）的两视图指入 ImdlDocument::binary（同
+// segments 的区间语义）；`compact` 兜底展开形态（parseCompactEdges :695-708 →
+// CompactEdges.ts indexedEdgeParamsFromCompactEdges）的产物字节在 TS 由 GC
+// 持有（:91/:97 new Uint8Array），C++ 由下方两个 owned 向量持有、视图指入
+// 其中——vector move 只转移堆缓冲，视图保持有效（parseImdlEdges 按值返回链）。
 struct DQ_RENDER_EXPORT ImdlIndexedEdgeParams {
     ImdlByteView indices;
     ImdlEdgeTable edges;
+    // compact 展开产物所有权（直取形态为空——视图指入 doc.binary）。
+    std::vector<uint8_t> ownedIndices;
+    std::vector<uint8_t> ownedEdgeTable;
 };
 
 // 一个 mesh 的边参数（weight = displayParams.width 像素宽；linePixels 线型）。
