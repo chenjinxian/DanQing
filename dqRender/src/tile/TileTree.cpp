@@ -65,10 +65,13 @@ void TileTree::selectTilesRecursive(TileDrawArgs& args, Tile* tile,
     // We want to display this tile: request its content if not ready, and
     // display the closest displayable ancestor meanwhile (BatchedTile.ts
     // :105-110 — insertMissing + selected.add(closestDisplayableAncestor)).
+    // Ported from: TileDrawArgs.insertMissing/markReady (TileDrawArgs.ts
+    // :402-404/:419-421 — the reference's IModelTile.selectTiles calls these
+    // markers instead of writing raw vectors).
     if (!tile->isDisplayable())
-        args.requestedTiles.push_back(tile);
+        args.insertMissing(tile);
     if (closest && closest->isDisplayable())
-        args.readyTiles.push_back(closest);
+        args.markReady(closest);
 }
 
 void TileTree::draw(TileDrawArgs& args)
@@ -79,7 +82,7 @@ void TileTree::draw(TileDrawArgs& args)
     selectTiles(args);
 
     // Collect graphics from ready tiles
-    for (auto* tile : args.readyTiles) {
+    for (auto* tile : args.getReadyTiles()) {
         if (tile->isDisplayable()) {
             args.graphics.push_back(tile->getGraphic());
         }

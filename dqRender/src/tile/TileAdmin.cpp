@@ -138,12 +138,17 @@ void TileAdmin::addTilesForUser(TileUser& user,
                                  std::vector<Tile*> const& ready,
                                  std::vector<Tile*> const& touched)
 {
+    // Ported from: TileAdmin.addTilesForUser (TileAdmin.ts:514-533) — LRU
+    // markUsed for the three sets + the selectedAndReady entry. (The former
+    // DanQing extension that re-derived the request set from `selected`
+    // ∩ NotLoaded is gone: the request feed comes from the scene's missing
+    // set via requestTiles, as in the reference.)
     // Store tiles for this user
     m_selectedTiles[&user] = selected;
     m_readyTiles[&user] = ready;
 
     // "selected"/"ready"/"touched" keep contents alive — mark used in the LRU
-    // (reference: _lruList.markUsed for all three sets, TileAdmin.ts:497-509).
+    // (reference: _lruList.markUsed for all three sets, TileAdmin.ts:516-520).
     if (m_lruList) {
         m_lruList->markUsed(user.getTileUserId(), selected);
         m_lruList->markUsed(user.getTileUserId(), ready);
@@ -155,14 +160,14 @@ void TileAdmin::addTilesForUser(TileUser& user,
     double const now = nowSeconds();
     for (auto* tile : selected)
         if (tile) tile->markUsed(now);
+}
 
-    // Collect tiles that need content
-    auto& requested = m_requestedTiles[&user];
-    for (auto* tile : selected) {
-        if (tile && tile->getLoadStatus() == TileLoadStatus::NotLoaded) {
-            requested.push_back(tile);
-        }
-    }
+void TileAdmin::requestTiles(TileUser& user, std::vector<Tile*> const& tiles)
+{
+    // Ported from: TileAdmin.requestTiles (TileAdmin.ts:498-500) —
+    // _requestsPerUser.set(user, tiles): set-REPLACE per user. Consumed (and
+    // cleared) by processRequestsForUser on the next process().
+    m_requestedTiles[&user] = tiles;
 }
 
 void TileAdmin::resetStatistics() noexcept

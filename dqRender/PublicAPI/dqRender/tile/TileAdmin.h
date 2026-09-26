@@ -77,6 +77,16 @@ public:
                          std::vector<Tile*> const& ready,
                          std::vector<Tile*> const& touched);
 
+    // Specifies the set of tiles currently requested for use by a TileUser.
+    // This set replaces any previously specified for the same user. The
+    // requests are not actually processed until the next call to process().
+    // This is typically invoked when a viewport recreates its scene (the
+    // frame-tail requestMissingTiles, Viewport.ts:2656 →
+    // SceneContext.requestMissingTiles, ViewContext.ts:432-434).
+    // Ported from: TileAdmin.requestTiles (TileAdmin.ts:493-500 —
+    // _requestsPerUser.set(user, tiles)).
+    void requestTiles(TileUser& user, std::vector<Tile*> const& tiles);
+
     // --- Events ---
     dqBase::DqEvent<Tile&> onTileLoad;
     dqBase::DqEvent<TileTree&> onTileTreeLoad;
