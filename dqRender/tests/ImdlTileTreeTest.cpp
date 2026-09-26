@@ -325,3 +325,105 @@ TEST(ImdlTileTreeTest, ReadContentPopulatesFeatureTable)
     ASSERT_NE(batch->getFeatureTable(), nullptr);
     EXPECT_TRUE(batch->isPickable());
 }
+
+// maximumSize 数据链 + 真 SSE 判定式（U9(2)）。
+// Ported from: TileMetadata.ts computeChildTileProps (:795/:847 —— 每孩子
+//              maximumSize = root.tileScreenSize) + IModelTile.ts:82-83
+//              (sizeMultiplier 乘法) + Tile.ts:459-463 判定式
+//              (pixelSize <= maximumSize * tileSizeModifier)。
+TEST(ImdlTileTreeTest, MaximumSizeChainAndSseTest)
+{
+    // --- ① computeImdlChildTileProps：每孩子 maximumSize = root.tileScreenSize
+    //       （:847 剖分分支 / :795 magnification 分支）。tileScreenSize 取非
+    //       缺省值 256——证明取自元数据而非硬编码。
+    dqRender::ImdlTileMetadata parent;
+    parent.contentId = "0/0/0/0";
+    parent.range = box(0, 0, 0, 8, 8, 8);
+    parent.isLeaf = false;
+
+    dqRender::ImdlTreeMetadata root;
+    root.contentRange = box(-1, -1, -1, 9, 9, 9);
+    root.is2d = false;
+    root.tileScreenSize = 256;
+
+    auto children = dqRender::computeImdlChildTileProps(parent, root);
+    ASSERT_EQ(children.size(), 8u);
+    for (auto const& c : children)
+        EXPECT_DOUBLE_EQ(c.maximumSize, 256.0);
+
+    parent.sizeMultiplier = 1.0;
+    auto mag = dqRender::computeImdlChildTileProps(parent, root);
+    ASSERT_EQ(mag.size(), 1u);
+    EXPECT_DOUBLE_EQ(mag[0].maximumSize, 256.0);
+    parent.sizeMultiplier = 0.0;
+
+    // --- ② ImdlTile::getMaximumSize = base × (sizeMultiplier > 0 ?
+    //       sizeMultiplier : 1)（IModelTile.ts:82-83）。根 leg：树构造填
+    //       tileScreenSize。
+    dqRender::ImdlTreeMetadata meta;
+    meta.contentRange = box(-1, -1, -1, 9, 9, 9);
+    meta.tileScreenSize = 512;
+    dqRender::ImdlTileTree tree("test-max-size-tree", "0/0/0/0",
+                                box(0, 0, 0, 8, 8, 8), meta);
+    ASSERT_NE(tree.getRootTile(), nullptr);
+    EXPECT_DOUBLE_EQ(tree.getRootTile()->getMaximumSize(), 512.0);
+
+    dqRender::ImdlTile magnified(tree, tree.getRootTile(), "0/0/0/0/2",
+                                 box(0, 0, 0, 8, 8, 8), 2.0, 512.0);
+    EXPECT_DOUBLE_EQ(magnified.getMaximumSize(), 1024.0);
+    dqRender::ImdlTile plain(tree, tree.getRootTile(), "1/0/0/0",
+                             box(0, 0, 0, 8, 8, 8), 0.0, 512.0);
+    EXPECT_DOUBLE_EQ(plain.getMaximumSize(), 512.0);
+
+    // --- ③ 判定式数值锁（Tile.ts:459-463）。camera 关（正交段）→
+    //       getPixelSize = radius / pixelSizeRatio（TileDrawArgs 球路径）。
+    //       pixelSizeRatio=1、radius=512（range 对角 1024）→ pixelSize=512。
+    //       非叶 tile（contentId 非空且未 setContent）走 SSE 分支——叶在
+    //       Tile.ts:445-449 早退 Visible，不进判定式。
+    dqRender::TileDrawArgs args;  // cameraOn=false、ratio=1、双 modifier=1
+    dqRender::ImdlTile onBoundary(tree, tree.getRootTile(), "1/0/0/0",
+                                  box(0, 0, 0, 1024, 0, 0), 0.0, 512.0);
+    // 512 <= 512 → Visible（边界含等号，Tile.ts:461）。
+    EXPECT_EQ(tree.computeVisibility(args, &onBoundary),
+              dqRender::TileVisibility::Visible);
+
+    // 513 > 512 → TooCoarse。旧近似公式（geometricError = 512/2^depth =
+    // 512/2 = 256，sse = 256/513 ≈ 0.499 <= 16）同输入判 Visible——
+    // 本断言即"切换真实发生"的证明。
+    dqRender::ImdlTile overBoundary(tree, tree.getRootTile(), "1/0/0/0",
+                                    box(0, 0, 0, 1026, 0, 0), 0.0, 512.0);
+    EXPECT_EQ(tree.computeVisibility(args, &overBoundary),
+              dqRender::TileVisibility::TooCoarse);
+}
+
+// readContent 回填 maximumSize（IModelTile.ts:140-142——content.graphic 到达
+// 且 maximumSize==0 时取 tree.tileScreenSize；非零不被覆盖）。
+// Ported from: itwinjs-core IModelTile.setContent (:140-142)。
+TEST(ImdlTileTreeTest, MaximumSizeBackfilledWhenContentLoaded)
+{
+    dqRender::ImdlTreeMetadata meta;
+    meta.contentRange = box(-1, -1, -1, 9, 9, 9);
+    dqRender::ImdlTileTree tree("fixture://minimal-imdl", "0/0/0/0",
+                                box(0, 0, 0, 8, 8, 8), meta);
+    ReadContentStubSystem system;
+    tree.setRenderSystem(&system);
+
+    // maximumSize=0 构造（参考 tree props 未带 maximumSize 的形态——
+    // undisplayable 直到内容到达）。
+    dqRender::ImdlTile tile(tree, nullptr, "0/0/0/0", box(0, 0, 0, 8, 8, 8),
+                            0.0, 0.0);
+    ASSERT_DOUBLE_EQ(tile.getMaximumSize(), 0.0);
+
+    auto content = tile.readContent(V1_1::rectangleBytes, V1_1::rectangleSize);
+    ASSERT_NE(content.graphic, nullptr);
+    EXPECT_DOUBLE_EQ(tile.getMaximumSize(),
+                     static_cast<double>(tree.metadata().tileScreenSize));
+
+    // 已有非零 maximumSize 不被覆盖（参考 `0 === this.maximumSize` 门）。
+    dqRender::ImdlTile preset(tree, nullptr, "0/0/0/0", box(0, 0, 0, 8, 8, 8),
+                              0.0, 64.0);
+    auto presetContent =
+        preset.readContent(V1_1::rectangleBytes, V1_1::rectangleSize);
+    ASSERT_NE(presetContent.graphic, nullptr);
+    EXPECT_DOUBLE_EQ(preset.getMaximumSize(), 64.0);
+}

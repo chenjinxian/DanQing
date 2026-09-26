@@ -8,11 +8,12 @@
 BEGIN_DQ_RENDER_NAMESPACE
 
 Tile::Tile(TileTree& tree, Tile* parent, dqGeom::Range3d const& range,
-           uint32_t depth)
+           uint32_t depth, double maximumSize)
     : m_tree(tree)
     , m_parent(parent)
     , m_range(range)
     , m_depth(depth)
+    , m_maximumSize(maximumSize)
 {
     // Compute bounding sphere from range
     // Ported from: itwinjs-core Tile.ts constructor
