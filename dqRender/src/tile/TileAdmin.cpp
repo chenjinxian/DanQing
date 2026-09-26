@@ -27,6 +27,14 @@ TileAdmin::TileAdmin()
     sInstance = this;
 }
 
+TileAdmin::TileAdmin(DefaultInstanceTag)
+    : m_fetcher(std::make_unique<NullTileFetcher>())
+    , m_lruList(std::make_unique<LRUTileList>())
+{
+    // Non-registering: see DefaultInstanceTag in the header. instance()
+    // registers this object itself, only when no live instance exists.
+}
+
 TileAdmin::~TileAdmin()
 {
     if (sInstance == this) {
@@ -41,8 +49,12 @@ void TileAdmin::setFetcher(std::unique_ptr<ITileFetcher> fetcher)
 
 TileAdmin& TileAdmin::instance()
 {
-    // Lazy initialization
-    static TileAdmin sDefaultInstance;
+    // Lazy initialization. The default object is built with the
+    // non-registering constructor: when this static constructs while a live
+    // instance (test fixture, embedder) is registered, that instance must
+    // keep receiving the instance() handle and the statistics — the public
+    // constructor's sInstance = this would otherwise hijack the registration.
+    static TileAdmin sDefaultInstance{DefaultInstanceTag::Default};
     if (!sInstance) {
         sInstance = &sDefaultInstance;
     }
@@ -84,11 +96,27 @@ void TileAdmin::process()
 
 void TileAdmin::processQueue()
 {
-    // Ported from: itwinjs-core TileAdmin.ts processQueue()
-    // For each user, collect requested tiles and create requests
+    // Ported from: itwinjs-core TileAdmin.ts processQueue() (:827-841).
+    // 1. "Mark all requests as being associated with no users, indicating
+    //    they are no longer needed" (:828-829 — UniqueTileUserSets.clearAll;
+    //    DanQing hosts the sets on the requests, so the walk is over the
+    //    channels' live requests).
+    m_channels.clearAll();
+
+    // 2. "Notify channels that we are enqueuing new requests" (:831-832) —
+    //    last frame's pending queue becomes previouslyPending; its requests
+    //    are canceled by channels.process unless re-enqueued below.
+    m_channels.swapPending();
+
+    // 3. "Repopulate pending requests queue from each user. We do NOT sort by
+    //    priority while doing so." (:834-835) — processRequests per user; the
+    //    feeds are NOT consumed here (see processRequestsForUser).
     for (auto* user : m_users) {
         processRequestsForUser(*user);
     }
+
+    // 4. channels.process() runs from TileAdmin::process (frame order
+    //    preserved: repopulate → process).
 }
 
 void TileAdmin::processRequestsForUser(TileUser& user)
@@ -130,7 +158,9 @@ void TileAdmin::processRequestsForUser(TileUser& user)
         } else {
             // Ported from: TileAdmin.ts:909-920.
             // Request may already be dispatched (in channel's active requests)
-            // - if so do not re-enqueue! (TileAdmin.ts:913-915)
+            // - if so do not re-enqueue! (TileAdmin.ts:913-915) — after
+            // swapPending the queued request sits in previouslyPending; the
+            // append moves it back into the live queue.
             if (request->isQueued() && request->getUsers().empty())
                 channel.append(*request);
 
@@ -139,8 +169,16 @@ void TileAdmin::processRequestsForUser(TileUser& user)
         }
     }
 
-    // Clear processed requests
-    requestedTiles.clear();
+    // NB: the feed is deliberately NOT consumed — the reference's
+    // _requestsPerUser entry persists until requestTiles replaces it
+    // (TileAdmin.ts:498-500) and is re-walked every processQueue so requests
+    // still wanted keep their users re-added after each frame's clearAll. The
+    // former DanQing one-shot clear would empty every request's user set one
+    // frame after its feed was consumed once the clearAll cycle landed,
+    // canceling in-flight loads. EQUIVALENCE: 参考源=TileAdmin.ts:837
+    // (_requestsPerUser.forEach(processRequests) — 持久集合)；发散=DanQing 此前
+    // 消费后清空（现在与参考一致）——验证法=
+    // TileAdminTest.QueuedRequestSurvivesFrameBoundaryViaReenqueue。
 }
 
 void TileAdmin::registerUser(TileUser& user)
@@ -150,17 +188,41 @@ void TileAdmin::registerUser(TileUser& user)
 
 void TileAdmin::forgetUser(TileUser& user)
 {
-    // Ported from: TileAdmin.forgetUser (TileAdmin.ts:560-563 — drop the
-    // feeds + the registration), plus the UniqueTileUserSets.forgetUser role
-    // (TileUserSet.ts:107-110 — remove the user from every request's user
-    // set; DanQing hosts the sets on the requests, so the walk is over the
-    // channels' live requests). The reference also cancels requests of
-    // interest only to the departing user (onUserIModelClosed,
-    // TileAdmin.ts:925-940) — the cancel() state machine is the follow-up
-    // task's scope (Task 3); TODO port with it.
+    // Ported from: TileAdmin.forgetUser (TileAdmin.ts:560-563 —
+    // onUserIModelClosed(user) then _users.delete(user)) + onUserIModelClosed
+    // (TileAdmin.ts:925-940): clear the usage/tile sets, then "if we can
+    // establish that only this user wants a given tile, cancel its request
+    // immediately" — `undefined !== request && 1 === request.users.length`.
+    // The cancel walk runs BEFORE the user-set removal below: the reference
+    // notes "user will be removed from TileUserSets in process()" (:924), so
+    // the departing user is still in the sets here. (DanQing removes eagerly
+    // via m_channels.forgetUser — the sole-user check also reads the feed,
+    // which persists per processRequestsForUser.) The plan adds `contains`
+    // (size==1 && front==user): identical whenever the feed was processed
+    // (its tiles' requests carry this user); it only excludes the reference's
+    // corner of canceling a foreign user's request from a never-processed
+    // feed — registered plan requirement, no observable divergence otherwise.
+    // NB: TileAdmin-level cancel does not record numCanceled — the reference
+    // counts only channel.cancel (TileRequestChannel.ts:325-328) inside the
+    // process loops (TileAdmin.ts:936 calls request.cancel() directly).
+    auto feedIt = m_requestedTiles.find(&user);
+    if (feedIt != m_requestedTiles.end()) {
+        for (Tile* tile : feedIt->second) {
+            if (!tile) continue;
+            TileRequest* request = tile->getRequest();
+            if (!request) continue;
+            auto const& users = request->getUsers();
+            if (users.size() == 1 && users.front() == &user)
+                request->cancel();
+        }
+        m_requestedTiles.erase(feedIt);
+    }
+
+    // The UniqueTileUserSets.forgetUser role (TileUserSet.ts:107-110 — remove
+    // the user from every remaining request's user set; DanQing hosts the
+    // sets on the requests, so the walk is over the channels' live requests).
     m_channels.forgetUser(user);
     m_users.erase(&user);
-    m_requestedTiles.erase(&user);
     m_selectedTiles.erase(&user);
     m_readyTiles.erase(&user);
     m_externalTiles.erase(&user);
@@ -321,7 +383,30 @@ void TileAdmin::deliverTileContent(Tile& tile, std::vector<uint8_t> const& data)
     // Ported from: TileRequest.handleResponse (TileRequest.ts:156-195) —
     // settle the channel request first (recordCompletion), then bytes →
     // readContent → setContent (which raises onTileLoad → scene invalidation).
-    if (TileRequest* request = tile.getRequest()) {
+    //
+    // The in-flight request is resolved through the channel's active set
+    // FIRST: a request canceled while its fetch ran has already released the
+    // tile hook (TileRequest.cancel → TileRequest.ts:144-145) but stays in
+    // the active set until its http activity completes
+    // (TileRequestChannel.ts:250 NB). EQUIVALENCE: 参考源=TileRequest.ts:107-110
+    // （response 到达后 isCanceled → 直接 return，丢弃 data，不读不 set）+
+    // TileRequestChannel.ts:333-336（dropActiveRequest 释放并发槽）；发散=参考
+    // 由 dispatch 的 promise 闭包直接持有请求对象，DanQing 的完成链只带
+    // (tile, data)，以 channel 活动集按 tile 反查（_active.add 的镜像）+
+    // tile 钩子兜底（无 channel 请求的交付路径保持原行为）；验证法=
+    // TileRequestChannelTest.UsersEmptyCancelsPendingAndActive（active 段）+
+    // TileAdminTest.ForgetUserCancelsSoleRequestImmediately。
+    TileRequest* request = m_channels.findActiveRequestForTile(tile);
+    if (!request)
+        request = tile.getRequest();
+
+    if (request) {
+        if (request->isCanceled()) {
+            // Cancel is a mark only — the fetch was not aborted; drop the
+            // late response and release the concurrency slot.
+            request->getChannel().settle(*request, /*failed=*/true);
+            return;
+        }
         request->getChannel().settle(*request);
         recordCompleted();
     }
@@ -332,11 +417,21 @@ void TileAdmin::deliverTileContent(Tile& tile, std::vector<uint8_t> const& data)
 
 void TileAdmin::reportTileFetchError(Tile& tile, std::string const& error)
 {
-    // Ported from: TileRequest.ts error paths (tile.setNotFound) with channel
-    // failure accounting.
+    // Ported from: TileRequest.ts error path (TileRequest.ts:94-103 →
+    // setFailed :148-153 — notifyAndClear + Failed + tile.setNotFound +
+    // recordFailure). NB: setFailed runs unconditionally on fetch error —
+    // even for a request canceled in flight (the reference's catch does not
+    // re-check isCanceled). settle uses failed=true so the request state is
+    // Failed, matching setFailed.
     (void)error;
-    if (TileRequest* request = tile.getRequest()) {
-        request->getChannel().settle(*request);
+    // Same active-set-first resolution as deliverTileContent: a canceled
+    // request's hook is gone but its active slot must still be released (the
+    // reference's dispatch catch reaches the request via its own closure).
+    TileRequest* request = m_channels.findActiveRequestForTile(tile);
+    if (!request)
+        request = tile.getRequest();
+    if (request) {
+        request->getChannel().settle(*request, /*failed=*/true);
         recordFailed();
     }
     tile.setNotFound();

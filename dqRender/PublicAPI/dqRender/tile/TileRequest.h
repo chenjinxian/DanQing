@@ -102,6 +102,23 @@ public:
     void complete();       // Loading -> Completed
     void fail();           // Any -> Failed
 
+    /// Cancel this request. This leaves the associated Tile's state untouched.
+    /// Empties the user set and releases the tile's request hook, then marks
+    /// the request Failed. Cancel is a MARK only — an in-flight fetch is not
+    /// aborted; when its response arrives the completion sink drops it
+    /// (TileRequest.ts:109-110, delivered via TileAdmin::deliverTileContent).
+    /// Ported from: itwinjs-core TileRequest.cancel (TileRequest.ts:122-131).
+    void cancel();
+
+    /// Empty the request's user set — the per-frame clearAll walk
+    /// (TileAdmin.processQueue → UniqueTileUserSets.clearAll, TileAdmin.ts:829
+    /// → TileUserSet.ts:126-128) marks every request "no longer needed" until
+    /// processRequests re-adds the users of tiles still wanted this frame.
+    /// Ported from: itwinjs-core TileUserSet.clear (TileUserSet.ts:39) —
+    /// DanQing hosts the user sets on the requests (see getUsers), so the
+    /// pooled set's clear operation lands here.
+    void clearUsers();
+
     /// Check if request is active (Dispatched or Loading)
     bool isActive() const noexcept {
         return m_state == State::Dispatched || m_state == State::Loading;

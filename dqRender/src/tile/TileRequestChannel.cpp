@@ -27,29 +27,73 @@ void TileRequestChannel::append(TileRequest& request)
 {
     // See the owning header for the EQUIVALENCE registration (reference
     // Queue.append re-enqueues by reference — TileRequestChannel.ts:224-227;
-    // unique_ptr single-slot ownership reduces "re-enqueue" to move-to-back
-    // until swapPending lands).
+    // unique_ptr single-slot ownership turns the dual queue membership into a
+    // move from m_previouslyPending into m_pending).
+    for (auto it = m_previouslyPending.begin(); it != m_previouslyPending.end(); ++it) {
+        if (it->get() == &request) {
+            m_pending.push_back(std::move(*it));  // 跨队列搬运（单槽位所有权）
+            m_previouslyPending.erase(it);
+            return;
+        }
+    }
     for (auto it = m_pending.begin(); it != m_pending.end(); ++it) {
         if (it->get() == &request) {
             std::rotate(it, it + 1, m_pending.end());  // vector 随机访问迭代器
             return;
         }
     }
-    // A queued request is always in the live pending queue while swapPending
-    // is unported; the cross-queue move arrives with it (Task 3).
+    // Unreachable via the shared-request gate: a queued request always lives
+    // in exactly one of the two queues (unique_ptr ownership).
+}
+
+void TileRequestChannel::swapPending()
+{
+    // Ported from: TileRequestChannel.swapPending (TileRequestChannel.ts:215-219)
+    // — the queue objects are exchanged; membership (ownership here) travels
+    // with the queue, so last frame's pending requests wake up in
+    // m_previouslyPending and new appends land in the fresh m_pending.
+    std::swap(m_pending, m_previouslyPending);
+}
+
+void TileRequestChannel::clearAll()
+{
+    // Ported from: UniqueTileUserSets.clearAll (TileUserSet.ts:126-128 —
+    // "forEach(set => set.clear())" via TileAdmin.ts:829); DanQing hosts the
+    // sets on the requests, so the walk is over the channel's live requests.
+    for (auto& request : m_pending)
+        if (request)
+            request->clearUsers();
+    for (auto& request : m_previouslyPending)
+        if (request)
+            request->clearUsers();
+    for (auto& request : m_active)
+        if (request)
+            request->clearUsers();
 }
 
 void TileRequestChannel::forgetUser(TileUser& user)
 {
     // Ported from: UniqueTileUserSets.forgetUser (TileUserSet.ts:107-110 —
     // "for each set, remove(user)"); DanQing's sets live on the requests, so
-    // the walk covers both the pending and the active requests.
+    // the walk covers the pending, previously-pending and active requests.
     for (auto& request : m_pending)
+        if (request)
+            request->removeUser(user);
+    for (auto& request : m_previouslyPending)
         if (request)
             request->removeUser(user);
     for (auto& request : m_active)
         if (request)
             request->removeUser(user);
+}
+
+void TileRequestChannel::cancel(std::unique_ptr<TileRequest> const& request)
+{
+    // Ported from: TileRequestChannel.cancel (TileRequestChannel.ts:325-328 —
+    // request.cancel() + ++_statistics.numCanceled; DanQing folds the channel
+    // statistics into TileAdmin.Statistics).
+    request->cancel();
+    TileAdmin::instance().recordCanceled();
 }
 
 void TileRequestChannel::process(uint32_t externalInFlight)
@@ -76,31 +120,32 @@ void TileRequestChannel::process(uint32_t externalInFlight)
             return a->getPriority() < b->getPriority();
         });
 
-    // REGISTERED ADAPTATION (not ported): the reference's per-frame request
-    // retirement has no DanQing counterpart yet —
-    //   · swapPending double buffer (:215-219) + "previously pending and now
-    //     userless → cancel" (:242-247);
-    //   · "active and userless → cancel" (:249-253) + processCancellations
-    //     (:256);
-    //   · TileAdmin.forgetUser → onUserIModelClosed canceling requests of
-    //     interest only to the departing user (TileAdmin.ts:560-563 → :925-940).
-    // The faces these rest on ARE ported now — TileRequest.users / addUser /
-    // isQueued / isCanceled (TileRequest.ts:25-77) and the processRequests
-    // dedup gate `undefined === tile.request` (TileAdmin.ts:897-925) that
-    // makes one shared request carry many users. What is still missing is the
-    // cancel() state machine + the per-frame clearAll/swapPending cycle
-    // (TileAdmin.ts:829-841) that empties the sets each frame: a request whose
-    // users all depart is removed from the sets by TileRequestChannel::
-    // forgetUser but keeps loading, and a userless queued request is not yet
-    // canceled here. Porting that retirement cycle is the follow-up task
-    // (Task 3), not a local patch.
-    // EQUIVALENCE: 参考源=TileRequestChannel.ts:242-253 + TileAdmin.ts:925-940；
-    // 发散=DanQing 残留请求不被取消而是完成加载（并发槽被无人关心的请求占用、
-    // 内容进 LRU 未选中分区）——验证法=调度序单测（TileRequestChannelTest）不
-    // 依赖取消面；取消面接线的回归锁由 Task 3 补（TileRequestUsersTest 已锁
-    // users/isCanceled 面）。
+    // 2. Cancel any previously pending requests that are no longer needed
+    //    (TileRequestChannel.ts:242-245): after this frame's clearAll
+    //    (TileAdmin.processQueue) emptied the user sets, a request left here
+    //    with no users is of interest to nobody. The cancel() releases the
+    //    tile hook, so the clear() below destroys exactly canceled requests —
+    //    every still-wanted queued request was moved into m_pending by the
+    //    shared-request gate's re-enqueue (TileAdmin.ts:913-915).
+    for (auto const& queued : m_previouslyPending)
+        if (queued->getUsers().empty())
+            cancel(queued);
+    m_previouslyPending.clear();  // (:247)
 
-    // 2. Dispatch pending requests up to the concurrency limit. The reference
+    // 3. Cancel any active requests that are no longer needed.
+    //    NB (:250): Do NOT remove them from the active set until their http
+    //    activity has completed — the fetch keeps running and the late
+    //    response is dropped by TileAdmin::deliverTileContent
+    //    (TileRequest.ts:109-110). (TileRequestChannel.ts:249-253)
+    for (auto const& active : m_active)
+        if (active->getUsers().empty())
+            cancel(active);
+
+    // 4. Batch-cancel running requests (TileRequestChannel.ts:256 → :299) —
+    //    no-op base for DanQing's polling fetcher (see the header note).
+    processCancellations();
+
+    // 5. Dispatch pending requests up to the concurrency limit. The reference
     // dispatches by invoking `channel.requestContent(tile, isCanceled)` which
     // forwards to `tile.requestContent()` and awaits its promise
     // (TileRequestChannel.ts:305-306 → TileRequest.ts:80-89). DanQing's fetcher
@@ -115,6 +160,20 @@ void TileRequestChannel::process(uint32_t externalInFlight)
         Tile& tile = request->getTile();
         TileRequest* raw = request.get();
 
+        // The reference's channel.dispatch counts the statistic before the
+        // request's own canceled guard can trip (TileRequestChannel.ts:313).
+        TileAdmin::instance().recordDispatched();
+
+        // Reference dispatch guard (TileRequest.ts:81-82): a request canceled
+        // while queued never begins its fetch. The owning handle drops it
+        // here; release the tile hook first if it still points at the request
+        // (the reference leaves the hook for GC — DanQing frees eagerly).
+        if (raw->isCanceled()) {
+            if (tile.getRequest() == raw)
+                tile.setRequest(nullptr);
+            continue;
+        }
+
         // Dispatch BEFORE initiating the fetch. The fetcher may fail
         // synchronously (e.g. NullTileFetcher invokes onError inline), which
         // settles the request via TileAdmin and destroys it — the raw pointer
@@ -124,7 +183,6 @@ void TileRequestChannel::process(uint32_t externalInFlight)
         tile.setRequest(raw);
         m_active.push_back(std::move(request));  // ownership → channel
         bool const initiated = tile.requestContent();
-        TileAdmin::instance().recordDispatched();
 
         // A synchronous completion/failure path has already settled the request
         // (tile's request hook cleared); only touch it while still in flight.
@@ -161,16 +219,31 @@ void TileRequestChannel::settle(TileRequest& request, bool failed)
     }
 }
 
+TileRequest* TileRequestChannel::findActiveRequestForTile(Tile& tile)
+{
+    // See the owning header for the EQUIVALENCE registration (the mirror of
+    // _active.add, TileRequestChannel.ts:314 — the reference reaches the
+    // in-flight request through the dispatch closure instead).
+    for (auto& request : m_active)
+        if (request && &request->getTile() == &tile)
+            return request.get();
+    return nullptr;
+}
+
 void TileRequestChannel::clear()
 {
     // Pending/active requests die with the channel; detach tile hooks first.
     for (auto& request : m_pending)
         if (request && request->getTile().getRequest() == request.get())
             request->getTile().setRequest(nullptr);
+    for (auto& request : m_previouslyPending)
+        if (request && request->getTile().getRequest() == request.get())
+            request->getTile().setRequest(nullptr);
     for (auto& request : m_active)
         if (request && request->getTile().getRequest() == request.get())
             request->getTile().setRequest(nullptr);
     m_pending.clear();
+    m_previouslyPending.clear();
     m_active.clear();
 }
 
@@ -194,6 +267,26 @@ TileRequestChannel& TileRequestChannels::getChannel(char const* name)
     return *ptr;
 }
 
+void TileRequestChannels::swapPending()
+{
+    // Ported from: TileRequestChannels.swapPending (TileRequestChannels.ts:179-182)
+    // — invoked by TileAdmin.processQueue when it is about to start enqueuing
+    // new requests.
+    for (auto& entry : m_channels) {
+        entry.channel->swapPending();
+    }
+}
+
+void TileRequestChannels::clearAll()
+{
+    // Ported from: TileAdmin.processQueue's clearAll step (TileAdmin.ts:828-829
+    // — UniqueTileUserSets.clearAll); DanQing hosts the user sets on the
+    // requests, so the walk is over the channels' live requests.
+    for (auto& entry : m_channels) {
+        entry.channel->clearAll();
+    }
+}
+
 void TileRequestChannels::forgetUser(TileUser& user)
 {
     // See TileRequestChannel::forgetUser (the UniqueTileUserSets.forgetUser
@@ -201,6 +294,16 @@ void TileRequestChannels::forgetUser(TileUser& user)
     for (auto& entry : m_channels) {
         entry.channel->forgetUser(user);
     }
+}
+
+TileRequest* TileRequestChannels::findActiveRequestForTile(Tile& tile)
+{
+    // See TileRequestChannel::findActiveRequestForTile.
+    for (auto& entry : m_channels) {
+        if (TileRequest* request = entry.channel->findActiveRequestForTile(tile))
+            return request;
+    }
+    return nullptr;
 }
 
 void TileRequestChannels::process(uint32_t externalInFlight)

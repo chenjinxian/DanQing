@@ -72,4 +72,34 @@ void TileRequest::fail()
     m_state = State::Failed;
 }
 
+void TileRequest::cancel()
+{
+    // Ported from: TileRequest.cancel (TileRequest.ts:125-131) —
+    // notifyAndClear (:141-146) empties the user set and releases the tile's
+    // request hook, then the state becomes Failed.
+    // REGISTERED ADAPTATIONS (both no-op bases in the reference):
+    // · notify() (:134-139) invokes TileUser.onRequestStateChanged — the
+    //   Viewport scene-invalidation hook (Viewport.ts:3082-3084). DanQing's
+    //   TileUser has no such hook; scene invalidation rides the
+    //   TileAdmin.onTileLoad event (Viewport ctor wiring). Unobservable in
+    //   DanQing's subset: the users-empty cancel loops iterate empty sets and
+    //   the forgetUser path's sole user is the departing one.
+    // · onActiveRequestCanceled (:127-128) accumulates backend cancellations
+    //   for IPC channels (ElementGraphicsChannel) — DanQing's polling fetcher
+    //   has no such channel subclass; the base is a no-op
+    //   (TileRequestChannel.ts:294). TODO port with IPC-style channel support.
+    m_users.clear();
+    m_tile.setRequest(nullptr);
+    m_state = State::Failed;
+}
+
+void TileRequest::clearUsers()
+{
+    // Ported from: TileUserSet.clear (TileUserSet.ts:39) — the per-frame
+    // clearAll walk empties every pooled set; DanQing hosts the sets on the
+    // requests (see the getUsers EQUIVALENCE note), so the set's clear
+    // operation lands here.
+    m_users.clear();
+}
+
 END_DQ_RENDER_NAMESPACE
