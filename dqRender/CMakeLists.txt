@@ -291,6 +291,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/ImdlTileTreeTest.cpp
         tests/ITileFetcherTest.cpp
         tests/TileAdminDiagnosticsTest.cpp  # Debug Info 面板数据源（2026-09-21）
+        tests/TileRequestChannelTest.cpp    # 调度器两级优先级键（TileRequestChannel.ts:13-20，U9(4)）
         tests/TileDrawArgsTest.cpp          # TileDrawArgs 参考面（标记集 + getPixelSize，U9 地基）
         tests/SelectTilesProtocolTest.cpp   # SelectParent 选择协议场景矩阵（IModelTile.ts:205-334，U9(3)）
         tests/GLTimerTest.cpp               # GLTimer 嵌套/异步交付语义（Profile GPU）

@@ -13,7 +13,14 @@ BEGIN_DQ_RENDER_NAMESPACE
 
 RealityTileTree::RealityTileTree(std::unique_ptr<Tile> rootTile,
                                  std::string const& tilesetUrl)
-    : TileTree(std::move(rootTile))
+    // Ported from: itwinjs-core reality-model tree priority — the reference's
+    // reality loaders carry TileLoadPriority::Context
+    // (RealityModelTileTree.ts:464 `public get priority(): TileLoadPriority {
+    // return TileLoadPriority.Context; }`, likewise OrbitGtTileTree.ts:128)
+    // which flows into the tree via params (:299) and is stored by the TileTree
+    // constructor (TileTree.ts:129 `this._loadPriority = params.priority`).
+    // TileLoadPriority::Context = 40 (Tile.ts:636 — "Typically, reality models").
+    : TileTree(std::move(rootTile), TileLoadPriority::Context)
     , m_tilesetUrl(tilesetUrl)
 {
 }
