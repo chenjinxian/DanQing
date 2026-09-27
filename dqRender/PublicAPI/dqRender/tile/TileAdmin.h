@@ -116,7 +116,7 @@ public:
     struct Statistics {
         uint32_t numActiveRequests = 0;      // currently in flight (mirror of getActiveRequestCount)
         uint32_t numPendingRequests = 0;     // queued (mirror of getPendingRequestCount)
-        uint32_t numCanceled = 0;            // canceled while pending
+        uint32_t numCanceled = 0;            // canceled while pending (cumulative — see the statistics() EQUIVALENCE note)
         uint32_t totalCompletedRequests = 0;
         uint32_t totalFailedRequests = 0;
         uint32_t totalTimedOutRequests = 0;
@@ -128,6 +128,14 @@ public:
         uint32_t totalAbortedRequests = 0;
         DecodingStatistics decoding;         // content-decode timings
     };
+    // EQUIVALENCE (numCanceled, M-C 收口): 参考源=TileRequestChannel.ts:233
+    // （process() 开头 `this._statistics.numCanceled = 0` ——每周期清零，面板
+    // 显示"本周期取消数"）；DanQing=process 生命周期累计（recordCanceled 只
+    // 递增，resetStatistics 也保留该计数，TileAdmin.cpp）——诊断面板语义差异
+    // （累计 vs 每周期）；无消费者依赖每周期语义（验证法=
+    // TileRequestChannelTest.UsersEmptyCancelsPendingAndActive 的 numCanceled
+    // 断言）。字段来源不变：
+    // TileRequestChannel.ts:28-37 Statistics + :325-328 cancel 的 ++numCanceled。
     Statistics const& statistics() const noexcept { return m_statistics; }
     // TileStatisticsTracker.ts:169 (resetStatistics — resets cumulative totals;
     // reference: channels.resetStatistics() + _totalElided = 0).

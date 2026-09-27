@@ -260,8 +260,9 @@ void TileAdmin::addTilesForUser(TileUser& user,
 void TileAdmin::requestTiles(TileUser& user, std::vector<Tile*> const& tiles)
 {
     // Ported from: TileAdmin.requestTiles (TileAdmin.ts:498-500) —
-    // _requestsPerUser.set(user, tiles): set-REPLACE per user. Consumed (and
-    // cleared) by processRequestsForUser on the next process().
+    // _requestsPerUser.set(user, tiles): set-REPLACE per user. The feed is
+    // PERSISTENT: processRequestsForUser re-walks it every processQueue (the
+    // reference never clears the entry — see the NB in processRequestsForUser).
     m_requestedTiles[&user] = tiles;
 }
 
