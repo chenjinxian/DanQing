@@ -20,6 +20,8 @@
 #include "render/LineCode.h"
 #include "render/SurfaceGeometry.h"
 #include "render/IndexedEdgeGeometry.h"
+#include "render/InstancedGeometry.h"
+#include "render/InstanceBuffers.h"
 #include "render/VertexLutTexture.h"
 #include "render/VertexTableBuilder.h"
 
@@ -309,6 +311,64 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
         else
             geom->setColor(dqCommon::ColorDef::create(0xFFFFFFFFu));
 
+        // -------------------------------------------------------------------
+        // TD-25：instances 修饰消费（ImdlSchema.ts:160-166 → InstancedGraphicParams
+        // 链）。参考 getModifiers（ImdlGraphicsCreator.ts:243-255 mod.type ==
+        // "instances" → InstancedGraphicParams.fromProps）+ createPrimitiveGraphic
+        //（:317-321 system.createRenderGraphic(geometry, mods.instances)）+
+        // webgl System.ts:577-590（InstanceBuffers.fromParams →
+        // MeshGraphic.create(geom, buffers)）。parseInstances 的归零语义
+        //（ParseImdlDocument.ts:1045-1087）：count<=0 / transformCenter 长度
+        // !=3 / featureIds / transforms bufferView 缺失 → 无实例化（按原有几何
+        // 绘制）；transforms 字节数 % (12*4) != 0 的参考 dev assert 在 C++
+        // 侧为显式防御（跳过实例化并 trace）。
+        // 带 instances 的 primitive 其 edges 亦应共享实例缓冲（MeshGraphic.
+        // create 的 _instances 覆盖全部图元——Mesh.ts:123-143）；本资产
+        // prim1 边缘 numVisible=0（无边缘几何）未触发——接线归后续
+        // （边缘实例化需 edge 变体的实例化 attribute 组，TODO 登记）。
+        // -------------------------------------------------------------------
+        InstanceBuffers* instanceBuffers = nullptr;
+        if (prim.instances) {
+            auto const& inst = *prim.instances;
+            uint8_t const* tdata = nullptr;
+            size_t tsize = 0;
+            uint8_t const* fiddata = nullptr;
+            size_t fidsize = 0;
+            uint8_t const* symdata = nullptr;
+            size_t symsize = 0;
+            bool const viewsOk =
+                inst.count > 0
+                && tilejson::findBufferView(*json, inst.transformsView, doc.binary,
+                                            tdata, tsize)
+                && tilejson::findBufferView(*json, inst.featureIdsView, doc.binary,
+                                            fiddata, fidsize)
+                && (tsize % (12u * sizeof(float)) == 0u)
+                && (tsize / (12u * sizeof(float)) == inst.count)
+                && (fidsize == static_cast<size_t>(inst.count) * 3u);
+            bool const symOk = !inst.symbologyOverridesView
+                || tilejson::findBufferView(*json, *inst.symbologyOverridesView,
+                                            doc.binary, symdata, symsize);
+            if (viewsOk && symOk
+                && (!symdata || symsize == static_cast<size_t>(inst.count) * 8u)) {
+                float const tc[3] = {
+                    static_cast<float>(inst.transformCenter[0]),
+                    static_cast<float>(inst.transformCenter[1]),
+                    static_cast<float>(inst.transformCenter[2]),
+                };
+                instanceBuffers = InstanceBuffers::create(
+                    *driver, inst.count,
+                    reinterpret_cast<float const*>(tdata), tc,
+                    fiddata, symdata);
+            }
+            if (getenv("DANQING_INST_TRACE")) {
+                std::fprintf(stderr,
+                             "[INST] primitive instances: count=%u views=%d sym=%d "
+                             "-> buffers=%p\n",
+                             inst.count, viewsOk ? 1 : 0, symOk ? 1 : 0,
+                             static_cast<void*>(instanceBuffers));
+            }
+        }
+
         // 每 mesh primitive 一个 MeshGraphic（decodeImdlGraphics :414-437
         // 的 graphic 链等价；调用方 createGraphicList + createBatch 包裹）。
         auto* meshGraphic = new MeshGraphic(*driver);
@@ -318,7 +378,13 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
         dqCommon::ColorDef const meshColor = prim.vertices.hasUniformColor
             ? dqCommon::ColorDef::create(prim.vertices.uniformColor)
             : dqCommon::ColorDef::create(0xFFFFFFFFu);
-        meshGraphic->addSurface(std::move(geom));
+        // instances 修饰：InstancedGeometry 包裹 LUT surface（wrapper 非拥有
+        // 观察 geom——所有权经 addInstancedSurface 入 MeshGraphic）。
+        if (instanceBuffers) {
+            meshGraphic->addInstancedSurface(std::move(geom), instanceBuffers);
+        } else {
+            meshGraphic->addSurface(std::move(geom));
+        }
 
         // -------------------------------------------------------------------
         // U11(2)：edges → edge graphics（与 surface 并列，Batch 包裹不变）。

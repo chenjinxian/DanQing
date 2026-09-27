@@ -108,6 +108,15 @@ public:
         return m_buffers->getRtcModelTransform(modelMatrix);
     }
 
+    /// Get the RTC-only transform (translation by rtcCenter), column-major 16.
+    /// Ported from: itwinjs-core InstanceData.getRtcOnlyTransform
+    /// (InstancedGeometry.ts:55-57；u_instanced_modelView 侧的 RTC 加回——
+    ///  BranchUniforms.ts:217-227 getRtcModelTransform = model × rtcOnly)。
+    void getRtcOnlyTransform(float* out16) const
+    {
+        m_buffers->getRtcOnlyTransform(out16);
+    }
+
 private:
     CachedGeometry* m_repr;  // not owned — shared with Batch
     InstanceBuffers* m_buffers;  // owned

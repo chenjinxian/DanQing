@@ -475,3 +475,185 @@ TEST(RpcDumpRender, CompatSeedReplaysLodChainToGraphicsReady)
     view.close();
     spin(200);
 }
+
+// ---------------------------------------------------------------------------
+// TD-25 清偿像素锁：instances60-v1 根瓦的 60 实例经 InstancedGraphicParams
+// 链（ImdlGraphicsCreator.ts:243-257 getModifiers → InstancedGraphicParams →
+// webgl System.ts:518/:577 createInstancedGraphic → InstancedGeometry.draw
+// drawArraysInstanced）按实例变换放置上屏。
+// ---------------------------------------------------------------------------
+// Authored: 见文件头。修复前几何落在原点附近的局部量化盒（decodedMin/Max
+// ±0.53）→ 取景域（树 contentRange -88.05..-69.89 域）外 → 零实例像素；
+// 修复后 60 实例分布上屏。判据（§11.11，asymmetric marker = 逐实例
+// symbologyOverrides 色 vs 上下文均匀绿——prim0 uniformColor 65280=绿，
+// 实例 a_instanceRgba 逐实例覆盖（紫/红/蓝…，Color.ts:32-35 applyInstanceColor））：
+// ①内容存活：着色实例像素（非绿 dominance）≥ 阈值——0 实例消费时恒 0；
+// ②WHERE 方向性：着色像素的屏幕分布来自 transforms 实测世界分布
+//  （实例世界盒 x[-84.1,-70.4] y[-41.0,-33.5]（transforms 12float/实例 解码
+//   实测——task-3 报告取证），对上下文盒 x[-87.7,-85.5] 的展开）——断言
+//   着色质心对绿质心的偏移 > 80px（首绿实测 407 的 0.2×，数据驱动钉值）；
+// ③着色 bbox 展布 ≥ 阈值（60 实例 13.7m×7.5m 世界分布 → 屏幕显著展布，
+//   单点/局部盒不可能满足）；
+// ④消费计数：根瓦 graphics 提交 + dispatch ≥ 1。
+TEST(RpcDumpRender, Instances60RendersAllInstances)
+{
+    std::string dumpRoot = std::string(DANQING_TILE_ASSETS_DIR)
+                           + "/rpc-dumps/instances60-v1";
+    if (char const* env = std::getenv("DANQING_RPC_DUMP"))
+        dumpRoot = env;
+
+    auto& app = dqApp::Application::Get();
+    if (!app.isInitialized()) {
+        dqApp::Application::Options opts;
+        opts.applicationId = "RpcDumpRender";
+        opts.applicationVersion = "1.0";
+        ASSERT_TRUE(app.Startup(opts));
+    }
+
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    view.resize(1000, 700);
+    view.show();
+    spin(400);
+
+    // 多树全量装载（本 dump 1 树 3587 瓦；iModelInfo 缺省——provenance 无
+    // iModel 字段，fit 回退树 contentRange 并集，DumpMount 入口实态）。
+    auto mount = dta::mountDump(*view.getUeViewport(), dumpRoot);
+    ASSERT_TRUE(mount.has_value()) << "mount failed: " << dumpRoot;
+    ASSERT_EQ(1u, mount->manifest.trees.size());  // instances60-v1：1 树
+    ASSERT_EQ(3587u, mount->manifest.tiles.size());
+    std::string const treeId = mount->manifest.trees[0].treeId;
+    auto props = mount->props->byTreeId(treeId);
+    ASSERT_TRUE(props.has_value()) << "byTreeId failed: " << treeId;
+    ASSERT_EQ(2424832u, props->metadata.formatVersion);  // 37.0（major<<16）
+
+    view.getUeViewport()->AddTiledGraphicsProvider(&mount->provider);
+    ASSERT_TRUE(view.getUeViewport()->HasTiledGraphicsProvider(&mount->provider));
+
+    {
+        auto* view3d = view.getUeViewport()->GetView()->AsViewState3d();
+        ASSERT_NE(view3d, nullptr);
+        // 取景 = fitRange（树 contentRange 并集——本 dump 单树；30% 外扩 +
+        // zEps=1.0 同 mirukuru/compatseed 既有参数）。
+        view3d->LookAtVolume(dta::mountDumpFitVolume(mount->fitRange, /*zEps=*/1.0));
+        view.getUeViewport()->InvalidateController();
+    }
+    {
+        auto& style = view.getUeViewport()->GetView()->GetDisplayStyle();
+        auto p = style.getViewFlags().Properties();
+        p.grid = false;
+        p.acsTriad = false;
+        style.setViewFlags(dqCommon::ViewFlags(p));
+    }
+    view.getUeViewport()->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+    // 不跑 StandardViewTool：其 view 过渡动画的落点对薄 z 盒 + 偏心内容的
+    // 取景不稳（TD-25 取证：泵帧期间内容锚点从 ndc (-0.086,-0.056) 逐帧
+    // 漂到 (-0.395,-2.011) 甩出取景）。TileTreeRender 像素锁成熟配方 =
+    // LookAtVolume 直取（ImdlTilesetRendersRecordedFixture 同款）。
+
+    // 泵帧到根瓦就绪（fetch → processCompleted → 失效级联 → 重绘；有界等待）。
+    uint32_t const dispatchedBefore =
+        dqRender::TileAdmin::instance().statistics().totalDispatchedRequests;
+    long readyTiles = 0, totalTiles = 0;
+    for (int i = 0; i < 120; ++i) {  // ≤12s 有界
+        spin(100);
+        readyTiles = 0;
+        totalTiles = 0;
+        for (auto& t : mount->trees)
+            countGraphicsReady(t->getRootTile(), readyTiles, totalTiles);
+        if (readyTiles >= 1 && i >= 8)  // 根瓦就绪且至少跑了几帧重绘
+            break;
+    }
+    view.getUeViewport()->RenderFrame();
+    uint32_t const dispatched =
+        dqRender::TileAdmin::instance().statistics().totalDispatchedRequests
+        - dispatchedBefore;
+    printf("[RPC-RENDER] graphics-ready tiles=%ld/%ld dispatched=%u\n",
+           readyTiles, totalTiles, dispatched);
+
+    std::vector<uint8_t> frame;
+    uint32_t w = 0, h = 0;
+    ASSERT_TRUE(view.getUeViewport()->ReadFrameForTest(frame, w, h));
+    dumpBmp(frame, w, h,
+            DANQING_TILE_ASSETS_DIR "/../../build/rpc-dump-instances60.bmp");
+
+    // 像素分类（§11.11 判别器校准）：先经背景差门（>90，同 contentStats——
+    // 排除天空渐变域），再按通道 dominance 分绿（prim0 均匀绿 65280）与
+    // 着色（实例 symbologyOverrides 色）。天空蓝 (142,205,255)：g 高 →
+    // 不构成 dominance；差门亦排除。
+    uint8_t const* bg = &frame[0];
+    long colored = 0, green = 0;
+    double ccx = 0.0, ccy = 0.0, gcx = 0.0, gcy = 0.0;
+    uint32_t cMinX = w, cMaxX = 0, cMinY = h, cMaxY = 0;
+    for (uint32_t y = 0; y < h; ++y) {
+        for (uint32_t x = 0; x < w; ++x) {
+            uint8_t const* p = &frame[(static_cast<size_t>(y) * w + x) * 4u];
+            int const dr = std::abs(p[0] - bg[0]);
+            int const dg = std::abs(p[1] - bg[1]);
+            int const db = std::abs(p[2] - bg[2]);
+            if (dr + dg + db <= 90)
+                continue;  // 背景域
+            int const r = p[0], g = p[1], b = p[2];
+            if (g > r + 20 && g > b + 20) {
+                ++green;
+                gcx += x; gcy += y;
+            } else if (r > g + 30 || b > g + 30) {
+                ++colored;
+                ccx += x; ccy += y;
+                if (x < cMinX) cMinX = x;
+                if (x > cMaxX) cMaxX = x;
+                if (y < cMinY) cMinY = y;
+                if (y > cMaxY) cMaxY = y;
+            }
+        }
+    }
+    if (colored > 0) { ccx /= colored; ccy /= colored; }
+    if (green > 0) { gcx /= green; gcy /= green; }
+    printf("[RPC-RENDER] colored=%ld green=%ld coloredCentroid=(%.0f,%.0f) "
+           "greenCentroid=(%.0f,%.0f) coloredBbox=(%u,%u)-(%u,%u) frame=%ux%u\n",
+           colored, green, ccx, ccy, gcx, gcy, cMinX, cMinY, cMaxX, cMaxY, w, h);
+
+    // ① 内容存活：着色实例像素 ≥ 20000（首绿实测 123069 的 0.16×——0 实例
+    //    消费恒 0、个位数实例 ~2k 亦红；阈值是首绿实测的钉死比例，非调参）。
+    EXPECT_GE(colored, 20000l)
+        << "no instanced content rendered — instances modifier not consumed "
+           "(TD-25 regression)";
+    // 上下文 prim0（绿墙）持续上屏的轻量锚（非本锁主判据——防"全帧蒸发"
+    // 类故障被着色判据掩盖）。
+    EXPECT_GE(green, 1000l) << "context primitive (prim0) no longer renders";
+
+    // ③ WHERE 展布：60 实例世界分布 13.7m×7.5m（transforms 实测）→ 屏幕
+    //    着色 bbox 显著展布（首绿实测 976×466——单点/局部盒不可能满足，
+    //    修复前几何即局部盒；阈值 ≈ 首绿的 0.4×）。
+    if (colored > 0) {
+        EXPECT_GE(cMaxX - cMinX, 400u) << "colored content not spread in x";
+        EXPECT_GE(cMaxY - cMinY, 150u) << "colored content not spread in y";
+        // ② WHERE 方向性：着色质心对绿质心的偏移（实例世界盒 x[-84.1,-70.4]
+        //    y[-41.0,-33.5] 相对上下文盒 x[-87.7,-85.5] y[-37.8,-34.3] 展开
+        //    的屏幕投影——首绿实测 delta=(239.7,167.7)（|d|₁=407）；
+        //    阈值 80 ≈ 首绿的 0.2×）。
+        double const dx = ccx - gcx;
+        double const dy = ccy - gcy;
+        printf("[RPC-RENDER] centroid delta=(%.1f,%.1f)\n", dx, dy);
+        EXPECT_GT(std::abs(dx) + std::abs(dy), 80.0)
+            << "colored centroid must be offset from the green context centroid "
+               "(instances spread away from the context chunk)";
+        // 角落探针：内容在帧中央带（同 mirukuru 锁的角落背景断言）。
+        uint32_t const box = std::max(1u, std::min(w, h) * 6 / 100);
+        EXPECT_LE(cornerContentRatio(frame, w, h, 0, 0, box), 0.01)
+            << "content leaked into the top-left corner";
+        EXPECT_LE(cornerContentRatio(frame, w, h, w - box, 0, box), 0.01)
+            << "content leaked into the top-right corner";
+        EXPECT_LE(cornerContentRatio(frame, w, h, 0, h - box, box), 0.01)
+            << "content leaked into the bottom-left corner";
+        EXPECT_LE(cornerContentRatio(frame, w, h, w - box, h - box, box), 0.01)
+            << "content leaked into the bottom-right corner";
+    }
+
+    // ④ 消费计数：根瓦 graphics 提交 + 至少 1 次 dispatch。
+    EXPECT_GE(readyTiles, 1) << "the replayed root tile never produced graphics";
+    EXPECT_GE(dispatched, 1u) << "expected the manifest tile to be dispatched";
+
+    view.getUeViewport()->DropTiledGraphicsProvider(&mount->provider);
+    view.close();
+    spin(200);
+}

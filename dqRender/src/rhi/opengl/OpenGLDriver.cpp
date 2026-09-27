@@ -886,19 +886,28 @@ void OpenGLDriver::setVertexAttribDivisor(uint32_t location, uint32_t divisor) n
     glVertexAttribDivisor(static_cast<GLuint>(location), static_cast<GLuint>(divisor));
 }
 
+void OpenGLDriver::disableVertexAttribArray(uint32_t location) noexcept
+{
+    glDisableVertexAttribArray(static_cast<GLuint>(location));
+}
+
 void OpenGLDriver::bindInstanceBuffer(BufferObjectHandle boh,
                                       uint32_t location, uint32_t components,
-                                      uint32_t stride, uint32_t offset) noexcept
+                                      uint32_t stride, uint32_t offset,
+                                      ElementType type, bool normalized) noexcept
 {
     auto* bo = m_handleAllocator.handle_cast<GLBufferObject, HwBufferObject>(boh);
     if (!bo) return;
 
+    int glTypeInt = 0, glSizeInt = 0;
+    gl::elementFormat(type, glTypeInt, glSizeInt);
     glBindBuffer(GL_ARRAY_BUFFER, bo->id);
     glEnableVertexAttribArray(static_cast<GLuint>(location));
     glVertexAttribPointer(
         static_cast<GLuint>(location),
         static_cast<GLint>(components),
-        GL_FLOAT, GL_FALSE,
+        static_cast<GLenum>(glTypeInt),
+        normalized ? GL_TRUE : GL_FALSE,
         static_cast<GLsizei>(stride),
         reinterpret_cast<const void*>(static_cast<uintptr_t>(offset)));
 }

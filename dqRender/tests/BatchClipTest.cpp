@@ -474,6 +474,10 @@ TEST(SurfaceVariantCompilerTest, QuantizedVertex)
 }
 
 // Authored: no reference test exists in itwinjs-core for batch clip rendering
+// TD-25 归位更新：instanced 路径改为参考的逐实例 attribute 方案
+//（glsl/Instancing.ts + Vertex.ts:147-154——a_instanceMatrixRow0/1/2 组
+// g_modelMatrixRTC，g_mv = u_instanced_modelView * g_modelMatrixRTC；
+// 旧 gl_InstanceID 索引 uniform 阵偏差形态已移除）。
 TEST(SurfaceVariantCompilerTest, InstancedVertex)
 {
     SurfaceVariantCompiler compiler;
@@ -482,7 +486,12 @@ TEST(SurfaceVariantCompilerTest, InstancedVertex)
     BuildSurfaceSource(compiler, false, false, FeatureMode::None, true, false, false, false, false, vert, frag);
 
     EXPECT_NE(vert.find("u_instanced_modelView"), std::string::npos);
-    EXPECT_NE(vert.find("gl_InstanceID"), std::string::npos);
+    EXPECT_NE(vert.find("a_instanceMatrixRow0"), std::string::npos);
+    EXPECT_NE(vert.find("g_modelMatrixRTC = mat4("), std::string::npos);
+    EXPECT_NE(vert.find("g_mv = u_instanced_modelView * g_modelMatrixRTC;"),
+              std::string::npos);
+    EXPECT_EQ(vert.find("gl_InstanceID"), std::string::npos)
+        << "uniform-array + gl_InstanceID deviation removed (TD-25 reference alignment)";
 }
 
 // Authored: no reference test exists in itwinjs-core for batch clip rendering

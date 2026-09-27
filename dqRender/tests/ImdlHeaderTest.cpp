@@ -14,9 +14,11 @@
 #include "rhi/DriverBase.h"
 #include "rhi/HandleAllocator.h"
 #include "dqRender/rhi/BufferDescriptor.h"
+#include "render/InstancedGeometry.h"
 #include "render/MeshGraphic.h"
 #include "render/PolyfaceGraphic.h"
 #include "render/SurfaceGeometry.h"
+#include "render/SurfaceVariantCompiler.h"
 #include "render/shader/EdgeShaderBuilder.h"
 #include "tile/TilesetJson.h"
 #include "tile-sample-assets/imdl-fixtures/TileIOFixtures.h"
@@ -28,6 +30,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <fstream>
 #include <map>
 #include <memory>
 #include <optional>
@@ -370,8 +373,10 @@ public:
     uint32_t lastHeight() const noexcept { return m_lastHeight; }
     std::vector<uint8_t> const& lastBytes() const noexcept { return m_lastBytes; }
 
-private:
+protected:
     dqRender::rhi::HandleAllocator m_allocator;
+
+private:
     uint32_t m_lastWidth = 0;
     uint32_t m_lastHeight = 0;
     std::vector<uint8_t> m_lastBytes;
@@ -1853,4 +1858,288 @@ TEST(EdgeShaderVariant, IndexedVariantConsumesEdgeLut)
     // 非 indexed 变体专属的 a_endPointAndQuadIndices 不应出现。
     EXPECT_EQ(vert.find("a_endPointAndQuadIndices"), std::string::npos)
         << "indexed variant reads endpoints from the edge LUT, not an attribute";
+}
+
+// ---------------------------------------------------------------------------
+// TD-25：imdl instances 修饰消费（解析 + 实例 BO 直传 + 实例化 shader 变体）。
+//
+// Ported from: ImdlSchema.ts:160-166（ImdlInstances schema）+
+//              ParseImdlDocument.ts parseInstances（:1045-1087——count/
+//              transformCenter/bufferView 名提取 + findBuffer :1089-1103
+//              字节区间解析）+ InstancedGraphicParams.ts:15-44（transforms
+//              12 float/实例——3 行 4 列，第 4 列 = 相对 transformCenter 的
+//              平移）+ InstancedGeometry.ts InstanceBuffersData.create
+//              （:88-111——BO 直传字节）+ Vertex.ts/Instancing.ts（shader 侧
+//              a_instanceMatrixRow0/1/2 + a_featureId/a_instanceOverrides）。
+// Authored: 场景自写（instances60 dump 资产驱动——真实后端 imdl，
+//           §11.11 只读；钉死值 = dump README 原文 + 本测试双录）。
+// ---------------------------------------------------------------------------
+
+namespace {
+
+std::vector<uint8_t> readDumpBytes(char const* relativePath)
+{
+    std::string const path = std::string(DANQING_TEST_ASSET_ROOT)
+                             + "/third_party/tile-sample-assets/rpc-dumps/"
+                             + relativePath;
+    std::ifstream f(path, std::ios::binary);
+    EXPECT_TRUE(f.good()) << "dump asset unreadable: " << path;
+    if (!f) return {};
+    f.seekg(0, std::ios::end);
+    std::streamoff const n = f.tellg();
+    f.seekg(0, std::ios::beg);
+    std::vector<uint8_t> out(static_cast<size_t>(n));
+    f.read(reinterpret_cast<char*>(out.data()), n);
+    return out;
+}
+
+// instances60-v1 根瓦钉死值（manifest: contentId "-b-0-0-0-0-1" → files/7.imdl）。
+// 数值来源：dump README.md 原文（count:60 / transformCenter 三值）+ 字节级
+// 双录（Task 3 Step 1 取证实测，见 task-3-report.md）。
+struct Instances60RootPinned {
+    static constexpr char kRelativePath[] = "instances60-v1/files/7.imdl";
+    static constexpr uint32_t kCount = 60;
+    // JSON 原文（dump README "root 瓦原文"引用段逐字符一致）。
+    static constexpr double kTransformCenterX = -77.27117673514951;
+    static constexpr double kTransformCenterY = -37.24289851958988;
+    static constexpr double kTransformCenterZ = -25.017626535143606;
+    static constexpr char kTransformsView[] = "bvInstanceTransforms1";
+    static constexpr char kFeatureIdsView[] = "bvInstanceFeatures1";
+    static constexpr char kSymbologyView[] = "bvInstanceOverrides1";
+    static constexpr size_t kTransformsBytes = 60u * 12u * 4u;  // 2880
+    static constexpr size_t kFeatureIdsBytes = 60u * 3u;        // 180（24-bit/实例）
+    static constexpr size_t kSymbologyBytes = 60u * 8u;         // 480（8B/实例）
+    // 首实例变换（IModelTileWriter.cpp setTransform——form3d[i][j] 3×4 行主序，
+    // 第 4 列 = origin − transformCenter）：行正交（旋转）+ 平移。
+    static constexpr float kFirstTransform[12] = {
+        1.0f, 0.0f, 0.0f, 6.84535551071167f,
+        0.0f, 0.0f, -1.0f, -3.75f,
+        0.0f, 1.0f, 0.0f, -0.265480101108551f,
+    };
+};
+
+// 录制驱动扩展：BO 创建返回真实句柄 + updateBufferObject 捕获字节——
+// instances 修饰的 BO 直传断言数据源（transforms/featureIds/symbology
+// 三缓冲区字节级回放）。形态照 RecordingLutDriver 先例。
+class RecordingInstanceDriver : public RecordingLutDriver {
+public:
+    dqRender::rhi::BufferObjectHandle createBufferObject(
+        uint32_t, dqRender::rhi::BufferObjectBinding,
+        dqRender::rhi::BufferUsage) noexcept override
+    {
+        return m_allocator.allocate<dqRender::rhi::HwBufferObject>();
+    }
+
+    void updateBufferObject(dqRender::rhi::BufferObjectHandle h,
+                            dqRender::rhi::BufferDescriptor&& data,
+                            uint32_t) noexcept override
+    {
+        auto const* b = static_cast<uint8_t const*>(data.buffer());
+        m_uploads[h.getId()].assign(b, b + data.size());
+    }
+
+    bool hasUpload(dqRender::rhi::BufferObjectHandle h) const
+    {
+        return m_uploads.find(h.getId()) != m_uploads.end();
+    }
+    std::vector<uint8_t> const& upload(dqRender::rhi::BufferObjectHandle h) const
+    {
+        return m_uploads.find(h.getId())->second;
+    }
+
+private:
+    std::map<uint32_t, std::vector<uint8_t>> m_uploads;
+};
+
+}  // namespace
+
+// 解析锁：instances60 根瓦 JSON → ImdlPrimitiveProps.instances 字段 +
+// findBufferView 字节区间（count/transformCenter 钉死，transforms 字节数
+// == count*12*4 钉死）。
+TEST(ImdlInstancesTest, ParsesInstanceFieldsFromDump)
+{
+    auto const bytes = readDumpBytes(Instances60RootPinned::kRelativePath);
+    ASSERT_FALSE(bytes.empty());
+    dqRender::ImdlByteStream stream(bytes.data(), bytes.size());
+    auto const header = dqRender::ImdlHeader::readFrom(stream);
+    ASSERT_TRUE(header.isValid());
+    auto const desc = dqRender::decodeImdlContentDescription(header, stream);
+    ASSERT_TRUE(desc.has_value());
+    auto doc = dqRender::parseImdlDocument(stream);
+    ASSERT_TRUE(doc.has_value());
+
+    auto json = dqRender::tilejson::parseJsonDocument(doc->sceneJson);
+    ASSERT_NE(json, nullptr);
+    auto prims = dqRender::tilejson::parseImdlMeshPrimitives(*json);
+    ASSERT_EQ(prims.size(), 2u) << "root tile = context primitive + instanced primitive";
+
+    // prim0（上下文）：无 instances 修饰（ImdlSchema.ts:181 instances? 可缺省）。
+    EXPECT_FALSE(prims[0].instances.has_value());
+
+    // prim1（60 实例共享几何）：instances 字段逐一（ImdlSchema.ts:160-166）。
+    ASSERT_TRUE(prims[1].instances.has_value());
+    auto const& inst = *prims[1].instances;
+    EXPECT_EQ(inst.count, Instances60RootPinned::kCount);
+    EXPECT_DOUBLE_EQ(inst.transformCenter[0], Instances60RootPinned::kTransformCenterX);
+    EXPECT_DOUBLE_EQ(inst.transformCenter[1], Instances60RootPinned::kTransformCenterY);
+    EXPECT_DOUBLE_EQ(inst.transformCenter[2], Instances60RootPinned::kTransformCenterZ);
+    EXPECT_EQ(inst.transformsView, Instances60RootPinned::kTransformsView);
+    EXPECT_EQ(inst.featureIdsView, Instances60RootPinned::kFeatureIdsView);
+    ASSERT_TRUE(inst.symbologyOverridesView.has_value());
+    EXPECT_EQ(*inst.symbologyOverridesView, Instances60RootPinned::kSymbologyView);
+
+    // findBuffer 字节区间语义（ParseImdlDocument.ts:1089-1103——bufferView 名 →
+    // byteOffset/byteLength 子段；transforms 字节数 == count*12*4 钉死
+    // （:1068-1071 assert 语义的 C++ 防御——参考 dev assert release 未定义，
+    // 此处显式核对））。
+    uint8_t const* data = nullptr;
+    size_t size = 0;
+    ASSERT_TRUE(dqRender::tilejson::findBufferView(
+        *json, inst.transformsView, doc->binary, data, size));
+    EXPECT_EQ(size, Instances60RootPinned::kTransformsBytes);
+    ASSERT_TRUE(dqRender::tilejson::findBufferView(
+        *json, inst.featureIdsView, doc->binary, data, size));
+    EXPECT_EQ(size, Instances60RootPinned::kFeatureIdsBytes);
+    ASSERT_TRUE(dqRender::tilejson::findBufferView(
+        *json, *inst.symbologyOverridesView, doc->binary, data, size));
+    EXPECT_EQ(size, Instances60RootPinned::kSymbologyBytes);
+
+    // transforms 数据形态：12 float/实例，第 4 列 = 相对 transformCenter 的
+    // 平移（InstancedGraphicParams.ts:24-33 + IModelTileWriter setTransform）。
+    uint8_t const* tdata = nullptr;
+    size_t tsize = 0;
+    ASSERT_TRUE(dqRender::tilejson::findBufferView(
+        *json, inst.transformsView, doc->binary, tdata, tsize));
+    ASSERT_EQ(tsize, sizeof(float) * 12u * inst.count);
+    float const* first = reinterpret_cast<float const*>(tdata);
+    for (int i = 0; i < 12; ++i)
+        EXPECT_FLOAT_EQ(first[i], Instances60RootPinned::kFirstTransform[i])
+            << "first instance transform[" << i << "]";
+}
+
+// BO 直传锁：createImdlLutGraphics 对带 instances 修饰的 primitive 产出
+// InstancedGeometry 包裹（repr = LUT SurfaceGeometry），三实例缓冲区字节
+// 级 verbatim 回放（InstanceBuffersData.create :88-111 的 BufferHandle
+// 直传形态 + InstancedGeometry.ts create :385-409 的 attribute 组装输入）。
+TEST(ImdlInstancesTest, LutPathUploadsInstanceBuffersVerbatim)
+{
+    auto const bytes = readDumpBytes(Instances60RootPinned::kRelativePath);
+    ASSERT_FALSE(bytes.empty());
+    dqRender::ImdlByteStream stream(bytes.data(), bytes.size());
+    auto const header = dqRender::ImdlHeader::readFrom(stream);
+    ASSERT_TRUE(header.isValid());
+    auto const desc = dqRender::decodeImdlContentDescription(header, stream);
+    ASSERT_TRUE(desc.has_value());
+    auto doc = dqRender::parseImdlDocument(stream);
+    ASSERT_TRUE(doc.has_value());
+
+    RecordingInstanceDriver driver;
+    LutStubSystem system(driver);
+    auto graphics = dqRender::createImdlLutGraphics(*doc, system);
+    // prim0（上下文，无 instances）+ prim1（instanced）各一 graphic。
+    ASSERT_EQ(graphics.size(), 2u);
+
+    // prim0：普通 LUT surface（无实例包裹）。
+    auto* mesh0 = static_cast<dqRender::MeshGraphic*>(graphics[0]);
+    ASSERT_NE(mesh0, nullptr);
+    ASSERT_EQ(mesh0->getSurfaces().size(), 1u);
+    EXPECT_EQ(mesh0->getInstancedSurfaces().size(), 0u);
+
+    // prim1：InstancedGeometry 包裹 LUT surface。
+    auto* mesh1 = static_cast<dqRender::MeshGraphic*>(graphics[1]);
+    ASSERT_NE(mesh1, nullptr);
+    ASSERT_EQ(mesh1->getInstancedSurfaces().size(), 1u);
+    dqRender::InstancedGeometry const* instanced = mesh1->getInstancedSurfaces()[0].get();
+    ASSERT_NE(instanced, nullptr);
+    EXPECT_EQ(instanced->getRepr(), mesh1->getSurfaces()[0].get())
+        << "wrapper observes the MeshGraphic-owned base surface";
+    EXPECT_EQ(instanced->getInstanceCount(), Instances60RootPinned::kCount);
+    ASSERT_NE(instanced->getBuffers(), nullptr);
+    EXPECT_TRUE(instanced->getBuffers()->hasFeatures())
+        << "featureIds buffer present → per-instance feature ids";
+    EXPECT_TRUE(instanced->getBuffers()->getSymbology())
+        << "symbologyOverrides buffer present → per-instance colors";
+
+    // 三缓冲区字节级 verbatim（生产侧线上字节原样入 BO，零重排）。
+    auto const& buffers = *instanced->getBuffers();
+    ASSERT_TRUE(driver.hasUpload(buffers.getTransforms()));
+    EXPECT_EQ(driver.upload(buffers.getTransforms()).size(),
+              Instances60RootPinned::kTransformsBytes);
+    ASSERT_TRUE(driver.hasUpload(buffers.getFeatureIds()));
+    EXPECT_EQ(driver.upload(buffers.getFeatureIds()).size(),
+              Instances60RootPinned::kFeatureIdsBytes);
+    ASSERT_TRUE(driver.hasUpload(buffers.getSymbology()));
+    EXPECT_EQ(driver.upload(buffers.getSymbology()).size(),
+              Instances60RootPinned::kSymbologyBytes);
+
+    // 字节内容 == dump 视图子段（memcmp 级）。
+    auto json = dqRender::tilejson::parseJsonDocument(doc->sceneJson);
+    ASSERT_NE(json, nullptr);
+    auto prims = dqRender::tilejson::parseImdlMeshPrimitives(*json);
+    ASSERT_EQ(prims.size(), 2u);
+    auto const& inst = *prims[1].instances;
+    uint8_t const* data = nullptr;
+    size_t size = 0;
+    ASSERT_TRUE(dqRender::tilejson::findBufferView(
+        *json, inst.transformsView, doc->binary, data, size));
+    EXPECT_EQ(std::memcmp(driver.upload(buffers.getTransforms()).data(), data, size), 0);
+    ASSERT_TRUE(dqRender::tilejson::findBufferView(
+        *json, inst.featureIdsView, doc->binary, data, size));
+    EXPECT_EQ(std::memcmp(driver.upload(buffers.getFeatureIds()).data(), data, size), 0);
+    ASSERT_TRUE(dqRender::tilejson::findBufferView(
+        *json, *inst.symbologyOverridesView, doc->binary, data, size));
+    EXPECT_EQ(std::memcmp(driver.upload(buffers.getSymbology()).data(), data, size), 0);
+
+    for (auto* g : graphics)
+        delete g;
+}
+
+// 实例化 shader 变体锁：Surface-Opaque-Quantized-Instanced 变体的 GLSL
+// 消费实例 attribute 链（glsl/Instancing.ts + Vertex.ts addModelViewMatrix
+// 实例分支 + Color.ts applyInstanceColor）——a_instanceMatrixRow0/1/2 组
+// g_modelMatrixRTC，g_mv = u_instanced_modelView * g_modelMatrixRTC，
+// 位置 = u_proj * g_mv * rawPos；逐实例色 a_instanceRgba 经
+// extractInstanceBit 混入。旧 u_instanced_modelView 数组偏差（gl_InstanceID
+// 索引 uniform 阵）必须消失（§0 参考对齐）。
+TEST(SurfaceShaderVariant, InstancedVariantConsumesInstanceAttributes)
+{
+    dqRender::TechniqueFlags flags;  // 默认 Opaque/Quantized/FeatureMode::None
+    flags.isInstanced = true;
+    dqRender::ShaderProgram prog;
+    dqRender::SurfaceVariantCompiler compiler;
+    compiler.buildProgram(prog, flags);
+    std::string const& vert = prog.getVertSource();
+
+    // 实例 attribute 声明（AttributeMap.ts:36-51 instanced 追加组）。
+    EXPECT_NE(vert.find("in vec4 a_instanceMatrixRow0;"), std::string::npos);
+    EXPECT_NE(vert.find("in vec4 a_instanceMatrixRow1;"), std::string::npos);
+    EXPECT_NE(vert.find("in vec4 a_instanceMatrixRow2;"), std::string::npos);
+    EXPECT_NE(vert.find("in vec4 a_instanceOverrides;"), std::string::npos);
+    EXPECT_NE(vert.find("in vec4 a_instanceRgba;"), std::string::npos);
+    // g_modelMatrixRTC 组装（Instancing.ts computeInstancedModelMatrixRTC :33-38）。
+    EXPECT_NE(vert.find("g_modelMatrixRTC = mat4("), std::string::npos);
+    // 实例化 model-view（Vertex.ts addModelViewMatrix :147-154 实例分支）。
+    EXPECT_NE(vert.find("uniform mat4 u_instanced_modelView;"), std::string::npos);
+    EXPECT_NE(vert.find("g_mv = u_instanced_modelView * g_modelMatrixRTC;"),
+              std::string::npos);
+    // 位置 = u_proj * (g_mv * rawPos)（Surface.ts computePositionPrelude/Postlude
+    // + MAT_MV=g_mv 定义——ShaderBuilder.ts:716-719）。
+    EXPECT_NE(vert.find("vec4 pos = g_mv * rawPos;"), std::string::npos);
+    EXPECT_NE(vert.find("return u_proj * pos;"), std::string::npos);
+    // 逐实例色（Color.ts applyInstanceColor :32-35）。
+    EXPECT_NE(vert.find("a_instanceRgba.rgb / 255.0"), std::string::npos);
+    EXPECT_NE(vert.find("extractInstanceBit(kOvrBit_Rgb)"), std::string::npos);
+    // 旧偏差形态不得出现（uniform 阵 + gl_InstanceID 索引）。
+    EXPECT_EQ(vert.find("u_instanced_modelView["), std::string::npos)
+        << "uniform-array + gl_InstanceID deviation must be gone (reference: "
+           "per-instance attributes with divisor)";
+    EXPECT_EQ(vert.find("gl_InstanceID"), std::string::npos);
+
+    // 非实例量化变体不受影响（无实例 attribute）。
+    dqRender::TechniqueFlags plain;
+    dqRender::ShaderProgram prog2;
+    compiler.buildProgram(prog2, plain);
+    std::string const& vert2 = prog2.getVertSource();
+    EXPECT_EQ(vert2.find("a_instanceMatrixRow0"), std::string::npos);
+    EXPECT_NE(vert2.find("uniform mat4 u_mvp;"), std::string::npos);
 }

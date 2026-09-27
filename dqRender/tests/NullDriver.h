@@ -79,7 +79,9 @@ public:
     void draw2(uint32_t, uint32_t, uint32_t) noexcept override {}
     void drawArrays(uint32_t, uint32_t, uint32_t) noexcept override {}
     void setVertexAttribDivisor(uint32_t, uint32_t) noexcept override {}
-    void bindInstanceBuffer(BufferObjectHandle, uint32_t, uint32_t, uint32_t, uint32_t) noexcept override {}
+    void disableVertexAttribArray(uint32_t) noexcept override {}
+    void bindInstanceBuffer(BufferObjectHandle, uint32_t, uint32_t, uint32_t, uint32_t,
+                            ElementType, bool) noexcept override {}
 
     // --- Texture ---
     TextureHandle createTexture(SamplerType, uint8_t, TextureFormat, uint32_t, uint32_t, uint32_t, TextureUsage) noexcept override { return {}; }

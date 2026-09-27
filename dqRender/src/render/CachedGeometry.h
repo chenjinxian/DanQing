@@ -174,6 +174,16 @@ public:
     // Subclasses that have indexed geometry should override this.
     virtual uint32_t getDrawIndexCount() const { return 0; }
 
+    // --- Whether draw() issues an element-indexed draw (glDrawElements) ---
+    // LUT-form geometry (SurfaceGeometry/EdgeGeometry quantized imdl) draws
+    // with glDrawArrays — the 24-bit vertex-table indices ARE the vertex
+    // stream (SurfaceGeometry.ts:150-162 / EdgeGeometry.ts:54-60). Indexed
+    // geometry (IndexedGeometry) uses glDrawElements. Consumed by
+    // InstancedGeometry::draw to pick the instanced draw call flavor.
+    // Ported from: itwinjs-core LUTGeometry._draw (drawArrays) vs
+    //              IndexedGeometry._draw (drawElements) (CachedGeometry.ts)
+    virtual bool usesIndexBuffer() const { return true; }
+
     // --- Material ---
     virtual RenderMaterialInternal const* getMaterialInfo() const { return nullptr; }
     bool hasMaterialAtlas() const {

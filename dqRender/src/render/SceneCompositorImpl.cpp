@@ -1347,6 +1347,13 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     ? PositionType::Quantized
                     : PositionType::Unquantized;
 
+                // Instancing is per-geometry (cachedGeometry.asInstanced)——
+                // Ported from: itwinjs-core DrawCommand.ts:211
+                // (isInstanced = this.primitive.isInstanced → CachedGeometry.asInstanced
+                //  Primitive.ts:110)。同帧混排实例/非实例几何时必须逐图元
+                // 切变体（instances60 根瓦 prim0 非实例 + prim1 实例同帧）。
+                flags.isInstanced = (geometry->asInstanced() != nullptr);
+
                 // isTranslucent from render pass
                 if (pass == RenderPass::Translucent || pass == RenderPass::TranslucentLayers) {
                     flags.isTranslucent = true;
@@ -1369,11 +1376,18 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                 }
 
                 // Only switch shaders if technique or flags changed
+                // （变体键须覆盖 positionType/isInstanced——同帧混排量化和
+                // 非量化、实例和非实例几何时，键缺这两维会把后者的 draw
+                // 复用前者的 program（TD-25 取证：prim0/prim1 同帧实例切换
+                // 失效）。参考侧 TechniqueFlags.equals 全维比较
+                // TechniqueFlags.ts:164-178。）
                 ShaderProgram* shader = nullptr;
                 if (techniqueId == m_cachedTechniqueId &&
                     flags.featureMode == m_cachedTechniqueFlags.featureMode &&
                     flags.isClassified == m_cachedTechniqueFlags.isClassified &&
                     flags.isThematic == m_cachedTechniqueFlags.isThematic &&
+                    flags.isInstanced == m_cachedTechniqueFlags.isInstanced &&
+                    flags.positionType == m_cachedTechniqueFlags.positionType &&
                     m_cachedShader) {
                     shader = m_cachedShader;
                 } else {
@@ -1557,6 +1571,40 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                                 static_cast<float>(255 - scc.t) / 255.0f,
                             };
                             params.setVec4("u_color", surfColorRgba);
+                        }
+                        // TD-25：实例化 surface 的 per-draw uniform 组。
+                        // Ported from: itwinjs-core BranchUniforms.bindModelViewMatrix
+                        // 的 instanced 分支（BranchUniforms.ts:217-227——
+                        // mv = view * getRtcModelTransform(model)，即 branch mv ×
+                        // rtcOnly 平移）+ Vertex.ts addInstancedRtcMatrix 同源的
+                        // RTC 语义 + Color.ts addInstanceColor 的
+                        // u_applyInstanceColor（默认 1.0 = 应用逐实例色；
+                        // 参考 0.0 仅 isEdge && edge color override 时——
+                        // surface 恒 1.0）。
+                        // EQUIVALENCE（§11.10）：参考源=BranchUniforms.ts:217-227
+                        // + FrustumUniforms 当前取景投影；发散=与 edge 分支
+                        // u_proj 同款——DanQing branch-stack 每分支自带完整
+                        // MVP 而 target 级 FrustumUniforms 不随 branch 刷新，
+                        // u_proj 取 mvp*mv⁻¹、u_instanced_modelView 取
+                        // mv*rtcOnly（branch mv == view*model 恒等式）；
+                        // 验证法=RpcDumpRender.Instances60RendersAllInstances
+                        // 像素锁（60 实例分布上屏）+ SurfaceShaderVariant
+                        // .InstancedVariantConsumesInstanceAttributes 源码锁。
+                        if (auto const* instanced = geometry->asInstanced()) {
+                            float rtcOnly[16] = {};
+                            instanced->getRtcOnlyTransform(rtcOnly);
+                            float mvRtc[16] = {};
+                            multiplyMat4ColMajor(m_branchStack.getCurrentMv().data(),
+                                                 rtcOnly, mvRtc);
+                            params.setMatrix4("u_instanced_modelView", mvRtc);
+                            auto const& branchMvpI = m_branchStack.getCurrentMvp();
+                            auto const& branchMvI = m_branchStack.getCurrentMv();
+                            float invI[16] = {};
+                            float projI[16] = {};
+                            invertMat4ColMajor(branchMvI.data(), invI);
+                            multiplyMat4ColMajor(branchMvpI.data(), invI, projI);
+                            params.setMatrix4("u_proj", projI);
+                            params.setFloat("u_applyInstanceColor", 1.0f);
                         }
                     } else if (techniqueId == TechniqueId::PlanarGrid) {
                         params.setMatrix4("u_mvpMatrix", m_branchStack.getCurrentMvp().data());

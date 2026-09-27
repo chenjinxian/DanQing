@@ -369,6 +369,27 @@ struct ImdlMeshEdgesProps {
     std::optional<ImdlCompactEdgesProps> compact;
 };
 
+// ---------------------------------------------------------------------------
+// TD-25：ImdlInstances——per-primitive 实例放置参数（JSON 侧——bufferView 名，
+// 字节区间由消费点 createImdlLutGraphics 用 findBufferView 换入）。
+// Ported from: itwinjs-core ImdlSchema.ts:156-166（ImdlInstances 字段逐一）+
+//              ParseImdlDocument.ts parseInstances（:1045-1087——count/
+//              transformCenter[3]/featureIds/transforms bufferView 名提取，
+//              symbologyOverrides 可选）。
+// ---------------------------------------------------------------------------
+
+// Ported from: ImdlSchema.ts:160-166 ImdlInstances（:161 count / :162
+//              transformCenter / :163 featureIds / :164 transforms /
+//              :165 symbologyOverrides?——bufferView 名 → *View 后缀，照
+//              ImdlSurfaceProps.indicesView 先例）。
+struct ImdlInstancesProps {
+    uint32_t count = 0;
+    double transformCenter[3] = {0.0, 0.0, 0.0};
+    std::string featureIdsView;
+    std::string transformsView;
+    std::optional<std::string> symbologyOverridesView;
+};
+
 struct ImdlPrimitiveProps {
     ImdlVertexTableProps vertices;
     ImdlSurfaceProps surface;
@@ -376,6 +397,7 @@ struct ImdlPrimitiveProps {
                             // 决定 OpaquePlanar pass 归属（Task 5 LUT 路径）
     std::string material;   // ImdlSchema.ts:173 material——关联 ImdlDisplayParams 的 Id
     std::optional<ImdlMeshEdgesProps> edges;  // ImdlSchema.ts:277-286（mesh primitive）
+    std::optional<ImdlInstancesProps> instances;  // ImdlSchema.ts:181 instances?
 
     // DisplayParams 子集（width/linePixels）——materials[material] 的
     // lineWidth/linePixels（parsePrimitive ParseImdlDocument.ts:800-802 +
@@ -498,6 +520,26 @@ inline std::vector<ImdlPrimitiveProps> parseImdlMeshPrimitives(JsonValue const& 
                     edges.compact = std::move(s);
                 }
                 props.edges = std::move(edges);
+            }
+            // ImdlSchema.ts:160-181 instances 修饰（parseInstances
+            // ParseImdlDocument.ts:1045-1087——字段原样提取；count<=0 /
+            // transformCenter 长度 !=3 / featureIds/transforms 缺失的归零
+            // 语义归消费点 createImdlLutGraphics，本层照参考只解析不丢弃）。
+            if (JsonValue const* instJson = prim.find("instances")) {
+                ImdlInstancesProps inst;
+                if (JsonValue const* c = instJson->find("count"))  // :161
+                    inst.count = static_cast<uint32_t>(c->number);
+                if (JsonValue const* tc = instJson->find("transformCenter")) {  // :162
+                    for (int i = 0; i < 3 && i < static_cast<int>(tc->arr.size()); ++i)
+                        inst.transformCenter[i] = tc->arr[i].number;
+                }
+                if (JsonValue const* f = instJson->find("featureIds"))  // :163
+                    inst.featureIdsView = f->str;
+                if (JsonValue const* t = instJson->find("transforms"))  // :164
+                    inst.transformsView = t->str;
+                if (JsonValue const* s = instJson->find("symbologyOverrides"))  // :165
+                    inst.symbologyOverridesView = s->str;
+                props.instances = std::move(inst);
             }
             out.push_back(std::move(props));
         }

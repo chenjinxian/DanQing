@@ -99,9 +99,16 @@ inline void addInstanceOverrides(ShaderBuilder& vert)
 
 /// Wire instance color application.
 /// Ported from: itwinjs-core Instancing.ts addInstanceColor()
+/// (Instancing.ts:101-113——addInstanceOverrides 的 a_instanceOverrides 名
+/// 幂等检查须在 attribute 声明之前：检查键即该变量名，先声明会让
+/// addInstanceOverrides 误判"已接线"而跳过 ovr 常量/extractInstanceBit。
+/// attribute 声明归本函数（参考侧 attribute 永远随 instanced attrMap 全集
+/// 声明——AttributeMap.ts:36-51）；a_instanceRgba 同理。)
 inline void addInstanceColor(ShaderBuilder& vert)
 {
     addInstanceOverrides(vert);
+    vert.addVariable({"a_instanceOverrides", VariableType::Vec4, VariableScope::Attribute, 0});
+    vert.addVariable({"a_instanceRgba", VariableType::Vec4, VariableScope::Attribute, 0});
     vert.addUniform("u_applyInstanceColor", VariableType::Float, nullptr);
 }
 

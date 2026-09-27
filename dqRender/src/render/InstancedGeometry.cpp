@@ -2,6 +2,7 @@
 // DanQing dqRender — Instanced geometry implementation
 // Ported from: itwinjs-core core/frontend/src/internal/render/webgl/InstancedGeometry.ts
 #include "InstancedGeometry.h"
+#include "AttributeMap.h"
 #include "PlanarGridGraphic.h"
 #include "SurfaceGeometry.h"
 #include "IndexedEdgeGeometry.h"
@@ -64,48 +65,82 @@ bool InstancedGeometry::hasFeatures() const {
 }
 
 // --- Draw (Ported from: itwinjs-core line 453-455) ---
+// Binds the repr geometry's VAO, appends the instance attributes
+// (InstancedGeometry.ts create :385-409 的 BuffersContainer 组装——
+// DanQing RHI 无 container 概念，等价地就地绑定进 repr VAO，draw 后
+// 复原 divisor + disable，避免共享 VAO 残留实例缓冲引用），然后按
+// repr 形态发 instanced draw（drawArraysInstanced / drawElementsInstanced）。
 void InstancedGeometry::draw(rhi::Driver& driver)
 {
     // Ported from: itwinjs-core InstancedGeometry.draw()
-    // Binds the repr geometry's VAO, adds instance transform attributes,
-    // and issues an instanced draw call.
     if (!m_repr || !m_buffers || !m_buffers->isValid()) return;
 
-    uint32_t instanceCount = m_buffers->getNumInstances();
+    uint32_t const instanceCount = m_buffers->getNumInstances();
     if (instanceCount == 0) return;
 
     // Step 1: Bind the repr geometry's VAO (without drawing).
+    // Ported from: LUTGeometry.drawInstanced 的 bufs.bind()（container 内已
+    // appendLinkages(repr.lutBuffers.linkages)——repr 的 attribute 布局）。
     m_repr->bindPrimitive(driver);
 
-    // Step 2: Bind instance transform buffer and set vertex attribute divisors.
-    // The 3 transform rows are stored as 3 vec4 attributes per instance.
-    // Ported from: itwinjs-core InstanceBuffers.getTransformBufferParams()
-    auto params = InstanceBuffers::getTransformBufferParams(getTechniqueId());
-    rhi::BufferObjectHandle transforms = m_buffers->getTransforms();
-    if (transforms) {
-        // Bind the transform buffer as 3 vec4 vertex attributes (one per matrix row).
-        for (int i = 0; i < 3; ++i) {
-            if (params.locations[i] > 0) {
-                driver.bindInstanceBuffer(transforms, params.locations[i],
-                                          4, params.stride, params.offsets[i]);
-                driver.setVertexAttribDivisor(params.locations[i], 1);
-            }
-        }
+    // Step 2: Append instance attributes with divisor=1.
+    // Locations come from the per-technique instanced AttributeMap
+    // (AttributeMap.ts:36-51——a_pos@0 之后追加实例组)。
+    TechniqueId const techId = getTechniqueId();
+    uint32_t boundLocs[8] = {};
+    uint32_t boundCount = 0;
+    auto const bindAttrib = [&](rhi::BufferObjectHandle bo, char const* name,
+                                uint32_t components, uint32_t stride, uint32_t offset,
+                                rhi::ElementType type, bool normalized) {
+        if (!bo) return;
+        auto const* details = AttributeMap::findAttribute(name, techId, /*instanced*/ true);
+        if (!details || details->location == 0)  // 0 = a_pos 位（实例组自 1 起）
+            return;
+        uint32_t const loc = details->location;
+        driver.bindInstanceBuffer(bo, loc, components, stride, offset, type, normalized);
+        driver.setVertexAttribDivisor(loc, 1);
+        boundLocs[boundCount++] = loc;
+    };
+
+    // 每实例变换（3×vec4 行，stride 48——InstanceBuffers.createTransformBufferParameters）。
+    auto const tparams = InstanceBuffers::getTransformBufferParams(techId);
+    rhi::BufferObjectHandle const transforms = m_buffers->getTransforms();
+    for (int i = 0; i < 3; ++i) {
+        if (tparams.locations[i] == 0) continue;
+        driver.bindInstanceBuffer(transforms, tparams.locations[i], 4,
+                                  tparams.stride, tparams.offsets[i]);
+        driver.setVertexAttribDivisor(tparams.locations[i], 1);
+        boundLocs[boundCount++] = tparams.locations[i];
     }
 
-    // Step 3: Issue instanced draw call.
-    uint32_t numIndices = m_repr->getDrawIndexCount();
+    // 每实例 symbology 覆盖（a_instanceOverrides@+0 / a_instanceRgba@+4，
+    // stride 8——InstancedGeometry.ts :392-401；UBYTE 非归一，着色器除 255）。
+    rhi::BufferObjectHandle const symbology = m_buffers->getSymbology();
+    bindAttrib(symbology, "a_instanceOverrides", 4, 8, 0,
+               rhi::ElementType::UBYTE4, /*normalized*/ false);
+    bindAttrib(symbology, "a_instanceRgba", 4, 8, 4,
+               rhi::ElementType::UBYTE4, /*normalized*/ false);
+
+    // 每实例 feature id（3×UBYTE，stride 0 紧凑——:402-406）。
+    rhi::BufferObjectHandle const featureIds = m_buffers->getFeatureIds();
+    bindAttrib(featureIds, "a_featureId", 3, 0, 0,
+               rhi::ElementType::UBYTE3, /*normalized*/ false);
+
+    // Step 3: Issue the instanced draw call in the repr's flavor.
+    // Ported from: itwinjs-core LUTGeometry._draw / IndexedGeometry._draw
+    // （SurfaceGeometry.ts:150-162 drawArrays；IndexedGeometry drawElements）。
+    uint32_t const numIndices = m_repr->getDrawIndexCount();
     if (numIndices > 0) {
-        driver.draw2(0, numIndices, instanceCount);
+        if (m_repr->usesIndexBuffer())
+            driver.draw2(0, numIndices, instanceCount);
+        else
+            driver.drawArrays(0, numIndices, instanceCount);
     }
 
-    // Step 4: Reset vertex attribute divisors to 0 (per-vertex).
-    if (transforms) {
-        for (int i = 0; i < 3; ++i) {
-            if (params.locations[i] > 0) {
-                driver.setVertexAttribDivisor(params.locations[i], 0);
-            }
-        }
+    // Step 4: Restore the repr VAO to its non-instanced state.
+    for (uint32_t i = 0; i < boundCount; ++i) {
+        driver.setVertexAttribDivisor(boundLocs[i], 0);
+        driver.disableVertexAttribArray(boundLocs[i]);
     }
 }
 

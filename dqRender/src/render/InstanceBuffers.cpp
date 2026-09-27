@@ -2,11 +2,13 @@
 // DanQing dqRender — Instance buffers implementation
 // Ported from: itwinjs-core core/frontend/src/internal/render/webgl/InstancedGeometry.ts
 #include "InstanceBuffers.h"
+#include "AttributeMap.h"
 #include "dqRender/RenderMemory.h"
 #include "TechniqueImpl.h"
 
 #include <cmath>
 #include <cstring>
+#include <string>
 
 BEGIN_DQ_RENDER_NAMESPACE
 
@@ -136,10 +138,12 @@ void InstanceBuffers::collectStatistics(RenderMemory::Statistics& stats) const
     stats.addInstances( transformBytes + featureBytes + symBytes);
 }
 
-InstanceBuffers::TransformBufferParams InstanceBuffers::getTransformBufferParams(TechniqueId /*techId*/)
+InstanceBuffers::TransformBufferParams InstanceBuffers::getTransformBufferParams(TechniqueId techId)
 {
     // Ported from: itwinjs-core InstanceBuffers.createTransformBufferParameters
-    // 3 rows per instance; 4 floats per row; 4 bytes per float.
+    // (:179-205——3 rows per instance; 4 floats per row; 4 bytes per float；
+    // attribute 名 a_instanceMatrixRowN 经 AttributeMap.findAttribute 解析
+    // location，instanced=true 取实例追加组)。
     TransformBufferParams params;
     constexpr uint32_t floatsPerRow = 4;
     constexpr uint32_t bytesPerVertex = floatsPerRow * sizeof(float);
@@ -147,10 +151,12 @@ InstanceBuffers::TransformBufferParams InstanceBuffers::getTransformBufferParams
 
     params.stride = stride;
     for (uint32_t row = 0; row < 3; ++row) {
-        // Attribute names: a_instanceMatrixRow0, a_instanceMatrixRow1, a_instanceMatrixRow2
-        // Locations are determined by the shader program; use default layout indices.
-        params.locations[row] = row;  // placeholder; actual binding done at draw time
         params.offsets[row] = row * bytesPerVertex;
+        std::string const name = "a_instanceMatrixRow" + std::to_string(row);
+        if (auto const* details = AttributeMap::findAttribute(name, techId, /*instanced*/ true))
+            params.locations[row] = details->location;
+        else
+            params.locations[row] = 0;  // 未映射 → 调用方跳过（参考 assert 语义的防御）
     }
 
     return params;
@@ -209,9 +215,9 @@ InstanceBuffers::Range3d InstanceBuffers::computeRange(
 InstanceBuffers* InstanceBuffers::create(
     rhi::Driver& driver, uint32_t count,
     float const* transforms, float const* transformCenter,
-    float const* featureIds, float const* symbology)
+    uint8_t const* featureIds, uint8_t const* symbology)
 {
-    // Ported from: itwinjs-core InstanceBuffersData.create
+    // Ported from: itwinjs-core InstanceBuffersData.create (:88-111)
     if (count == 0 || !transforms) return nullptr;
 
     // Create transform buffer: 3 vec4 rows per instance (12 floats = 48 bytes)
@@ -223,9 +229,11 @@ InstanceBuffers* InstanceBuffers::create(
     rhi::BufferDescriptor transformData(transforms, transformSize);
     driver.updateBufferObject(transformBuf, std::move(transformData), 0);
 
+    // featureIds：3 字节/实例（24-bit LE feature index——GPU 侧 a_featureId
+    // = 3×UNSIGNED_BYTE stride 0，InstancedGeometry.ts :402-406）。
     rhi::BufferObjectHandle featureIdBuf;
     if (featureIds) {
-        uint32_t featureIdSize = count * 3 * sizeof(float);
+        uint32_t featureIdSize = count * 3;
         featureIdBuf = driver.createBufferObject(
             featureIdSize, rhi::BufferObjectBinding::VERTEX, rhi::BufferUsage::STATIC);
         if (featureIdBuf) {
@@ -234,9 +242,11 @@ InstanceBuffers* InstanceBuffers::create(
         }
     }
 
+    // symbology：8 字节/实例（a_instanceOverrides@0 + a_instanceRgba@4，
+    // stride 8——InstancedGeometry.ts :392-401）。
     rhi::BufferObjectHandle symbologyBuf;
     if (symbology) {
-        uint32_t symSize = count * 8 * sizeof(uint8_t);
+        uint32_t symSize = count * 8;
         symbologyBuf = driver.createBufferObject(
             symSize, rhi::BufferObjectBinding::VERTEX, rhi::BufferUsage::STATIC);
         if (symbologyBuf) {
