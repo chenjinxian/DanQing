@@ -231,9 +231,12 @@ public:
     // polling ITileFetcher delivers on a later process() cycle, so the sink lives
     // on TileAdmin and resolves the in-flight request via the channel's active
     // set (the tile hook is the fallback). A request canceled while its fetch
-    // ran drops the response here (TileRequest.ts:109-110) and merely releases
-    // its concurrency slot — cancel is a mark, the fetch itself is not aborted
-    // (TileRequestChannel.ts:250 NB).
+    // ran DELIVERS the late response here — the data-arrival Loading migration
+    // (TileRequest.ts:92-93) puts it under isCanceled's Loading exemption
+    // (:58-60), so the :109-110 gate passes and the content settles instead of
+    // leaving the tile in limbo. Cancel is a mark, the fetch itself is not
+    // aborted (TileRequestChannel.ts:250 NB) — the settle releases the
+    // concurrency slot either way.
     void deliverTileContent(Tile& tile, std::vector<uint8_t> const& data);
 
     // Fetch-failure sink: settle the request and mark the tile NotFound.

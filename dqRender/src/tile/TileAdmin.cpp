@@ -381,30 +381,53 @@ void TileAdmin::onTileContentLoaded(Tile& tile)
 
 void TileAdmin::deliverTileContent(Tile& tile, std::vector<uint8_t> const& data)
 {
-    // Ported from: TileRequest.handleResponse (TileRequest.ts:156-195) —
-    // settle the channel request first (recordCompletion), then bytes →
-    // readContent → setContent (which raises onTileLoad → scene invalidation).
+    // Ported from: TileRequest.dispatch + handleResponse (TileRequest.ts:88-110
+    // → :156-195) — bytes have arrived: the data-arrival Loading migration
+    // first (:92-93), then settle (recordCompletion/dropActiveRequest), then
+    // the :109-110 gate → readContent → setContent (which raises onTileLoad →
+    // scene invalidation).
     //
     // The in-flight request is resolved through the channel's active set
     // FIRST: a request canceled while its fetch ran has already released the
     // tile hook (TileRequest.cancel → TileRequest.ts:144-145) but stays in
     // the active set until its http activity completes
-    // (TileRequestChannel.ts:250 NB). EQUIVALENCE: 参考源=TileRequest.ts:107-110
-    // （response 到达后 isCanceled → 直接 return，丢弃 data，不读不 set）+
-    // TileRequestChannel.ts:333-336（dropActiveRequest 释放并发槽）；发散=参考
-    // 由 dispatch 的 promise 闭包直接持有请求对象，DanQing 的完成链只带
-    // (tile, data)，以 channel 活动集按 tile 反查（_active.add 的镜像）+
-    // tile 钩子兜底（无 channel 请求的交付路径保持原行为）；验证法=
-    // TileRequestChannelTest.UsersEmptyCancelsPendingAndActive（active 段）+
-    // TileAdminTest.ForgetUserCancelsSoleRequestImmediately。
+    // (TileRequestChannel.ts:250 NB).
     TileRequest* request = m_channels.findActiveRequestForTile(tile);
     if (!request)
         request = tile.getRequest();
 
     if (request) {
+        // Data arrival → Loading migration (TileRequest.ts:92-93 — "Set this
+        // now, so our `isCanceled` check can see it"): the reference moves the
+        // request to Loading UNCONDITIONALLY at this point, before the drop
+        // gate (:109-110). A request canceled while its fetch ran arrives here
+        // Failed with an empty user set; the migration puts it under
+        // isCanceled's Loading exemption (:58-60 — "After we've received the
+        // raw tile data, always finish processing it - otherwise tile may end
+        // up in limbo") so the data delivers. Without it the drop branch below
+        // discards the bytes and the tile is pinned in Loading forever (cancel
+        // released the tile hook + processRequestsForUser only creates requests
+        // for NotLoaded tiles → never re-requested).
+        //
+        // EQUIVALENCE: 参考源=TileRequest.ts:92-93（数据到达点无条件 Loading
+        // 迁移）+ :109-110（丢弃门）；语义=数据已到→交付（迁移后 ：109-110 门
+        // 对已到数据恒放行——唯一残余丢弃面是参考 isCanceled 首句 iModel
+        // disposed，DanQing 无对应物，TileRequest.h isCanceled 已登记 TODO）；
+        // 无数据→丢弃/失败链（reportTileFetchError → settle(failed) +
+        // setNotFound，:94-103 catch → :148-153 setFailed——不设 Loading）；
+        // 发散=参考由 dispatch 的 promise 闭包直接持有请求对象，DanQing 的
+        // 完成链只带 (tile, data)，以 channel 活动集按 tile 反查（_active.add
+        // 的镜像）+ tile 钩子兜底（无 channel 请求的交付路径保持原行为）；
+        // 验证法=TileAdminTest.ForgetUserCancelsSoleRequestImmediately（数据
+        // 到达 → 交付）+ TileAdminTest.CanceledRequestWithoutDataStaysDropped
+        // （无数据 → 失败链不变）+
+        // TileRequestChannelTest.UsersEmptyCancelsPendingAndActive（active 段）。
+        request->startLoading();
+
         if (request->isCanceled()) {
-            // Cancel is a mark only — the fetch was not aborted; drop the
-            // late response and release the concurrency slot.
+            // TileRequest.ts:109-110 的丢弃门。迁移后对已到数据不可达（见上
+            // EQUIVALENCE：唯一可达面是未移植的 iModel disposed 句）；保留以
+            // 对齐参考结构。
             request->getChannel().settle(*request, /*failed=*/true);
             return;
         }

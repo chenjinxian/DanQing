@@ -1659,6 +1659,12 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
 
                                 // u_renderOrder = geometry.renderOrder（Edge 或
                                 // PlanarEdge）。Ported from: FeatureSymbology.ts:490-495。
+                                // 登记项（deferred）：参考 :492 内含
+                                // `drawingBackgroundForReadPixels ?
+                                // RenderOrder.Background : geometry.renderOrder`
+                                // 三元（readPixels 背景绘制时置 Background，
+                                // SceneCompositor.ts:1546-1548/Target.ts:151）——
+                                // DanQing 只移植后半（该概念未移植，当前不可达）。
                                 params.setFloat(
                                     "u_renderOrder",
                                     static_cast<float>(static_cast<uint8_t>(indexedGeom->getRenderOrder())));

@@ -70,6 +70,12 @@ void selectTilesBatchedForm(TileDrawArgs& args, Tile& tile,
         // The reference's selected is a Set — siblings sharing a stand-in add
         // it once; DanQing hosts the collection as a deduplicated vector (the
         // TileDrawArgs sets' convention) so the draw list matches 1:1.
+        // EQUIVALENCE: 参考源=BatchedTile.ts:88-110（:90 markReady(this) 只在
+        // TooCoarse 下钻分支；显示分支 :106-109 只 insertMissing(this) +
+        // selected.add(closestDisplayableAncestor)，不 markReady）；发散=DanQing
+        // 在 stand-in 落点 markReady(closest)（存量分歧——报告面多记祖先，绘制
+        // 面不受影响，draw 已从 selected 取图形）；验证法=TileTreeRender 像素锁
+        // 10/10。
         args.markReady(closest);
         if (std::find(selected.begin(), selected.end(), closest) == selected.end())
             selected.push_back(closest);

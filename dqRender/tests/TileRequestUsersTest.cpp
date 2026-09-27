@@ -219,10 +219,16 @@ TEST(TileRequestUsers, QueuedUserlessRequestReenqueuedNotDuplicated)
 // Ported from: TileAdmin.forgetUser (TileAdmin.ts:560-563 —
 //              onUserIModelClosed → _users.delete) + onUserIModelClosed
 //              (:925-940 — 独占请求立即取消) + TileRequest.cancel
-//              (TileRequest.ts:122-131)。
+//              (TileRequest.ts:122-131) + TileRequest.dispatch 的数据到达
+//              Loading 迁移（TileRequest.ts:92-93 "Set this now, so our
+//              `isCanceled` check can see it"——迁移落在丢弃门 :109-110 之前，
+//              使 isCanceled 的 Loading 豁免 :58-60 "After we've received the
+//              raw tile data, always finish processing it - otherwise tile may
+//              end up in limbo" 放行迟到数据 → handleResponse :156-195 交付）。
 // Authored: 参考无 TileAdmin 级取消单测（TileAdmin.test.ts 只测统计面）；
 //           场景按 onUserIModelClosed 的 `1 === request.users.length` 分支
-//           自写。
+//           自写；数据到达交付面按 dispatch 的迁移序（:92-93 → :109-110 →
+//           handleResponse）自写。
 TEST(TileAdminTest, ForgetUserCancelsSoleRequestImmediately)
 {
     g_requestContentCount = 0;
@@ -245,12 +251,58 @@ TEST(TileAdminTest, ForgetUserCancelsSoleRequestImmediately)
     EXPECT_TRUE(raw->isCanceled());
     EXPECT_EQ(tile.getRequest(), nullptr);  // 钩子已释放（TileRequest.ts:145）
 
-    // 取消只标记，不中止 fetch（TileRequestChannel.ts:250 NB）——content 迟到
-    // 时丢弃并释放并发槽（TileRequest.ts:109-110）。
+    // 取消只标记，不中止 fetch（TileRequestChannel.ts:250 NB）——数据迟到时
+    // 交付而非丢弃：数据到达点无条件迁移 Loading（TileRequest.ts:92-93）→
+    // isCanceled 的 Loading 豁免（:58-60）使 :109-110 门放行 → readContent +
+    // setContent（handleResponse :156-195）。无迁移则字节被丢弃、瓦钉死
+    // Loading（cancel 已释放瓦钩 + processRequests 只为 NotLoaded 瓦建请求
+    // —— limbo，:58-60 注释所防）。NB：settle 即把请求移出活动集（unique_ptr
+    // 所有权 → 销毁），settle 后断言走活动集计数/统计面，不解引用 raw。
     f.admin.deliverTileContent(tile, {0x11, 0x22, 0x33, 0x44});
-    EXPECT_EQ(g_readContentCount, 0);  // 不 decode
+    EXPECT_EQ(g_readContentCount, 1);  // 数据已到 → 解码交付（不丢弃）
     EXPECT_EQ(g_requestContentCount, 1);  // 不重新取数
-    EXPECT_EQ(tile.getLoadStatus(), TileLoadStatus::Loading);  // cancel 不触碰 tile 状态 (:122)
+    EXPECT_EQ(tile.getLoadStatus(), TileLoadStatus::Ready);  // setContent（Tile.ts:210-216）
+    EXPECT_EQ(f.admin.getActiveRequestCount(), 0u);  // 请求 settle（离开活动集）
+    EXPECT_EQ(f.admin.statistics().totalCompletedRequests, 1u);  // complete（recordCompletion）
+}
+
+// Ported from: TileRequest.dispatch (TileRequest.ts:94-110) — the no-data
+//              drop face: the Loading migration (:92-93) sits inside the try
+//              AFTER `gotResponse = true`, so a canceled request whose fetch
+//              produces no data never reaches it — it stays Failed, and the
+//              fetch failure settles through setFailed (:148-153 —
+//              notifyAndClear + Failed + tile.setNotFound + recordFailure).
+// Authored: 参考无直接单测；对照锁"无数据的取消不交付"——Loading 迁移只在
+//           数据到达点发生，失败链（reportTileFetchError，参考 catch 不复查
+//           isCanceled → setFailed 无条件跑）不变。
+TEST(TileAdminTest, CanceledRequestWithoutDataStaysDropped)
+{
+    g_requestContentCount = 0;
+    g_readContentCount = 0;
+    AdminFixture f;
+    StubTree tree;
+    ProbeTile tile(tree);
+    StubUser user(1);
+
+    f.admin.registerUser(user);
+    f.admin.requestTiles(user, {&tile});
+    f.admin.process();
+    TileRequest* raw = tile.getRequest();
+    ASSERT_NE(raw, nullptr);
+    EXPECT_TRUE(raw->isActive());
+
+    f.admin.forgetUser(user);
+    EXPECT_EQ(raw->getState(), TileRequest::State::Failed);  // cancel → Failed
+    EXPECT_TRUE(raw->isCanceled());  // 无数据到达 → :92-93 未达 → 无 Loading 豁免
+
+    // fetch 失败（无数据）→ 失败链：settle(failed) + setNotFound（setFailed
+    // 形态，TileRequest.ts:148-153）——不得复活动画/交付（settle 销毁请求，
+    // 之后断言走统计面）。
+    f.admin.reportTileFetchError(tile, "fetch failed");
+    EXPECT_EQ(f.admin.getActiveRequestCount(), 0u);  // 失败链 settle
+    EXPECT_EQ(f.admin.statistics().totalFailedRequests, 1u);  // fail（recordFailure 形态）
+    EXPECT_EQ(g_readContentCount, 0);  // 不 decode
+    EXPECT_EQ(tile.getLoadStatus(), TileLoadStatus::NotFound);  // setNotFound（:152）
 }
 
 // Ported from: TileAdmin.onUserIModelClosed (TileAdmin.ts:928-940) —
