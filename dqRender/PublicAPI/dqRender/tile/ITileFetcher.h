@@ -4,7 +4,8 @@
 //              (abstract network fetch contract)
 //
 // §7.2: This header is in PublicAPI and must contain ZERO Qt types.
-// Concrete Qt implementation lives in src/tile/TileRequestFetcher.h.
+// Concrete implementations live in the host layer (dqApp — the local-file
+// fetcher and the RPC-dump replay fetcher; zero network per §8.2).
 #pragma once
 
 #include <cstdint>
@@ -26,16 +27,18 @@ class Tile;
 // ITileFetcher — abstract interface for async tile content fetching.
 // Ported from: itwinjs-core TileRequestFetcher (abstract fetch contract)
 //
-// Concrete implementations (e.g., Qt QNetworkAccessManager-based) live in
-// src/ and may use platform-specific types. This interface defines the
-// contract using only std types so PublicAPI remains Qt-free (§7.2).
+// Concrete implementations live in the host layer (dqApp) and may use
+// host-specific types internally. This interface defines the contract using
+// only std types so PublicAPI remains Qt-free (§7.2) and zero-network (§8.2
+// — data enters the engine as bytes through this DI seam).
 // ---------------------------------------------------------------------------
 class ITileFetcher {
 public:
     virtual ~ITileFetcher() = default;
 
-    /// Initiate an async HTTP fetch for tile content.
-    /// @param url  The resolved content URL (std::string, not QString).
+    /// Initiate an async fetch for tile content (the host layer's seam —
+    /// local files / RPC-dump replay; zero network, §8.2).
+    /// @param url  The resolved content URL (std::string).
     /// @param tile Reference to the tile being fetched.
     /// @param onComplete Called on success with the downloaded bytes.
     /// @param onError    Called on failure with an error description.

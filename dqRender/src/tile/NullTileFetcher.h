@@ -3,8 +3,9 @@
 // Authored: no reference exists in itwinjs-core for a null tile fetcher;
 //           itwinjs couples tile fetch to IModelConnection. This is a DanQing
 //           SDK default so dqRender stays Qt-free (§8.2) until the application
-//           injects a concrete fetcher (e.g., dqApp's QtTileRequestFetcher)
-//           via TileAdmin::setFetcher().
+//           injects a concrete fetcher (e.g., dqApp's local-file fetcher or
+//           RPC-dump replay fetcher — both zero-network §8.2) via
+//           TileAdmin::setFetcher().
 #pragma once
 
 #include "dqRender/tile/ITileFetcher.h"

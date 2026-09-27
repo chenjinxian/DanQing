@@ -53,11 +53,13 @@ target_sources(dqApp
         src/DecorationsCache.cpp
         src/Animator.cpp
         src/ViewportSync.cpp
-        # Application-layer Qt-based ITileFetcher (injected into dqRender TileAdmin;
-        # dqRender itself is Qt-free per §8.2). FileTileFetcher wraps it and adds
-        # local-filesystem tile content for offline tilesets.
-        src/QtTileRequestFetcher.cpp
+        # Application-layer ITileFetchers (injected into dqRender TileAdmin;
+        # dqRender itself is Qt-free per §8.2). 零网络协议（TD-24 清退）：
+        # FileTileFetcher 读本地文件系统路径；DumpTileFetcher 按 manifest 回放
+        # RPC-dump 资产——两者均为纯文件 I/O，零网络原语。
         src/FileTileFetcher.cpp
+        src/tile/DumpTileFetcher.cpp
+        src/tile/DumpTileTreeProps.cpp
         src/tile/Tiles.cpp
         src/tile/TileTreeReference.cpp
         src/tile/DisclosedTileTreeSet.cpp
@@ -65,7 +67,6 @@ target_sources(dqApp
         src/tile/SpatialTileTreeReferences.cpp
         # Headers with Q_OBJECT (needed for AUTOMOC)
         PublicAPI/dqApp/Viewport.h
-        src/QtTileRequestFetcher.h
         src/FileTileFetcher.h
 )
 
@@ -85,7 +86,6 @@ target_link_libraries(dqApp
         danqing_compile_options
         Qt6::Core
         Qt6::Gui
-        Qt6::Network
         Qt6::Widgets
         Qt6::OpenGL
         Qt6::OpenGLWidgets
@@ -156,6 +156,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/StandardViewAnimationTest.cpp
         tests/LookToolTest.cpp
         tests/TileTreeRegistryTest.cpp  # 忠实路径 F3：Tiles 注册表（Ported from Tiles.test.ts）
+        tests/DumpTileFetcherTest.cpp  # RPC-dump 本地回放契约（零网络 §8.2/TD-24）
     )
     target_link_libraries(dqAppTest
         PRIVATE

@@ -141,9 +141,10 @@ TEST(TileTreeRender, MinimalTilesetRendersColoredBoxes)
 {
     std::string const tilesetPath = DANQING_TILE_ASSETS_DIR "/minimal/tileset.json";
 
-    // Startup injects the application-layer tile fetcher (FileTileFetcher →
-    // QtTileRequestFetcher) into TileAdmin — without it the NullTileFetcher
-    // fails every request synchronously (CursorStateTest 同款幂等模式).
+    // Startup injects the application-layer tile fetcher (FileTileFetcher —
+    // local files only, zero network §8.2) into TileAdmin — without it the
+    // NullTileFetcher fails every request synchronously (CursorStateTest
+    // 同款幂等模式).
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;
