@@ -850,7 +850,7 @@ ImdlTileTree::ImdlTileTree(std::string treeId, std::string rootContentId,
       // the header); maxTilesToSkip = TileAdmin.maximumLevelsToSkip.
     , m_maxInitialTilesToSkip(0)
     , m_maxTilesToSkip(TileAdmin::instance().maximumLevelsToSkip())
-    // Ported from: IModelTileTree.ts:397-398 — contentIdProvider =
+    // Ported from: IModelTileTree.ts:396-398 — contentIdProvider =
     // ContentIdProvider.create(params.options.allowInstancing, tileAdmin,
     // params.formatVersion). DanQing: allowInstancing = true (the
     // static-primary derivation, PrimaryTileTree.ts:70 — the animated/
@@ -864,7 +864,7 @@ ImdlTileTree::ImdlTileTree(std::string treeId, std::string rootContentId,
                                     treeMetadata.formatVersion)
                               : nullptr)
 {
-    // Ported from: IModelTileTree.ts:405 —
+    // Ported from: IModelTileTree.ts:398 —
     // `params.rootTile.contentId = this.contentIdProvider.rootContentId;`
     // (the props' scheme-agnostic root id — V1 form from the backend — is
     // overridden with the negotiated scheme's root form; the request key must
