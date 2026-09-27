@@ -427,3 +427,164 @@ TEST(ImdlTileTreeTest, MaximumSizeBackfilledWhenContentLoaded)
     ASSERT_NE(presetContent.graphic, nullptr);
     EXPECT_DOUBLE_EQ(preset.getMaximumSize(), 64.0);
 }
+
+// ---------------------------------------------------------------------------
+// ContentIdProvider — 内容 Id 方案机制（M-D(3)：RPC dump 请求键形态的来源）。
+//
+// Ported from: itwinjs-core core/common/src/test/TileMetadata.test.ts
+//              ("parses TileTreeId and ContentId strings" :330-336 的 flags
+//              语义字面量 "-3-0"/"-c-5"/"-F-2" + "round trips tree Id and
+//              content Id" :341 的 {depth:2,i:5,j:400,k:16,multiplier:8} spec
+//              + getMaximumMajorTileFormatVersion TileMetadata.ts:412-427 的
+//              钳制分支)。
+//              适配登记：参考测试的 tree-Id 解析半边（iModelTileTreeIdToString
+//              /parseTileTreeIdAndContentId）DanQing 无载体，不移植——只移植
+//              content-Id 半边；flags 字面量取参考值，id 形态按 computeId 展
+//              开（hex join，TileMetadata.ts:633-636）。"-b-0-0-0-0-1" 键兼为
+//              采集资产 manifest 的根请求键（compatseed-v1，事实双锚）。
+// ---------------------------------------------------------------------------
+TEST(ImdlContentIdProvider, GetMaximumMajorTileFormatVersionClamps)
+{
+    using dqRender::getMaximumMajorTileFormatVersion;
+    // (maxMajorVersion, formatVersion) → major（TileMetadata.ts:412-427 分支）。
+    EXPECT_EQ(37u, getMaximumMajorTileFormatVersion(37, 0));            // undefined → max
+    EXPECT_EQ(37u, getMaximumMajorTileFormatVersion(37, 37u << 0x10));  // 37.0（dump 域）
+    EXPECT_EQ(37u, getMaximumMajorTileFormatVersion(37, (37u << 0x10) | 5));  // minor 忽略
+    EXPECT_EQ(4u, getMaximumMajorTileFormatVersion(4, 50u << 0x10));    // 后端超 app 上限 → app 上限
+    EXPECT_EQ(4u, getMaximumMajorTileFormatVersion(37, 4u << 0x10));    // 后端低于已知版本
+    EXPECT_EQ(1u, getMaximumMajorTileFormatVersion(1, 0));              // <1 无效 → 1
+}
+
+TEST(ImdlContentIdProvider, V4RootContentIdMatchesCapturedKeyDomain)
+{
+    // defaultTileOptions + allowInstancing=true → flags 0xb（TileMetadata.ts
+    // :314-331 缺省 + :703-710 组合——AllowInstancing|ImprovedElision|
+    // ExternalTextures；ignoreAreaPatterns 缺省 false）。
+    dqRender::TileOptions options;
+    auto provider = dqRender::ContentIdProvider::create(
+        /*allowInstancing=*/true, options, 37u << 0x10);
+    ASSERT_NE(provider, nullptr);
+    EXPECT_EQ(37u, provider->majorFormatVersion);
+    EXPECT_EQ(static_cast<uint32_t>(dqRender::ContentFlags::AllowInstancing)
+                  | static_cast<uint32_t>(dqRender::ContentFlags::ImprovedElision)
+                  | static_cast<uint32_t>(dqRender::ContentFlags::ExternalTextures),
+              static_cast<uint32_t>(provider->contentFlags));
+    // 根请求键 = 采集 manifest 的 depth-0 键（compatseed-v1）。
+    EXPECT_EQ("-b-0-0-0-0-1", provider->rootContentId());
+}
+
+TEST(ImdlContentIdProvider, V4FlagPermutationsFromReferenceLiterals)
+{
+    // flags 语义字面量（TileMetadata.test.ts:330-336：elision+instancing → 3；
+    // noPatterns+externalTextures → c；四者全开 → F）——经 rootContentId 的
+    // 前缀形态断言（"-<flags>-0-0-0-0-1"）。
+    dqRender::TileOptions elisionInstancing;  // 缺省即 instancing+elision+textures
+    elisionInstancing.enableExternalTextures = false;
+    EXPECT_EQ("-3-0-0-0-0-1",
+              dqRender::ContentIdProvider::create(true, elisionInstancing, 4u << 0x10)
+                  ->rootContentId());
+
+    dqRender::TileOptions noPatternsTextures;
+    noPatternsTextures.enableInstancing = false;   // allowInstancing=true 但 options 关断
+    noPatternsTextures.enableImprovedElision = false;
+    noPatternsTextures.ignoreAreaPatterns = true;
+    EXPECT_EQ("-c-0-0-0-0-1",
+              dqRender::ContentIdProvider::create(true, noPatternsTextures, 4u << 0x10)
+                  ->rootContentId());
+
+    dqRender::TileOptions allFlags;
+    allFlags.ignoreAreaPatterns = true;
+    EXPECT_EQ("-f-0-0-0-0-1",
+              dqRender::ContentIdProvider::create(true, allFlags, 4u << 0x10)
+                  ->rootContentId());
+
+    // allowInstancing=false 关断 instancing 位（:704 的合取门）。
+    dqRender::TileOptions defaults;
+    EXPECT_EQ("-a-0-0-0-0-1",
+              dqRender::ContentIdProvider::create(false, defaults, 4u << 0x10)
+                  ->rootContentId());
+}
+
+TEST(ImdlContentIdProvider, V1AndV2SchemesByMajorVersion)
+{
+    // major 0/1 → V1 "depth/i/j/k/multiplier"（TileMetadata.ts:663-665 注释）。
+    auto v1 = dqRender::ContentIdProvider::create(true, dqRender::TileOptions{}, 1u << 0x10);
+    ASSERT_NE(v1, nullptr);
+    EXPECT_EQ("2/5/190/10/8",
+              v1->idFromSpec(dqRender::ImdlContentIdSpec{2, 5, 400, 16, 8}));
+
+    // major 2/3 → V2 "_majorVersion_flags_depth_i_j_k_multiplier"
+    //（TileMetadata.ts:677-679 注释；flags 只有 instancing 位——:683）。
+    auto v2 = dqRender::ContentIdProvider::create(true, dqRender::TileOptions{}, 2u << 0x10);
+    ASSERT_NE(v2, nullptr);
+    EXPECT_EQ("_2_1_2_5_190_10_8",
+              v2->idFromSpec(dqRender::ImdlContentIdSpec{2, 5, 400, 16, 8}));
+}
+
+TEST(ImdlContentIdProvider, SpecRoundtripHex)
+{
+    // TileMetadata.test.ts:341-347 的 round-trip spec（{2,5,400,16,8}——hex
+    // 字段 190/10 走 parse/再组仍等）。
+    dqRender::TileOptions options;
+    auto provider = dqRender::ContentIdProvider::create(true, options, 37u << 0x10);
+    dqRender::ImdlContentIdSpec const spec{2, 5, 400, 16, 8};
+    EXPECT_EQ("-b-2-5-190-10-8", provider->idFromSpec(spec));
+    dqRender::ImdlContentIdSpec const parsed =
+        provider->specFromId(provider->idFromSpec(spec));
+    EXPECT_EQ(spec.depth, parsed.depth);
+    EXPECT_EQ(spec.i, parsed.i);
+    EXPECT_EQ(spec.j, parsed.j);
+    EXPECT_EQ(spec.k, parsed.k);
+    EXPECT_EQ(spec.mult, parsed.mult);
+}
+
+TEST(ImdlContentIdProvider, ChildIdsFollowCapturedKeyDomain)
+{
+    // 参考链：IModelTile._loadChildren（:153-169）→ computeChildTileProps
+    //（:777-853）→ idProvider.idFromSpec（:846）——compatseed 域：根 ±100.015、
+    // model range 在低角 → 唯一存活子 = depth1/i=j=k=0，键 = manifest 第 2 瓦。
+    dqRender::ImdlTileMetadata parent;
+    parent.contentId = "-b-0-0-0-0-1";
+    parent.range = box(-100.015, -100.015, -100.015, 100.015, 100.015, 100.015);
+    parent.contentRange = parent.range;
+
+    dqRender::ImdlTreeMetadata root;
+    root.contentRange = box(-100.005, -100.005, -100.005, -97.505, -97.505, -97.505);
+    root.tileScreenSize = 2048;
+
+    dqRender::TileOptions options;
+    auto provider = dqRender::ContentIdProvider::create(true, options, 37u << 0x10);
+    auto children = dqRender::computeImdlChildTileProps(parent, *provider, root);
+    ASSERT_EQ(1u, children.size());
+    EXPECT_EQ("-b-1-0-0-0-1", children[0].contentId);
+    EXPECT_DOUBLE_EQ(2048.0, children[0].maximumSize);
+}
+
+TEST(ImdlContentIdProvider, TreeOverridesRootKeyWhenPropsCarryFormatVersion)
+{
+    // IModelTileTree.ts:405 — params.rootTile.contentId =
+    // contentIdProvider.rootContentId（props 的 V1 形根 id 被覆写为协商方案
+    // 的根请求键）；props 无 formatVersion → legacy 路径不覆写（登记见
+    // ImdlTreeMetadata::formatVersion）。
+    dqRender::ImdlTreeMetadata meta;
+    meta.contentRange = box(-100.005, -100.005, -100.005, -97.505, -97.505, -97.505);
+    meta.tileScreenSize = 2048;
+    meta.formatVersion = 37u << 0x10;
+    dqRender::ImdlTileTree tree("25_1d-E:6_0x1c", "0/0/0/0/1",
+                                box(-100.015, -100.015, -100.015, 100.015, 100.015, 100.015),
+                                meta);
+    auto* root = static_cast<dqRender::ImdlTile*>(tree.getRootTile());
+    ASSERT_NE(root, nullptr);
+    EXPECT_EQ("-b-0-0-0-0-1", root->getContentId());
+    EXPECT_EQ("25_1d-E:6_0x1c/-b-0-0-0-0-1",
+              tree.contentUrl(root->getContentId()));
+
+    // 无 formatVersion → 根键保持传入原文（legacy V1 id 合同）。
+    dqRender::ImdlTreeMetadata legacyMeta = meta;
+    legacyMeta.formatVersion = 0;
+    dqRender::ImdlTileTree legacyTree("fixture://tree", "0/0/0/0",
+                                      box(0, 0, 0, 8, 8, 8), legacyMeta);
+    auto* legacyRoot = static_cast<dqRender::ImdlTile*>(legacyTree.getRootTile());
+    ASSERT_NE(legacyRoot, nullptr);
+    EXPECT_EQ("0/0/0/0", legacyRoot->getContentId());
+}
