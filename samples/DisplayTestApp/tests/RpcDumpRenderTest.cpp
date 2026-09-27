@@ -22,7 +22,7 @@
 //     ——现有 LUT 消费链（U7）可直接上屏。①内容存活 + ②WHERE + 消费计数
 //     全部在此断言。
 //   - compatseed-v1 = **LOD 链消费锁**：7 瓦链（-b-0..-b-6）验证请求键覆写
-//     （IModelTileTree.ts:405）→ manifest 键域命中 → 字节回放 → 协议选择 →
+//     （IModelTileTree.ts:398）→ manifest 键域命中 → 字节回放 → 协议选择 →
 //     ≥2 瓦 graphics 提交。其瓦内容全部带 instances 修饰（transformCenter
 //     -98.755 + 每实例变换），参考经 InstancedGraphicParams→
 //     createInstancedGraphic（ImdlGraphicsCreator.ts:243-257、webgl
@@ -249,10 +249,10 @@ TEST(RpcDumpRender, MirukuruRendersRealBackendTile)
     auto props = treeProps->byTreeId(treeId);
     ASSERT_TRUE(props.has_value()) << "byTreeId failed: " << treeId;
     // 前置（资产自洽，非回归断言）：RPC dump 携带 formatVersion——M-D(3) 起
-    // 消费（ContentIdProvider V4 请求键形态的切换依据，IModelTileTree.ts:397）。
+    // 消费（ContentIdProvider V4 请求键形态的切换依据，IModelTileTree.ts:396）。
     ASSERT_EQ(2424832u, props->metadata.formatVersion);  // 37.0（major<<16）
 
-    // 2. 树装配 + 请求键锁（IModelTileTree.ts:405 rootContentId 覆写——根键
+    // 2. 树装配 + 请求键锁（IModelTileTree.ts:398 rootContentId 覆写——根键
     //    必须是 manifest 的 depth-0 瓦键，否则 fetch NotFound）。
     std::unique_ptr<dqRender::ImdlTileTree> tree =
         std::make_unique<dqRender::ImdlTileTree>(
@@ -263,7 +263,7 @@ TEST(RpcDumpRender, MirukuruRendersRealBackendTile)
         auto* root = static_cast<dqRender::ImdlTile*>(tree->getRootTile());
         ASSERT_NE(root, nullptr);
         EXPECT_EQ(manifest->tiles[0].contentId, root->getContentId())
-            << "root request key must be the manifest key (IModelTileTree.ts:405 "
+            << "root request key must be the manifest key (IModelTileTree.ts:398 "
                "rootContentId override)";
     }
 
@@ -331,7 +331,10 @@ TEST(RpcDumpRender, MirukuruRendersRealBackendTile)
     std::vector<uint8_t> frame;
     uint32_t w = 0, h = 0;
     ASSERT_TRUE(view.getUeViewport()->ReadFrameForTest(frame, w, h));
-    dumpBmp(frame, w, h, "build/rpc-dump-mirukuru.bmp");
+    // 绝对路径锚（§12.10.4：CWD 相对路径是历次假观测来源）——资产宏是绝对
+    // 路径，仓库根 = 其上两级。
+    dumpBmp(frame, w, h,
+            DANQING_TILE_ASSETS_DIR "/../../build/rpc-dump-mirukuru.bmp");
 
     long count = 0;
     double cx = 0, cy = 0;
@@ -340,12 +343,14 @@ TEST(RpcDumpRender, MirukuruRendersRealBackendTile)
         << "no replayed RPC tile content rendered — dump replay chain broken "
            "(fetch keys? tree assembly? see [TILE-TRACE]/BMP)";
 
-    // ① 内容存活（阈值 = 首绿实测的 1/2；实测值回填：首绿 [TBD-于提交前实测]）。
+    // ① 内容存活（阈值 = 首绿实测的 1/2：首绿 2000×1400 实测 572660 px =
+    //    20.45%，质心 (999,698) 对帧心 (1000,700)、bbox (284,284)-(1714,1111)
+    //    近对称——几何即取景域内的模型平面）。
     printf("[RPC-RENDER] content=%ld px (%.3f%% of %ux%u) bbox=(%u,%u)-(%u,%u) "
            "centroid=(%.0f,%.0f) frame center=(%.0f,%.0f)\n",
            count, 100.0 * count / (static_cast<double>(w) * h), w, h,
            minX, minY, maxX, maxY, cx, cy, w / 2.0, h / 2.0);
-    EXPECT_GT(count, 5000)
+    EXPECT_GT(count, 250000)
         << "replayed imdl content barely visible — threshold is a pinned "
            "fraction of the measured GREEN baseline, not a fudge factor";
 
@@ -385,7 +390,7 @@ TEST(RpcDumpRender, MirukuruRendersRealBackendTile)
 //（primitive decodedMin/Max ±0.25，JSON 实测）→ 原点附近 → 取景域
 //（-100.005..-97.505）外 → 像素不可断言。TD-25 清偿时把像素判据加回本锁。
 // 本锁钉住链上今天的真实消费面：
-// ①请求键覆写：根键 = manifest 键域的 "-b-0-0-0-0-1"（IModelTileTree.ts:405
+// ①请求键覆写：根键 = manifest 键域的 "-b-0-0-0-0-1"（IModelTileTree.ts:398
 //   rootContentId 覆写——props 的 V1 形 id 不直接作为请求键）；
 // ②字节回放：链上瓦按 manifest byteLength 精确回放（fetch 错误路径零触发）；
 // ③协议选择级联：SSE refine → 链上 ≥2 瓦（-b-0 根 + -b-1 子）graphics 提交，
@@ -436,7 +441,7 @@ TEST(RpcDumpRender, CompatSeedReplaysLodChainToGraphicsReady)
         auto* root = static_cast<dqRender::ImdlTile*>(tree->getRootTile());
         ASSERT_NE(root, nullptr);
         EXPECT_EQ(rootKey, root->getContentId())
-            << "root request key must be the manifest key (IModelTileTree.ts:405 "
+            << "root request key must be the manifest key (IModelTileTree.ts:398 "
                "rootContentId override)";
         EXPECT_EQ(treeId + "/" + rootKey, tree->contentUrl(rootKey));
     }
@@ -503,7 +508,8 @@ TEST(RpcDumpRender, CompatSeedReplaysLodChainToGraphicsReady)
     std::vector<uint8_t> frame;
     uint32_t w = 0, h = 0;
     ASSERT_TRUE(view.getUeViewport()->ReadFrameForTest(frame, w, h));
-    dumpBmp(frame, w, h, "build/rpc-dump-compatseed.bmp");
+    dumpBmp(frame, w, h,
+            DANQING_TILE_ASSETS_DIR "/../../build/rpc-dump-compatseed.bmp");
 
     // ③ 协议选择级联：≥2 瓦 graphics 提交 + dispatch ≥2。
     EXPECT_GE(readyTiles, 2)

@@ -206,8 +206,8 @@ std::optional<DumpTreeProps> DumpTileTreeProps::byTreeId(std::string const& tree
     if (dumpjson::JsonValue const* v = doc->find("tileScreenSize"))
         out.metadata.tileScreenSize = static_cast<uint32_t>(v->number);
 
-    // IModelTileTreeProps.formatVersion（TileProps.ts:63）→ metadata 载体
-    //（IModelTileTree.ts:397 消费——ContentIdProvider 的方案选择，M-D(3) 起
+    // IModelTileTreeProps.formatVersion（TileProps.ts:65）→ metadata 载体
+    //（IModelTileTree.ts:396 消费——ContentIdProvider 的方案选择，M-D(3) 起
     // 接线；缺失保留 0 = DanQing legacy V1 id 路径，登记见 ImdlTileTree.h）。
     if (dumpjson::JsonValue const* v = doc->find("formatVersion"))
         out.metadata.formatVersion = static_cast<uint32_t>(v->number);
@@ -229,7 +229,7 @@ std::optional<DumpTreeProps> DumpTileTreeProps::byTreeId(std::string const& tree
 
     // TileProps.contentId（:25）——原文（"0/0/0/0/1" 形态；注意这不是 manifest
     // 的回放瓦键——参考侧 IModelTileTree 构造会用 contentIdProvider.rootContentId
-    // 覆写它，IModelTileTree.ts:405）。
+    // 覆写它，IModelTileTree.ts:398）。
     if (dumpjson::JsonValue const* v = rootTile->find("contentId"))
         out.rootTile.contentId = v->str;
 

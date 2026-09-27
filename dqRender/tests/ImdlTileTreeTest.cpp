@@ -443,6 +443,8 @@ TEST(ImdlTileTreeTest, MaximumSizeBackfilledWhenContentLoaded)
 //              开（hex join，TileMetadata.ts:633-636）。"-b-0-0-0-0-1" 键兼为
 //              采集资产 manifest 的根请求键（compatseed-v1，事实双锚）。
 // ---------------------------------------------------------------------------
+// Ported from: TileMetadata.ts:412-427 的钳制分支逐条（TileMetadata.test.ts
+// 无本函数专项 it——断言值自参考实现逐分支推导，§5(f) 标注）。
 TEST(ImdlContentIdProvider, GetMaximumMajorTileFormatVersionClamps)
 {
     using dqRender::getMaximumMajorTileFormatVersion;
@@ -455,6 +457,9 @@ TEST(ImdlContentIdProvider, GetMaximumMajorTileFormatVersionClamps)
     EXPECT_EQ(1u, getMaximumMajorTileFormatVersion(1, 0));              // <1 无效 → 1
 }
 
+// Authored: 参考无对应测试（键兼为采集资产 compatseed-v1 manifest 的 depth-0
+// 瓦键——事实双锚）；flags 组合语义锚在 defaultTileOptions（TileMetadata.ts
+// :314-331）+ ContentIdV4Provider 构造（:703-710）。
 TEST(ImdlContentIdProvider, V4RootContentIdMatchesCapturedKeyDomain)
 {
     // defaultTileOptions + allowInstancing=true → flags 0xb（TileMetadata.ts
@@ -473,6 +478,10 @@ TEST(ImdlContentIdProvider, V4RootContentIdMatchesCapturedKeyDomain)
     EXPECT_EQ("-b-0-0-0-0-1", provider->rootContentId());
 }
 
+// Ported from: TileMetadata.test.ts "parses TileTreeId and ContentId strings"
+//              :330-336 的 flags 语义字面量（elision+instancing→3、
+//              noPatterns+externalTextures→c、四开→F；树-Id 解析半边不移植，
+//              字面量落在 rootContentId 前缀形态上）。
 TEST(ImdlContentIdProvider, V4FlagPermutationsFromReferenceLiterals)
 {
     // flags 语义字面量（TileMetadata.test.ts:330-336：elision+instancing → 3；
@@ -505,6 +514,10 @@ TEST(ImdlContentIdProvider, V4FlagPermutationsFromReferenceLiterals)
                   ->rootContentId());
 }
 
+// Ported from: TileMetadata.ts 方案注释（:663-665 V1 "depth/i/j/k/multiplier"、
+//              :677-679 V2 "_majorVersion_flags_depth_i_j_k_multiplier"）+
+//              create 的 majorVersion 分派（:644-661）；spec 取
+//              TileMetadata.test.ts:341 的 round-trip 值。
 TEST(ImdlContentIdProvider, V1AndV2SchemesByMajorVersion)
 {
     // major 0/1 → V1 "depth/i/j/k/multiplier"（TileMetadata.ts:663-665 注释）。
@@ -521,6 +534,9 @@ TEST(ImdlContentIdProvider, V1AndV2SchemesByMajorVersion)
               v2->idFromSpec(dqRender::ImdlContentIdSpec{2, 5, 400, 16, 8}));
 }
 
+// Ported from: TileMetadata.test.ts "round trips tree Id and content Id"
+//              :341-347（{depth:2,i:5,j:400,k:16,multiplier:8} 的
+//              idFromSpec→specFromId 往返；tree-Id 半边不移植）。
 TEST(ImdlContentIdProvider, SpecRoundtripHex)
 {
     // TileMetadata.test.ts:341-347 的 round-trip spec（{2,5,400,16,8}——hex
@@ -538,6 +554,9 @@ TEST(ImdlContentIdProvider, SpecRoundtripHex)
     EXPECT_EQ(spec.mult, parsed.mult);
 }
 
+// Authored: 参考无 computeChildTileProps 专项测试（行为锚在唯一调用者
+// IModelTile._loadChildren :153-169 的 idProvider 接线 + 采集资产
+// compatseed-v1 manifest 第 2 瓦键——事实双锚，§5(f) 标注）。
 TEST(ImdlContentIdProvider, ChildIdsFollowCapturedKeyDomain)
 {
     // 参考链：IModelTile._loadChildren（:153-169）→ computeChildTileProps
@@ -560,9 +579,11 @@ TEST(ImdlContentIdProvider, ChildIdsFollowCapturedKeyDomain)
     EXPECT_DOUBLE_EQ(2048.0, children[0].maximumSize);
 }
 
+// Authored: 参考无对应测试（行为锚在 IModelTileTree.ts:396-398——构造器内
+// contentIdProvider.create + params.rootTile.contentId 覆写；§5(f) 标注）。
 TEST(ImdlContentIdProvider, TreeOverridesRootKeyWhenPropsCarryFormatVersion)
 {
-    // IModelTileTree.ts:405 — params.rootTile.contentId =
+    // IModelTileTree.ts:398 — params.rootTile.contentId =
     // contentIdProvider.rootContentId（props 的 V1 形根 id 被覆写为协商方案
     // 的根请求键）；props 无 formatVersion → legacy 路径不覆写（登记见
     // ImdlTreeMetadata::formatVersion）。

@@ -305,7 +305,7 @@ loadDumpManifest(std::string const& dumpRoot);
 //   geometryGuid、transformNodeRanges、extentsBasis/baseExtents（TileProps.ts
 //   之外的后端扩展域，参考类型亦无）。
 //   formatVersion 原在本清单——M-D(3) 起已消费（metadata.formatVersion →
-//   ImdlTileTree 的 ContentIdProvider 方案选择，IModelTileTree.ts:397-398）。
+//   ImdlTileTree 的 ContentIdProvider 方案选择，IModelTileTree.ts:396-398）。
 // ---------------------------------------------------------------------------
 struct DumpTreeProps {
     dqRender::ImdlTreeMetadata metadata;

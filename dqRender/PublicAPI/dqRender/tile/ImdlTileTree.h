@@ -43,10 +43,10 @@ struct ImdlTreeMetadata {
     dqGeom::Range3d contentRange;  // model range (empty = unknown)
     uint32_t tileScreenSize = 512;  // TileProps.ts:66 default
     bool is2d = false;
-    // IModelTileTreeProps.formatVersion (TileProps.ts:63) — the maximum
+    // IModelTileTreeProps.formatVersion (TileProps.ts:65) — the maximum
     // major+minor version the backend supplies ((major<<0x10)|minor).
     // Consumed by the ImdlTileTree constructor to select the content Id
-    // scheme (ContentIdProvider.create — IModelTileTree.ts:397-398).
+    // scheme (ContentIdProvider.create — IModelTileTree.ts:396-398).
     // 0 = not carried: DanQing's legacy V1 id helpers (parseImdlContentId/
     // formatImdlContentId — base-10, multiplier omitted when 0) stay in
     // charge. EQUIVALENCE (registered, §11.10): the reference maps an absent
