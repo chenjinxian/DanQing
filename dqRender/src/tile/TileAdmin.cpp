@@ -463,9 +463,30 @@ void TileAdmin::reportTileFetchError(Tile& tile, std::string const& error)
 
 void TileAdmin::onTileContentDisposed(Tile& tile)
 {
-    // Ported from: TileAdmin.ts:770-773.
+    // Ported from: TileAdmin.ts:770-773（LRU drop——内容处置的标准钩子）。
     if (m_lruList)
         m_lruList->drop(tile);
+
+    // TD-22 清偿（C++ 所有权适配——参考 JS GC 语义无此义务，DanQing 的
+    // feed 集持裸 Tile*）：清扫本瓦片在所有 user feed 里的残留指针。
+    // 触发实案：RpcDumpRender.Instances60RendersAllInstances 拆解——
+    // 子瓦请求键与 manifest 不符（-b-1-0-0-0-1 vs -b-2-0-0-0-1，派生链
+    // 差异另登记）→ fetch NotFound → 瓦片入 feed 后树先于视口销毁 →
+    // ~Viewport forgetUser 遍历 feed 解引用死 Tile → SEH 0xc0000005。
+    // 没有本清扫时安全顺序依赖"请求全部完成"（mirukuru/compatseed 侥幸），
+    // 任何悬挂请求（失败/取消未投递）+ 先拆树即爆——与拆树/拆视口顺序无关。
+    auto scrubFeeds = [&tile](auto& feeds) {
+        for (auto& [user, tiles] : feeds) {
+            (void)user;
+            tiles.erase(std::remove(tiles.begin(), tiles.end(), &tile),
+                        tiles.end());
+        }
+    };
+    scrubFeeds(m_requestedTiles);
+    scrubFeeds(m_selectedTiles);
+    scrubFeeds(m_readyTiles);
+    // m_externalTiles 的值类型是 ExternalTileStatistics（计数器聚合），
+    // 不持 Tile*——无需清扫。
 }
 
 void TileAdmin::setTileExpirationTime(double seconds) noexcept

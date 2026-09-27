@@ -120,7 +120,9 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
     // order here is free — matches itwinjs's composition (addColor after addTexture).
     // Quantized: v_color from the u_color uniform (color-table LUT sampling is a
     // registered TODO — getComputeElementColor Color.ts:16-26), no a_color attribute.
-    addColor(builder, quantized);
+    // Instanced: 逐实例 symbology 色在 u_color 之上混入（Color.ts:32-35
+    // applyInstanceColor——getComputeColor 的 instanced 分支）。
+    addColor(builder, quantized, instanced);
 
     // --- Lighting ---
     // Ported from: itwinjs-core Lighting.ts addLighting()
@@ -184,14 +186,23 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
         // computeVertexPosition) run BEFORE computeFeatureOverrides
         // (ShaderBuilder function-call main), so g_featureAndMaterialIndex
         // is populated by the time this component executes.
-        bool const lutFeatures = quantized;
+        // INSTANCED 例外（FeatureSymbology.ts:61-77 computeFeatureIndex——
+        // usesInstancedGeometry 时逐实例 a_featureId attribute 取代顶点表
+        // 特征（g_isAreaPattern ? u_patternFeatureId : a_featureId），
+        // LUT 几何亦然）：instanced 声明 vec3 a_featureId（AttributeMap
+        // instanced 组 Vec3——GPU 侧 3×UBYTE divisor 1 绑定）。
+        bool const lutFeatures = quantized && !instanced;
 
         // Feature ID attribute (non-LUT geometry only) + varying
         // The attribute stays Uint (PolyfaceGraphic packs a_featureId as UINT), but
         // the VARYING must be float — GLSL requires flat interpolation for integer
         // varyings (the reference declares v_feature_id as Vec4; a bare `out uint`
         // without `flat` fails to compile on desktop GL).
-        if (!lutFeatures) {
+        if (instanced) {
+            // TD-25：instanced 的 a_featureId 为 vec3（0..255 三分量——
+            // 参考 BufferParameters 3×UnsignedByte 非归一 + decodeUInt24）。
+            vert.addVariable({"a_featureId", VariableType::Vec3, VariableScope::Attribute, 0});
+        } else if (!lutFeatures) {
             vert.addVariable({"a_featureId", VariableType::Uint, VariableScope::Attribute, 0});
         }
         builder.addVarying("v_featureId", VariableType::Float);
@@ -210,11 +221,14 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
             // Ported from: itwinjs-core FeatureSymbology.ts computeIdVert
             // (:514 — pick = featureIndex + u_batchId; LUT path decodes the
             // index from g_featureAndMaterialIndex.xyz per getFeatureIndex
-            // :79-86).
+            // :79-86；INSTANCED 分支 decodeUInt24(a_featureId)——逐实例
+            // featureIds 24-bit LE，FeatureSymbology.ts:61-77 computeFeatureIndex)。
             vert.setVertexComponent(VertexShaderComponent::ComputeFeatureOverrides,
-                lutFeatures
-                    ? "    v_featureId = decodeUInt24(g_featureAndMaterialIndex.xyz) + u_batchId;\n"
-                    : "    v_featureId = float(a_featureId) + u_batchId;\n");
+                instanced
+                    ? "    v_featureId = decodeUInt24(a_featureId) + u_batchId;\n"
+                    : lutFeatures
+                        ? "    v_featureId = decodeUInt24(g_featureAndMaterialIndex.xyz) + u_batchId;\n"
+                        : "    v_featureId = float(a_featureId) + u_batchId;\n");
         } else {
             // Overrides: the reference's computeFeatureOverrides PROLOGUE —
             // feature_rgb/feature_alpha start at "not overridden" sentinels
@@ -225,13 +239,17 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
             // The LUT-driven overrides are applied in the fragment
             // (OverrideFeatureId slot); DanQing's split of the reference body.
             // LUT path: local feature index = decodeUInt24(g_featureAndMaterialIndex.xyz)
-            // (getFeatureIndex FeatureSymbology.ts:79-86).
+            // (getFeatureIndex FeatureSymbology.ts:79-86)；INSTANCED 分支
+            // decodeUInt24(a_featureId)（本批 batch-local 索引直接进 LUT）。
             vert.setVertexComponent(VertexShaderComponent::ComputeFeatureOverrides,
-                lutFeatures
-                    ? "    v_featureId = decodeUInt24(g_featureAndMaterialIndex.xyz);\n"
+                instanced
+                    ? "    v_featureId = decodeUInt24(a_featureId);\n"
                       "    feature_rgb = vec3(-1.0);\n    feature_alpha = -1.0;\n"
-                    : "    v_featureId = float(a_featureId);\n"
-                      "    feature_rgb = vec3(-1.0);\n    feature_alpha = -1.0;\n");
+                    : lutFeatures
+                        ? "    v_featureId = decodeUInt24(g_featureAndMaterialIndex.xyz);\n"
+                          "    feature_rgb = vec3(-1.0);\n    feature_alpha = -1.0;\n"
+                        : "    v_featureId = float(a_featureId);\n"
+                          "    feature_rgb = vec3(-1.0);\n    feature_alpha = -1.0;\n");
         }
 
         if (featureMode == FeatureMode::Pick) {
@@ -377,16 +395,49 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
     // (explicit per-technique attribute name→location mapping; LUT-based
     // techniques use the DEFAULT map — AttributeMap.ts :64 posOnly =
     // [["a_pos", 0, Vec3]], a single index attribute at location 0).
+    // INSTANCED 变体（TD-25）：a_pos@0 之后追加实例组（AttributeMap.ts:36-51
+    // instanced 追加序——Row0/1/2、Overrides、Rgba、featureId；patternX/Y 随
+    // area pattern 变体落后续位，surface 未用）——draw 侧 InstancedGeometry::
+    // draw 经同一 AttributeMap 取位绑定，两边必须一致。
     if (quantized) {
-        prog.setAttributeMap({{"a_qPosition", 0}});
+        if (instanced) {
+            prog.setAttributeMap({
+                {"a_qPosition", 0},
+                {"a_instanceMatrixRow0", 1},
+                {"a_instanceMatrixRow1", 2},
+                {"a_instanceMatrixRow2", 3},
+                {"a_instanceOverrides", 4},
+                {"a_instanceRgba", 5},
+                {"a_featureId", 6},
+                {"a_patternX", 7},
+                {"a_patternY", 8},
+            });
+        } else {
+            prog.setAttributeMap({{"a_qPosition", 0}});
+        }
     } else {
-        prog.setAttributeMap({
-            {"a_position", 0},
-            {"a_normal", 1},
-            {"a_color", 2},
-            {"a_texCoord", 3},
-            {"a_featureId", 4},
-        });
+        if (instanced) {
+            prog.setAttributeMap({
+                {"a_position", 0},
+                {"a_normal", 1},
+                {"a_color", 2},
+                {"a_texCoord", 3},
+                {"a_instanceMatrixRow0", 4},
+                {"a_instanceMatrixRow1", 5},
+                {"a_instanceMatrixRow2", 6},
+                {"a_instanceOverrides", 7},
+                {"a_instanceRgba", 8},
+                {"a_featureId", 9},
+            });
+        } else {
+            prog.setAttributeMap({
+                {"a_position", 0},
+                {"a_normal", 1},
+                {"a_color", 2},
+                {"a_texCoord", 3},
+                {"a_featureId", 4},
+            });
+        }
     }
 
     // --- Attach uniform bindings ---

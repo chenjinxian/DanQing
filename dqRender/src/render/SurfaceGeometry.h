@@ -67,6 +67,18 @@ public:
     Pass getPass() const noexcept override;
     RenderOrder getRenderOrder() const noexcept override;
     void draw(rhi::Driver& driver) override;
+    // InstancedGeometry 的 VAO 绑定入口（draw 的 bind 半段——
+    // InstancedGeometry.ts draw :453-455 → repr.drawInstanced 的 bufs.bind()）。
+    void bindPrimitive(rhi::Driver& driver) override
+    {
+        if (m_primitive)
+            driver.bindRenderPrimitive(m_primitive);
+    }
+    uint32_t getDrawIndexCount() const override { return m_numIndices; }
+    // LUT 形态（量化 imdl 网格）= drawArrays（无 element index buffer，
+    // 24-bit 顶点表索引流即 a_qPosition attribute）；VBO 形态 = draw2。
+    // Ported from: SurfaceGeometry.ts :150-162（_draw 的 drawArrays）。
+    bool usesIndexBuffer() const override { return !m_usesQuantizedPositions; }
     void collectStatistics(RenderMemory::Statistics& stats) const override;
 
     // LUT 形态为 true，VBO 形态为 false。
@@ -185,6 +197,9 @@ public:
     // LUT 形态为量化几何（与 surface 共享 Quantized 边缘变体）；VBO 形态沿用
     // MeshGeometry 的 false。
     bool usesQuantizedPositions() const noexcept override { return m_lutForm; }
+    // LUT 形态 = drawArrays（EdgeGeometry.ts:54-60 _draw 无 element index
+    // buffer）；VBO 形态 = draw2。InstancedGeometry::draw 的 flavor 选择。
+    bool usesIndexBuffer() const override { return !m_lutForm; }
     void draw(rhi::Driver& driver) override;
     void collectStatistics(RenderMemory::Statistics& stats) const override;
 

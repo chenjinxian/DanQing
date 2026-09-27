@@ -13,6 +13,7 @@
 #pragma once
 
 #include "CommonShaders.h"   // addFrustum
+#include "InstancingShaders.h"  // addInstancedModelMatrixRTC / addInstanceColor（TD-25）
 #include "RenderPassShaders.h"  // addRenderPass (authoritative u_renderPass + kRenderPass_*)
 #include "ShaderBindings.h"  // wireProjectionMatrix, wireModelViewMatrix
 #include "ShaderBuilder.h"
@@ -37,10 +38,18 @@ inline constexpr float kRenderOrder_BlankingRegion_f = 2.0f;
 // ---------------------------------------------------------------------------
 // createCommon — foundation layer for Surface shaders
 // Ported from: itwinjs-core Surface.ts createCommon() (line 265-298)
+//              + Vertex.ts addProjectionMatrix (:8-14) / addModelViewMatrix
+//              (:142-160) / ShaderBuilder.ts VertexShaderBuilder ctor
+//              (:712-723 —— usesInstancedGeometry 时 addInstancedModelMatrixRTC
+//              + MAT_MV=g_mv / MAT_MVP=g_mvp 定义)
 //
 // Creates the vertex-side position pipeline:
 // - Non-instanced: u_mvp (legacy upload) + u_mv (GraphicUniform binding)
-// - Instanced:     u_proj (ProgramUniform binding) + u_instanced_modelView
+// - Instanced:     u_proj (ProgramUniform binding) + per-instance
+//                  a_instanceMatrixRow0/1/2 (divisor 1) → g_modelMatrixRTC
+//                  (Instancing.ts addInstancedModelMatrixRTC) →
+//                  g_mv = u_instanced_modelView * g_modelMatrixRTC
+//                  (Vertex.ts addModelViewMatrix 实例分支 :147-154)
 // - Quantized LUT: delegates to addVertexTable (full texture decode path)
 // - Non-quantized: a_position attribute (simplified, §3.4 deviation)
 // - addFrustum (u_frustum ProgramUniform binding)
@@ -58,26 +67,51 @@ inline void createCommon(ProgramBuilder& builder, bool instanced, bool quantized
     // TEXTURE/TEXTURE_CUBE/TEXTURE_PROJ macros are now added automatically
     // by the ShaderBuilder constructor (ShaderBuilder.h addDefaultMacros()).
 
-    // Projection matrix
     if (instanced) {
-        // Instanced path: u_proj (ProgramUniform, reads from target frustum).
+        // Instanced attribute declarations（AttributeMap.ts:36-51 instanced 追加组——
+        // a_pos@0 之后 a_instanceMatrixRow0/1/2、a_instanceOverrides、a_instanceRgba、
+        // a_featureId、a_patternX/Y；位置由 prog.setAttributeMap(glBindAttribLocation)
+        // 固定，此处只声明，未绑定缓冲的属性读取常量默认（参考行为一致））。
+        // a_instanceOverrides/a_instanceRgba 的声明归 addInstanceColor
+        // （InstancingShaders.h——其 addInstanceOverrides 幂等检查以
+        // a_instanceOverrides 名为键，检查必须在声明之前发生）；
+        // a_featureId 声明归 SurfaceVariantCompiler 的 feature 段（FeatureMode
+        // 门控）；a_patternX/Y 供 addInstancedModelMatrixRTC 的 area-pattern
+        // 分支引用（Instancing.ts:25-31——本资产恒 g_isAreaPattern=0 走
+        // 实例矩阵分支，声明仅为编译通过，参考 attrMap 亦恒声明）。
+        vert.addVariable({"a_instanceMatrixRow0", VariableType::Vec4, VariableScope::Attribute, 0});
+        vert.addVariable({"a_instanceMatrixRow1", VariableType::Vec4, VariableScope::Attribute, 0});
+        vert.addVariable({"a_instanceMatrixRow2", VariableType::Vec4, VariableScope::Attribute, 0});
+        vert.addVariable({"a_patternX", VariableType::Float, VariableScope::Attribute, 0});
+        vert.addVariable({"a_patternY", VariableType::Float, VariableScope::Attribute, 0});
+
+        // g_modelMatrixRTC = mat4(a_instanceMatrixRow0/1/2) 逐实例模型矩阵（RTC——
+        // 平移列相对 transformCenter，渲染时由 u_instanced_modelView 侧 RTC 加回：
+        // BranchUniforms.ts:217-227 mv = view * getRtcModelTransform(model)）。
+        // Ported from: Instancing.ts addInstancedModelMatrixRTC()
+        //（VertexShaderBuilder ctor 对 usesInstancedGeometry 无条件调用，
+        //  ShaderBuilder.ts:716-717）。
+        addInstancedModelMatrixRTC(vert);
+
+        // Projection matrix（ProgramUniform，绑定在 use() 时从 target 上传）。
         // Ported from: itwinjs-core Vertex.ts addProjectionMatrix() line 8-14
         wireProjectionMatrix(vert);
+
+        // Instanced model-view：参考 bindModelViewMatrix 对 instanced 几何
+        // 绑 view * model * rtcOnly（BranchUniforms.ts:217-227）；着色器侧乘
+        // 逐实例 g_modelMatrixRTC 得完整 eye 变换（Vertex.ts:147-154）。
+        vert.addUniform("u_instanced_modelView", VariableType::Mat4, nullptr);
+        vert.addGlobal("g_mv", VariableType::Mat4);
+        vert.addInitializer("g_mv = u_instanced_modelView * g_modelMatrixRTC;");
     } else {
         // Non-instanced path: u_mvp (legacy upload via params.setMatrix4).
         // No binding — the draw loop uploads it directly.
         vert.addUniform("u_mvp", VariableType::Mat4, nullptr);
-    }
 
-    // Model-view matrix (non-instanced: GraphicUniform from DrawParams).
-    // Ported from: itwinjs-core Vertex.ts addModelViewMatrix() line 38-41
-    if (!instanced)
+        // Model-view matrix (non-instanced: GraphicUniform from DrawParams).
+        // Ported from: itwinjs-core Vertex.ts addModelViewMatrix() line 38-41
         wireModelViewMatrix(vert);
-
-    // Instanced model-view matrix array (SSBO or uniform array).
-    // Ported from: itwinjs-core Instancing.ts
-    if (instanced)
-        vert.addUniformArray("u_instanced_modelView", VariableType::Mat4, 64, nullptr);
+    }
 
     // Position attribute(s) — quantized LUT or non-quantized attribute path.
     // Ported from: itwinjs-core Vertex.ts addPosition() (line 258-280)
@@ -112,11 +146,11 @@ inline void createCommon(ProgramBuilder& builder, bool instanced, bool quantized
 
     // --- ComputePosition: model-view + blanking offset + projection ---
     // Ported from: itwinjs-core Surface.ts computePositionPrelude + adjustEyeSpace
-    //              + computePositionPostlude (line 240-263)
+    //              + computePositionPostlude (line 240-263)；MAT_MV 定义见
+    //              ShaderBuilder.ts:716-723（instanced=g_mv，非 instanced=u_mv）。
     if (instanced) {
         vert.setVertexComponent(VertexShaderComponent::ComputePosition,
-            "    int idx = gl_InstanceID;\n"
-            "    vec4 pos = u_instanced_modelView[idx] * rawPos;\n"
+            "    vec4 pos = g_mv * rawPos;\n"
             "    v_eyeSpace = pos.xyz;\n"
             "    if (kRenderOrder_BlankingRegion == u_renderOrder)\n"
             "        v_eyeSpace.z -= 2.0 / 65536.0 * (u_frustum.y - u_frustum.x);\n"
@@ -136,6 +170,8 @@ inline void createCommon(ProgramBuilder& builder, bool instanced, bool quantized
 // Ported from: itwinjs-core Color.ts addColor() (line 51-70)
 //              + addVaryingColor() (line 65-70)
 //              + getComputeElementColor() (line 16-26)
+//              + getComputeColor() (line 37-45 —— instanced 时
+//              applyInstanceColor 混入 a_instanceRgba 逐实例色)
 //
 // Non-quantized (§3.4 deviation): reads color from a_color attribute instead
 // of the color LUT texture appended to the vertex data.
@@ -153,7 +189,7 @@ inline void createCommon(ProgramBuilder& builder, bool instanced, bool quantized
 //   Varying: v_color (vec4)
 //   Fragment: ComputeBaseColor slot (return v_color)
 // ---------------------------------------------------------------------------
-inline void addColor(ProgramBuilder& builder, bool quantized = false)
+inline void addColor(ProgramBuilder& builder, bool quantized = false, bool instanced = false)
 {
     auto& vert = builder.getVertexBuilder();
 
@@ -171,9 +207,22 @@ inline void addColor(ProgramBuilder& builder, bool quantized = false)
         // fixture consumes uniform colors only.
         vert.addUniform("u_color", VariableType::Vec4, nullptr);
 
-        // Vertex ComputeBaseColor: return the uniform color.
-        vert.setVertexComponent(VertexShaderComponent::ComputeBaseColor,
-                                "    return u_color;\n");
+        if (instanced) {
+            // 逐实例 symbology 色（Color.ts getComputeColor :37-45——instanced
+            // 时 addInstanceColor 接线 a_instanceOverrides/a_instanceRgba +
+            // u_applyInstanceColor + extractInstanceBit；applyInstanceColor
+            // :32-35 在元素色之上 mix 逐实例 rgb/alpha）。
+            addInstanceColor(vert);
+            vert.setVertexComponent(VertexShaderComponent::ComputeBaseColor,
+                "    vec4 color = u_color;\n"
+                "    color.rgb = mix(color.rgb, a_instanceRgba.rgb / 255.0, u_applyInstanceColor * extractInstanceBit(kOvrBit_Rgb));\n"
+                "    color.a = mix(color.a, a_instanceRgba.a / 255.0, u_applyInstanceColor * extractInstanceBit(kOvrBit_Alpha));\n"
+                "    return color;\n");
+        } else {
+            // Vertex ComputeBaseColor: return the uniform color.
+            vert.setVertexComponent(VertexShaderComponent::ComputeBaseColor,
+                                    "    return u_color;\n");
+        }
     } else {
         // a_color attribute
         vert.addVariable({"a_color", VariableType::Vec4, VariableScope::Attribute, 0});

@@ -109,9 +109,11 @@ public:
     void drawArrays(uint32_t vertexOffset, uint32_t vertexCount,
                     uint32_t instanceCount) noexcept override;
     void setVertexAttribDivisor(uint32_t location, uint32_t divisor) noexcept override;
+    void disableVertexAttribArray(uint32_t location) noexcept override;
     void bindInstanceBuffer(BufferObjectHandle boh,
                             uint32_t location, uint32_t components,
-                            uint32_t stride, uint32_t offset) noexcept override;
+                            uint32_t stride, uint32_t offset,
+                            ElementType type, bool normalized) noexcept override;
 
     void readPixels(RenderTargetHandle src, uint32_t x, uint32_t y,
                     uint32_t width, uint32_t height,

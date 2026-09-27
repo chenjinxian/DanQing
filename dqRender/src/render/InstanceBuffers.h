@@ -141,10 +141,15 @@ public:
 
     // --- Factory ---
     /// Create from raw transform data.
+    /// featureIds/symbology are per-instance BYTE payloads（3B/实例 24-bit
+    /// feature id、8B/实例 symbology——InstancedGraphicParams.ts:35-41 +
+    /// InstanceBuffersData.create :88-111 的 Uint8Array 语义 + GPU 侧
+    /// a_featureId 3×UNSIGNED_BYTE / a_instanceOverrides+a_instanceRgba
+    /// InstancedGeometry.ts :397-406 BufferParameters）。
     static InstanceBuffers* create(
         rhi::Driver& driver, uint32_t count,
         float const* transforms, float const* transformCenter,
-        float const* featureIds = nullptr, float const* symbology = nullptr);
+        uint8_t const* featureIds = nullptr, uint8_t const* symbology = nullptr);
 
 private:
     rhi::BufferObjectHandle m_transforms;

@@ -139,12 +139,21 @@ public:
     // Ported from: glVertexAttribDivisor
     virtual void setVertexAttribDivisor(uint32_t location, uint32_t divisor) noexcept = 0;
 
+    // Disable a vertex attribute array (post-instanced-draw cleanup so the
+    // shared repr VAO does not retain a reference to the instance buffer).
+    // Ported from: glDisableVertexAttribArray
+    virtual void disableVertexAttribArray(uint32_t location) noexcept = 0;
+
     // Bind a buffer object as a vertex attribute (for instanced rendering).
     // Binds the buffer and sets up the vertex attribute pointer.
     // Ported from: glBindBuffer + glVertexAttribPointer + glVertexAttribDivisor
+    // (the instance-attribute element type/normalized pair mirrors the
+    // reference BufferParameters glType/glNormalized——AttributeBuffers.ts)
     virtual void bindInstanceBuffer(BufferObjectHandle boh,
                                     uint32_t location, uint32_t components,
-                                    uint32_t stride, uint32_t offset) noexcept = 0;
+                                    uint32_t stride, uint32_t offset,
+                                    ElementType type = ElementType::FLOAT,
+                                    bool normalized = false) noexcept = 0;
 
     // --- Texture ---
     virtual TextureHandle createTexture(SamplerType target, uint8_t levels,

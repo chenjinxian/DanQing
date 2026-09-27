@@ -124,6 +124,7 @@ Tile::~Tile()
     // the list keeps a dangling pointer and later traversals crash (exposed
     // by TileAdminMemoryTest cross-test state, 2026-09-21). The reference
     // does this in Tile.dispose → onTileContentDisposed (Tile.ts:160-166).
+    // TD-22: 本钩子同时清扫各 user feed 里的裸 Tile*（见 TileAdmin.cpp）。
     if (TileAdmin::hasInstance())
         TileAdmin::instance().onTileContentDisposed(*this);
 }
