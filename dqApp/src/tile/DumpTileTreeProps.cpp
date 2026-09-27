@@ -206,10 +206,19 @@ std::optional<DumpTreeProps> DumpTileTreeProps::byTreeId(std::string const& tree
     if (dumpjson::JsonValue const* v = doc->find("tileScreenSize"))
         out.metadata.tileScreenSize = static_cast<uint32_t>(v->number);
 
-    // TileTreeProps.contentRange（:51）→ 仅在字段存在时置值
-    // （IModelTileTree.ts:54-56；缺失保留 null range——"unknown" 约定）。
+    // IModelTileTreeProps.formatVersion（TileProps.ts:63）→ metadata 载体
+    //（IModelTileTree.ts:397 消费——ContentIdProvider 的方案选择，M-D(3) 起
+    // 接线；缺失保留 0 = DanQing legacy V1 id 路径，登记见 ImdlTileTree.h）。
+    if (dumpjson::JsonValue const* v = doc->find("formatVersion"))
+        out.metadata.formatVersion = static_cast<uint32_t>(v->number);
+
+    // TileTreeProps.contentRange（:51）→ 仅在字段存在且为对象时置值
+    // （IModelTileTree.ts:54-56；缺失/null 保留 null range——"unknown" 约定；
+    // null 视同缺省不硬失败——参考 Range3d.setFromJSON 的 `if (!json) return`
+    // 对 null 无操作，Range.ts:189-191）。
     if (dumpjson::JsonValue const* v = doc->find("contentRange")) {
-        if (!parseRange3d(*v, out.metadata.contentRange))
+        if (v->type == dumpjson::JsonValue::Type::Object
+            && !parseRange3d(*v, out.metadata.contentRange))
             return std::nullopt;
     }
 
@@ -232,9 +241,11 @@ std::optional<DumpTreeProps> DumpTileTreeProps::byTreeId(std::string const& tree
         return std::nullopt;
     }
 
-    // TileProps.contentRange（:29，optional）——缺失 → null。
+    // TileProps.contentRange（:29，optional）——缺失/null → null（同上：null
+    // 视同缺省，setFromJSON 对 null 无操作）。
     if (dumpjson::JsonValue const* v = rootTile->find("contentRange")) {
-        if (!parseRange3d(*v, out.rootTile.contentRange))
+        if (v->type == dumpjson::JsonValue::Type::Object
+            && !parseRange3d(*v, out.rootTile.contentRange))
             return std::nullopt;
     }
 

@@ -299,10 +299,13 @@ loadDumpManifest(std::string const& dumpRoot);
 //
 // 未消费的 props 字段（解析期忽略，登记——载体归后续里程碑，与 M-C 登记同源）：
 //   location（TransformProps——ImdlTileTree 无变换载体）、maxTilesToSkip、
-//   maxInitialTilesToSkip（ImdlTileTree 预算固定 0/TileAdmin——IModelTileTree
-//   .ts:390-391 的载体缺口）、formatVersion、contentIdQualifier、geometryGuid、
-//   transformNodeRanges、extentsBasis/baseExtents（TileProps.ts 之外的后端
-//   扩展域，参考类型亦无）。
+//   maxInitialTilesToSkip（**载体在、注入路径缺**：ImdlTileTree.h:349-350 的
+//   预算成员存在，但树构造器无 props 入参，props 值无法到达——预算仍为
+//   ?? 0 / TileAdmin 缺省，IModelTileTree.ts:390-391）、contentIdQualifier、
+//   geometryGuid、transformNodeRanges、extentsBasis/baseExtents（TileProps.ts
+//   之外的后端扩展域，参考类型亦无）。
+//   formatVersion 原在本清单——M-D(3) 起已消费（metadata.formatVersion →
+//   ImdlTileTree 的 ContentIdProvider 方案选择，IModelTileTree.ts:397-398）。
 // ---------------------------------------------------------------------------
 struct DumpTreeProps {
     dqRender::ImdlTreeMetadata metadata;

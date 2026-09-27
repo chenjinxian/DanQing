@@ -18,6 +18,8 @@
 #include "dqRender/tile/ITileFetcher.h"
 #include "dqRender/tile/TileAdmin.h"
 
+#include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <memory>
 #include <sstream>
@@ -42,6 +44,317 @@ void bisectRange(dqGeom::Range3d& range, int axis, bool keepLow)
 }
 
 }  // namespace
+
+// ---------------------------------------------------------------------------
+// ContentIdProvider — content Id scheme machinery.
+// Ported from: itwinjs-core core/common/src/tile/TileMetadata.ts
+//              (getMaximumMajorTileFormatVersion :412-427, ContentIdProvider
+//              :596-638, ContentIdV1Provider :665-673, ContentIdV2Provider
+//              :680-691, ContentIdV4Provider :699-713).
+// ---------------------------------------------------------------------------
+
+namespace {
+
+std::string toHex(uint32_t value)
+{
+    // toString(16) — lowercase, unpadded.
+    char buf[16];
+    std::snprintf(buf, sizeof(buf), "%x", value);
+    return buf;
+}
+
+uint32_t fromHex(std::string const& text)
+{
+    return static_cast<uint32_t>(std::strtoul(text.c_str(), nullptr, 16));
+}
+
+}  // namespace
+
+uint32_t getMaximumMajorTileFormatVersion(uint32_t maxMajorVersion,
+                                          uint32_t formatVersion)
+{
+    // Ported from: TileMetadata.ts:412-427 — clamp the backend's version by
+    // the app-configured maximum and the currently supported major version.
+    uint32_t majorVersion = maxMajorVersion;
+    if (formatVersion != 0)  // `undefined !== formatVersion` (:417-419); 0 = undefined
+        majorVersion = std::min(formatVersion >> 0x10, majorVersion);
+
+    // Version number less than 1 is invalid - ignore (:421-422).
+    majorVersion = std::max(majorVersion, 1u);
+
+    // Version number greater than current known version ignored (:423-424).
+    majorVersion = std::min(majorVersion,
+                            static_cast<uint32_t>(CurrentImdlVersion::Major));
+
+    // Version numbers are integers - round down (:426-427).
+    return std::max(majorVersion, 1u);
+}
+
+ContentIdProvider::~ContentIdProvider() = default;
+
+ContentIdProvider::ContentIdProvider(uint32_t majorVersion, ContentFlags flags)
+    : majorFormatVersion(majorVersion)
+    , contentFlags(flags)
+{
+}
+
+std::string ContentIdProvider::rootContentId() const
+{
+    // Ported from: TileMetadata.ts:605-607.
+    return computeId(0, 0, 0, 0, 1);
+}
+
+std::string ContentIdProvider::idFromParentAndMultiplier(
+    std::string const& parentId, uint32_t multiplier) const
+{
+    // Ported from: TileMetadata.ts:609-613 — keep everything up to and
+    // including the last separator, replace the multiplier component.
+    size_t const lastSepPos = parentId.rfind(separator());
+    if (lastSepPos == std::string::npos)
+        return parentId;  // reference asserts (-fno-exceptions port: keep the id)
+    return parentId.substr(0, lastSepPos + 1) + toHex(multiplier);
+}
+
+ImdlContentIdSpec ContentIdProvider::specFromId(std::string const& id) const
+{
+    // Ported from: TileMetadata.ts:615-627 — split on the separator, parse the
+    // trailing five components as hex.
+    ImdlContentIdSpec spec;
+    std::vector<std::string> parts;
+    size_t start = 0;
+    while (true) {
+        size_t const sep = id.find(separator(), start);
+        if (sep == std::string::npos) {
+            parts.push_back(id.substr(start));
+            break;
+        }
+        parts.push_back(id.substr(start, sep - start));
+        start = sep + 1;
+    }
+    // (:616-617 assert len >= 5) — registered best-effort divergence: short
+    // ids parse from the front instead of asserting.
+    size_t const len = parts.size();
+    if (len >= 5) {
+        spec.depth = fromHex(parts[len - 5]);
+        spec.i = fromHex(parts[len - 4]);
+        spec.j = fromHex(parts[len - 3]);
+        spec.k = fromHex(parts[len - 2]);
+        spec.mult = fromHex(parts[len - 1]);
+    } else {
+        size_t const n = std::min(len, size_t{5});
+        uint32_t* fields[] = {&spec.depth, &spec.i, &spec.j, &spec.k, &spec.mult};
+        for (size_t idx = 0; idx < n; ++idx)
+            *fields[idx] = fromHex(parts[idx]);
+    }
+    return spec;
+}
+
+std::string ContentIdProvider::idFromSpec(ImdlContentIdSpec const& spec) const
+{
+    // Ported from: TileMetadata.ts:629-631.
+    return computeId(spec.depth, spec.i, spec.j, spec.k, spec.mult);
+}
+
+std::string ContentIdProvider::join(uint32_t depth, uint32_t i, uint32_t j,
+                                    uint32_t k, uint32_t mult) const
+{
+    // Ported from: TileMetadata.ts:633-636.
+    std::string out = toHex(depth);
+    out += separator();
+    out += toHex(i);
+    out += separator();
+    out += toHex(j);
+    out += separator();
+    out += toHex(k);
+    out += separator();
+    out += toHex(mult);
+    return out;
+}
+
+std::unique_ptr<ContentIdProvider> ContentIdProvider::create(
+    bool allowInstancing, TileOptions const& options, uint32_t formatVersion)
+{
+    // Ported from: TileMetadata.ts:640-661.
+    uint32_t const majorVersion = getMaximumMajorTileFormatVersion(
+        options.maximumMajorTileFormatVersion, formatVersion);
+    switch (majorVersion) {
+        case 0:
+        case 1:
+            return std::make_unique<ContentIdV1Provider>(majorVersion);
+        case 2:
+        case 3:
+            return std::make_unique<ContentIdV2Provider>(majorVersion,
+                                                         allowInstancing,
+                                                         options);
+        default:
+            return std::make_unique<ContentIdV4Provider>(allowInstancing,
+                                                         options,
+                                                         majorVersion);
+    }
+}
+
+ContentIdV1Provider::ContentIdV1Provider(uint32_t majorVersion)
+    : ContentIdProvider(majorVersion, ContentFlags::None)
+{
+    // Ported from: TileMetadata.ts:667-670.
+}
+
+char ContentIdV1Provider::separator() const noexcept
+{
+    return '/';
+}
+
+std::string ContentIdV1Provider::computeId(uint32_t depth, uint32_t i,
+                                           uint32_t j, uint32_t k,
+                                           uint32_t mult) const
+{
+    // Ported from: TileMetadata.ts:671-673.
+    return join(depth, i, j, k, mult);
+}
+
+namespace {
+
+// The V4 flags composition (:703-710) — hoisted so the const base member can
+// initialize directly from it.
+ContentFlags v4ContentFlags(bool allowInstancing, TileOptions const& options)
+{
+    uint32_t flags = static_cast<uint32_t>(ContentFlags::None);
+    if (allowInstancing && options.enableInstancing)
+        flags |= static_cast<uint32_t>(ContentFlags::AllowInstancing);
+    if (options.enableImprovedElision)
+        flags |= static_cast<uint32_t>(ContentFlags::ImprovedElision);
+    if (options.ignoreAreaPatterns)
+        flags |= static_cast<uint32_t>(ContentFlags::IgnoreAreaPatterns);
+    if (options.enableExternalTextures)
+        flags |= static_cast<uint32_t>(ContentFlags::ExternalTextures);
+    return static_cast<ContentFlags>(flags);
+}
+
+}  // namespace
+
+ContentIdV2Provider::ContentIdV2Provider(uint32_t majorVersion,
+                                         bool allowInstancing,
+                                         TileOptions const& options)
+    : ContentIdProvider(
+          majorVersion,
+          (allowInstancing && options.enableInstancing) ? ContentFlags::AllowInstancing
+                                                        : ContentFlags::None)
+{
+    // Ported from: TileMetadata.ts:688 — _prefix = separator + majorVersion
+    // hex + separator + flags hex + separator.
+    m_prefix = std::string(1, separator()) + toHex(majorFormatVersion)
+               + std::string(1, separator())
+               + toHex(static_cast<uint32_t>(contentFlags))
+               + std::string(1, separator());
+}
+
+char ContentIdV2Provider::separator() const noexcept
+{
+    return '_';
+}
+
+std::string ContentIdV2Provider::computeId(uint32_t depth, uint32_t i,
+                                           uint32_t j, uint32_t k,
+                                           uint32_t mult) const
+{
+    // Ported from: TileMetadata.ts:689-691.
+    return m_prefix + join(depth, i, j, k, mult);
+}
+
+ContentIdV4Provider::ContentIdV4Provider(bool allowInstancing,
+                                         TileOptions const& options,
+                                         uint32_t majorVersion)
+    : ContentIdProvider(majorVersion, v4ContentFlags(allowInstancing, options))
+{
+    // Ported from: TileMetadata.ts:711-712 — _prefix = separator + flags hex
+    // + separator.
+    m_prefix = std::string(1, separator())
+               + toHex(static_cast<uint32_t>(contentFlags))
+               + std::string(1, separator());
+}
+
+char ContentIdV4Provider::separator() const noexcept
+{
+    return '-';
+}
+
+std::string ContentIdV4Provider::computeId(uint32_t depth, uint32_t i,
+                                           uint32_t j, uint32_t k,
+                                           uint32_t mult) const
+{
+    // Ported from: TileMetadata.ts:712-713.
+    return m_prefix + join(depth, i, j, k, mult);
+}
+
+// ---------------------------------------------------------------------------
+// computeImdlChildTileProps — the provider-based reference-signature form.
+// ---------------------------------------------------------------------------
+
+std::vector<ImdlChildTileProps> computeImdlChildTileProps(
+    ImdlTileMetadata const& parent, ContentIdProvider const& idProvider,
+    ImdlTreeMetadata const& root)
+{
+    // Ported from: computeChildTileProps (TileMetadata.ts:777-853).
+    std::vector<ImdlChildTileProps> children;
+    if (parent.isLeaf)
+        return children;
+
+    // Magnification: one child, same volume, doubled multiplier (:785-799).
+    if (parent.sizeMultiplier > 0.0) {
+        double const multiplier = parent.sizeMultiplier * 2.0;
+        ImdlChildTileProps child;
+        child.contentId = idProvider.idFromParentAndMultiplier(
+            parent.contentId, static_cast<uint32_t>(multiplier));  // :788
+        child.range = parent.range;
+        child.sizeMultiplier = multiplier;
+        child.isLeaf = false;
+        child.maximumSize = static_cast<double>(root.tileScreenSize);  // :795
+        children.push_back(std::move(child));
+        return children;
+    }
+
+    // Sub-divide into 4 (2d) or 8 (3d) children (:801-848).
+    ImdlContentIdSpec parentSpec = idProvider.specFromId(parent.contentId);
+    uint32_t const emptyMask = parent.emptySubRangeMask;
+
+    // Model-range rejection (:816-820): only test children when the parent
+    // is not wholly inside the model range.
+    bool testContentRange = !root.contentRange.isNull()
+                            && !root.contentRange.ContainsRange(parent.range);
+
+    for (uint32_t i = 0; i < 2; ++i) {
+        for (uint32_t j = 0; j < 2; ++j) {
+            for (uint32_t k = 0; k < (root.is2d ? 1u : 2u); ++k) {
+                uint32_t const emptyBit = 1u << (i + j * 2 + k * 4);
+                if (0 != (emptyMask & emptyBit))
+                    continue;  // known-empty sub-volume (:826-830)
+
+                dqGeom::Range3d range = parent.range;
+                bisectRange(range, 0, 0 == i);
+                bisectRange(range, 1, 0 == j);
+                if (!root.is2d)
+                    bisectRange(range, 2, 0 == k);
+
+                if (testContentRange && !range.IntersectsRange(root.contentRange))
+                    continue;  // outside model range (:836-840)
+
+                ImdlContentIdSpec childSpec = parentSpec;
+                childSpec.depth = parentSpec.depth + 1;
+                childSpec.i = parentSpec.i * 2 + i;
+                childSpec.j = parentSpec.j * 2 + j;
+                childSpec.k = parentSpec.k * 2 + k;
+
+                ImdlChildTileProps child;
+                child.contentId = idProvider.idFromSpec(childSpec);  // :846
+                child.range = range;
+                child.maximumSize = static_cast<double>(root.tileScreenSize);  // :847
+                children.push_back(std::move(child));
+            }
+        }
+    }
+
+    return children;
+}
 
 ImdlContentIdSpec parseImdlContentId(std::string const& id)
 {
@@ -75,70 +388,56 @@ std::string formatImdlContentId(ImdlContentIdSpec const& spec)
     return ss.str();
 }
 
+namespace {
+
+// DanQing legacy V1 id 约定（base-10、mult=0 时省略——parseImdlContentId/
+// formatImdlContentId 的既有行为）的 provider 适配器：2 参
+// computeImdlChildTileProps 的输出合同（id-encoded 装配 + 离线资产/tests 的
+// 既存行为）经它冻结到与参考 :777-853 单一的细分主体上。
+// Authored: 兼容 shim，参考无对应物——参考的 ContentIdV1Provider 是 hex +
+// 恒 5 段；两 id 形态并存的登记见 ImdlTreeMetadata::formatVersion 的
+// EQUIVALENCE 注（ImdlTileTree.h）。
+class LegacyContentIdAdapter final : public ContentIdProvider {
+public:
+    LegacyContentIdAdapter()
+        : ContentIdProvider(1, ContentFlags::None)
+    {
+    }
+
+    ImdlContentIdSpec specFromId(std::string const& id) const override
+    {
+        return parseImdlContentId(id);
+    }
+
+    std::string idFromParentAndMultiplier(std::string const& parentId,
+                                          uint32_t multiplier) const override
+    {
+        ImdlContentIdSpec spec = parseImdlContentId(parentId);
+        spec.mult = multiplier;
+        return formatImdlContentId(spec);
+    }
+
+protected:
+    std::string computeId(uint32_t depth, uint32_t i, uint32_t j, uint32_t k,
+                          uint32_t mult) const override
+    {
+        return formatImdlContentId(ImdlContentIdSpec{depth, i, j, k, mult});
+    }
+
+private:
+    char separator() const noexcept override { return '/'; }
+};
+
+LegacyContentIdAdapter const s_legacyContentIdAdapter;
+
+}  // namespace
+
 std::vector<ImdlChildTileProps> computeImdlChildTileProps(
     ImdlTileMetadata const& parent, ImdlTreeMetadata const& root)
 {
-    // Ported from: computeChildTileProps (TileMetadata.ts:777-853).
-    std::vector<ImdlChildTileProps> children;
-    if (parent.isLeaf)
-        return children;
-
-    // Magnification: one child, same volume, doubled multiplier (:785-799).
-    if (parent.sizeMultiplier > 0.0) {
-        double const multiplier = parent.sizeMultiplier * 2.0;
-        ImdlContentIdSpec spec = parseImdlContentId(parent.contentId);
-        spec.mult = static_cast<uint32_t>(multiplier);
-        ImdlChildTileProps child;
-        child.contentId = formatImdlContentId(spec);
-        child.range = parent.range;
-        child.sizeMultiplier = multiplier;
-        child.isLeaf = false;
-        child.maximumSize = static_cast<double>(root.tileScreenSize);  // :795
-        children.push_back(std::move(child));
-        return children;
-    }
-
-    // Sub-divide into 4 (2d) or 8 (3d) children (:801-848).
-    ImdlContentIdSpec parentSpec = parseImdlContentId(parent.contentId);
-    uint32_t const emptyMask = parent.emptySubRangeMask;
-
-    // Model-range rejection (:816-820): only test children when the parent
-    // is not wholly inside the model range.
-    bool testContentRange = !root.contentRange.isNull()
-                            && !root.contentRange.ContainsRange(parent.range);
-
-    for (uint32_t i = 0; i < 2; ++i) {
-        for (uint32_t j = 0; j < 2; ++j) {
-            for (uint32_t k = 0; k < (root.is2d ? 1u : 2u); ++k) {
-                uint32_t const emptyBit = 1u << (i + j * 2 + k * 4);
-                if (0 != (emptyMask & emptyBit))
-                    continue;  // known-empty sub-volume (:826-830)
-
-                dqGeom::Range3d range = parent.range;
-                bisectRange(range, 0, 0 == i);
-                bisectRange(range, 1, 0 == j);
-                if (!root.is2d)
-                    bisectRange(range, 2, 0 == k);
-
-                if (testContentRange && !range.IntersectsRange(root.contentRange))
-                    continue;  // outside model range (:836-840)
-
-                ImdlContentIdSpec childSpec = parentSpec;
-                childSpec.depth = parentSpec.depth + 1;
-                childSpec.i = parentSpec.i * 2 + i;
-                childSpec.j = parentSpec.j * 2 + j;
-                childSpec.k = parentSpec.k * 2 + k;
-
-                ImdlChildTileProps child;
-                child.contentId = formatImdlContentId(childSpec);
-                child.range = range;
-                child.maximumSize = static_cast<double>(root.tileScreenSize);  // :847
-                children.push_back(std::move(child));
-            }
-        }
-    }
-
-    return children;
+    // DanQing legacy 签名：id 形态合同经适配器冻结后走参考 :777-853 的同一
+    // 细分主体（provider 形态 = 本文件上方的 3 参定义）。
+    return computeImdlChildTileProps(parent, s_legacyContentIdAdapter, root);
 }
 
 // ---------------------------------------------------------------------------
@@ -546,11 +845,33 @@ ImdlTileTree::ImdlTileTree(std::string treeId, std::string rootContentId,
     , m_metadata(treeMetadata)
       // Ported from: IModelTileTree constructor (IModelTileTree.ts:390-391) —
       // maxInitialTilesToSkip = params.maxInitialTilesToSkip ?? 0 (DanQing's
-      // offline tilesets carry no such props field → the ?? 0 default);
-      // maxTilesToSkip = IModelApp.tileAdmin.maximumLevelsToSkip.
+      // tree constructor has no props-injection path — the RPC dump props
+      // carry the field but it cannot reach here; see the accessor note in
+      // the header); maxTilesToSkip = TileAdmin.maximumLevelsToSkip.
     , m_maxInitialTilesToSkip(0)
     , m_maxTilesToSkip(TileAdmin::instance().maximumLevelsToSkip())
+    // Ported from: IModelTileTree.ts:397-398 — contentIdProvider =
+    // ContentIdProvider.create(params.options.allowInstancing, tileAdmin,
+    // params.formatVersion). DanQing: allowInstancing = true (the
+    // static-primary derivation, PrimaryTileTree.ts:70 — the animated/
+    // priority/sectionCut carriers don't exist here yet, registered) and
+    // defaultTileOptions (TileOptions{} — TileMetadata.ts:314-331; flags 0xb
+    // for formatVersion 37.0, which is exactly the captured request-key
+    // prefix "-b-" of the RPC dumps).
+    , m_contentIdProvider(treeMetadata.formatVersion != 0
+                              ? ContentIdProvider::create(
+                                    /*allowInstancing=*/true, TileOptions{},
+                                    treeMetadata.formatVersion)
+                              : nullptr)
 {
+    // Ported from: IModelTileTree.ts:405 —
+    // `params.rootTile.contentId = this.contentIdProvider.rootContentId;`
+    // (the props' scheme-agnostic root id — V1 form from the backend — is
+    // overridden with the negotiated scheme's root form; the request key must
+    // match the backend's key domain).
+    if (m_contentIdProvider)
+        rootContentId = m_contentIdProvider->rootContentId();
+
     // Root tile from the tree props (the reference's requestTileTreeProps
     // rootTile; IModelTileTree constructor :396-410). maximumSize =
     // tileScreenSize: the children fill the same value (TileMetadata.ts:795/

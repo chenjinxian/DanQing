@@ -8,6 +8,7 @@
 #pragma once
 
 #include "../Export.h"
+#include "ImdlHeader.h"  // CurrentImdlVersion（TileOptions 缺省值引用）
 #include "Tile.h"
 #include "TileDrawArgs.h"
 #include "TileTree.h"
@@ -42,6 +43,22 @@ struct ImdlTreeMetadata {
     dqGeom::Range3d contentRange;  // model range (empty = unknown)
     uint32_t tileScreenSize = 512;  // TileProps.ts:66 default
     bool is2d = false;
+    // IModelTileTreeProps.formatVersion (TileProps.ts:63) — the maximum
+    // major+minor version the backend supplies ((major<<0x10)|minor).
+    // Consumed by the ImdlTileTree constructor to select the content Id
+    // scheme (ContentIdProvider.create — IModelTileTree.ts:397-398).
+    // 0 = not carried: DanQing's legacy V1 id helpers (parseImdlContentId/
+    // formatImdlContentId — base-10, multiplier omitted when 0) stay in
+    // charge. EQUIVALENCE (registered, §11.10): the reference maps an absent
+    // props.formatVersion to maxMajorVersion = CurrentImdlVersion.Major → V4
+    // (ContentIdProvider.create, TileMetadata.ts:649-651 — formatVersion ?? );
+    // DanQing keeps the legacy path there because its pre-existing id-encoded
+    // tree assembly (PrimaryTileTreeSupplier) and offline assets/tests speak
+    // the legacy id form — switching them would be a breaking id-scheme flip
+    // with no fetcher on the other side. Divergence = legacy-path trees format
+    // ids base-10/4-segment; verification = this header's provider tests +
+    // TileTreeRender pixel locks (legacy) + RpcDumpRender (V4 path).
+    uint32_t formatVersion = 0;
 };
 
 // Content-id components — V1 scheme (ContentIdProvider, TileMetadata.ts:665-674:
@@ -66,8 +83,150 @@ struct DQ_RENDER_EXPORT ImdlChildTileProps {
     // Tile.ts:459-463).
     double maximumSize = 0.0;
 };
+
+// ---------------------------------------------------------------------------
+// ContentFlags / TileOptions / getMaximumMajorTileFormatVersion /
+// ContentIdProvider — the content Id scheme machinery.
+// Ported from: itwinjs-core core/common/src/tile/TileMetadata.ts
+//              (ContentFlags :564-571, TileOptions :86-91 +
+//              defaultTileOptions :314-331, getMaximumMajorTileFormatVersion
+//              :412-427, ContentIdProvider :596-638, ContentIdV1Provider
+//              :665-673, ContentIdV2Provider :680-691, ContentIdV4Provider
+//              :699-713).
+// ---------------------------------------------------------------------------
+
+// Flags controlling how tile content is produced (part of the content Id).
+// Ported from: ContentFlags (TileMetadata.ts:564-571).
+enum class ContentFlags : uint32_t {
+    None = 0,
+    AllowInstancing = 1u << 0,
+    ImprovedElision = 1u << 1,
+    IgnoreAreaPatterns = 1u << 2,
+    ExternalTextures = 1u << 3,
+};
+
+// TileOptions — the subset ContentIdProvider.create consumes. Ported from:
+// TileOptions (TileMetadata.ts:86-91) with the defaultTileOptions defaults
+// (:314-331). §3.4 registered subset adaptation: only the fields the provider
+// reads have a consumer here — the remaining TileOptions fields (useProject-
+// Extents/edgeOptions/…) are carried by their own features' ports.
+struct TileOptions {
+    uint32_t maximumMajorTileFormatVersion = CurrentImdlVersion::Major;
+    bool enableInstancing = true;
+    bool enableImprovedElision = true;
+    bool ignoreAreaPatterns = false;
+    bool enableExternalTextures = true;
+};
+
+// The major tile format version to request: the backend's formatVersion
+// clamped by the app-configured maximum and the currently supported version.
+// Ported from: getMaximumMajorTileFormatVersion (TileMetadata.ts:412-427);
+// formatVersion 0 stands for the reference's `undefined` (backend version
+// unknown — :417's guard).
+uint32_t DQ_RENDER_EXPORT getMaximumMajorTileFormatVersion(
+    uint32_t maxMajorVersion, uint32_t formatVersion);
+
+// ContentIdProvider — content Id composition/parsing for the negotiated tile
+// format scheme. Ported from: ContentIdProvider (TileMetadata.ts:596-638
+// abstract base; concrete methods rootContentId/idFromParentAndMultiplier/
+// specFromId/idFromSpec are virtual in DanQing so the §3.4 legacy-id adapter
+// in computeImdlChildTileProps can substitute the pre-existing id form —
+// the reference providers' behavior is the default implementation).
+class DQ_RENDER_EXPORT ContentIdProvider {
+public:
+    virtual ~ContentIdProvider();
+
+    uint32_t const majorFormatVersion;  // :597
+    ContentFlags const contentFlags;    // :598
+
+    // (:605-607) — computeId(0, 0, 0, 0, 1)
+    virtual std::string rootContentId() const;
+    // (:609-613) — replace the id's last separator component with the
+    // multiplier (hex).
+    virtual std::string idFromParentAndMultiplier(std::string const& parentId,
+                                                  uint32_t multiplier) const;
+    // (:615-627) — split on the scheme separator and parse the trailing five
+    // hex components. Registered divergence: ids with fewer than five
+    // components parse best-effort from the front instead of the reference's
+    // assert (DanQing compiles -fno-exceptions without assert-driven flows;
+    // callers only round-trip provider-produced ids).
+    virtual ImdlContentIdSpec specFromId(std::string const& id) const;
+    // (:629-631)
+    virtual std::string idFromSpec(ImdlContentIdSpec const& spec) const;
+
+    // (:640-661) — scheme selection by the negotiated major version:
+    // 0/1 → V1, 2/3 → V2, ≥4 → V4. `allowInstancing` is the tree options'
+    // allowInstancing (PrimaryTileTree.ts:70 — static-primary derivation).
+    static std::unique_ptr<ContentIdProvider> create(bool allowInstancing,
+                                                     TileOptions const& options,
+                                                     uint32_t formatVersion);
+
+protected:
+    ContentIdProvider(uint32_t majorVersion, ContentFlags flags);
+    virtual char separator() const noexcept = 0;  // :637
+    virtual std::string computeId(uint32_t depth, uint32_t i, uint32_t j,
+                                  uint32_t k, uint32_t mult) const = 0;  // :638
+    // (:633-636) — the five components hex-joined with the scheme separator.
+    std::string join(uint32_t depth, uint32_t i, uint32_t j, uint32_t k,
+                     uint32_t mult) const;
+};
+
+// V1 scheme "depth/i/j/k/multiplier". Ported from: ContentIdV1Provider
+// (TileMetadata.ts:665-673).
+class DQ_RENDER_EXPORT ContentIdV1Provider final : public ContentIdProvider {
+public:
+    explicit ContentIdV1Provider(uint32_t majorVersion);
+
+protected:
+    char separator() const noexcept override;
+    std::string computeId(uint32_t depth, uint32_t i, uint32_t j, uint32_t k,
+                          uint32_t mult) const override;
+};
+
+// V2/V3 scheme "_majorVersion_flags_depth_i_j_k_multiplier". Ported from:
+// ContentIdV2Provider (TileMetadata.ts:680-691).
+class DQ_RENDER_EXPORT ContentIdV2Provider final : public ContentIdProvider {
+public:
+    ContentIdV2Provider(uint32_t majorVersion, bool allowInstancing,
+                        TileOptions const& options);
+
+protected:
+    char separator() const noexcept override;
+    std::string computeId(uint32_t depth, uint32_t i, uint32_t j, uint32_t k,
+                          uint32_t mult) const override;
+
+private:
+    std::string m_prefix;  // _prefix (:681)
+};
+
+// V4+ scheme "-flags-depth-i-j-k-multiplier" (the version lives in the tree
+// Id). Ported from: ContentIdV4Provider (TileMetadata.ts:699-713).
+class DQ_RENDER_EXPORT ContentIdV4Provider final : public ContentIdProvider {
+public:
+    ContentIdV4Provider(bool allowInstancing, TileOptions const& options,
+                        uint32_t majorVersion);
+
+protected:
+    char separator() const noexcept override;
+    std::string computeId(uint32_t depth, uint32_t i, uint32_t j, uint32_t k,
+                          uint32_t mult) const override;
+
+private:
+    std::string m_prefix;  // _prefix (:700)
+};
+
 std::vector<ImdlChildTileProps> DQ_RENDER_EXPORT
 computeImdlChildTileProps(ImdlTileMetadata const& parent,
+                          ImdlTreeMetadata const& root);
+
+// The reference-signature form: the tree's content Id provider feeds child Id
+// composition (:777 parameter order — IModelTile._loadChildren passes
+// tree.contentIdProvider, IModelTile.ts:153-169). Request keys come out in the
+// negotiated scheme (V4 "-flags-depth-i-j-k-multiplier" for the RPC dumps' 37.0
+// domain) — the key domain the captured manifest speaks.
+std::vector<ImdlChildTileProps> DQ_RENDER_EXPORT
+computeImdlChildTileProps(ImdlTileMetadata const& parent,
+                          ContentIdProvider const& idProvider,
                           ImdlTreeMetadata const& root);
 
 // Parse/format a V1 content id ("<depth>/<i>/<j>/<k>" [+ "/<mult>"]).
@@ -150,11 +309,15 @@ public:
     /// How many levels may be skipped past while selecting until
     /// maxInitialTilesToSkip is exhausted (the SelectParent protocol's
     /// per-tree budgets).
-    /// Ported from: IModelTileTree.maxInitialTilesToSkip / maxTilesToSkip
+    /// Ported from: IModelTree.maxInitialTilesToSkip / maxTilesToSkip
     /// (IModelTileTree.ts:361-362 — maxInitialTilesToSkip = tree-props field
     /// ?? 0 (:390); maxTilesToSkip = TileAdmin.maximumLevelsToSkip (:391)).
-    /// DanQing's offline tilesets carry no maxInitialTilesToSkip field → the
-    /// props default 0 applies.
+    /// DanQing's tree constructor has no props-injection path (the reference
+    /// receives the parsed props via IModelTileTreeParams) — the members exist
+    /// (this class) but the props values cannot reach them, so the ?? 0
+    /// default holds even where the RPC dump props carry maxInitialTilesToSkip
+    /// (e.g. compatseed 6 — parsed by DumpTileTreeProps, registered
+    /// unconsumed). The carrier/injection path is a later-milestone item.
     uint32_t getMaxInitialTilesToSkip() const noexcept
     {
         return m_maxInitialTilesToSkip;
@@ -164,9 +327,14 @@ public:
     TileVisibility computeVisibility(TileDrawArgs& args, Tile* tile) override;
 
     // Child computation for a tile of this tree (computeImdlChildTileProps
-    // with this tree's metadata; IModelTile._loadChildren :153-169).
+    // with this tree's metadata + content Id provider; IModelTile._loadChildren
+    // :153-169 passes tree.contentIdProvider — the negotiated scheme's request
+    // keys; the legacy 2-arg form keeps the pre-provider id contract).
     std::vector<ImdlChildTileProps> childPropsFor(ImdlTileMetadata const& parent) const
     {
+        if (m_contentIdProvider)
+            return computeImdlChildTileProps(parent, *m_contentIdProvider,
+                                             m_metadata);
         return computeImdlChildTileProps(parent, m_metadata);
     }
 
@@ -180,6 +348,10 @@ private:
     // SelectParent 协议的树级跳级预算（IModelTileTree.ts:361-362/:390-391）。
     uint32_t m_maxInitialTilesToSkip = 0;  // :390 — props ?? 0
     uint32_t m_maxTilesToSkip = 1;         // :391 — TileAdmin.maximumLevelsToSkip
+    // The tree's content Id scheme (:397-398 contentIdProvider.create) — null
+    // while the tree props carry no formatVersion (DanQing's legacy V1 id
+    // helpers path, see ImdlTreeMetadata::formatVersion).
+    std::unique_ptr<ContentIdProvider> const m_contentIdProvider;
 };
 
 END_DQ_RENDER_NAMESPACE
