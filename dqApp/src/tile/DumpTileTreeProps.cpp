@@ -58,7 +58,8 @@ bool parseRange3d(dumpjson::JsonValue const& json, dqGeom::Range3d& out)
     return true;
 }
 
-bool parseManifest(std::string const& jsonText, DumpManifest& out)
+bool parseManifest(std::string const& jsonText, DumpManifest& out,
+                   std::optional<DumpIModelInfo>* iModelInfoOut)
 {
     auto doc = dumpjson::parseJsonDocument(jsonText);
     if (!doc || doc->type != dumpjson::JsonValue::Type::Object)
@@ -137,6 +138,30 @@ bool parseManifest(std::string const& jsonText, DumpManifest& out)
                 return false;
         }
     }
+
+    // provenance.iModel → iModel 级元数据（M-E Task 2）。优雅语义：
+    // provenance 缺失 / iModel 缺失 / iModel 非对象 → 不置值（nullopt——
+    // 采集工具未写字段，非损坏）；iModel 为对象 → 消费其内可用的
+    // name（字符串）与 extents（Range3dProps {low,high}——与 dump 内全部
+    // 范围域同构）——extents 坏形态（非对象/low-high 缺轴）忽略该字段。
+    if (iModelInfoOut) {
+        if (dumpjson::JsonValue const* provenance = doc->find("provenance")) {
+            if (provenance->type == dumpjson::JsonValue::Type::Object) {
+                if (dumpjson::JsonValue const* imodel = provenance->find("iModel")) {
+                    if (imodel->type == dumpjson::JsonValue::Type::Object) {
+                        DumpIModelInfo info;
+                        if (dumpjson::JsonValue const* name = imodel->find("name")) {
+                            if (name->type == dumpjson::JsonValue::Type::String)
+                                info.name = name->str;
+                        }
+                        if (dumpjson::JsonValue const* extents = imodel->find("extents"))
+                            parseRange3d(*extents, info.extents);
+                        *iModelInfoOut = std::move(info);
+                    }
+                }
+            }
+        }
+    }
     return true;
 }
 
@@ -151,7 +176,7 @@ std::optional<DumpManifest> loadDumpManifest(std::string const& dumpRoot)
         return std::nullopt;
     DumpManifest manifest;
     if (!parseManifest(
-            std::string(bytes.begin(), bytes.end()), manifest))
+            std::string(bytes.begin(), bytes.end()), manifest, nullptr))
         return std::nullopt;
     return manifest;
 }
@@ -162,12 +187,16 @@ std::optional<DumpManifest> loadDumpManifest(std::string const& dumpRoot)
 
 std::optional<DumpTileTreeProps> DumpTileTreeProps::load(std::string const& dumpRoot)
 {
-    auto manifest = loadDumpManifest(dumpRoot);
-    if (!manifest)
+    bool ok = false;
+    std::vector<uint8_t> const bytes =
+        readFileBytes(joinPath(dumpRoot, "manifest.json"), &ok);
+    if (!ok)
         return std::nullopt;
     DumpTileTreeProps props;
+    if (!parseManifest(std::string(bytes.begin(), bytes.end()), props.m_manifest,
+                       &props.m_iModelInfo))
+        return std::nullopt;
     props.m_dumpRoot = dumpRoot;
-    props.m_manifest = std::move(*manifest);
     return props;
 }
 

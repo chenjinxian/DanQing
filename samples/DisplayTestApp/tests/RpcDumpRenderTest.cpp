@@ -45,15 +45,13 @@
 
 #include "View3DInventor.h"
 
+#include "DumpMount.h"  // 多树全量挂载入口（M-E Task 2——manifest trees 迭代 + fit 并集）
+
 #include <dqApp/Application.h>
 #include <dqApp/Viewport.h>
 #include <dqApp/StandardView.h>
 #include <dqApp/ViewTool.h>
 #include <dqApp/ViewState.h>
-#include <dqApp/tile/DumpTileFetcher.h>
-#include <dqApp/tile/DumpTileTreeProps.h>
-#include <dqApp/tile/SimpleTileTreeReference.h>
-#include <dqApp/tile/TiledGraphicsProvider.h>
 #include <dqRender/tile/ImdlTileTree.h>
 #include <dqRender/tile/TileAdmin.h>
 
@@ -158,27 +156,6 @@ void countGraphicsReady(dqRender::Tile* tile, long& ready, long& total)
         countGraphicsReady(child, ready, total);
 }
 
-// TiledGraphicsProvider 装树（TileTreeRenderTest 的 TreeSetProvider 同款——
-// 应用通道 Viewport.ts:1729-1732 addTiledGraphicsProvider）。
-class DumpTreeProvider final : public dqApp::TiledGraphicsProvider {
-public:
-    void addTree(dqRender::TileTree* tree)
-    {
-        m_refs.push_back(std::make_unique<dqApp::SimpleTileTreeReference>(tree));
-    }
-
-    void forEachTileTreeRef(
-        dqApp::Viewport& /*viewport*/,
-        std::function<void(dqApp::TileTreeReference&)> const& func) const override
-    {
-        for (auto& ref : m_refs)
-            func(*ref);
-    }
-
-private:
-    std::vector<std::unique_ptr<dqApp::SimpleTileTreeReference>> m_refs;
-};
-
 void dumpBmp(std::vector<uint8_t> const& frame, uint32_t w, uint32_t h,
              char const* path)
 {
@@ -210,6 +187,9 @@ void dumpBmp(std::vector<uint8_t> const& frame, uint32_t w, uint32_t h,
 
 // ---------------------------------------------------------------------------
 // 像素锁：mirukuru-v1 真后端瓦上屏（内容存活 + WHERE + 消费计数）。
+// 装载经 DumpMount.h 多树全量挂载入口（M-E Task 2：manifest trees 迭代，
+// 每树一 TileTree——本 dump 2 树全装，0x28 空树随之入 provider，参与
+// fit 并集时以其 contentRange 为 null 跳过）。
 // ---------------------------------------------------------------------------
 // Authored: 见文件头。该瓦无 instances 修饰、顶点量化域 = iModel 坐标域——
 // 现有 LUT 消费链的忠实上屏。判据：
@@ -231,66 +211,50 @@ TEST(RpcDumpRender, MirukuruRendersRealBackendTile)
         ASSERT_TRUE(app.Startup(opts));
     }
 
-    // 1. dump 装载 + DumpTileFetcher 注入（DI 缝，§8.4；替换 Startup 的
-    //    FileTileFetcher。gtest_discover_tests 逐测试独立进程——不回溢其他
-    //    ctest 条目；本文件注册在 TileTreeRenderTest 之后）。
-    auto manifest = dqApp::loadDumpManifest(dumpRoot);
-    ASSERT_TRUE(manifest.has_value()) << "manifest load failed: " << dumpRoot;
-    ASSERT_EQ(2u, manifest->trees.size());  // mirukuru-v1：2 树 1 瓦
-    ASSERT_EQ(1u, manifest->tiles.size());
-
-    auto fetcher = std::make_unique<dqApp::DumpTileFetcher>(dumpRoot);
-    ASSERT_TRUE(fetcher->isValid());
-    dqRender::TileAdmin::instance().setFetcher(std::move(fetcher));
-
-    auto treeProps = dqApp::DumpTileTreeProps::load(dumpRoot);
-    ASSERT_TRUE(treeProps.has_value());
-    std::string const treeId = manifest->trees[0].treeId;
-    auto props = treeProps->byTreeId(treeId);
-    ASSERT_TRUE(props.has_value()) << "byTreeId failed: " << treeId;
-    // 前置（资产自洽，非回归断言）：RPC dump 携带 formatVersion——M-D(3) 起
-    // 消费（ContentIdProvider V4 请求键形态的切换依据，IModelTileTree.ts:396）。
-    ASSERT_EQ(2424832u, props->metadata.formatVersion);  // 37.0（major<<16）
-
-    // 2. 树装配 + 请求键锁（IModelTileTree.ts:398 rootContentId 覆写——根键
-    //    必须是 manifest 的 depth-0 瓦键，否则 fetch NotFound）。
-    std::unique_ptr<dqRender::ImdlTileTree> tree =
-        std::make_unique<dqRender::ImdlTileTree>(
-            props->id, props->rootTile.contentId, props->rootTile.range,
-            props->metadata);
-    {
-        ASSERT_EQ("-b-0-0-0-0-1", manifest->tiles[0].contentId);
-        auto* root = static_cast<dqRender::ImdlTile*>(tree->getRootTile());
-        ASSERT_NE(root, nullptr);
-        EXPECT_EQ(manifest->tiles[0].contentId, root->getContentId())
-            << "root request key must be the manifest key (IModelTileTree.ts:398 "
-               "rootContentId override)";
-    }
-
-    // 3. 装树（TiledGraphicsProvider 应用通道）+ 取景 + 泵帧。
     Gui::View3DInventor view(nullptr, nullptr, nullptr);
     view.resize(1000, 700);
     view.show();
     spin(400);
 
-    DumpTreeProvider provider;
-    provider.addTree(tree.get());
-    view.getUeViewport()->AddTiledGraphicsProvider(&provider);
-    ASSERT_TRUE(view.getUeViewport()->HasTiledGraphicsProvider(&provider));
-    tree->setRenderSystem(view.getUeViewport()->renderSystem());
+    // 1. 多树全量装载（DumpMount.h 挂载入口：manifest + props + fetcher
+    //    注入 + 每树 ImdlTileTree 装配——树序 == manifest trees[] 序）。
+    auto mount = dta::mountDump(*view.getUeViewport(), dumpRoot);
+    ASSERT_TRUE(mount.has_value()) << "mount failed: " << dumpRoot;
+    ASSERT_EQ(2u, mount->manifest.trees.size());  // mirukuru-v1：2 树 1 瓦
+    ASSERT_EQ(1u, mount->manifest.tiles.size());
+    ASSERT_EQ(mount->trees.size(), mount->manifest.trees.size());
+    std::string const treeId = mount->manifest.trees[0].treeId;
+    auto props = mount->props->byTreeId(treeId);
+    ASSERT_TRUE(props.has_value()) << "byTreeId failed: " << treeId;
+    // 前置（资产自洽，非回归断言）：RPC dump 携带 formatVersion——M-D(3) 起
+    // 消费（ContentIdProvider V4 请求键形态的切换依据，IModelTileTree.ts:396）。
+    ASSERT_EQ(2424832u, props->metadata.formatVersion);  // 37.0（major<<16）
+
+    // 2. 请求键锁（IModelTileTree.ts:398 rootContentId 覆写——根键必须是
+    //    manifest 的 depth-0 瓦键，否则 fetch NotFound）。trees[0] = 0x1c。
+    {
+        ASSERT_EQ("-b-0-0-0-0-1", mount->manifest.tiles[0].contentId);
+        auto* root =
+            static_cast<dqRender::ImdlTile*>(mount->trees[0]->getRootTile());
+        ASSERT_NE(root, nullptr);
+        EXPECT_EQ(mount->manifest.tiles[0].contentId, root->getContentId())
+            << "root request key must be the manifest key (IModelTileTree.ts:398 "
+               "rootContentId override)";
+    }
+
+    // 3. 装树（TiledGraphicsProvider 应用通道）+ 取景 + 泵帧。
+    view.getUeViewport()->AddTiledGraphicsProvider(&mount->provider);
+    ASSERT_TRUE(view.getUeViewport()->HasTiledGraphicsProvider(&mount->provider));
 
     {
         auto* view3d = view.getUeViewport()->GetView()->AsViewState3d();
         ASSERT_NE(view3d, nullptr);
-        // 取景 = 树 contentRange（iModel 坐标域——瓦顶点同域，见文件头登记）
-        // 外扩 30%（先验决定：对象完整居中、四角留背景——非事后调参）。
-        dqGeom::Range3d const& cr = props->metadata.contentRange;
-        double const dx = 0.3 * (cr.high.x - cr.low.x);
-        double const dy = 0.3 * (cr.high.y - cr.low.y);
-        double const dz = 0.3 * (cr.high.z - cr.low.z) + 1.0;  // +1：z 向亚厘米薄盒——给 Iso 视线留深度
-        view3d->LookAtVolume(dqGeom::Range3d::CreateXYZXYZ(
-            cr.low.x - dx, cr.low.y - dy, cr.low.z - dz,
-            cr.high.x + dx, cr.high.y + dy, cr.high.z + dz));
+        // 取景 = fitRange（iModelInfo 缺省——本 dump provenance 无 iModel；
+        // 回退树 contentRange 并集 = 0x1c 单树域，0x28 空树 null range 跳过），
+        // 30% 外扩 + zEps=1.0（z 向亚厘米薄盒给 Iso 视线留深度——M-D(3)
+        // 既有取景参数，DumpMount.h 归并）。
+        view3d->LookAtVolume(
+            dta::mountDumpFitVolume(mount->fitRange, /*zEps=*/1.0));
         view.getUeViewport()->InvalidateController();
     }
     {
@@ -316,7 +280,8 @@ TEST(RpcDumpRender, MirukuruRendersRealBackendTile)
         spin(100);
         readyTiles = 0;
         totalTiles = 0;
-        countGraphicsReady(tree->getRootTile(), readyTiles, totalTiles);
+        for (auto& t : mount->trees)
+            countGraphicsReady(t->getRootTile(), readyTiles, totalTiles);
         if (readyTiles >= 1 && i >= 8)  // 瓦就绪且至少跑了几帧重绘
             break;
     }
@@ -374,7 +339,7 @@ TEST(RpcDumpRender, MirukuruRendersRealBackendTile)
     EXPECT_GE(readyTiles, 1) << "the replayed tile never produced graphics";
     EXPECT_GE(dispatched, 1u) << "expected the manifest tile to be dispatched";
 
-    view.getUeViewport()->DropTiledGraphicsProvider(&provider);
+    view.getUeViewport()->DropTiledGraphicsProvider(&mount->provider);
     view.close();
     spin(200);
 }
@@ -410,65 +375,46 @@ TEST(RpcDumpRender, CompatSeedReplaysLodChainToGraphicsReady)
         ASSERT_TRUE(app.Startup(opts));
     }
 
-    auto manifest = dqApp::loadDumpManifest(dumpRoot);
-    ASSERT_TRUE(manifest.has_value()) << "manifest load failed: " << dumpRoot;
-    ASSERT_EQ(1u, manifest->trees.size());  // compatseed-v1：1 树 7 瓦
-    ASSERT_EQ(7u, manifest->tiles.size());
-
-    auto fetcher = std::make_unique<dqApp::DumpTileFetcher>(dumpRoot);
-    ASSERT_TRUE(fetcher->isValid());
-    dqRender::TileAdmin::instance().setFetcher(std::move(fetcher));
-
-    auto treeProps = dqApp::DumpTileTreeProps::load(dumpRoot);
-    ASSERT_TRUE(treeProps.has_value());
-    std::string const treeId = manifest->trees[0].treeId;
-    auto props = treeProps->byTreeId(treeId);
-    ASSERT_TRUE(props.has_value()) << "byTreeId failed: " << treeId;
-    ASSERT_EQ(2424832u, props->metadata.formatVersion);  // 37.0（major<<16）
-
-    std::unique_ptr<dqRender::ImdlTileTree> tree =
-        std::make_unique<dqRender::ImdlTileTree>(
-            props->id, props->rootTile.contentId, props->rootTile.range,
-            props->metadata);
-
-    // ① 请求键覆写（:398）：根键 = manifest 的 depth-0 条目。
-    {
-        std::string rootKey;
-        for (auto const& t : manifest->tiles)
-            if (t.treeId == treeId && t.contentId.rfind("-b-0-0-0-0-1", 0) == 0)
-                rootKey = t.contentId;
-        ASSERT_FALSE(rootKey.empty()) << "no depth-0 entry in manifest";
-        auto* root = static_cast<dqRender::ImdlTile*>(tree->getRootTile());
-        ASSERT_NE(root, nullptr);
-        EXPECT_EQ(rootKey, root->getContentId())
-            << "root request key must be the manifest key (IModelTileTree.ts:398 "
-               "rootContentId override)";
-        EXPECT_EQ(treeId + "/" + rootKey, tree->contentUrl(rootKey));
-    }
-
     Gui::View3DInventor view(nullptr, nullptr, nullptr);
     view.resize(1000, 700);
     view.show();
     spin(400);
 
-    DumpTreeProvider provider;
-    provider.addTree(tree.get());
-    view.getUeViewport()->AddTiledGraphicsProvider(&provider);
-    ASSERT_TRUE(view.getUeViewport()->HasTiledGraphicsProvider(&provider));
-    tree->setRenderSystem(view.getUeViewport()->renderSystem());
+    // 多树全量装载（本 dump 1 树——入口行为与多树同码路径）。
+    auto mount = dta::mountDump(*view.getUeViewport(), dumpRoot);
+    ASSERT_TRUE(mount.has_value()) << "mount failed: " << dumpRoot;
+    ASSERT_EQ(1u, mount->manifest.trees.size());  // compatseed-v1：1 树 7 瓦
+    ASSERT_EQ(7u, mount->manifest.tiles.size());
+    std::string const treeId = mount->manifest.trees[0].treeId;
+    auto props = mount->props->byTreeId(treeId);
+    ASSERT_TRUE(props.has_value()) << "byTreeId failed: " << treeId;
+    ASSERT_EQ(2424832u, props->metadata.formatVersion);  // 37.0（major<<16）
+
+    // ① 请求键覆写（:398）：根键 = manifest 的 depth-0 条目。
+    {
+        std::string rootKey;
+        for (auto const& t : mount->manifest.tiles)
+            if (t.treeId == treeId && t.contentId.rfind("-b-0-0-0-0-1", 0) == 0)
+                rootKey = t.contentId;
+        ASSERT_FALSE(rootKey.empty()) << "no depth-0 entry in manifest";
+        auto* root =
+            static_cast<dqRender::ImdlTile*>(mount->trees[0]->getRootTile());
+        ASSERT_NE(root, nullptr);
+        EXPECT_EQ(rootKey, root->getContentId())
+            << "root request key must be the manifest key (IModelTileTree.ts:398 "
+               "rootContentId override)";
+        EXPECT_EQ(treeId + "/" + rootKey, mount->trees[0]->contentUrl(rootKey));
+    }
+
+    view.getUeViewport()->AddTiledGraphicsProvider(&mount->provider);
+    ASSERT_TRUE(view.getUeViewport()->HasTiledGraphicsProvider(&mount->provider));
 
     {
         auto* view3d = view.getUeViewport()->GetView()->AsViewState3d();
         ASSERT_NE(view3d, nullptr);
-        // 取景 = 树 contentRange（iModel 坐标域——instances 修好后瓦几何的
-        // 落点；TD-25 前几何在原点附近不上屏，见本锁头注释）。
-        dqGeom::Range3d const& cr = props->metadata.contentRange;
-        double const dx = 0.3 * (cr.high.x - cr.low.x);
-        double const dy = 0.3 * (cr.high.y - cr.low.y);
-        double const dz = 0.3 * (cr.high.z - cr.low.z);
-        view3d->LookAtVolume(dqGeom::Range3d::CreateXYZXYZ(
-            cr.low.x - dx, cr.low.y - dy, cr.low.z - dz,
-            cr.high.x + dx, cr.high.y + dy, cr.high.z + dz));
+        // 取景 = fitRange（树 contentRange 并集——单树即其域；iModelInfo 缺省
+        // 回退面，instances60/本 dump 实态），30% 外扩（M-D(3) 既有参数）。
+        view3d->LookAtVolume(dta::mountDumpFitVolume(mount->fitRange));
         view.getUeViewport()->InvalidateController();
     }
     {
@@ -494,7 +440,8 @@ TEST(RpcDumpRender, CompatSeedReplaysLodChainToGraphicsReady)
         spin(100);
         readyTiles = 0;
         totalTiles = 0;
-        countGraphicsReady(tree->getRootTile(), readyTiles, totalTiles);
+        for (auto& t : mount->trees)
+            countGraphicsReady(t->getRootTile(), readyTiles, totalTiles);
         if (readyTiles >= 2 && i >= 8)
             break;
     }
@@ -519,11 +466,12 @@ TEST(RpcDumpRender, CompatSeedReplaysLodChainToGraphicsReady)
     // ② 字节回放完整性：链上瓦按 manifest byteLength 精确回放（fetch 的
     //    byteLength 不符走 onError → 瓦 NotFound → graphics 缺失——③的失败
     //    即含此因；这里再直接核对已就绪瓦的内容范围来自真实字节）。
-    auto* root = static_cast<dqRender::ImdlTile*>(tree->getRootTile());
+    auto* root =
+        static_cast<dqRender::ImdlTile*>(mount->trees[0]->getRootTile());
     ASSERT_NE(root, nullptr);
     EXPECT_TRUE(root->hasGraphics()) << "root tile (-b-0) has no graphics";
 
-    view.getUeViewport()->DropTiledGraphicsProvider(&provider);
+    view.getUeViewport()->DropTiledGraphicsProvider(&mount->provider);
     view.close();
     spin(200);
 }
