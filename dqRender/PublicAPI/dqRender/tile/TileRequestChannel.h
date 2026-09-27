@@ -113,7 +113,9 @@ public:
     /// must also be reachable after cancel() released the tile hook
     /// (TileRequest.ts:144-145) — the active set is that handle (the mirror
     /// of _active.add, TileRequestChannel.ts:314). Consumed by
-    /// TileAdmin::deliverTileContent's cancel-drop path.
+    /// TileAdmin::deliverTileContent's cancel-drop path. (The cancel walks it
+    /// serves landed in M-C Task 3: swapPending double-buffer + users-empty
+    /// cancel + forgetUser withdrawal.)
     TileRequest* findActiveRequestForTile(Tile& tile);
 
 private:

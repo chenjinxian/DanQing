@@ -148,7 +148,18 @@ struct DQ_RENDER_EXPORT ImdlEdgeTable {
 // CompactEdges.ts indexedEdgeParamsFromCompactEdges）的产物字节在 TS 由 GC
 // 持有（:91/:97 new Uint8Array），C++ 由下方两个 owned 向量持有、视图指入
 // 其中——vector move 只转移堆缓冲，视图保持有效（parseImdlEdges 按值返回链）。
+// 拷贝禁用（Task 6 评审④，M-C 收口）：拷贝会令新对象的 indices/edges.data
+// 视图仍指入**被拷贝方**的 owned 向量——被拷贝方是临时对象时即悬空。唯一
+// 消费链 parseImdlEdges（TilesetJson.h:596 out.indexed = std::move(ix)）与
+// indexedEdgeParamsFromCompactEdges（CompactEdges.cpp:130 return out）均走
+// move；移动转移堆缓冲不改 pointee 地址，视图跨 move 有效。
 struct DQ_RENDER_EXPORT ImdlIndexedEdgeParams {
+    ImdlIndexedEdgeParams() = default;
+    ImdlIndexedEdgeParams(ImdlIndexedEdgeParams const&) = delete;
+    ImdlIndexedEdgeParams& operator=(ImdlIndexedEdgeParams const&) = delete;
+    ImdlIndexedEdgeParams(ImdlIndexedEdgeParams&&) = default;
+    ImdlIndexedEdgeParams& operator=(ImdlIndexedEdgeParams&&) = default;
+
     ImdlByteView indices;
     ImdlEdgeTable edges;
     // compact 展开产物所有权（直取形态为空——视图指入 doc.binary）。

@@ -81,9 +81,13 @@ void TileRequest::cancel()
     // · notify() (:134-139) invokes TileUser.onRequestStateChanged — the
     //   Viewport scene-invalidation hook (Viewport.ts:3082-3084). DanQing's
     //   TileUser has no such hook; scene invalidation rides the
-    //   TileAdmin.onTileLoad event (Viewport ctor wiring). Unobservable in
-    //   DanQing's subset: the users-empty cancel loops iterate empty sets and
-    //   the forgetUser path's sole user is the departing one.
+    //   TileAdmin.onTileLoad event (Viewport ctor wiring). M-C Task 3 landed
+    //   the cancel walks that reach this path (swapPending's previously-pending
+    //   users-empty cancel + active users-empty cancel + forgetUser's sole-user
+    //   withdrawal, TileRequestChannel.ts:242-253 / TileAdmin.ts:928-940), so
+    //   the user set here is no longer necessarily empty — the notify() no-op
+    //   adaptation itself stays registered (no onRequestStateChanged hook to
+    //   invoke; the reference uses it only for scene invalidation).
     // · onActiveRequestCanceled (:127-128) accumulates backend cancellations
     //   for IPC channels (ElementGraphicsChannel) — DanQing's polling fetcher
     //   has no such channel subclass; the base is a no-op
