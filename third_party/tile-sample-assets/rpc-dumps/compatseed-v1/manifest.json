@@ -1,0 +1,103 @@
+{
+  "provenance": {
+    "pageHref": "http://localhost:3000/",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7977.54 Electron/44.0.0 Safari/537.36",
+    "formatVersion": 2424832,
+    "seed": "CompatibilityTestSeed.bim",
+    "seedPath": "D:\\Github\\itwinjs-core\\test-apps\\display-test-app\\assets\\CompatibilityTestSeed.bim",
+    "collected": "2026-09-27T07:58:34.749Z",
+    "itwinjsCommit": "7e57d0182ee375e34f3f1be840bbc623c6776e04",
+    "iModelId": "048a431f-0398-4091-acbd-c92657680797",
+    "changesetId": "",
+    "tool": "danqing-rpc-tools capture.mjs"
+  },
+  "stats": {
+    "trees": 1,
+    "tiles": 7,
+    "dupTiles": 0,
+    "dupTrees": 0,
+    "bytes": 71432
+  },
+  "trees": [
+    {
+      "treeId": "25_1d-E:6_0x1c",
+      "iModelId": "048a431f-0398-4091-acbd-c92657680797",
+      "formatVersion": 2424832,
+      "byteLength": 688,
+      "file": "files/5.json",
+      "propsFile": "files/5.json"
+    }
+  ],
+  "tiles": [
+    {
+      "treeId": "25_1d-E:6_0x1c",
+      "contentId": "-b-6-0-0-0-1",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "048a431f-0398-4091-acbd-c92657680797",
+      "changesetId": "",
+      "byteLength": 25152,
+      "sha256": "6a45f4345b81c26ecf7518b024f29e44cfc9fe079cf5c56c81688004638b6340",
+      "file": "files/6.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x1c",
+      "contentId": "-b-5-0-0-0-1",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "048a431f-0398-4091-acbd-c92657680797",
+      "changesetId": "",
+      "byteLength": 15720,
+      "sha256": "c28a61daedeb4776bef6b878e406647f8145fe3aae560381098bad548d59a304",
+      "file": "files/7.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x1c",
+      "contentId": "-b-4-0-0-0-1",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "048a431f-0398-4091-acbd-c92657680797",
+      "changesetId": "",
+      "byteLength": 9068,
+      "sha256": "f9eac2107f6bbb22a415cf1fc97cee3469bfd560a140775199551f390023e4dd",
+      "file": "files/8.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x1c",
+      "contentId": "-b-3-0-0-0-1",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "048a431f-0398-4091-acbd-c92657680797",
+      "changesetId": "",
+      "byteLength": 6788,
+      "sha256": "e77650f0fb9a22803e97551c396771bd3b85062ee4a82dd986ba5896b58bc6eb",
+      "file": "files/9.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x1c",
+      "contentId": "-b-2-0-0-0-1",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "048a431f-0398-4091-acbd-c92657680797",
+      "changesetId": "",
+      "byteLength": 5200,
+      "sha256": "3575156092db32e2690001abe3436c17638d3e17d3154edb0ac6ffcdc37175cc",
+      "file": "files/10.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x1c",
+      "contentId": "-b-1-0-0-0-1",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "048a431f-0398-4091-acbd-c92657680797",
+      "changesetId": "",
+      "byteLength": 5200,
+      "sha256": "b77eef122ec520c40a8b65fa91b773c8ce7bc50c88a5143d348e9ad3b9c4f32e",
+      "file": "files/11.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x1c",
+      "contentId": "-b-0-0-0-0-1",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "048a431f-0398-4091-acbd-c92657680797",
+      "changesetId": "",
+      "byteLength": 4304,
+      "sha256": "1a127baf00dc484b42cfd15d85f65478fe7e5a168d61790297c4cc47917db721",
+      "file": "files/12.imdl"
+    }
+  ]
+}

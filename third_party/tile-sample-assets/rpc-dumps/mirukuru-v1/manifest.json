@@ -1,0 +1,49 @@
+{
+  "provenance": {
+    "pageHref": "http://localhost:3000/",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7977.54 Electron/44.0.0 Safari/537.36",
+    "seed": "mirukuru.ibim",
+    "seedPath": "D:\\Github\\itwinjs-core\\test-apps\\display-test-app\\assets\\mirukuru.ibim",
+    "collected": "2026-09-27T07:59:09.826Z",
+    "itwinjsCommit": "7e57d0182ee375e34f3f1be840bbc623c6776e04",
+    "tool": "danqing-rpc-tools capture.mjs",
+    "formatVersion": 2424832
+  },
+  "stats": {
+    "trees": 2,
+    "tiles": 1,
+    "dupTiles": 0,
+    "dupTrees": 0,
+    "bytes": 1652
+  },
+  "trees": [
+    {
+      "treeId": "25_1d-E:6_0x1c",
+      "iModelId": "20f0f4a0-64bb-4b2b-b060-11c25024d986",
+      "formatVersion": 2424832,
+      "byteLength": 713,
+      "file": "files/4.json",
+      "propsFile": "files/4.json"
+    },
+    {
+      "treeId": "25_1d-E:6_0x28",
+      "iModelId": "20f0f4a0-64bb-4b2b-b060-11c25024d986",
+      "formatVersion": 2424832,
+      "byteLength": 531,
+      "file": "files/5.json",
+      "propsFile": "files/5.json"
+    }
+  ],
+  "tiles": [
+    {
+      "treeId": "25_1d-E:6_0x1c",
+      "contentId": "-b-0-0-0-0-1",
+      "guid": "first_9423750c2e439c14",
+      "iModelId": "20f0f4a0-64bb-4b2b-b060-11c25024d986",
+      "changesetId": "",
+      "byteLength": 1652,
+      "sha256": "fdecac50e7f291aaf8f9add70a193a69722cd7d146d4cb0efdf0c516b1fe01aa",
+      "file": "files/6.imdl"
+    }
+  ]
+}
