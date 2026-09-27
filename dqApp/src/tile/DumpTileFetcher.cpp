@@ -68,9 +68,14 @@ void DumpTileFetcher::fetch(std::string const& url, dqRender::Tile& tile,
     entry.onComplete = std::move(onComplete);
     entry.onError = std::move(onError);
 
+    // 请求轨迹（对账锁消费面）：每个 fetch() 调用一条，结果归类随分支落定。
+    DumpRequestRecord record;
+    record.outcome = DumpFetchOutcome::Error;
+
     if (!m_valid) {
         entry.ok = false;
         entry.error = "DumpTileFetcher: no manifest loaded (dump root: " + m_dumpRoot + ")";
+        m_requestLog.push_back(std::move(record));
         m_completed.push_back(std::move(entry));
         return;
     }
@@ -82,11 +87,15 @@ void DumpTileFetcher::fetch(std::string const& url, dqRender::Tile& tile,
     if (parts.size() < 2) {
         entry.ok = false;
         entry.error = "DumpTileFetcher: url does not carry <treeId>/<contentId>: " + url;
+        record.contentId = url;  // 原样留痕（无法拆键的畸形 url）
+        m_requestLog.push_back(std::move(record));
         m_completed.push_back(std::move(entry));
         return;
     }
     std::string const& treeId = parts[parts.size() - 2];
     std::string const& contentId = parts[parts.size() - 1];
+    record.treeId = treeId;
+    record.contentId = contentId;
 
     // manifest 查表（线性——dump 规模为十数量级条目）。
     DumpManifestTileEntry const* tileEntry = nullptr;
@@ -98,9 +107,11 @@ void DumpTileFetcher::fetch(std::string const& url, dqRender::Tile& tile,
     }
     if (!tileEntry) {
         // NotFound 语义（前端请求键未采集进 dump——上层瓦片按请求失败处置）。
+        record.outcome = DumpFetchOutcome::NotFound;
         entry.ok = false;
         entry.error = "DumpTileFetcher: content not found in dump manifest: "
                       + treeId + "/" + contentId;
+        m_requestLog.push_back(std::move(record));
         m_completed.push_back(std::move(entry));
         return;
     }
@@ -121,10 +132,13 @@ void DumpTileFetcher::fetch(std::string const& url, dqRender::Tile& tile,
                       + contentId + " (manifest " + std::to_string(tileEntry->byteLength)
                       + ", disk " + std::to_string(bytes.size()) + ")";
     } else {
+        record.outcome = DumpFetchOutcome::Completed;
+        record.bytes = static_cast<uint64_t>(bytes.size());
         entry.ok = true;
         entry.data = std::move(bytes);
     }
 
+    m_requestLog.push_back(std::move(record));
     m_completed.push_back(std::move(entry));
 }
 

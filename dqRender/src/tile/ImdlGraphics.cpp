@@ -317,11 +317,13 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
         // "instances" → InstancedGraphicParams.fromProps）+ createPrimitiveGraphic
         //（:317-321 system.createRenderGraphic(geometry, mods.instances)）+
         // webgl System.ts:577-590（InstanceBuffers.fromParams →
-        // MeshGraphic.create(geom, buffers)）。parseInstances 的归零语义
-        //（ParseImdlDocument.ts:1045-1087）：count<=0 / transformCenter 长度
-        // !=3 / featureIds / transforms bufferView 缺失 → 无实例化（按原有几何
-        // 绘制）；transforms 字节数 % (12*4) != 0 的参考 dev assert 在 C++
-        // 侧为显式防御（跳过实例化并 trace）。
+        // MeshGraphic.create(geom, buffers)）。消费点复现的归零语义
+        //（ParseImdlDocument.ts:1045-1087 的可达子集）：count<=0 + 三
+        // bufferView 缺失/尺寸不符（featureIds 3B/实例、transforms 48B/实例
+        // = 参考 :1060-1071 findBuffer + %12 assert 的 C++ 显式防御）→ 无
+        // 实例化（按原有几何绘制）。参考 :1054-1056 的 transformCenter 长度
+        // ≠3 放弃语义在解析层发生，DanQing 提取层已丢失原始长度（零填充
+        // double[3]）——不可复现，登记（采集资产均带合法 3 分量，当前不可达）。
         // 带 instances 的 primitive 其 edges 亦应共享实例缓冲（MeshGraphic.
         // create 的 _instances 覆盖全部图元——Mesh.ts:123-143）；本资产
         // prim1 边缘 numVisible=0（无边缘几何）未触发——接线归后续

@@ -61,7 +61,9 @@
 #include <cstdio>
 #include <cstring>
 #include <functional>
+#include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -142,6 +144,29 @@ double cornerContentRatio(std::vector<uint8_t> const& f, uint32_t w, uint32_t h,
                 ++hits;
         }
     return total > 0 ? static_cast<double>(hits) / total : 0.0;
+}
+
+// 绿 dominance 计数（完整加载锁的轻量像素锚——上下文 prim0 均匀绿 65280；
+// 与 Instances60RendersAllInstances 的完整分类判据分工：本锁只钉"消费的
+// 根瓦实际上屏"，逐实例着色分布归那只锁）。
+long countGreenPixels(std::vector<uint8_t> const& f, uint32_t w, uint32_t h)
+{
+    uint8_t const* bg = &f[0];
+    long green = 0;
+    for (uint32_t y = 0; y < h; ++y) {
+        for (uint32_t x = 0; x < w; ++x) {
+            uint8_t const* p = &f[(static_cast<size_t>(y) * w + x) * 4u];
+            int const dr = std::abs(p[0] - bg[0]);
+            int const dg = std::abs(p[1] - bg[1]);
+            int const db = std::abs(p[2] - bg[2]);
+            if (dr + dg + db <= 90)
+                continue;  // 背景域
+            int const r = p[0], g = p[1], b = p[2];
+            if (g > r + 20 && g > b + 20)
+                ++green;
+        }
+    }
+    return green;
 }
 
 // 树内 graphics 就绪瓦计数（多瓦锁判据——"graphics 提交计数 >0"的瓦数）。
@@ -652,6 +677,257 @@ TEST(RpcDumpRender, Instances60RendersAllInstances)
     // ④ 消费计数：根瓦 graphics 提交 + 至少 1 次 dispatch。
     EXPECT_GE(readyTiles, 1) << "the replayed root tile never produced graphics";
     EXPECT_GE(dispatched, 1u) << "expected the manifest tile to be dispatched";
+
+    view.getUeViewport()->DropTiledGraphicsProvider(&mount->provider);
+    view.close();
+    spin(200);
+}
+
+// ---------------------------------------------------------------------------
+// 完整加载 E2E 对账锁（M-E Task 4）：instances60-v1 全树前缀加载——驱动
+// selectTiles 至静默后，DumpTileFetcher 侧记录的全部请求键与 manifest 键集合
+// 逐一对账：凡 manifest 有键且被请求的瓦全部消费（Completed → graphics），
+// 对不上（NotFound）的键全部是 V4 细分派生形——即 TD-25/task-3 登记的子瓦
+// contentId 派生链差异（DanQing computeImdlChildTileProps 的 "-b-d-i-j-k-1"
+// vs 真实后端采集键域的尾段 quadrant/magnification 形），非链断。
+// ---------------------------------------------------------------------------
+// Authored: 见文件头。判据设计（不盲目 ready==manifest.tiles.size——子瓦派生
+// 链差异使绝大多数采集键不在今天派生链的可达面内，盲目全等会把已登记的
+// 派生差异烤成失败）：
+// ① 零 Error：请求日志里无文件缺失/byteLength 不符/畸形 url（dump 资产
+//    自洽性破口必红）；
+// ② 零重复：每键至多一条请求（TileAdmin 非 NotLoaded 不重建请求的门）；
+// ③ 链通：Completed 键 ⊆ manifest 键集，且根键 "-b-0-0-0-0-1" 在其中
+//    （IModelTileTree.ts:398 rootContentId 覆写——V4 形根键命中采集域）；
+// ④ 差异形：requested \ manifest 的每个键都是 "-b-<d>-<i>-<j>-<k>-1"
+//    （V4 细分派生、mult=1、d≥1）——不含采集域的尾段 -{2,4,8} 形/畸形键；
+// ⑤ 树侧终态全消费：树内每个瓦——contentId ∈ manifest 命中集 → hasGraphics()；
+//    否则（派生 miss）→ loadStatus == NotFound。无 Loading/Queued/NotLoaded
+//    残留（泵至静默的"全部就绪"语义：在途清零）；
+// ⑥ 计数对账：|Completed| == 树侧 graphics 瓦数（每个完成的请求都被消费）；
+// ⑦ 覆盖率报告（printf 非断言）：命中/3587——首绿实测 1/3587（唯一非空
+//    octant 的子键亦落采集域外）——今天派生链可达键域的占比，其余键域可达
+//    性归子瓦派生链任务（与 TD-25 遗留呼应，不判失败）；
+// ⑧ 像素锚：消费的根瓦上屏（内容 ≥ 20000 + 绿上下文 ≥ 1000——首绿实测
+//    231141/56399 的下界钉值）。
+// ⑨ dispatch ≥ 1。
+TEST(RpcDumpRender, Instances60FullLoadReconcilesManifestKeys)
+{
+    std::string dumpRoot = std::string(DANQING_TILE_ASSETS_DIR)
+                           + "/rpc-dumps/instances60-v1";
+    if (char const* env = std::getenv("DANQING_RPC_DUMP"))
+        dumpRoot = env;
+
+    auto& app = dqApp::Application::Get();
+    if (!app.isInitialized()) {
+        dqApp::Application::Options opts;
+        opts.applicationId = "RpcDumpRender";
+        opts.applicationVersion = "1.0";
+        ASSERT_TRUE(app.Startup(opts));
+    }
+
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    view.resize(1000, 700);
+    view.show();
+    spin(400);
+
+    // 多树全量装载（本 dump 1 树 3587 瓦——全树前缀加载的对账输入）。
+    auto mount = dta::mountDump(*view.getUeViewport(), dumpRoot);
+    ASSERT_TRUE(mount.has_value()) << "mount failed: " << dumpRoot;
+    ASSERT_EQ(1u, mount->manifest.trees.size());
+    ASSERT_EQ(3587u, mount->manifest.tiles.size());
+    ASSERT_NE(nullptr, mount->fetcher);
+    std::string const treeId = mount->manifest.trees[0].treeId;
+
+    view.getUeViewport()->AddTiledGraphicsProvider(&mount->provider);
+    ASSERT_TRUE(view.getUeViewport()->HasTiledGraphicsProvider(&mount->provider));
+
+    {
+        auto* view3d = view.getUeViewport()->GetView()->AsViewState3d();
+        ASSERT_NE(view3d, nullptr);
+        // 取景 = fitRange（树 contentRange 并集；30% 外扩 + zEps=1.0 同
+        // Instances60RendersAllInstances 的成熟配方——不跑 StandardViewTool）。
+        view3d->LookAtVolume(dta::mountDumpFitVolume(mount->fitRange, /*zEps=*/1.0));
+        view.getUeViewport()->InvalidateController();
+    }
+    {
+        auto& style = view.getUeViewport()->GetView()->GetDisplayStyle();
+        auto p = style.getViewFlags().Properties();
+        p.grid = false;
+        p.acsTriad = false;
+        style.setViewFlags(dqCommon::ViewFlags(p));
+    }
+    view.getUeViewport()->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+
+    // 泵至静默：根瓦就绪 + 请求日志尺寸连续 6 次迭代不变 + 投递队列排空
+    // （每键至多请求一次——日志稳定即"想要的全要了"；有界 20s）。
+    uint32_t const dispatchedBefore =
+        dqRender::TileAdmin::instance().statistics().totalDispatchedRequests;
+    long readyTiles = 0, totalTiles = 0;
+    size_t lastLogSize = 0;
+    int stable = 0, quiesceIter = -1;
+    for (int i = 0; i < 200; ++i) {
+        spin(100);
+        readyTiles = 0;
+        totalTiles = 0;
+        for (auto& t : mount->trees)
+            countGraphicsReady(t->getRootTile(), readyTiles, totalTiles);
+        size_t const logSize = mount->fetcher->requestLog().size();
+        if (readyTiles >= 1 && !mount->fetcher->requestLog().empty()
+            && logSize == lastLogSize
+            && mount->fetcher->getActiveCount() == 0) {
+            if (++stable >= 6) {
+                quiesceIter = i;
+                break;
+            }
+        } else {
+            stable = 0;
+        }
+        lastLogSize = logSize;
+    }
+    ASSERT_GE(quiesceIter, 0)
+        << "tile load never quiesced — in-flight requests remain (log="
+        << mount->fetcher->requestLog().size() << " ready=" << readyTiles << ")";
+    view.getUeViewport()->RenderFrame();
+    uint32_t const dispatched =
+        dqRender::TileAdmin::instance().statistics().totalDispatchedRequests
+        - dispatchedBefore;
+
+    // --- 对账：请求日志 vs manifest 键集合 ---
+    std::set<std::string> manifestKeys;
+    for (auto const& t : mount->manifest.tiles)
+        manifestKeys.insert(t.treeId + "/" + t.contentId);
+
+    auto const& log = mount->fetcher->requestLog();
+    std::set<std::string> requestedKeys;
+    size_t numCompleted = 0, numNotFound = 0, numError = 0;
+    std::vector<std::string> misses;  // requested \ manifest（treeId/contentId）
+    for (auto const& rec : log) {
+        std::string const key = rec.treeId + "/" + rec.contentId;
+        requestedKeys.insert(key);
+        switch (rec.outcome) {
+        case dqApp::DumpTileFetcher::DumpFetchOutcome::Completed:
+            ++numCompleted;
+            break;
+        case dqApp::DumpTileFetcher::DumpFetchOutcome::NotFound:
+            ++numNotFound;
+            misses.push_back(rec.contentId);
+            break;
+        case dqApp::DumpTileFetcher::DumpFetchOutcome::Error:
+            ++numError;
+            break;
+        }
+    }
+    printf("[RPC-RENDER] full-load reconcile: requested=%zu (completed=%zu "
+           "notFound=%zu error=%zu) manifest=%zu coverage=%zu/%zu quiesceIter=%d "
+           "ready=%ld/%ld dispatched=%u\n",
+           log.size(), numCompleted, numNotFound, numError, manifestKeys.size(),
+           requestedKeys.size() - misses.size(), manifestKeys.size(),
+           quiesceIter, readyTiles, totalTiles, dispatched);
+
+    // ① 零 Error（dump 资产自洽性破口）。
+    EXPECT_EQ(0u, numError) << "dump asset integrity break (missing file / "
+                               "byteLength mismatch / malformed url)";
+    // ② 零重复请求（每键至多一条）。
+    EXPECT_EQ(requestedKeys.size(), log.size())
+        << "duplicate requests for the same key — re-request thrash";
+    // ③ 链通：Completed 键 ⊆ manifest，根键在其中。
+    for (auto const& rec : log) {
+        if (rec.outcome != dqApp::DumpTileFetcher::DumpFetchOutcome::Completed)
+            continue;
+        EXPECT_TRUE(manifestKeys.count(rec.treeId + "/" + rec.contentId) > 0)
+            << "Completed key not in manifest: " << rec.contentId;
+    }
+    EXPECT_GT(numCompleted, 0u) << "no manifest key was ever requested";
+    // 首绿实测钉值（2026-09-28）：链通集恰 = 根键一个——contentRange 裁剪后
+    // 唯一非空 octant 的子键 "-b-1-0-0-0-1" 落采集域外（采集域 depth-1 =
+    // "-b-1-0-0-0-{2,4,8}"，即 TD-25/task-3 登记的子瓦派生链差异实形）。
+    // 归链任务修复派生后此处随实测更新（期望：miss 缩小/消失、覆盖率上升）。
+    EXPECT_EQ(1u, numCompleted) << "unexpected chain-connected set — reconcile "
+                                   "the new consumption face consciously";
+    // ④ 差异形：每个 miss 都是 "-b-<d>-<i>-<j>-<k>-1"（V4 细分派生、mult=1）。
+    for (auto const& m : misses) {
+        bool derivedForm = false;
+        if (m.rfind("-b-", 0) == 0) {
+            // 段：['', 'b', d, i, j, k, mult] —— mult 恒 "1"、d ≥ 1。
+            std::vector<std::string> segs;
+            size_t start = 0;
+            while (true) {
+                size_t const sep = m.find('-', start);
+                if (sep == std::string::npos) {
+                    segs.push_back(m.substr(start));
+                    break;
+                }
+                segs.push_back(m.substr(start, sep - start));
+                start = sep + 1;
+            }
+            derivedForm = segs.size() == 7 && segs[1] == "b" && segs[6] == "1"
+                          && segs[2] != "0";
+        }
+        EXPECT_TRUE(derivedForm)
+            << "miss key is not a V4 subdivision derivation: " << m
+            << " (collection-domain shape leaked or malformed)";
+    }
+    // 差异键实钉：今天派生链的唯一 miss 即 task-3 登记的 "-b-1-0-0-0-1"
+    //（vs 采集域 "-b-1-0-0-0-{2,4,8}"——真实后端尾段 quadrant/magnification
+    // 编号差异）。派生链修复后本断言随新实测更新。
+    ASSERT_EQ(1u, misses.size());
+    EXPECT_EQ("-b-1-0-0-0-1", misses[0])
+        << "the registered derivation-difference key changed — update the pin "
+           "with the fixed derivation's measured shape";
+
+    // ⑤ 树侧终态全消费：manifest 命中键 → hasGraphics；miss 键 → NotFound。
+    std::map<std::string, dqRender::Tile*> tilesByKey;
+    std::function<void(dqRender::Tile*)> walk = [&](dqRender::Tile* tile) {
+        if (!tile)
+            return;
+        auto* imdl = static_cast<dqRender::ImdlTile*>(tile);
+        tilesByKey[treeId + "/" + imdl->getContentId()] = tile;
+        for (dqRender::Tile* child : tile->getChildren())
+            walk(child);
+    };
+    for (auto& t : mount->trees)
+        walk(t->getRootTile());
+    long graphicsTiles = 0, terminalMisses = 0, inFlight = 0;
+    for (auto const& kv : tilesByKey) {
+        bool const hit = manifestKeys.count(kv.first) > 0;
+        if (hit) {
+            if (kv.second->hasGraphics())
+                ++graphicsTiles;
+            else
+                ++inFlight;  // manifest 键已请求完成却未消费成 graphics
+        } else {
+            if (kv.second->getLoadStatus() == dqRender::TileLoadStatus::NotFound)
+                ++terminalMisses;
+            else
+                ++inFlight;  // 派生 miss 未达终态
+        }
+    }
+    printf("[RPC-RENDER] tree-side: tiles=%zu graphics=%ld terminalMiss=%ld "
+           "inFlight=%ld\n", tilesByKey.size(), graphicsTiles, terminalMisses,
+           inFlight);
+    EXPECT_EQ(0l, inFlight) << "tiles left in non-terminal state at quiescence";
+    // ⑥ 计数对账：每个 Completed 请求都被消费成 graphics。
+    EXPECT_EQ(static_cast<long>(numCompleted), graphicsTiles)
+        << "completed requests without consumed graphics (readContent drop?)";
+
+    // ⑧ 像素锚：消费的根瓦上屏（阈值 = 首绿实测下界，见测试头）。
+    std::vector<uint8_t> frame;
+    uint32_t w = 0, h = 0;
+    ASSERT_TRUE(view.getUeViewport()->ReadFrameForTest(frame, w, h));
+    dumpBmp(frame, w, h,
+            DANQING_TILE_ASSETS_DIR "/../../build/rpc-dump-instances60-full.bmp");
+    long count = 0;
+    double cx = 0, cy = 0;
+    uint32_t minX = 0, maxX = 0, minY = 0, maxY = 0;
+    ASSERT_TRUE(contentStats(frame, w, h, count, cx, cy, minX, maxX, minY, maxY));
+    long const green = countGreenPixels(frame, w, h);
+    printf("[RPC-RENDER] content=%ld px green=%ld px\n", count, green);
+    EXPECT_GE(count, 20000l) << "consumed root tile not rendered — load chain "
+                                "disconnected from draw";
+    EXPECT_GE(green, 1000l) << "context primitive (green wall) not rendered";
+    // ⑨ dispatch ≥ 1。
+    EXPECT_GE(dispatched, 1u);
 
     view.getUeViewport()->DropTiledGraphicsProvider(&mount->provider);
     view.close();
