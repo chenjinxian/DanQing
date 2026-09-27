@@ -210,6 +210,108 @@ TEST(DumpTileFetcherTest, ManifestLoadsAndServesTreePropsAndTiles)
 }
 
 // ---------------------------------------------------------------------------
+// 多树全量装载 + iModel 元数据消费（instances60-v1 驱动——阶段1 M-E Task 2）。
+// ---------------------------------------------------------------------------
+// Authored: no reference test exists in itwinjs-core for dump loading（dump
+// 为本仓采集资产；多树迭代对齐参考侧 PrimaryTreeSupplier 对
+// requestTileTreeProps 返回树的逐树 createTileTree 消费面
+// PrimaryTileTree.ts:63-80；iModelInfo 的范围语义对齐 iModel 项目范围经
+// fit 视图消费的宿主侧用途）。instances60-v1 实测 1 树（如实断言——trees()
+// 迭代面由 DisplayTestApp 挂载入口的多树装载消费）。
+TEST(DumpTileFetcherTest, Instances60LoadsAllTreesWithIModelInfo)
+{
+    std::string const dumpRoot = kDumpRoot + "/instances60-v1";
+
+    // ① load：trees/tiles 计数与 manifest 一致（instances60-v1 实态：
+    //    stats 1 树 / 3587 瓦——BFS 最大完整前缀，§11.11 只读资产）。
+    auto props = dqApp::DumpTileTreeProps::load(dumpRoot);
+    ASSERT_TRUE(props.has_value()) << "manifest load failed: " << dumpRoot;
+    EXPECT_EQ(1u, props->getTreeCount());
+    EXPECT_EQ(3587u, props->getTileCount());
+
+    // trees() 迭代 == manifest trees[]（多树全量装载的驱动面——与
+    // getTreeCount() 同域，逐条可达）。
+    auto const& trees = props->trees();
+    ASSERT_EQ(props->getTreeCount(), trees.size());
+    ASSERT_FALSE(trees.empty());
+    EXPECT_EQ("25_1d-E:6_0x1c", trees[0].treeId);
+    EXPECT_EQ("dfac2750-4c3e-41de-afe7-5f4d97375006", trees[0].iModelId);
+    EXPECT_EQ(2424832u, trees[0].formatVersion);  // 37.0（major<<16）
+    EXPECT_EQ("files/6.json", trees[0].propsFile);
+
+    // ② iModelInfo()：instances60-v1 采集时 provenance.iModel 缺口（sweep
+    //    的 extents 取空）——优雅返回空（nullopt）。登记：iModel 级元数据
+    //    载体待采集工具补齐后落地（挂载入口回退树 contentRange 并集 fit）。
+    EXPECT_FALSE(props->iModelInfo().has_value());
+
+    // ③ 每树 byTreeId 均可达 root props（instances60 树 props 钉死值——
+    // TileProps.ts 字段映射面）。
+    for (auto const& entry : trees) {
+        auto tree = props->byTreeId(entry.treeId);
+        ASSERT_TRUE(tree.has_value()) << "byTreeId failed: " << entry.treeId;
+        EXPECT_FALSE(tree->rootTile.contentId.empty());
+        EXPECT_FALSE(tree->rootTile.range.isNull());
+    }
+    auto tree = props->byTreeId(trees[0].treeId);
+    ASSERT_TRUE(tree.has_value());
+    EXPECT_EQ(2048u, tree->metadata.tileScreenSize);
+    EXPECT_EQ(2424832u, tree->metadata.formatVersion);
+    EXPECT_DOUBLE_EQ(-88.05017416331312, tree->metadata.contentRange.low.x);
+    EXPECT_DOUBLE_EQ(-41.523859496768054, tree->metadata.contentRange.low.y);
+    EXPECT_DOUBLE_EQ(-26.906429488189204, tree->metadata.contentRange.low.z);
+    EXPECT_DOUBLE_EQ(-69.89486114832899, tree->metadata.contentRange.high.x);
+    EXPECT_DOUBLE_EQ(-32.961938138659534, tree->metadata.contentRange.high.y);
+    EXPECT_DOUBLE_EQ(-21.358517128951533, tree->metadata.contentRange.high.z);
+    EXPECT_EQ(2048.0, tree->rootMaximumSize);
+    EXPECT_EQ("0/0/0/0/1", tree->rootTile.contentId);
+    EXPECT_FALSE(tree->rootTile.isLeaf);
+}
+
+// ---------------------------------------------------------------------------
+// iModelInfo() 的 provenance.iModel 解析契约 + 缺省优雅回退。
+// 合成最小 manifest（写系统临时目录——不动只读资产 §11.11；两形态：
+// 有 iModel 字段（解析钉死值）/ 无 iModel 字段（nullopt，既有三 dump 实态））。
+// ---------------------------------------------------------------------------
+TEST(DumpTileFetcherTest, IModelInfoParsesProvenanceWithGracefulFallback)
+{
+    namespace fs = std::filesystem;
+    fs::path const dir =
+        fs::temp_directory_path() / "danqing-dump-imodelinfo-test";
+    fs::remove_all(dir);
+    fs::create_directories(dir / "files");
+    {
+        std::ofstream out(dir / "files" / "0.json");
+        out << R"({"id":"tree-0","rootTile":{"contentId":"0/0/0/0/1","range":{"low":[0,0,0],"high":[1,1,1]}}})";
+    }
+    {
+        std::ofstream out(dir / "manifest.json");
+        out << R"({"provenance":{"iModel":{"name":"Synthetic.ibim","extents":{"low":[-1.5,-2.5,-3.5],"high":[1.5,2.5,3.5]}}},"stats":{"trees":1,"tiles":0},"trees":[{"treeId":"tree-0","propsFile":"files/0.json"}],"tiles":[]})";
+    }
+    auto props = dqApp::DumpTileTreeProps::load(dir.string());
+    ASSERT_TRUE(props.has_value());
+    auto info = props->iModelInfo();
+    ASSERT_TRUE(info.has_value()) << "provenance.iModel must be consumed when present";
+    EXPECT_EQ("Synthetic.ibim", info->name);
+    EXPECT_DOUBLE_EQ(-1.5, info->extents.low.x);
+    EXPECT_DOUBLE_EQ(-2.5, info->extents.low.y);
+    EXPECT_DOUBLE_EQ(-3.5, info->extents.low.z);
+    EXPECT_DOUBLE_EQ(1.5, info->extents.high.x);
+    EXPECT_DOUBLE_EQ(2.5, info->extents.high.y);
+    EXPECT_DOUBLE_EQ(3.5, info->extents.high.z);
+
+    // 缺省面：provenance.iModel 缺失（compatseed/mirukuru/instances60 三
+    // dump 的实态）→ nullopt，装载其余面不受影响。
+    {
+        std::ofstream out(dir / "manifest.json");
+        out << R"({"provenance":{"seed":"x.ibim"},"stats":{"trees":1,"tiles":0},"trees":[{"treeId":"tree-0","propsFile":"files/0.json"}],"tiles":[]})";
+    }
+    auto noInfo = dqApp::DumpTileTreeProps::load(dir.string());
+    ASSERT_TRUE(noInfo.has_value());
+    EXPECT_FALSE(noInfo->iModelInfo().has_value());
+    fs::remove_all(dir);
+}
+
+// ---------------------------------------------------------------------------
 // byTreeId 多键分发（mirukuru-v1：2 树/1 瓦）+ optional 字段缺省路径。
 // ---------------------------------------------------------------------------
 TEST(DumpTileFetcherTest, MultiTreeDispatchByTreeId)

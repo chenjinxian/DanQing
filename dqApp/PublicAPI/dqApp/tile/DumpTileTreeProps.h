@@ -15,8 +15,9 @@
 //     PrimaryTreeSupplier.createTileTree (PrimaryTileTree.ts:63-80) 的
 //     requestTileTreeProps 返回值（TileAdmin.ts:648-657）离线对应物。
 //
-// 本文件持 dump 的元数据三件：manifest.json 索引（trees/tiles——DumpTileFetcher
-// 的字节回放同用此索引）、树 props JSON → DumpTreeProps 映射、按 treeId 分发。
+// 本文件持 dump 的元数据四件：manifest.json 索引（trees/tiles——DumpTileFetcher
+// 的字节回放同用此索引）、树 props JSON → DumpTreeProps 映射、按 treeId 分发、
+// provenance.iModel → iModel 级元数据（name/extents——宿主 fit 视图消费）。
 // 公共头依据 §8.4：DisplayTestApp 宿主（samples）跨模块消费。
 #pragma once
 
@@ -259,6 +260,18 @@ struct DumpManifestTreeEntry {
     std::string propsFile;  // file 的别名双给（Task 1 评审钉死②）；解析优先显式 propsFile，缺省回退 file
 };
 
+// ---------------------------------------------------------------------------
+// iModel 级元数据（manifest provenance.iModel——采集器契约，M-E Task 2）。
+// extents 为 iModel 坐标域的范围（Range3dProps {low,high}——与 dump 内全部
+// 范围域同构），宿主经 fit 视图消费（并集/整体取景）。采集工具未写
+// provenance.iModel 时（compatseed/mirukuru/instances60 三 dump 的当前实态）
+// iModelInfo() 返回 nullopt——优雅降级，挂载入口回退树 contentRange 并集。
+// ---------------------------------------------------------------------------
+struct DumpIModelInfo {
+    std::string name;
+    dqGeom::Range3d extents;
+};
+
 // manifest tiles[] 条目。瓦键 = (treeId, contentId) 原样串——contentId 是前端
 // 请求键（getTileRequestProps TileAdmin.ts:694-706；"-b-6-0-0-0-1" 形态），
 // 不是 props.rootTile.contentId 的 "0/0/0/0/1" 形态（Task 1 评审钉死①）。
@@ -325,6 +338,21 @@ public:
     // 未知 treeId / props 文件缺失或坏 → nullopt（NotFound 语义）。
     std::optional<DumpTreeProps> byTreeId(std::string const& treeId) const;
 
+    // manifest trees[] 迭代（多树全量装载的驱动面——DisplayTestApp 挂载入口
+    // 逐条消费；参考侧对齐面 = PrimaryTreeSupplier 对 requestTileTreeProps
+    // 返回树的逐树 createTileTree，PrimaryTileTree.ts:63-80）。
+    std::vector<DumpManifestTreeEntry> const& trees() const noexcept
+    {
+        return m_manifest.trees;
+    }
+
+    // manifest provenance.iModel → iModel 级元数据。缺字段/非对象 → nullopt
+    // （采集工具未写的 graceful 语义——挂载入口回退树 contentRange 并集）。
+    std::optional<DumpIModelInfo> const& iModelInfo() const noexcept
+    {
+        return m_iModelInfo;
+    }
+
     // manifest 计数（契约测试的 ① 面——与 manifest.json stats 域一致）。
     size_t getTreeCount() const noexcept { return m_manifest.trees.size(); }
     size_t getTileCount() const noexcept { return m_manifest.tiles.size(); }
@@ -334,6 +362,7 @@ private:
 
     std::string m_dumpRoot;
     DumpManifest m_manifest;
+    std::optional<DumpIModelInfo> m_iModelInfo;  // provenance.iModel（缺失 → nullopt）
 };
 
 END_DQ_APP_NAMESPACE
