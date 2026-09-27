@@ -144,8 +144,11 @@ public:
     bool isEmpty() const noexcept
     {
         return m_surfaces.empty() && m_edges.empty() && m_indexedEdges.empty()
-            && m_polylines.empty() && m_pointStrings.empty() && m_pointClouds.empty();
-    }    /// Wire the shared vertex-side GL resources (vbo + vbih + vbh) created once by
+            && m_polylines.empty() && m_pointStrings.empty()
+            && m_pointClouds.empty();
+    }
+
+    /// Wire the shared vertex-side GL resources (vbo + vbih + vbh) created once by
     /// MeshRenderGeometry::create and reused by every geometry in this mesh. The
     /// MeshGraphic dtor releases them; each geometry's dtor releases its own ibh +
     /// render primitive.
@@ -200,9 +203,9 @@ private:
     std::vector<std::unique_ptr<SurfaceGeometry>> m_surfaces;
     // TD-25：实例化 surface 包裹体（观察 m_surfaces 对应项，非拥有）+
     // 与 m_surfaces 平行的 instanced 标记（addCommands 的派发选择）。
-    // 成员序：m_instancedSurfaces 先于 m_surfaces 声明 → 析构反序
-    // surfaces 先死、wrapper 后死——wrapper 析构只删 InstanceBuffers
-    // （InstancedGeometry dtor 不触 repr），无悬空窗口。
+    // 成员序：m_surfaces 先于 m_instancedSurfaces 声明 → 析构反序 wrapper
+    // 先死、surface 后死——wrapper 析构只删 InstanceBuffers（InstancedGeometry
+    // dtor 不触 repr），surface 全程存活，无悬空窗口。
     std::vector<std::unique_ptr<InstancedGeometry>> m_instancedSurfaces;
     std::vector<bool> m_surfaceInstanced;
     std::vector<std::unique_ptr<EdgeGeometry>> m_edges;

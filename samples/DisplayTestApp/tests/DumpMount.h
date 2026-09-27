@@ -69,13 +69,15 @@ private:
 // 多树全量装载结果。manifest/props 保留供测试断言（计数/键域/树 props）；
 // trees 与 provider 由本结构持有（ImdlTileTree 非拷贝——unique_ptr 所有权）。
 // props 为 optional——DumpTileTreeProps 构造私域（load 静态工厂），DumpMount
-// 需默认构造后移入。
+// 需默认构造后移入。fetcher 为非拥有观察指针（所有权经 setFetcher 移入
+// TileAdmin）——完整加载对账锁读 requestLog 的入口（M-E Task 4）。
 struct DumpMount {
     dqApp::DumpManifest manifest;
     std::optional<dqApp::DumpTileTreeProps> props;
     std::vector<std::unique_ptr<dqRender::ImdlTileTree>> trees;
     DumpTreeProvider provider;
     dqGeom::Range3d fitRange;
+    dqApp::DumpTileFetcher* fetcher = nullptr;
 };
 
 // fit 取景域：30% 外扩（对象完整居中、四角留背景的先验——M-D(3) 两只锁
@@ -114,6 +116,10 @@ inline std::optional<DumpMount> mountDump(dqApp::Viewport& viewport,
     DumpMount out;
     out.manifest = std::move(*manifest);
     out.props = std::move(*loadedProps);
+    // 非拥有观察指针——所有权已随 setFetcher 移入 TileAdmin；供完整加载
+    // 对账锁读 requestLog（M-E Task 4）。
+    out.fetcher = static_cast<dqApp::DumpTileFetcher*>(
+        &dqRender::TileAdmin::instance().getFetcher());
     auto& props = *out.props;
 
     // fit 域：iModel 级元数据优先（provenance.iModel）；缺省回退树

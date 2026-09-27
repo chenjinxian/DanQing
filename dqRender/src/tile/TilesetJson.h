@@ -522,9 +522,16 @@ inline std::vector<ImdlPrimitiveProps> parseImdlMeshPrimitives(JsonValue const& 
                 props.edges = std::move(edges);
             }
             // ImdlSchema.ts:160-181 instances 修饰（parseInstances
-            // ParseImdlDocument.ts:1045-1087——字段原样提取；count<=0 /
-            // transformCenter 长度 !=3 / featureIds/transforms 缺失的归零
-            // 语义归消费点 createImdlLutGraphics，本层照参考只解析不丢弃）。
+            // ParseImdlDocument.ts:1045-1087——字段原样提取，本层不丢弃）。
+            // 语义差异登记：参考 parseInstances 对 count<=0（:1050-1052）与
+            // transformCenter 长度≠3（:1054-1056）是解析层直接 return
+            // undefined（放弃实例化）；DanQing 本层把 count 与
+            // transformCenter（不足 3 分量零填充）照字段提取，长度≠3 的
+            // 放弃语义在消费点不可复现（原始长度信息于此丢失）——采集资产
+            // 的 instances 均带合法 3 分量 transformCenter，当前不可达。
+            // 消费点（createImdlLutGraphics）复现的归零 = count<=0 +
+            // bufferView 缺失/尺寸不符（参考 :1060-1071 的 findBuffer 与
+            // %12 assert 的 C++ 显式防御）。
             if (JsonValue const* instJson = prim.find("instances")) {
                 ImdlInstancesProps inst;
                 if (JsonValue const* c = instJson->find("count"))  // :161
