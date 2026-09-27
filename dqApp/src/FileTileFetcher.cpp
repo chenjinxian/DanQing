@@ -1,33 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // DanQing dqApp — local-file tile fetcher implementation
-// Authored: see FileTileFetcher.h (no reference equivalent — offline assets).
+// Authored: see FileTileFetcher.h (no reference equivalent — offline assets;
+//           §8.2 零网络——TD-24 清退后无任何网络回退分支).
 #include "FileTileFetcher.h"
 
 #include <dqRender/tile/Tile.h>
 
-#include <algorithm>
 #include <fstream>
 
 namespace dqApp {
-
-FileTileFetcher::FileTileFetcher(std::unique_ptr<dqRender::ITileFetcher> httpFetcher)
-    : m_httpFetcher(std::move(httpFetcher))
-{
-}
 
 void FileTileFetcher::fetch(std::string const& url, dqRender::Tile& tile,
                             std::function<void(dqRender::Tile&, std::vector<uint8_t> const&)> onComplete,
                             std::function<void(dqRender::Tile&, std::string const&)> onError)
 {
-    bool const isHttp = url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0;
-    if (isHttp && m_httpFetcher) {
-        m_httpFetcher->fetch(url, tile, std::move(onComplete), std::move(onError));
-        return;
-    }
-
-    // Local filesystem path: read synchronously now, deliver on the next
-    // processCompleted() (the polling-fetcher contract — delivery stays on
-    // the TileAdmin process cycle, never inline from fetch()).
+    // 本地文件系统路径：同步读取，下一个 processCompleted() 投递（轮询契约——
+    // 投递保持在 TileAdmin process 周期上，从不在 fetch() 内联）。
     Completed entry;
     entry.tile = &tile;
     entry.onComplete = std::move(onComplete);
@@ -55,9 +43,6 @@ void FileTileFetcher::fetch(std::string const& url, dqRender::Tile& tile,
 
 void FileTileFetcher::processCompleted()
 {
-    if (m_httpFetcher)
-        m_httpFetcher->processCompleted();
-
     // Deliver from a copied list: callbacks may re-enter fetch().
     auto pending = std::move(m_completed);
     m_completed.clear();
@@ -73,17 +58,12 @@ void FileTileFetcher::processCompleted()
 
 uint32_t FileTileFetcher::getActiveCount() const noexcept
 {
-    uint32_t n = static_cast<uint32_t>(m_completed.size());
-    if (m_httpFetcher)
-        n += m_httpFetcher->getActiveCount();
-    return n;
+    return static_cast<uint32_t>(m_completed.size());
 }
 
 void FileTileFetcher::cancelAll()
 {
     m_completed.clear();
-    if (m_httpFetcher)
-        m_httpFetcher->cancelAll();
 }
 
 }  // namespace dqApp

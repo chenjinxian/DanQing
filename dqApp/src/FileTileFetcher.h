@@ -5,10 +5,12 @@
 // no filesystem, and in itwinjs-core standalone mode this role is played by
 // the local backend serving tiles over IPC. DanQing's offline tileset assets
 // (third_party/tile-sample-assets) are referenced by absolute/relative
-// filesystem paths in tileset.json, which QNetworkAccessManager cannot fetch
-// (no file:// scheme support). This fetcher routes by URL scheme: http(s)
-// transparently forwards to the injected network fetcher; anything else is
-// read from the local filesystem.
+// filesystem paths in tileset.json; this fetcher reads those paths directly.
+//
+// §8.2 零网络协议（2026-09-27 用户指令）：本地文件路径是唯一取数路径。曾经的
+// http(s) → Qt 网络拉瓦器（TD-24 登记对象）透传分支已随 TD-24 清退删除
+// （数据经 ITileFetcher DI 以字节进入引擎；RPC-dump 本地回放走
+// DumpTileFetcher——同为纯文件 I/O）。
 #pragma once
 
 #include <dqRender/tile/ITileFetcher.h>
@@ -21,11 +23,10 @@
 
 namespace dqApp {
 
-// FileTileFetcher — scheme-routing fetcher (local files + HTTP passthrough).
+// FileTileFetcher — local-filesystem ITileFetcher (zero network, §8.2).
 class FileTileFetcher : public dqRender::ITileFetcher {
 public:
-    // Takes ownership of the network fetcher used for http(s) URLs.
-    explicit FileTileFetcher(std::unique_ptr<dqRender::ITileFetcher> httpFetcher);
+    FileTileFetcher() = default;
 
     // ITileFetcher
     void fetch(std::string const& url, dqRender::Tile& tile,
@@ -45,7 +46,6 @@ private:
         std::function<void(dqRender::Tile&, std::string const&)> onError;
     };
 
-    std::unique_ptr<dqRender::ITileFetcher> m_httpFetcher;
     std::vector<Completed> m_completed;
 };
 

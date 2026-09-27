@@ -4,7 +4,6 @@
 #include "dqApp/Application.h"
 
 #include "FileTileFetcher.h"
-#include "QtTileRequestFetcher.h"
 
 #include <dqRender/tile/TileAdmin.h>
 
@@ -73,13 +72,12 @@ bool Application::Startup(Options const& opts)
     m_viewManager.AddDecorator(&m_accuSnap);
     m_viewManager.AddDecorator(&m_toolAdmin);
 
-    // Inject the application-layer tile fetcher (Qt network backend wrapped by
-    // the local-file router for offline tilesets). dqRender's TileAdmin defaults
+    // Inject the application-layer tile fetcher. dqRender's TileAdmin defaults
     // to a Qt-free NullTileFetcher (§8.2); dqApp supplies the real fetcher via
-    // DI (setFetcher). FileTileFetcher forwards http(s) to the Qt fetcher and
-    // reads local filesystem paths directly (offline tile-sample assets).
-    dqRender::TileAdmin::instance().setFetcher(
-        std::make_unique<FileTileFetcher>(std::make_unique<QtTileRequestFetcher>()));
+    // DI (setFetcher). §8.2 零网络协议（TD-24 清退）：本地文件路径是唯一离线
+    // 取数路径（数据经 ITileFetcher DI 以字节进入引擎）；RPC-dump 本地回放
+    // （DumpTileFetcher——同为纯文件 I/O）由宿主按需注入。
+    dqRender::TileAdmin::instance().setFetcher(std::make_unique<FileTileFetcher>());
 
     m_initialized = true;
     OnAfterStartup.Raise();
