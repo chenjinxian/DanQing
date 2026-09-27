@@ -37,6 +37,14 @@
 | 种子 | `core/backend/lib/cjs/test/assets/mirukuru.ibim` |
 | 统计 | 2 树 / 1 瓦 / 1652 B（模型极小；价值在第二个 treeId `25_1d-E:6_0x28`——回放 fetcher 的 byTreeId 键分发需多树才能被测到） |
 
+### instances60-v1 — Properties_60InstancesWithUrl2.ibim（BFS 全树 + instances 修饰）
+
+| 项 | 值 |
+|---|---|
+| 种子 | `full-stack-tests/presentation/assets/datasets/Properties_60InstancesWithUrl2.ibim`（拷至 DTA assets） |
+| 统计 | 1 树 / 3587 瓦 / 289.67 MB（深度 d0:4..d7:2880；BFS 未完成——depth-7 仍扩展；详见该目录 README） |
+| 价值 | 瓦 JSON 含 per-primitive `instances{count:60,transforms,featureIds}` 修饰——M-E TD-25（instances 未消费）的直接输入 |
+
 ## manifest 契约（Task 2 DumpTileFetcher/DumpTileTreeProps 消费）
 
 ```jsonc
