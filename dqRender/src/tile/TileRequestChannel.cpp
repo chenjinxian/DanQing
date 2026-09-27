@@ -134,9 +134,11 @@ void TileRequestChannel::process(uint32_t externalInFlight)
 
     // 3. Cancel any active requests that are no longer needed.
     //    NB (:250): Do NOT remove them from the active set until their http
-    //    activity has completed — the fetch keeps running and the late
-    //    response is dropped by TileAdmin::deliverTileContent
-    //    (TileRequest.ts:109-110). (TileRequestChannel.ts:249-253)
+    //    activity has completed — the fetch keeps running and its late
+    //    response settles through TileAdmin::deliverTileContent: the
+    //    data-arrival Loading migration (TileRequest.ts:92-93) delivers the
+    //    content (:58-60, gate at :109-110) and the settle here-side releases
+    //    the concurrency slot. (TileRequestChannel.ts:249-253)
     for (auto const& active : m_active)
         if (active->getUsers().empty())
             cancel(active);

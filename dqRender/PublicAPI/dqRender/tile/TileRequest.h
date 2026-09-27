@@ -98,15 +98,23 @@ public:
 
     // --- State transitions ---
     void dispatch();       // Queued -> Dispatched
-    void startLoading();   // Dispatched -> Loading
+    /// Data-arrival Loading migration: the reference assigns Loading
+    /// unconditionally the moment the raw response lands, BEFORE the
+    /// isCanceled drop gate, so a request canceled in flight still finishes
+    /// processing its data (isCanceled's Loading exemption). Ported from:
+    /// itwinjs-core TileRequest.dispatch (TileRequest.ts:92-93 + :58-60).
+    /// Production caller: TileAdmin::deliverTileContent (the data-arrival
+    /// point).
+    void startLoading();
     void complete();       // Loading -> Completed
     void fail();           // Any -> Failed
 
     /// Cancel this request. This leaves the associated Tile's state untouched.
     /// Empties the user set and releases the tile's request hook, then marks
     /// the request Failed. Cancel is a MARK only — an in-flight fetch is not
-    /// aborted; when its response arrives the completion sink drops it
-    /// (TileRequest.ts:109-110, delivered via TileAdmin::deliverTileContent).
+    /// aborted; when its response arrives the data-arrival Loading migration
+    /// (TileRequest.ts:92-93) delivers it through the completion sink
+    /// (TileAdmin::deliverTileContent) despite the empty user set (:58-60).
     /// Ported from: itwinjs-core TileRequest.cancel (TileRequest.ts:122-131).
     void cancel();
 

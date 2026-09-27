@@ -57,9 +57,18 @@ void TileRequest::dispatch()
 
 void TileRequest::startLoading()
 {
-    if (m_state == State::Dispatched) {
-        m_state = State::Loading;
-    }
+    // Ported from: TileRequest.dispatch (TileRequest.ts:92-93) — the
+    // data-arrival Loading migration ("Set this now, so our `isCanceled`
+    // check can see it"). The reference assignment is UNCONDITIONAL: a request
+    // canceled while its fetch ran sits in Failed here (cancel, :130), and
+    // the migration deliberately overrides it so isCanceled's Loading
+    // exemption (:58-60 — "After we've received the raw tile data, always
+    // finish processing it - otherwise tile may end up in limbo") lets the
+    // late response finish processing. The former Dispatched-only guard was a
+    // self-made state gate with no reference counterpart and no production
+    // caller; M-C 终审 wires this transition to its production site —
+    // TileAdmin::deliverTileContent, the data-arrival point.
+    m_state = State::Loading;
 }
 
 void TileRequest::complete()
