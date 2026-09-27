@@ -348,7 +348,8 @@ private:
     // SelectParent 协议的树级跳级预算（IModelTileTree.ts:361-362/:390-391）。
     uint32_t m_maxInitialTilesToSkip = 0;  // :390 — props ?? 0
     uint32_t m_maxTilesToSkip = 1;         // :391 — TileAdmin.maximumLevelsToSkip
-    // The tree's content Id scheme (:397-398 contentIdProvider.create) — null
+    // The tree's content Id scheme (:396-398 contentIdProvider.create +
+    // :398 rootContentId override) — null
     // while the tree props carry no formatVersion (DanQing's legacy V1 id
     // helpers path, see ImdlTreeMetadata::formatVersion).
     std::unique_ptr<ContentIdProvider> const m_contentIdProvider;

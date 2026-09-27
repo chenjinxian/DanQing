@@ -213,7 +213,7 @@ void dumpBmp(std::vector<uint8_t> const& frame, uint32_t w, uint32_t h,
 // ---------------------------------------------------------------------------
 // Authored: 见文件头。该瓦无 instances 修饰、顶点量化域 = iModel 坐标域——
 // 现有 LUT 消费链的忠实上屏。判据：
-// ①内容存活：非背景像素 ≥ 阈值（首绿实测的 1/2 下限，实测值回填本注释）；
+// ①内容存活：非背景像素 ≥ 250000（≈ 首绿实测 572660 px 的 0.44×，20.45%→0.2% 退化必红）；
 // ②WHERE：质心在视口中央带（±20%）+ 四象限角为背景（6% 角框 ≤1% 内容）；
 // ③消费计数：≥1 瓦 graphics 提交 + ≥1 次 dispatch（该 dump 只有 1 瓦）。
 TEST(RpcDumpRender, MirukuruRendersRealBackendTile)
@@ -343,9 +343,9 @@ TEST(RpcDumpRender, MirukuruRendersRealBackendTile)
         << "no replayed RPC tile content rendered — dump replay chain broken "
            "(fetch keys? tree assembly? see [TILE-TRACE]/BMP)";
 
-    // ① 内容存活（阈值 = 首绿实测的 1/2：首绿 2000×1400 实测 572660 px =
-    //    20.45%，质心 (999,698) 对帧心 (1000,700)、bbox (284,284)-(1714,1111)
-    //    近对称——几何即取景域内的模型平面）。
+    // ① 内容存活（阈值 250000 ≈ 首绿实测 572660 px 的 0.44×——20.45%→0.2%
+    //    的退化（~45× 跌落）必红；首绿质心 (999,698) 对帧心 (1000,700)、
+    //    bbox (284,284)-(1714,1111) 近对称——几何即取景域内的模型平面）。
     printf("[RPC-RENDER] content=%ld px (%.3f%% of %ux%u) bbox=(%u,%u)-(%u,%u) "
            "centroid=(%.0f,%.0f) frame center=(%.0f,%.0f)\n",
            count, 100.0 * count / (static_cast<double>(w) * h), w, h,
@@ -431,7 +431,7 @@ TEST(RpcDumpRender, CompatSeedReplaysLodChainToGraphicsReady)
             props->id, props->rootTile.contentId, props->rootTile.range,
             props->metadata);
 
-    // ① 请求键覆写（:405）：根键 = manifest 的 depth-0 条目。
+    // ① 请求键覆写（:398）：根键 = manifest 的 depth-0 条目。
     {
         std::string rootKey;
         for (auto const& t : manifest->tiles)
