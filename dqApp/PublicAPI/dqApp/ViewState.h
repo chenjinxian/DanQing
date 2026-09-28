@@ -6,6 +6,7 @@
 #include "DisplayStyle.h"
 #include "Decorator.h"
 #include "MarginOptions.h"
+#include "ViewStateProps.h"  // SpatialViewState::CreateFromProps 入参载体
 #include "ViewStatus.h"
 
 #include <dqBase/RefCounted.h>
@@ -567,6 +568,16 @@ public:
         dqGeom::Point3d const& origin,
         dqGeom::Vector3d const& extents,
         std::optional<dqGeom::Matrix3d> rotation = std::nullopt);
+
+    // Factory: create a spatial view from persisted properties (the saved-ViewState
+    // open path — M-H Task 3).
+    // Ported from: itwinjs-core SpatialViewState.createFromProps
+    //              (SpatialViewState.ts:90-95) + ViewState3d constructor's props
+    //              application (ViewState.ts:1497-1515: cameraOn/origin/extents/
+    //              rotation-from-angles/camera + centerEyePoint when the camera is
+    //              on) + ViewState constructor's description/isPrivate (:303-304).
+    static dqBase::RefPtr<SpatialViewState> CreateFromProps(
+        ViewStateProps const& props, IModelConnection* iModel);
 
     // Type guard override (avoids dynamic_cast / RTTI).
     SpatialViewState* AsSpatialViewState() override { return this; }

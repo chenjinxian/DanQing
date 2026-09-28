@@ -58,6 +58,33 @@ bool parseRange3d(dumpjson::JsonValue const& json, dqGeom::Range3d& out)
     return true;
 }
 
+// TransformProps 3×4 数组形 → dqGeom::Transform。
+// Ported from: itwinjs-core core-geometry Transform.setFromJSON 的
+//              isArrayOfNumberArray(json,3,4) 分支（Transform.ts:86-94——
+//              matrix = 3×3 行值、origin = 每行第 4 列）；dump 实态即此形
+//              （纯平移）——{origin,matrix} 对象形与 12 数平铺形登记未移植
+//              （采集域无此形态）。缺段/非数组 → false。
+bool parseTransform3x4(dumpjson::JsonValue const& json, dqGeom::Transform& out)
+{
+    if (json.type != dumpjson::JsonValue::Type::Array || json.arr.size() < 3)
+        return false;
+    double m[9];
+    double t[3];
+    for (int row = 0; row < 3; ++row) {
+        auto const& r = json.arr[static_cast<size_t>(row)];
+        if (r.type != dumpjson::JsonValue::Type::Array || r.arr.size() < 4)
+            return false;
+        for (int col = 0; col < 3; ++col)
+            m[row * 3 + col] = r.arr[static_cast<size_t>(col)].number;
+        t[row] = r.arr[3].number;
+    }
+    out = dqGeom::Transform::CreateOriginAndMatrix(
+        dqGeom::Point3d::From(t[0], t[1], t[2]),
+        dqGeom::Matrix3d::CreateRowValues(m[0], m[1], m[2], m[3], m[4], m[5],
+                                          m[6], m[7], m[8]));
+    return true;
+}
+
 bool parseManifest(std::string const& jsonText, DumpManifest& out,
                    std::optional<DumpIModelInfo>* iModelInfoOut)
 {
@@ -249,6 +276,21 @@ std::optional<DumpTreeProps> DumpTileTreeProps::byTreeId(std::string const& tree
     // RpcDumpRender.Instances60DrillReplaysViewportChain 锁头）。
     if (dumpjson::JsonValue const* v = doc->find("maxInitialTilesToSkip"))
         out.metadata.maxInitialTilesToSkip = static_cast<uint32_t>(v->number);
+
+    // TileTreeProps.location（TileProps.ts:46-47——"Transform tile coordinates
+    // to iModel world coordinates"）→ DumpTreeProps.location（M-H Task 3 消费
+    // ——装载侧 setIModelTransform；iModelTileTreeParamsFromJSON 的
+    // Transform.fromJSON(props.location) IModelTileTree.ts:50/:71 →
+    // TileTree.iModelTransform TileTree.ts:122）。缺失 → hasLocation=false
+    // （恒等缺省——Transform.setFromJSON(undefined) Transform.ts:104-105）；
+    // 字段在但畸形 → 装载失败（dump 自洽性破口）。
+    if (dumpjson::JsonValue const* v = doc->find("location")) {
+        if (v->type != dumpjson::JsonValue::Type::Null) {
+            if (!parseTransform3x4(*v, out.location))
+                return std::nullopt;
+            out.hasLocation = true;
+        }
+    }
 
     // TileTreeProps.contentRange（:51）→ 仅在字段存在且为对象时置值
     // （IModelTileTree.ts:54-56；缺失/null 保留 null range——"unknown" 约定；

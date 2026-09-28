@@ -13,10 +13,13 @@
 #include "TileDrawArgs.h"
 #include "TileTree.h"
 
+#include <dqCommon/FeatureTable.h>  // dqCommon::BatchType（ClassifierTileTreeId.type）
 #include <dqGeom/Range3d.h>
 
 #include <memory>
+#include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #ifndef BEGIN_DQ_RENDER_NAMESPACE
@@ -115,18 +118,102 @@ enum class ContentFlags : uint32_t {
     ExternalTextures = 1u << 3,
 };
 
+// ---------------------------------------------------------------------------
+// TileEdgeType / EdgeOptions / TreeFlags / IModelTileTreeId /
+// edgeOptionsToString / iModelTileTreeIdToString — tile tree Id 派生面
+// （M-H Task 3：打开链按 modelSelector 逐 model 派生 treeId——参考
+// PrimaryTreeReference.createTreeId（PrimaryTileTree.ts:268-290）→
+// PrimaryTreeSupplier.createTileTree 的 iModelTileTreeIdToString 调用点
+// （PrimaryTileTree.ts:65）→ requestTileTreeProps RPC 的键）。
+// ---------------------------------------------------------------------------
+
+// TileEdgeType — Ported from: TileMetadata.ts:57（TS 字符串字面量联合 →
+// enum class，§3.4；值名取字面量的 PascalCase 形）。
+enum class TileEdgeType : uint8_t { Compact, Indexed, NonIndexed };
+
+// EdgeOptions — how edges should be produced for tiles in a tile tree.
+// Ported from: TileMetadata.ts:62-66。
+struct EdgeOptions {
+    TileEdgeType type = TileEdgeType::Compact;
+    // For polyfaces that lack edge visibility information, generate edges for
+    // all faces; otherwise, infer edges from mesh topology. (:64-65)
+    bool smooth = true;
+};
+
+// TreeFlags — flags controlling the structure of a tile tree (part of the
+// tree Id). Ported from: TileMetadata.ts:433-441。
+enum class TreeFlags : uint32_t {
+    None = 0,
+    UseProjectExtents = 1u << 0,       // :435
+    EnforceDisplayPriority = 1u << 1,  // :436
+    OptimizeBRepProcessing = 1u << 2,  // :437
+    UseLargerTiles = 1u << 3,          // :438
+    ExpandProjectExtents = 1u << 4,    // :439
+    DisablePolyfaceDecimation = 1u << 5,  // :440
+};
+
+// PrimaryTileTreeId — describes a tile tree used to draw the contents of a
+// model, possibly with embedded animation. Ported from: TileMetadata.ts:446-463。
+// §3.4 适配：TS `EdgeOptions | false` → std::optional<EdgeOptions>（false=nullopt）；
+// enforceDisplayPriority 参考为 optional bool（:456）——false 缺省等价。
+struct PrimaryTileTreeId {
+    // 判别字段（参考 type: BatchType.Primary 字面量——variant 的 Primary 备选
+    // 恒 Primary，无运行时枚举成员）。
+    std::optional<EdgeOptions> edges;        // :450（false → nullopt）
+    std::optional<std::string> animationId;  // :452
+    bool enforceDisplayPriority = false;     // :456
+    std::optional<std::string> sectionCut;   // :461
+    bool disablePolyfaceDecimation = false;  // :462
+};
+
+// ClassifierTileTreeId — Ported from: TileMetadata.ts:468-473。
+struct ClassifierTileTreeId {
+    dqCommon::BatchType type = dqCommon::BatchType::PlanarClassifier;  // :469
+    double expansion = 1.0;                                            // :470
+    std::optional<std::string> animationId;                            // :471
+    bool disablePolyfaceDecimation = false;                            // :472
+};
+
+// IModelTileTreeId — Id of an iModel tile tree. Ported from:
+// TileMetadata.ts:482（union → std::variant，§3.4）。
+using IModelTileTreeId = std::variant<PrimaryTileTreeId, ClassifierTileTreeId>;
+
+// edgeOptionsToString — Ported from: TileMetadata.ts:399-409（false →
+// "E:0_"；各 type×smooth 组合的编码串）。
+std::string DQ_RENDER_EXPORT
+edgeOptionsToString(std::optional<EdgeOptions> const& options);
+
 // TileOptions — the subset ContentIdProvider.create consumes. Ported from:
 // TileOptions (TileMetadata.ts:86-91) with the defaultTileOptions defaults
 // (:314-331). §3.4 registered subset adaptation: only the fields the provider
 // reads have a consumer here — the remaining TileOptions fields (useProject-
 // Extents/edgeOptions/…) are carried by their own features' ports.
+// M-H Task 3 归位：treeId 派生（iModelTileTreeIdToString——TileMetadata.ts
+// :487-532）消费面落地，补 :92-95/:98-99 五字段 + edgeOptions（:98）——
+// 默认值 = defaultTileOptions（:314-331，与采集域 treeId "25_1d-E:6_…" 逐位
+// 吻合：flags 0x1d = UseProjectExtents|OptimizeBRepProcessing|UseLargerTiles|
+// ExpandProjectExtents）。
 struct TileOptions {
     uint32_t maximumMajorTileFormatVersion = CurrentImdlVersion::Major;
     bool enableInstancing = true;
     bool enableImprovedElision = true;
     bool ignoreAreaPatterns = false;
     bool enableExternalTextures = true;
+    bool useProjectExtents = true;       // :92（defaultTileOptions :320）
+    bool expandProjectExtents = true;    // :93（:321）
+    bool optimizeBRepProcessing = true;  // :94（:322）
+    bool useLargerTiles = true;          // :95（:323）
+    // :98（:327-330 —— { type: "compact", smooth: true }）。
+    EdgeOptions edgeOptions{TileEdgeType::Compact, true};
+    bool disablePolyfaceDecimation = false;  // :99（:326）
 };
+
+// iModelTileTreeIdToString — convert a tile tree Id to its string
+// representation. Ported from: TileMetadata.ts:487-532。modelId = Id64String
+// （"0x1c" 形态——调用侧 DqId::ToString()）。
+std::string DQ_RENDER_EXPORT
+iModelTileTreeIdToString(std::string const& modelId, IModelTileTreeId const& treeId,
+                         TileOptions const& options);
 
 // The major tile format version to request: the backend's formatVersion
 // clamped by the app-configured maximum and the currently supported version.

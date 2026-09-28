@@ -18,6 +18,9 @@
 #include "dqRender/tile/ITileFetcher.h"
 #include "dqRender/tile/TileAdmin.h"
 
+#include "render/Graphic.h"               // Branch（location 包裹——M-H Task 3）
+#include "render/RenderGraphicAdapter.h"  // OwningRenderGraphicAdapter（同上）
+
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -169,6 +172,117 @@ std::string ContentIdProvider::join(uint32_t depth, uint32_t i, uint32_t j,
     out += separator();
     out += toHex(mult);
     return out;
+}
+
+// ---------------------------------------------------------------------------
+// edgeOptionsToString / iModelTileTreeIdToString — tile tree Id 派生
+// （M-H Task 3；参考 PrimaryTreeSupplier.createTileTree 的调用点
+// PrimaryTileTree.ts:65——requestTileTreeProps RPC 的键）。
+// ---------------------------------------------------------------------------
+
+std::string edgeOptionsToString(std::optional<EdgeOptions> const& options)
+{
+    // Ported from: TileMetadata.ts:399-409（逐分支 1:1）。
+    if (!options.has_value())
+        return "E:0_";  // :400-401
+
+    switch (options->type) {
+        case TileEdgeType::NonIndexed:
+            return options->smooth ? "E:3_" : "";          // :404
+        case TileEdgeType::Indexed:
+            return options->smooth ? "E:4_" : "E:2_";      // :405
+        case TileEdgeType::Compact:
+            return options->smooth ? "E:6_" : "E:5_";      // :406
+    }
+    return "";  // :407-408 throw 分支不可达（enum 穷举）——§3.4 禁异常适配
+}
+
+namespace {
+
+// animationIdToString — Ported from: TileMetadata.ts:475-477。
+std::string animationIdToString(std::string const& animationId)
+{
+    return "A:" + animationId + "_";
+}
+
+// toFixed(6) 的 C++ 等价（TileMetadata.ts:513 expansion.toFixed(6)——
+// JS toFixed 对有限小数与 printf %.6f 同产出：1→"1.000000"、0.25→"0.250000"、
+// 12.00001234→"12.000012"、123456789→"123456789.000000"——参考测试钉值四例）。
+std::string expansionToString(double expansion)
+{
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "%.6f", expansion);
+    return buf;
+}
+
+// uint32 → 小写 hex（:527-528 version.toString(16)/flags.toString(16)）。
+std::string treeIdHex(uint32_t v)
+{
+    char buf[16];
+    std::snprintf(buf, sizeof(buf), "%x", v);
+    return buf;
+}
+
+}  // namespace
+
+std::string iModelTileTreeIdToString(std::string const& modelId,
+                                     IModelTileTreeId const& treeId,
+                                     TileOptions const& options)
+{
+    // Ported from: TileMetadata.ts:487-532（逐行 1:1）。
+    std::string idStr;
+    // :488-500 —— flags 合成。
+    uint32_t flags = options.useProjectExtents
+        ? static_cast<uint32_t>(TreeFlags::UseProjectExtents)
+        : static_cast<uint32_t>(TreeFlags::None);
+    if (options.optimizeBRepProcessing)
+        flags |= static_cast<uint32_t>(TreeFlags::OptimizeBRepProcessing);
+    if (options.disablePolyfaceDecimation)
+        flags |= static_cast<uint32_t>(TreeFlags::DisablePolyfaceDecimation);
+    if (options.useLargerTiles)
+        flags |= static_cast<uint32_t>(TreeFlags::UseLargerTiles);
+    if (options.expandProjectExtents)
+        flags |= static_cast<uint32_t>(TreeFlags::ExpandProjectExtents);
+
+    if (auto const* primary = std::get_if<PrimaryTileTreeId>(&treeId)) {
+        // :502-510 —— BatchType.Primary 分支。
+        if (primary->animationId.has_value())
+            idStr += animationIdToString(*primary->animationId);       // :503-504
+        else if (primary->enforceDisplayPriority)                      // :505-506
+            flags |= static_cast<uint32_t>(TreeFlags::EnforceDisplayPriority);
+
+        std::string const edges = edgeOptionsToString(primary->edges);  // :508
+        // :509 —— sectionCut ? `S${sectionCut}s` : ""
+        std::string const sectionCut = primary->sectionCut.has_value()
+            ? "S" + *primary->sectionCut + "s"
+            : "";
+        idStr = idStr + edges + sectionCut;                             // :510
+    } else {
+        auto const& classifier = std::get<ClassifierTileTreeId>(treeId);
+        // :511-523 —— classifier 分支。
+        std::string const typeStr =
+            dqCommon::BatchType::PlanarClassifier == classifier.type ? "CP" : "C";  // :512
+        idStr = idStr + typeStr + ":" + expansionToString(classifier.expansion) + "_";  // :513
+
+        if (dqCommon::BatchType::VolumeClassifier == classifier.type) {
+            // Volume classifiers always use the exact project extents. (:515-519)
+            flags |= static_cast<uint32_t>(TreeFlags::UseProjectExtents);
+            flags &= ~static_cast<uint32_t>(TreeFlags::ExpandProjectExtents);
+        }
+
+        if (classifier.animationId.has_value())
+            idStr += animationIdToString(*classifier.animationId);      // :521-522
+    }
+
+    // :525-529 —— V4+ 前缀（version_flags-）。
+    uint32_t const version = getMaximumMajorTileFormatVersion(
+        options.maximumMajorTileFormatVersion, /*formatVersion=*/0);
+    if (version >= 4) {
+        std::string const prefix = treeIdHex(version) + "_" + treeIdHex(flags) + "-";
+        idStr = prefix + idStr;
+    }
+
+    return idStr + modelId;  // :531
 }
 
 std::unique_ptr<ContentIdProvider> ContentIdProvider::create(
@@ -595,6 +709,31 @@ TileContent ImdlTile::readContent(uint8_t const* data, size_t dataSize)
     // maximumSize 回填已归位 ImdlTile::setContent（IModelTile.ts:140-142）——
     // setContent 现为 virtual，参考的 IModelTile.setContent 覆写有 C++ 分派
     // 路径（TileAdmin::deliverTileContent 经 Tile& 调用，M-F(1)）。
+
+    // location 消费（M-H Task 3）：树 iModelTransform 非恒等 → 瓦 graphic
+    // 包进带 localToWorld 的 Branch（变换经 BranchState.fromBranch 组合——
+    // Graphic.h:220-221 注释；OwningRenderGraphicAdapter 持所有权——被包的
+    // graphic 可能是公共 GraphicBranch（createGraphicList 多 mesh 返回，
+    // 非内部 Graphic））。
+    // EQUIVALENCE: 参考源=TileDrawArgs.produceGraphics 的 draw 时包裹
+    //   （TileDrawArgs.ts:360-385——createGraphicBranch(graphics,
+    //   this.location) :373，location=tree.iModelTransform）；发散=DanQing
+    //   创建时包裹（树 location 装载期一次性 setIModelTransform、之后不变
+    //   ——参考 draw 时逐帧读 tree.iModelTransform 的其余动机字段
+    //   transformFromIModel/clipVolume/animationTransformNodeId 在 DanQing
+    //   无载体）；验证法=DumpOpenChain 两锁的 saved 视图像素锚（location
+    //   平移后内容落 saved 视域——修复前内容在 iModel 坐标域出视域）。
+    // 既有锁零影响：不设 location 的树（DumpMount 通道）恒等 → 跳过包裹。
+    if (content.graphic) {
+        auto const& xf = getTree().getIModelTransform();
+        if (!xf.IsIdentity()) {
+            auto branch = std::make_unique<Branch>();
+            branch->setLocalToWorld(xf);
+            branch->setChild(std::make_unique<OwningRenderGraphicAdapter>(
+                content.graphic.release()));
+            content.graphic.reset(branch.release());
+        }
+    }
     return content;
 }
 
@@ -949,9 +1088,26 @@ TileVisibility ImdlTileTree::computeVisibility(TileDrawArgs& args, Tile* tile)
 
     if (args.frustumPlanes.isValid()) {
         auto const& bs = tile->getBoundingSphere();
-        dqGeom::Point3d const center(bs.center[0], bs.center[1], bs.center[2]);
-        if (args.frustumPlanes.computeContainment(
-                tile->getRange(), &center, static_cast<double>(bs.radius))
+        // Ported from: Tile.isRegionCulled/isFrustumCulled（Tile.ts:391-411）
+        // ——range 与 boundingSphere 先经 args.location（treeToWorld =
+        // tree.iModelTransform）变换到 world 域再剔除（`box.transformBy
+        // (args.location)` / `sphere?.transformBy(args.location)` :406-407——
+        // 球半径 × maxColumnScale，BoundingSphere.transformBy）。
+        // 移植缺口修复（M-H Task 3）：原实现把 iModel 坐标域的 range/球直接
+        // 喂 world 域 frustumPlanes——location 非恒等的树（RPC dump 的
+        // iModel→world 平移）域错位剔除（saved 视域内内容被整树剔成
+        // OutsideFrustum——[SEL] 取证实锤）；恒等 location 下两形同值
+        //（M-E/M-F/M-G 锁全绿的既有面不受影响）。
+        dqGeom::Range3d const worldRange =
+            args.treeToWorld.MultiplyRange(tile->getRange());
+        dqGeom::Point3d const worldCenter = args.treeToWorld.MultiplyPoint3d(
+            dqGeom::Point3d(bs.center[0], bs.center[1], bs.center[2]));
+        auto const& m = args.treeToWorld.GetMatrix();
+        double const maxScale = (std::max)(
+            {m.ColumnXMagnitude(), m.ColumnYMagnitude(), m.ColumnZMagnitude()});
+        double const worldRadius = static_cast<double>(bs.radius) * maxScale;
+        if (args.frustumPlanes.computeContainment(worldRange, &worldCenter,
+                                                  worldRadius)
             == dqCommon::FrustumPlanes::Containment::Outside)
             return TileVisibility::OutsideFrustum;
     }

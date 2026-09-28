@@ -24,6 +24,7 @@
 #include "../Export.h"
 
 #include <dqGeom/Range3d.h>
+#include <dqGeom/Transform.h>  // DumpTreeProps.location（TileTreeProps.location 载体）
 #include <dqRender/tile/ImdlTileTree.h>  // ImdlTreeMetadata / ImdlTileMetadata
 
 #include <cstddef>
@@ -312,8 +313,12 @@ loadDumpManifest(std::string const& dumpRoot);
 //     iModelTileParamsFromJSON(params.rootTile) 携带，IModelTileTree.ts:406）。
 //
 // 未消费的 props 字段（解析期忽略，登记——载体归后续里程碑，与 M-C 登记同源）：
-//   location（TransformProps——ImdlTileTree 无变换载体）、maxTilesToSkip
-//   （参考亦不消费 props 值——IModelTileTree.ts:391 取 TileAdmin.
+//   ~~location（TransformProps——ImdlTileTree 无变换载体）~~ ✅ M-H Task 3
+//   已消费（DumpTreeProps.location → 装载侧 setIModelTransform——TileTreeProps.
+//   location TileProps.ts:46-47 "Transform tile coordinates to iModel world
+//   coordinates" → iModelTileTreeParamsFromJSON IModelTileTree.ts:50/:71 →
+//   TileTree.iModelTransform TileTree.ts:122）；
+//   maxTilesToSkip（参考亦不消费 props 值——IModelTileTree.ts:391 取 TileAdmin.
 //   maximumLevelsToSkip）、contentIdQualifier、geometryGuid、
 //   transformNodeRanges、extentsBasis/baseExtents（TileProps.ts 之外的后端
 //   扩展域，参考类型亦无）。
@@ -329,6 +334,14 @@ struct DumpTreeProps {
     dqRender::ImdlTileMetadata rootTile;
     double rootMaximumSize = 0.0;  // TileProps.maximumSize（0 = undisplayable 语义）
     std::string id;                // TileTreeProps.id 原文（不做强校验——参考 requestTileTreeProps 同样信任返回值）
+    // TileTreeProps.location（TileProps.ts:46-47——"Transform tile coordinates
+    // to iModel world coordinates"）→ 装载侧 ImdlTileTree::setIModelTransform
+    // 的输入（M-H Task 3 消费——saved 视图下内容上屏的必要链：瓦顶点在
+    // iModel 坐标域，location 平移到 projectExtents 域 = saved 视域）。
+    // 缺失 → hasLocation=false（恒等语义——Transform.setFromJSON(undefined)
+    // 的 identity 缺省，core-geometry Transform.ts:104-105）。
+    dqGeom::Transform location = dqGeom::Transform::CreateIdentity();
+    bool hasLocation = false;
 };
 
 // 按 treeId 提供树 props（manifest trees[].propsFile → IModelTileTreeProps

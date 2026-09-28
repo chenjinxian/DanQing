@@ -290,6 +290,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/TileAdminMemoryTest.cpp
         tests/ImdlHeaderTest.cpp
         tests/ImdlTileTreeTest.cpp
+        tests/IModelTileTreeIdTest.cpp  # tree Id 派生锁（M-H Task 3——TileMetadata.ts :70-270 用例 + 采集域对账）
         tests/ITileFetcherTest.cpp
         tests/TileAdminDiagnosticsTest.cpp  # Debug Info 面板数据源（2026-09-21）
         tests/TileRequestChannelTest.cpp    # 调度器两级优先级键（TileRequestChannel.ts:13-20，U9(4)）

@@ -28,6 +28,7 @@ add_executable(DisplayTestApp WIN32
     src/Gui/View3DInventor.cpp      # DanQing: 3D viewport (replaces Coin3D with dqRender)
     src/Gui/DecorationGeometryExample.cpp   # Surface.ts:155-165 装饰几何示例（2026-09-17）
     src/Gui/DevToolsWidgets.cpp     # frontend-devtools 7 诊断 widget（DiagnosticsPanel）
+    src/DumpOpenHelper.cpp          # 已存 iModel 打开链装配（M-H Task 3——Start 入口与同构锁共用）
     src/Gui/DevToolsWidgets.h       # MOC needs this for Q_OBJECT
     src/Gui/DebugWindow.cpp            # Viewer.ts:238-242 Debug info 面板（2026-09-17；2026-09-21 全量 7 widget）
     src/Gui/DtaToolBars.cpp         # DTA 功能分类工具栏区（Views/Selection/View Settings/View Tools/Analysis；Surface 入口在 Start 页）
@@ -238,7 +239,9 @@ if(TARGET gtest_main AND TARGET dqApp)
         tests/PickHiliteSelectionTest.cpp  # 拾取/高亮/点选三链像素级回归（2026-09-16）
         tests/TileTreeRenderTest.cpp    # 离线 3D Tiles tileset 加载渲染像素回归（2026-09-19，RED 锁）
         tests/RpcDumpRenderTest.cpp     # RPC 真实数据端到端渲染锁（M-D(3)，2026-09-27——注册在 TileTreeRenderTest 之后：同进程直跑时其 fetcher 替换不回溢）
+        tests/DumpOpenChainTest.cpp     # 已存 iModel 打开链流程同构锁（M-H Task 3——注册在 RpcDumpRenderTest 之后：同因 fetcher 替换不回溢）
         src/Gui/View3DInventor.cpp       # 测试构造真实 View3DInventor（真视口）
+        src/DumpOpenHelper.cpp           # 打开链装配（M-H Task 3——DumpOpenChain 锁的被测面）
         src/Gui/DecorationGeometryExample.cpp   # DtaToolBars 引用（Deco 按钮）
         src/Gui/DebugWindow.cpp                # DtaToolBars 引用（Debug 按钮）
         src/Gui/DevToolsWidgets.cpp            # DebugWindow 的 7 诊断 widget（DiagnosticsPanel）
@@ -272,6 +275,7 @@ if(TARGET gtest_main AND TARGET dqApp)
         resources.qrc                 # DTA 图标资源（字体 + SVG——图标断言测试需要）
     )
     target_include_directories(DisplayTestAppDtaTest PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src       # DumpOpenHelper.h（M-H Task 3）
         ${CMAKE_CURRENT_SOURCE_DIR}/src/Gui
         ${CMAKE_CURRENT_SOURCE_DIR}/stubs      # Gui::Application 需要 Base/App 桩头
         ${CMAKE_SOURCE_DIR}/third_party        # TileIOFixtures.h（cylinder 录制夹具——U11(3) silhouette 像素锁的派生资产源）
