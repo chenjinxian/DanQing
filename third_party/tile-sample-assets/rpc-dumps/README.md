@@ -45,6 +45,33 @@
 | 统计 | 1 树 / 3587 瓦 / 289.67 MB（深度 d0:4..d7:2880；BFS 未完成——depth-7 仍扩展；详见该目录 README） |
 | 价值 | 瓦 JSON 含 per-primitive `instances{count:60,transforms,featureIds}` 修饰——M-E TD-25（instances 未消费）的直接输入 |
 
+### instances60-drill-v1 — 同上（视口请求面 drill 采集，M-G）
+
+| 项 | 值 |
+|---|---|
+| 统计 | 1 树 / 5 瓦 / 289,572 B（depth-2 放大链 `-b-2-0-0-0-{1,2,4,8,10}`——×16 键在 sweep 域外） |
+| 价值 | 首个真实视口请求面 dump——"视口请求面=回放可达面"同构锁（M-G）的输入 |
+
+### joeshouse-v1 — JoesHouse.bim（BFS 全树，M-H）
+
+| 项 | 值 |
+|---|---|
+| 种子 | `test-apps/display-test-app/test-models/JoesHouse.bim`（拷至 DTA assets） |
+| 统计 | 10 树 / 173,876 瓦 / 291,514,784 B（depth≤10 cap 登记；10 model⇔10 树；imodel.json[iModelRpc 面]在根） |
+| 价值 | 首个多 model 全树资产——特征盘点：纹理 0 命中、instances 67 瓦/795 实例、compact 边缘 75,336 瓦 |
+
+### joeshouse-drill-v1 — 同上（视口请求面 drill 采集，M-H）
+
+| 项 | 值 |
+|---|---|
+| 统计 | 10 树 / 15 瓦 / 125,516 B（4 小树跳级键 + 两大树放大链 ×1..×32；3 键在 sweep 域外[×16×2/×32×1]） |
+
+### instances60-imodel-v1 — Properties_60InstancesWithUrl2.ibim（iModelRpc 面，M-H）
+
+| 项 | 值 |
+|---|---|
+| 统计 | 1 树 / 1 瓦（活性证据）/ imodel.json 主产物（4 视图/默认 0x25/1 model——instances60 的 iModelRpc 面自包含） |
+
 ## manifest 契约（Task 2 DumpTileFetcher/DumpTileTreeProps 消费）
 
 ```jsonc
