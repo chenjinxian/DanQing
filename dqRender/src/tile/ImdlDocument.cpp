@@ -93,7 +93,14 @@ std::optional<ImdlContentDescription> decodeImdlContentDescriptionHeaderOnly(
         return std::nullopt;
 
     bool isLeaf = false;
-    double sizeMultiplier = 1.0;
+    // 0.0 = undefined（DanQing 约定，同 ImdlTileMetadata.sizeMultiplier）——
+    // 对齐参考 decodeTileContentDescription 的 `let sizeMultiplier =
+    // args.sizeMultiplier`（TileMetadata.ts:900，请求瓦自身倍率；根瓦请求路径
+    // 为 undefined）。1.0 仅在下方两个分支内赋值（:924-927 的
+    // `undefined === sizeMultiplier` 门——移植曾被丢为无条件 + 缺省 1.0，
+    // M-F(1) 修正：header 未描述放大时保持 undefined，否则 setContent 的
+    // 升门控（IModelTile.ts:145）会对一切密集瓦误触发 magnification）。
+    double sizeMultiplier = 0.0;
 
     bool const completeTile =
         0 == (static_cast<uint32_t>(header.flags) & static_cast<uint32_t>(ImdlFlags::Incomplete));
@@ -114,9 +121,11 @@ std::optional<ImdlContentDescription> decodeImdlContentDescriptionHeaderOnly(
                     0 != (static_cast<uint32_t>(header.flags) & static_cast<uint32_t>(ImdlFlags::ContainsCurves));
                 if (!containsCurves)
                     isLeaf = true;
-                else
+                else if (0.0 == sizeMultiplier)  // :924-925 `undefined === sizeMultiplier`
                     sizeMultiplier = 1.0;
-            } else if (header.numElementsIncluded + header.numElementsExcluded <= kMinElementsPerTile) {
+            } else if (0.0 == sizeMultiplier  // :926-927
+                       && header.numElementsIncluded + header.numElementsExcluded
+                              <= kMinElementsPerTile) {
                 sizeMultiplier = 1.0;
             }
         }
@@ -147,7 +156,9 @@ std::optional<ImdlContentDescription> decodeImdlContentDescription(
     stream.advance(featureTableStartPos + ftHeader.length - stream.curPos());
 
     bool isLeaf = false;
-    double sizeMultiplier = 1.0;
+    // 0.0 = undefined——同 header-only 形态的 M-F(1) 修正（见其上注释；
+    // TileMetadata.ts:900/:924-927）。
+    double sizeMultiplier = 0.0;
 
     // Determine subdivision from header data (:907-934).
     bool const completeTile =
@@ -172,9 +183,11 @@ std::optional<ImdlContentDescription> decodeImdlContentDescription(
                     0 != (static_cast<uint32_t>(header.flags) & static_cast<uint32_t>(ImdlFlags::ContainsCurves));
                 if (!containsCurves)
                     isLeaf = true;      // :927
-                else
+                else if (0.0 == sizeMultiplier)  // :924-925 `undefined === sizeMultiplier`
                     sizeMultiplier = 1.0;  // :925-928
-            } else if (header.numElementsIncluded + header.numElementsExcluded <= kMinElementsPerTile) {
+            } else if (0.0 == sizeMultiplier  // :926-927
+                       && header.numElementsIncluded + header.numElementsExcluded
+                              <= kMinElementsPerTile) {
                 sizeMultiplier = 1.0;   // :929-931
             }
         }

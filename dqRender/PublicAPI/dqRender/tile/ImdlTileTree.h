@@ -252,6 +252,12 @@ public:
     std::string const& getContentId() const noexcept { return m_contentId; }
     double getSizeMultiplier() const noexcept { return m_sizeMultiplier; }
 
+    /// Mask of known-empty sub-volumes (subdivision skips them,
+    /// computeChildTileProps TileMetadata.ts:826-830). Assigned from content
+    /// in setContent.
+    /// Ported from: IModelTile.emptySubRangeMask (IModelTile.ts:78).
+    uint32_t getEmptySubRangeMask() const noexcept { return m_emptySubRangeMask; }
+
     /// This tile's tree, typed as the iModel tree (the SelectParent protocol's
     /// skip-budget access goes through it).
     /// Ported from: IModelTile.iModelTree (IModelTile.ts:76 —
@@ -272,6 +278,13 @@ public:
     // --- Tile overrides ---
     bool requestContent() override;
     TileContent readContent(uint8_t const* data, size_t dataSize) override;
+
+    /// IModelTile.setContent 的 :134-148 语义：emptySubRangeMask 赋值 (:136)、
+    /// maximumSize 回填 (:140-142)、sizeMultiplier 升门控赋值 (:145-146) +
+    /// contentId 覆写 (:147) + 子代 >1 时 disposeChildren (:148)。
+    /// Ported from: itwinjs-core IModelTile.setContent (IModelTile.ts:134-148)。
+    void setContent(TileContent content) override;
+
     void loadChildren() override;
     bool hasContent() const noexcept override { return !m_contentId.empty(); }
 
@@ -285,6 +298,9 @@ public:
 private:
     std::string m_contentId;
     double m_sizeMultiplier = 0.0;
+    // 参考 _emptySubRangeMask (IModelTile.ts:58)；0 = 未赋值（参考 undefined，
+    // IModelTile.ts:78 的 `?? 0`）。
+    uint32_t m_emptySubRangeMask = 0;
 };
 
 // ---------------------------------------------------------------------------
@@ -336,6 +352,16 @@ public:
             return computeImdlChildTileProps(parent, *m_contentIdProvider,
                                              m_metadata);
         return computeImdlChildTileProps(parent, m_metadata);
+    }
+
+    /// The tree's content Id provider (IModelTileTree.contentIdProvider —
+    /// :396-398 contentIdProvider.create). Null on the legacy path (props
+    /// carry no formatVersion — the legacy V1 id helpers stay in charge, see
+    /// ImdlTreeMetadata::formatVersion). Consumed by ImdlTile::setContent's
+    /// contentId rewrite (IModelTile.ts:147).
+    ContentIdProvider const* contentIdProvider() const noexcept
+    {
+        return m_contentIdProvider.get();
     }
 
     // Content URL: <treeId>/<contentId> (the fetch layer's composition point —

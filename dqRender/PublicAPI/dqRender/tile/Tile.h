@@ -176,8 +176,12 @@ public:
     void collectStatistics(RenderMemory::Statistics& stats, bool includeChildren = true);
 
     // --- Content lifecycle ---
-    /// Set tile content (transitions to Ready)
-    void setContent(TileContent content);
+    /// Set tile content (transitions to Ready).
+    /// Ported from: itwinjs-core Tile.setContent (Tile.ts:309-322). Virtual:
+    /// the reference's TS members are virtual and IModelTile overrides this
+    /// (IModelTile.ts:134 `public override setContent` — the :134-148
+    /// sizeMultiplier/contentId semantics live in ImdlTile::setContent).
+    virtual void setContent(TileContent content);
 
     /// Mark tile as not found
     void setNotFound();
@@ -234,8 +238,7 @@ protected:
     /// The maximum size in pixels this tile can be drawn (Tile.ts:233).
     /// Protected (the reference keeps `_maximumSize` private and IModelTile's
     /// content backfill writes it from the subclass — IModelTile.ts:142;
-    /// DanQing's setContent is non-virtual, so the backfill runs in
-    /// ImdlTile::readContent and needs this access path).
+    /// the backfill lives in ImdlTile::setContent, M-F(1)).
     double m_maximumSize = 0.0;
 
     /// Whether this tile has EVER carried a graphic (the SelectParent

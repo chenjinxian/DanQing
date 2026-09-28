@@ -181,7 +181,11 @@ TEST(ImdlDocument, RectangleIsLeaf)
     auto const desc = dqRender::decodeImdlContentDescription(header, stream);
     ASSERT_TRUE(desc.has_value());
     EXPECT_TRUE(desc->isLeaf);
-    EXPECT_EQ(desc->sizeMultiplier, 1.0);
+    // 叶分支（!containsCurves → isLeaf=true，TileMetadata.ts:923-927）不触
+    // 达 :924-927 的 1.0 赋值——参考 sizeMultiplier 保持 undefined
+    // （:900 的 args.sizeMultiplier 于根瓦请求路径为 undefined）→ DanQing
+    // 0 = undefined 约定（M-F(1) 修正：1.0 只在放大描述分支内赋值）。
+    EXPECT_EQ(desc->sizeMultiplier, 0.0);
 }
 
 // imdl 内容接入 tile 链（G-D3'）：夹具字节经 RealityTile::readContent 的

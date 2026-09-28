@@ -386,10 +386,12 @@ TEST(SelectTilesProtocolTest, DrawCollectsProtocolSelectedTransitionalChildren)
 // :290 的注释（"or else we would draw nothing"）：undisplayable root 下画
 // 当前可画的任何孩子。
 // 场景杠杆（确定性）：
-// - 根未就绪 + 可跳级（:283 haveChildren 的前提）= m_hadGraphics 路由
-//  （:264-265 "previously loaded and later unloaded"——setContent 后 freeMemory；
+// - 根 Ready 空瓦（无 graphic——setContent 空内容：ImdlTile.setContent 的
+//   maximumSize 回填以 graphic 为前提，IModelTile.ts:140-142，空内容不触发
+//   → maximumSize 保持 0=undisplayable）+ 可跳级（:269 的 isReady 路由——
 //   maximumSize==0 + 无父时其余两项不可达：isParentDisplayable 需父、
-//   maxInitialTilesToSkip 恒 0）。
+//   maxInitialTilesToSkip 恒 0；:264-265 的 hadGraphics 路由不可选——
+//   hadGraphics ⟹ graphic 到达过 ⟹ 已被 :140-142 回填成 displayable）。
 // - 根 TooCoarse 走 hasContent 门（空 contentId——同 TooCoarseSkips… 的在文件
 //   杠杆），maximumSize 只进 undisplayable 判定，不进可见性。
 // Ported from: IModelTile.ts:292/:304（isUndisplayableRootTile 特例——
@@ -399,13 +401,19 @@ TEST(SelectTilesProtocolTest, UndisplayableRootDrawsReadyChildrenDespiteSiblingY
 {
     ProtocolTree tree;
 
-    // 根形态：maximumSize 是 ImdlTile 构造尾参；曾载后卸制造未就绪 + 可跳级。
+    // 根形态：maximumSize 是 ImdlTile 构造尾参。undisplayable 腿的可达形态
+    // = 空内容（Ready 无 graphic——IModelTile.ts:140-142 的 maximumSize 回填
+    // 以 graphic 为前提，空内容不触发 → maximumSize 保持 0；isReady 经 :269
+    // 给 canSkipThisTile，:283 的 children 非 undefined → descend 可达）。
+    // M-F(1) 前此腿用 setContent(readyContent)+freeMemory 造 hadGraphics 路由，
+    // 回填归位 setContent 后该形态会被回填成 displayable（参考同样如此——
+    // hadGraphics ⟹ graphic 到达过 ⟹ 已回填），改用参考可达的空内容形态。
     auto makeRoot = [&tree](double maximumSize) {
         auto root = std::make_unique<ImdlTile>(tree, nullptr, "",
                                                box(0, 0, 0, 8, 8, 8), 0.0,
                                                maximumSize);
-        root->setContent(readyContent());  // _hadGraphics 置位（Tile.ts:210-216）
-        root->freeMemory();                // 卸载 → 未就绪 + :264-265 可跳级
+        TileContent empty;  // isLeaf=false、graphic=null → Ready 空瓦
+        root->setContent(std::move(empty));
         return root;
     };
     // kidReady：叶（setContent isLeaf）→ 确定 Visible → :219-222 push+markReady。
@@ -449,8 +457,8 @@ TEST(SelectTilesProtocolTest, UndisplayableRootDrawsReadyChildrenDespiteSiblingY
     }
     {
         // 对照（同形态、根可显示 maximumSize 512）：:304 = false → 独占回滚
-        //（:313-314）丢弃就绪孩子；根自身未就绪（Abandoned）:317 不入选 →
-        // selected 空。两块对锁 :304 的两个取值方向。
+        //（:313-314）丢弃就绪孩子；根自身 Ready 空瓦（无 graphic）:317-320
+        // 不入选 → selected 空。两块对锁 :304 的两个取值方向。
         auto root = makeRoot(/*maximumSize=*/512.0);
         ASSERT_FALSE(root->isUndisplayableRootTile());
         auto const [readyPtr, notReadyPtr] = makeKids(*root);

@@ -66,20 +66,27 @@ void TileAdmin::process()
     // Ported from: itwinjs-core TileAdmin.ts process()
     // Called each frame from Application::EventLoop
 
-    // 1. Process the request queue (collect from users, dispatch via channels)
+    // 1. Process completed async fetches (deliver data to tiles).
+    //    EQUIVALENCE（参考可观察排序不变量）：参考的 fetch 经网络异步完成——
+    //    帧 N dispatch 的响应最早在帧 N+1 的选择之后到达（setContent 绝不早于
+    //    下一个选择趟）；DanQing 轮询 fetcher 的 fetch() 在 dispatch 时即入
+    //    队完成项，若按"先 dispatch 后 drain"的同帧顺序会在帧 N 的选择之前
+    //    交付，塌缩该不变量（M-F(1) 实锤：根瓦内容同帧到达 → setContent 门控
+    //    先于首个 loadChildren → 兼容种子树误走 magnification，与采集
+    //    manifest 的细分键域矛盾）。故 drain 置于本帧 dispatch 之前——
+    //    完成项只能在 ≥1 个选择趟之后交付（TileAdmin.ts:445-453 参考内部
+    //    顺序对其 http fetcher 不可观察，此处按参考可观察语义归位）。
+    if (m_fetcher)
+        m_fetcher->processCompleted();
+
+    // 2. Process the request queue (collect from users, dispatch via channels)
     processQueue();
 
-    // 2. Process all channels (sort, dispatch up to concurrency limit).
+    // 3. Process all channels (sort, dispatch up to concurrency limit).
     //    The polling fetcher owns the real in-flight set, so its active count
     //    participates in the channels' concurrency limit (see
     //    TileRequestChannel::process — reference keeps this inside the channel).
     m_channels.process(m_fetcher ? m_fetcher->getActiveCount() : 0);
-
-    // 3. Process completed async fetches (deliver data to tiles)
-    // Ported from: itwinjs-core TileRequestChannel._processCompleted()
-    if (m_fetcher) {
-        m_fetcher->processCompleted();
-    }
 
     // Statistics mirrors (panel reads statistics() only — keep the live
     // active/pending counts in sync with the queue state).

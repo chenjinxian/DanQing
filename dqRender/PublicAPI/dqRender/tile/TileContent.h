@@ -35,6 +35,21 @@ struct TileContent {
     /// If true, no further subdivision is needed (leaf tile)
     bool isLeaf = false;
 
+    /// If this tile was produced by refinement, the multiplier applied to its
+    /// screen size (0.0 = undefined — the DanQing convention, same as
+    /// ImdlTileMetadata.sizeMultiplier; the reference's is `number | undefined`,
+    /// IModelTile.ts:49). Consumed by ImdlTile::setContent
+    /// (IModelTile.ts:134-148).
+    /// Ported from: itwinjs-core IModelTileContent.sizeMultiplier
+    /// (IModelTile.ts:48-49).
+    double sizeMultiplier = 0.0;
+
+    /// A bitfield describing empty sub-volumes of this tile's volume
+    /// (skipped by subdivision, computeChildTileProps TileMetadata.ts:826-830).
+    /// Ported from: itwinjs-core IModelTileContent.emptySubRangeMask
+    /// (IModelTile.ts:50-51).
+    uint32_t emptySubRangeMask = 0;
+
     /// If true, content contains point cloud data (affects shader selection)
     bool containsPointCloud = false;
 
