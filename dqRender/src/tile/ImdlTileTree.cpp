@@ -672,6 +672,10 @@ void ImdlTile::loadChildren()
     parent.contentRange = getRange();
     parent.isLeaf = isLeaf();
     parent.sizeMultiplier = m_sizeMultiplier;
+    // 参考的 parent 实参即 this（IModelTile.ts:156 computeChildTileProps(this,
+    // ...)）——setContent :136 写入的 _emptySubRangeMask 随瓦进 computeChild-
+    // TileProps 的跳过逻辑（TileMetadata.ts:808/:826-830）。
+    parent.emptySubRangeMask = m_emptySubRangeMask;
 
     auto children = tree.childPropsFor(parent);
     if (children.empty()) {

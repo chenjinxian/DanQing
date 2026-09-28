@@ -101,7 +101,7 @@ bool contentStats(std::vector<uint8_t> const& f, uint32_t w, uint32_t h,
                   uint32_t& minX, uint32_t& maxX, uint32_t& minY, uint32_t& maxY)
 {
     uint8_t const* bg = &f[0];
-    long sx = 0, sy = 0;
+    long long sx = 0, sy = 0;  // long long：内容 >2.1M px 时 32-bit long 累加溢出
     count = 0;
     minX = w; maxX = 0; minY = h; maxY = 0;
     for (uint32_t y = 0; y < h; ++y)
@@ -702,32 +702,57 @@ TEST(RpcDumpRender, Instances60RendersAllInstances)
 }
 
 // ---------------------------------------------------------------------------
-// 完整加载 E2E 对账锁（M-E Task 4）：instances60-v1 全树前缀加载——驱动
-// selectTiles 至静默后，DumpTileFetcher 侧记录的全部请求键与 manifest 键集合
-// 逐一对账：凡 manifest 有键且被请求的瓦全部消费（Completed → graphics），
-// 对不上（NotFound）的键全部是 V4 细分派生形——即 TD-25/task-3 登记的子瓦
-// contentId 派生链差异（DanQing computeImdlChildTileProps 的 "-b-d-i-j-k-1"
-// vs 真实后端采集键域的尾段 quadrant/magnification 形），非链断。
+// 完整加载 E2E 对账锁（M-E Task 4；M-F Task 2 两相驱动升级）：instances60-v1
+// 全树前缀加载——驱动 selectTiles 至静默后，DumpTileFetcher 侧记录的全部请求
+// 键与 manifest 键集合逐一对账。
+//
+// 【M-F Task 2 取证结论（实测驱动，替代 M-E 的"派生链差异"假设）】
+// 本 dump 的 manifest 键域是仓外 sweep.js **合成 BFS 采集面**的产物，不是
+// 任何单一视口驱动的请求面（README/provenance 在案：generateTileContent
+// 鸭子类型逐键请求 + 页内 computeChildTileProps 派生子瓦 + 放大 cap=×8 +
+// BFS 未完成前缀）。两个结构性事实决定视口面对本域的连接上限：
+//  (a) 放大子与父**同范围**（TileMetadata.ts:785-799）——父 TooCoarse 时
+//      放大子同尺寸也 TooCoarse、永不 Visible；而 hasSizeMultiplier 使
+//      isNotReady 为假（IModelTile.ts:272）不耗跳级预算——放大脊在视口
+//      面是"无请求的canSkip穿透"（参考同构）。故采集域的 depth-0 放大键
+//      "-b-0-0-0-0-{2,4,8}" 是 BFS 直接请求的产物，**任何视口驱动都不会
+//      请求它们**（M-F Task 2 选择轨迹实证：冷启动 fit 泵帧全程只请求
+//      根 + 可见子 "-b-1-0-0-0-1"）。
+//  (b) 细分子的 mult **继承父键**（TileMetadata.ts:841-846 childSpec 展开
+//      parentSpec——DanQing ImdlTileTree.cpp 逐行同构）。冷启动根的首次
+//      loadChildren 在内容到达前以 mult=0 细分（两实现同构——参考的
+//      computeChildTileProps 在 loadChildren() 调用点同步执行），产
+//      mult=1 子；setContent :148 的 disposeChildren 门要求 children>1
+//      （唯一幸存子被保留，参考同构）→ 冷 fit 面请求 "-b-1-0-0-0-1"——
+//      该键不在采集域（sweep 从未细分 mult=1 父：根 descMult=1 恒走放大）。
+// 因此本锁分两相驱动，把**视口面可达的链消费**钉全：
+//   相 1（冷 fit 全量装载）：根 "-b-0-0-0-0-1" 链通（Completed），子
+//      "-b-1-0-0-0-1" miss（域外，形验记录）。
+//   相 2（确定性钻取 kZoom=3，CompatSeed 成熟配方同款）："-b-1-0-0-0-1"
+//      转 TooCoarse → canSkip 下潜（:272 预算 0→1）→ 其 mult=1 细分子
+//      预算耗尽被请求（:329-331）→ "-b-2-0-0-0-1" 命中采集域（Completed
+//      → graphics）——派生子瓦请求→字节→graphics 的 E2E 直接证据。
 // ---------------------------------------------------------------------------
-// Authored: 见文件头。判据设计（不盲目 ready==manifest.tiles.size——子瓦派生
-// 链差异使绝大多数采集键不在今天派生链的可达面内，盲目全等会把已登记的
-// 派生差异烤成失败）：
+// Authored: 见文件头。判据设计（不盲目 ready==manifest.tiles.size——采集域
+// 是 BFS 面产物（上），盲目全等会把采集面差异烤成失败）：
 // ① 零 Error：请求日志里无文件缺失/byteLength 不符/畸形 url（dump 资产
 //    自洽性破口必红）；
 // ② 零重复：每键至多一条请求（TileAdmin 非 NotLoaded 不重建请求的门）；
 // ③ 链通：Completed 键 ⊆ manifest 键集，且根键 "-b-0-0-0-0-1" 在其中
 //    （IModelTileTree.ts:398 rootContentId 覆写——V4 形根键命中采集域）；
-// ④ 差异形：requested \ manifest 的每个键都是 "-b-<d>-<i>-<j>-<k>-1"
-//    （V4 细分派生、mult=1、d≥1）——不含采集域的尾段 -{2,4,8} 形/畸形键；
+//    M-F(2) 新增："-b-2-0-0-0-1" ∈ Completed（相 2 钻取消费的非根派生键——
+//    采集域内 depth-2 唯一 mult=1 键）；
+// ④ 差异形：requested \ manifest 的每个键都是 "-b-<d>-<i>-<j>-<k>-<mult>"
+//    形（V4 派生形；mult 段为 hex——细分继承父 mult、放大为 2 的幂，参考
+//    TileMetadata.ts:633-636/:841-846）；已知域外键两枚实钉（见下）；
 // ⑤ 树侧终态全消费：树内每个瓦——contentId ∈ manifest 命中集 → hasGraphics()；
 //    否则（派生 miss）→ loadStatus == NotFound。无 Loading/Queued/NotLoaded
 //    残留（泵至静默的"全部就绪"语义：在途清零）；
 // ⑥ 计数对账：|Completed| == 树侧 graphics 瓦数（每个完成的请求都被消费）；
-// ⑦ 覆盖率报告（printf 非断言）：命中/3587——首绿实测 1/3587（唯一非空
-//    octant 的子键亦落采集域外）——今天派生链可达键域的占比，其余键域可达
-//    性归子瓦派生链任务（与 TD-25 遗留呼应，不判失败）；
-// ⑧ 像素锚：消费的根瓦上屏（内容 ≥ 20000 + 绿上下文 ≥ 1000——首绿实测
-//    231141/56399 的下界钉值）。
+// ⑦ 覆盖率报告（printf 非断言）：命中/3587——首绿实测 1/3587；M-F(2) 两相
+//    实测 2/3587（相 2 的 "-b-2-0-0-0-1" 命中）。其余 3585 键的域内可达性
+//    受采集面 (a)(b) 限制（见锁头取证结论），非引擎通路缺口；
+// ⑧ 像素锚：消费的瓦上屏（内容 + 绿上下文 ≥ 首绿实测下界，见断言处）；
 // ⑨ dispatch ≥ 1。
 TEST(RpcDumpRender, Instances60FullLoadReconcilesManifestKeys)
 {
@@ -777,41 +802,77 @@ TEST(RpcDumpRender, Instances60FullLoadReconcilesManifestKeys)
     }
     view.getUeViewport()->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
 
-    // 泵至静默：根瓦就绪 + 请求日志尺寸连续 6 次迭代不变 + 投递队列排空
-    // （每键至多请求一次——日志稳定即"想要的全要了"；有界 20s）。
+    // 泵至静默的公共形态：请求日志尺寸连续 6 次迭代不变 + 投递队列排空
+    // （每键至多请求一次——日志稳定即"想要的全要了"；有界 20s/相）。
     uint32_t const dispatchedBefore =
         dqRender::TileAdmin::instance().statistics().totalDispatchedRequests;
     long readyTiles = 0, totalTiles = 0;
-    size_t lastLogSize = 0;
-    int stable = 0, quiesceIter = -1;
-    for (int i = 0; i < 200; ++i) {
-        spin(100);
-        readyTiles = 0;
-        totalTiles = 0;
-        for (auto& t : mount->trees)
-            countGraphicsReady(t->getRootTile(), readyTiles, totalTiles);
-        size_t const logSize = mount->fetcher->requestLog().size();
-        if (readyTiles >= 1 && !mount->fetcher->requestLog().empty()
-            && logSize == lastLogSize
-            && mount->fetcher->getActiveCount() == 0) {
-            if (++stable >= 6) {
-                quiesceIter = i;
-                break;
+    auto pumpToQuiesce = [&]() -> int {
+        size_t lastLogSize = 0;
+        int stable = 0;
+        for (int i = 0; i < 200; ++i) {
+            spin(100);
+            readyTiles = 0;
+            totalTiles = 0;
+            for (auto& t : mount->trees)
+                countGraphicsReady(t->getRootTile(), readyTiles, totalTiles);
+            size_t const logSize = mount->fetcher->requestLog().size();
+            if (readyTiles >= 1 && !mount->fetcher->requestLog().empty()
+                && logSize == lastLogSize
+                && mount->fetcher->getActiveCount() == 0) {
+                if (++stable >= 6)
+                    return i;
+            } else {
+                stable = 0;
             }
-        } else {
-            stable = 0;
+            lastLogSize = logSize;
         }
-        lastLogSize = logSize;
-    }
+        return -1;
+    };
+
+    // 相 1：冷 fit 全量装载泵至静默（选择轨迹实证面：根 TooCoarse 请求 +
+    // 其唯一细分子 Visible 请求；见锁头取证结论）。
+    int quiesceIter = pumpToQuiesce();
     ASSERT_GE(quiesceIter, 0)
-        << "tile load never quiesced — in-flight requests remain (log="
+        << "phase-1 tile load never quiesced — in-flight requests remain (log="
+        << mount->fetcher->requestLog().size() << " ready=" << readyTiles << ")";
+
+    // 相 2：确定性钻取（CompatSeed 成熟配方同款——不跑 StandardViewTool，
+    // LookAtVolume+synch 即刻 settle）：fit 体积向心缩 3× → "-b-1-0-0-0-1"
+    // 由 Visible 转 TooCoarse（fit 下其 screenSize ≤ 2048，3× 后 ∈
+    // (3072,6144] 必超阈值）→ canSkip 下潜 → 其 mult=1 细分子预算耗尽被
+    // 请求（:329-331）→ "-b-2-0-0-0-1" 入链通集（采集域内 depth-2 唯一
+    // mult=1 键）。后续波次（"-b-2" 就绪后再下潜 depth-3）由泵至静默兜住，
+    // 实测钉值见下。
+    {
+        auto* view3d = view.getUeViewport()->GetView()->AsViewState3d();
+        ASSERT_NE(view3d, nullptr);
+        dqGeom::Range3d const fit = dta::mountDumpFitVolume(mount->fitRange,
+                                                            /*zEps=*/1.0);
+        auto const center = fit.Center();
+        double constexpr kZoom = 3.0;
+        dqGeom::Range3d const zoomed = dqGeom::Range3d::CreateXYZXYZ(
+            center.x - (center.x - fit.low.x) / kZoom,
+            center.y - (center.y - fit.low.y) / kZoom,
+            center.z - (center.z - fit.low.z) / kZoom,
+            center.x + (fit.high.x - center.x) / kZoom,
+            center.y + (fit.high.y - center.y) / kZoom,
+            center.z + (fit.high.z - center.z) / kZoom);
+        view3d->LookAtVolume(zoomed);
+        view.getUeViewport()->InvalidateController();
+        view.getUeViewport()->synchWithView(
+            dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+    }
+    int const quiesceIter2 = pumpToQuiesce();
+    ASSERT_GE(quiesceIter2, 0)
+        << "phase-2 drill load never quiesced — in-flight requests remain (log="
         << mount->fetcher->requestLog().size() << " ready=" << readyTiles << ")";
     view.getUeViewport()->RenderFrame();
     uint32_t const dispatched =
         dqRender::TileAdmin::instance().statistics().totalDispatchedRequests
         - dispatchedBefore;
 
-    // --- 对账：请求日志 vs manifest 键集合 ---
+    // --- 对账：请求日志 vs manifest 键集合（两相累计） ---
     std::set<std::string> manifestKeys;
     for (auto const& t : mount->manifest.tiles)
         manifestKeys.insert(t.treeId + "/" + t.contentId);
@@ -819,7 +880,7 @@ TEST(RpcDumpRender, Instances60FullLoadReconcilesManifestKeys)
     auto const& log = mount->fetcher->requestLog();
     std::set<std::string> requestedKeys;
     size_t numCompleted = 0, numNotFound = 0, numError = 0;
-    std::vector<std::string> misses;  // requested \ manifest（treeId/contentId）
+    std::vector<std::string> misses;  // requested \ manifest（contentId）
     for (auto const& rec : log) {
         std::string const key = rec.treeId + "/" + rec.contentId;
         requestedKeys.insert(key);
@@ -836,12 +897,12 @@ TEST(RpcDumpRender, Instances60FullLoadReconcilesManifestKeys)
             break;
         }
     }
-    printf("[RPC-RENDER] full-load reconcile: requested=%zu (completed=%zu "
-           "notFound=%zu error=%zu) manifest=%zu coverage=%zu/%zu quiesceIter=%d "
-           "ready=%ld/%ld dispatched=%u\n",
+    printf("[RPC-RENDER] full-load reconcile (2-phase): requested=%zu "
+           "(completed=%zu notFound=%zu error=%zu) manifest=%zu "
+           "coverage=%zu/%zu quiesceIter=%d/%d ready=%ld/%ld dispatched=%u\n",
            log.size(), numCompleted, numNotFound, numError, manifestKeys.size(),
            requestedKeys.size() - misses.size(), manifestKeys.size(),
-           quiesceIter, readyTiles, totalTiles, dispatched);
+           quiesceIter, quiesceIter2, readyTiles, totalTiles, dispatched);
 
     // ① 零 Error（dump 资产自洽性破口）。
     EXPECT_EQ(0u, numError) << "dump asset integrity break (missing file / "
@@ -849,7 +910,7 @@ TEST(RpcDumpRender, Instances60FullLoadReconcilesManifestKeys)
     // ② 零重复请求（每键至多一条）。
     EXPECT_EQ(requestedKeys.size(), log.size())
         << "duplicate requests for the same key — re-request thrash";
-    // ③ 链通：Completed 键 ⊆ manifest，根键在其中。
+    // ③ 链通：Completed 键 ⊆ manifest，根键 + 相 2 钻取键在其中。
     for (auto const& rec : log) {
         if (rec.outcome != dqApp::DumpTileFetcher::DumpFetchOutcome::Completed)
             continue;
@@ -857,17 +918,34 @@ TEST(RpcDumpRender, Instances60FullLoadReconcilesManifestKeys)
             << "Completed key not in manifest: " << rec.contentId;
     }
     EXPECT_GT(numCompleted, 0u) << "no manifest key was ever requested";
-    // 首绿实测钉值（2026-09-28）：链通集恰 = 根键一个——contentRange 裁剪后
-    // 唯一非空 octant 的子键 "-b-1-0-0-0-1" 落采集域外（采集域 depth-1 =
-    // "-b-1-0-0-0-{2,4,8}"，即 TD-25/task-3 登记的子瓦派生链差异实形）。
-    // 归链任务修复派生后此处随实测更新（期望：miss 缩小/消失、覆盖率上升）。
-    EXPECT_EQ(1u, numCompleted) << "unexpected chain-connected set — reconcile "
+    // M-F(2) 实测钉值（两相驱动实测）：链通集 = {"-b-0-0-0-0-1"（相 1 根键）,
+    // "-b-2-0-0-0-1"（相 2 钻取消费的派生子键——mult=1 细分继承形，采集域内
+    // depth-2 唯一）}。采集域的放大键（-b-0-0-0-0-{2,4,8} 等）是 sweep BFS
+    // 面产物，视口驱动不请求（锁头取证结论 (a)）——不钉入链通集，钉了即烤
+    // 采集面差异进判据。
+    EXPECT_EQ(2u, numCompleted) << "unexpected chain-connected set — reconcile "
                                    "the new consumption face consciously";
-    // ④ 差异形：每个 miss 都是 "-b-<d>-<i>-<j>-<k>-1"（V4 细分派生、mult=1）。
+    {
+        bool rootConnected = false, drillConnected = false;
+        for (auto const& rec : log) {
+            if (rec.outcome != dqApp::DumpTileFetcher::DumpFetchOutcome::Completed)
+                continue;
+            if (rec.contentId == "-b-0-0-0-0-1")
+                rootConnected = true;
+            if (rec.contentId == "-b-2-0-0-0-1")
+                drillConnected = true;
+        }
+        EXPECT_TRUE(rootConnected) << "root key never connected";
+        EXPECT_TRUE(drillConnected)
+            << "phase-2 drill key -b-2-0-0-0-1 (in-manifest mult-1 derivation) "
+               "never connected — derived-child request chain broken";
+    }
+    // ④ 差异形：每个 miss 都是 "-b-<d>-<i>-<j>-<k>-<mult>" 形（V4 派生形，
+    // mult 段 hex——细分继承父 mult / 放大 2 的幂）。
     for (auto const& m : misses) {
         bool derivedForm = false;
         if (m.rfind("-b-", 0) == 0) {
-            // 段：['', 'b', d, i, j, k, mult] —— mult 恒 "1"、d ≥ 1。
+            // 段：['', 'b', d, i, j, k, mult] —— mult 为 1-2 位 hex、d ≥ 1。
             std::vector<std::string> segs;
             size_t start = 0;
             while (true) {
@@ -879,20 +957,26 @@ TEST(RpcDumpRender, Instances60FullLoadReconcilesManifestKeys)
                 segs.push_back(m.substr(start, sep - start));
                 start = sep + 1;
             }
-            derivedForm = segs.size() == 7 && segs[1] == "b" && segs[6] == "1"
+            derivedForm = segs.size() == 7 && segs[1] == "b"
+                          && segs[6].size() >= 1 && segs[6].size() <= 2
+                          && segs[6].find_first_not_of("0123456789abcdef")
+                             == std::string::npos
                           && segs[2] != "0";
         }
         EXPECT_TRUE(derivedForm)
-            << "miss key is not a V4 subdivision derivation: " << m
+            << "miss key is not a V4 derivation shape: " << m
             << " (collection-domain shape leaked or malformed)";
     }
-    // 差异键实钉：今天派生链的唯一 miss 即 task-3 登记的 "-b-1-0-0-0-1"
-    //（vs 采集域 "-b-1-0-0-0-{2,4,8}"——真实后端尾段 quadrant/magnification
-    // 编号差异）。派生链修复后本断言随新实测更新。
-    ASSERT_EQ(1u, misses.size());
-    EXPECT_EQ("-b-1-0-0-0-1", misses[0])
-        << "the registered derivation-difference key changed — update the pin "
-           "with the fixed derivation's measured shape";
+    // 差异键实钉（M-F(2) 两相实测）：域外 miss 恰两枚——
+    //  "-b-1-0-0-0-1"（相 1：冷启动根的首个 loadChildren 在内容到达前细分
+    //    （两实现同构）、唯一幸存子被 :148 ≤1 门保留、fit 下 Visible 被请求；
+    //    sweep 从未细分 mult=1 父 → 域外）；
+    //  "-b-3-0-0-0-1"（相 2 后波："-b-2-0-0-0-1" 就绪后再下潜 depth-3，
+    //    mult=1 形；采集域 depth-3 无 mult=1 键 → 域外）。
+    // 若实测变化（键集合/数量），先核锁头取证结论再更新钉值。
+    ASSERT_EQ(2u, misses.size());
+    EXPECT_EQ("-b-1-0-0-0-1", misses[0]);
+    EXPECT_EQ("-b-3-0-0-0-1", misses[1]);
 
     // ⑤ 树侧终态全消费：manifest 命中键 → hasGraphics；miss 键 → NotFound。
     std::map<std::string, dqRender::Tile*> tilesByKey;
@@ -929,7 +1013,12 @@ TEST(RpcDumpRender, Instances60FullLoadReconcilesManifestKeys)
     EXPECT_EQ(static_cast<long>(numCompleted), graphicsTiles)
         << "completed requests without consumed graphics (readContent drop?)";
 
-    // ⑧ 像素锚：消费的根瓦上屏（阈值 = 首绿实测下界，见测试头）。
+    // ⑧ 像素锚：相 2 钻取视图的消费内容上屏。首绿实测（M-F(2) 两相驱动）：
+    // content=2624167 px = 帧（2000×1400）的 93.7%——钻取体积落入模型内容
+    // octant，整帧近全覆盖（绿上下文墙在钻取体积外，green=0 是相 2 取景的
+    // 预期形态，不作锚）。阈值 = 首绿实测的 0.38×（内容存活退化——如瓦内容
+    // 整体消失/取景链断——必红）；WHERE = 内容质心在中央带（钻取向心取
+    // fit 中心，质心偏移 = 变换链缺陷）。
     std::vector<uint8_t> frame;
     uint32_t w = 0, h = 0;
     ASSERT_TRUE(view.getUeViewport()->ReadFrameForTest(frame, w, h));
@@ -939,11 +1028,15 @@ TEST(RpcDumpRender, Instances60FullLoadReconcilesManifestKeys)
     double cx = 0, cy = 0;
     uint32_t minX = 0, maxX = 0, minY = 0, maxY = 0;
     ASSERT_TRUE(contentStats(frame, w, h, count, cx, cy, minX, maxX, minY, maxY));
-    long const green = countGreenPixels(frame, w, h);
-    printf("[RPC-RENDER] content=%ld px green=%ld px\n", count, green);
-    EXPECT_GE(count, 20000l) << "consumed root tile not rendered — load chain "
-                                "disconnected from draw";
-    EXPECT_GE(green, 1000l) << "context primitive (green wall) not rendered";
+    printf("[RPC-RENDER] content=%ld px (%.3f%% of %ux%u) bbox=(%u,%u)-(%u,%u) "
+           "centroid=(%.0f,%.0f)\n",
+           count, 100.0 * count / (static_cast<double>(w) * h), w, h,
+           minX, minY, maxX, maxY, cx, cy);
+    EXPECT_GE(count, 1000000l)
+        << "consumed drill-view content barely visible — threshold is a pinned "
+           "fraction of the measured GREEN baseline, not a fudge factor";
+    EXPECT_LT(std::abs(cx - w / 2.0), w * 0.2) << "content centroid x off-center";
+    EXPECT_LT(std::abs(cy - h / 2.0), h * 0.2) << "content centroid y off-center";
     // ⑨ dispatch ≥ 1。
     EXPECT_GE(dispatched, 1u);
 

@@ -534,6 +534,49 @@ TEST(ImdlTileTreeTest, SetContentSizeMultiplierNeverDowngrades)
 }
 
 // ---------------------------------------------------------------------------
+// ImdlTile::loadChildren — emptySubRangeMask 消费最后一跳（M-F Task 2 评审
+// 指定先修项）：参考的 parent 实参即 this（IModelTile.ts:156
+// computeChildTileProps(this, ...)）——setContent :136 写入的 mask 随瓦进入
+// TileMetadata.ts:808/:826-830 的已知空子体积跳过逻辑。
+// ---------------------------------------------------------------------------
+
+// Ported from: IModelTile._loadChildren (IModelTile.ts:153-156——mask 传递
+//              语义：parent.emptySubRangeMask 来自瓦自身而非调用点重拷）。
+// Authored: 场景自写（参考无 loadChildren mask 直达单测——覆盖在树集成）。
+TEST(ImdlTileTreeTest, LoadChildrenSkipsSubVolumesMarkedEmptyByParentMask)
+{
+    // 桩树 V4 provider（-b- 键域）；contentRange 全包含根域——模型域拒绝
+    // （TileMetadata.ts:816-820/:836-840）不介入，mask 是唯一的跳过源。
+    dqRender::ImdlTreeMetadata meta;
+    meta.contentRange = box(-101, -101, -101, 101, 101, 101);
+    meta.tileScreenSize = 2048;
+    meta.formatVersion = 37u << 0x10;
+    dqRender::ImdlTileTree tree("25_1d-E:6_0x1c", "0/0/0/0/1",
+                                box(-100, -100, -100, 100, 100, 100), meta);
+    auto* root = static_cast<dqRender::ImdlTile*>(tree.getRootTile());
+    ASSERT_NE(root, nullptr);
+    ASSERT_EQ(root->getContentId(), "-b-0-0-0-0-1");
+
+    // 参考内容形态：无 sizeMultiplier（细分路径——mask 语义生效面；
+    // magnification 分支 :785-799 不查 mask）；emptySubRangeMask=0x1 =
+    // 子 (i=j=k=0) 已知为空（位序 1<<(i + j*2 + k*4)，TileMetadata.ts:826）。
+    dqRender::TileContent content;
+    content.graphic = std::make_unique<ReadContentStubGraphic>();
+    content.emptySubRangeMask = 0x1;
+    root->setContent(std::move(content));
+    ASSERT_EQ(root->getEmptySubRangeMask(), 0x1u);
+
+    root->loadChildren();  // IModelTile.ts:153-169 → computeChildTileProps
+
+    // 空子不产：8 octants − 1 masked = 7（内容范围全包含 → 无模型域拒绝；
+    // 修复前 mask 未接线恒 0 → 8 子，本锁 RED）。
+    ASSERT_EQ(root->getChildren().size(), 7u);
+    for (auto const* c : root->getChildren())
+        EXPECT_NE(static_cast<dqRender::ImdlTile const*>(c)->getContentId(),
+                  "-b-1-0-0-0-1");
+}
+
+// ---------------------------------------------------------------------------
 // ContentIdProvider — 内容 Id 方案机制（M-D(3)：RPC dump 请求键形态的来源）。
 //
 // Ported from: itwinjs-core core/common/src/test/TileMetadata.test.ts
