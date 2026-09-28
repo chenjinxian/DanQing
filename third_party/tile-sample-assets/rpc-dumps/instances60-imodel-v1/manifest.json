@@ -1,0 +1,80 @@
+{
+  "provenance": {
+    "pageHref": "http://localhost:3000/",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7977.65 Electron/44.1.1 Safari/537.36",
+    "defaultView": {
+      "origin": [
+        16.475149227367368,
+        -6.819911264086677,
+        -7.991705903657024
+      ],
+      "extents": [
+        19.32567417568155,
+        10.482563627426238,
+        19.557384678145382
+      ],
+      "rotation": [
+        [
+          -0.9405434981923299,
+          -0.3396732665490985,
+          8.326672684688674e-17
+        ],
+        [
+          0.0961362015920622,
+          -0.26619780905027807,
+          0.9591123798597755
+        ],
+        [
+          -0.32578483505464967,
+          0.9020869129128839,
+          0.28302551616368077
+        ]
+      ],
+      "is3d": true,
+      "cameraOn": false,
+      "lens": 0,
+      "viewRect": {
+        "w": 1556,
+        "h": 844
+      },
+      "capturedAt": "2026-09-28T14:15:36.287Z"
+    },
+    "formatVersion": 2424832,
+    "seed": "Properties_60InstancesWithUrl2.ibim",
+    "seedPath": "D:\\Github\\tiangong-kaiwu\\itwinjs-core\\test-apps\\display-test-app\\assets\\Properties_60InstancesWithUrl2.ibim",
+    "collected": "2026-09-28T14:15:52.180Z",
+    "itwinjsCommit": "6f57040dc68a4c418dcabfe66cf61b036e144d16",
+    "iModelId": "dfac2750-4c3e-41de-afe7-5f4d97375006",
+    "changesetId": "",
+    "tool": "danqing-rpc-tools capture.mjs"
+  },
+  "stats": {
+    "trees": 1,
+    "tiles": 1,
+    "dupTiles": 0,
+    "dupTrees": 0,
+    "bytes": 20844
+  },
+  "trees": [
+    {
+      "treeId": "25_1d-E:6_0x1c",
+      "iModelId": "dfac2750-4c3e-41de-afe7-5f4d97375006",
+      "formatVersion": 2424832,
+      "byteLength": 682,
+      "file": "files/2.json",
+      "propsFile": "files/2.json"
+    }
+  ],
+  "tiles": [
+    {
+      "treeId": "25_1d-E:6_0x1c",
+      "contentId": "-b-2-0-0-0-1",
+      "guid": "first_eb17e2d298ad8205",
+      "iModelId": "dfac2750-4c3e-41de-afe7-5f4d97375006",
+      "changesetId": "",
+      "byteLength": 20844,
+      "sha256": "6f32f060bf396e4527d4c45f80d0b6b2cbe1937eb1d868faf325997312e12611",
+      "file": "files/3.imdl"
+    }
+  ]
+}
