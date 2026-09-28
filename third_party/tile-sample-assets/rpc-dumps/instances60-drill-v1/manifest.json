@@ -1,0 +1,113 @@
+{
+  "provenance": {
+    "pageHref": "http://localhost:3000/",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7977.65 Electron/44.1.1 Safari/537.36",
+    "formatVersion": 2424832,
+    "seed": "Properties_60InstancesWithUrl2.ibim",
+    "seedPath": "D:\\Github\\tiangong-kaiwu\\itwinjs-core\\test-apps\\display-test-app\\assets\\Properties_60InstancesWithUrl2.ibim",
+    "collected": "2026-09-28T06:23:41.345Z",
+    "itwinjsCommit": "f7a78eec2bc6daaafce555e2d873de38b195b111",
+    "iModelId": "dfac2750-4c3e-41de-afe7-5f4d97375006",
+    "changesetId": "",
+    "tool": "danqing-rpc-tools capture.mjs",
+    "drill": {
+      "targets": [
+        [
+          -78.97,
+          -37.24,
+          -24.13
+        ]
+      ],
+      "zoomPerTarget": 10,
+      "radius": 101,
+      "framingApi": "skipped(skipFrame)",
+      "zoomInApi": "viewport.zoom(undefined,0.5)",
+      "windowSize": "2000,1400",
+      "viewRect": {
+        "w": 1556,
+        "h": 844
+      },
+      "cameraOn": false,
+      "levelsReached": [
+        {
+          "target": [
+            -78.97,
+            -37.24,
+            -24.13
+          ],
+          "levels": 10,
+          "tilesAtEnd": 5
+        }
+      ]
+    }
+  },
+  "stats": {
+    "trees": 1,
+    "tiles": 5,
+    "dupTiles": 0,
+    "dupTrees": 0,
+    "bytes": 289572
+  },
+  "trees": [
+    {
+      "treeId": "25_1d-E:6_0x1c",
+      "iModelId": "dfac2750-4c3e-41de-afe7-5f4d97375006",
+      "formatVersion": 2424832,
+      "byteLength": 682,
+      "file": "files/3.json",
+      "propsFile": "files/3.json"
+    }
+  ],
+  "tiles": [
+    {
+      "treeId": "25_1d-E:6_0x1c",
+      "contentId": "-b-2-0-0-0-1",
+      "guid": "first_eb17e2d298ad8205",
+      "iModelId": "dfac2750-4c3e-41de-afe7-5f4d97375006",
+      "changesetId": "",
+      "byteLength": 20844,
+      "sha256": "6f32f060bf396e4527d4c45f80d0b6b2cbe1937eb1d868faf325997312e12611",
+      "file": "files/4.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x1c",
+      "contentId": "-b-2-0-0-0-2",
+      "guid": "first_eb17e2d298ad8205",
+      "iModelId": "dfac2750-4c3e-41de-afe7-5f4d97375006",
+      "changesetId": "",
+      "byteLength": 27084,
+      "sha256": "de02973bdda602d5da2322f4725f6e5a7412d2af7dbb77bdf1955cfc73730760",
+      "file": "files/5.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x1c",
+      "contentId": "-b-2-0-0-0-4",
+      "guid": "first_eb17e2d298ad8205",
+      "iModelId": "dfac2750-4c3e-41de-afe7-5f4d97375006",
+      "changesetId": "",
+      "byteLength": 44840,
+      "sha256": "ddb6fefc2c20f3b0838a010261822164fe3cdfb7b7921ccc9b6a7273e6e56cf2",
+      "file": "files/6.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x1c",
+      "contentId": "-b-2-0-0-0-8",
+      "guid": "first_eb17e2d298ad8205",
+      "iModelId": "dfac2750-4c3e-41de-afe7-5f4d97375006",
+      "changesetId": "",
+      "byteLength": 70828,
+      "sha256": "beb80967145f83107df64241a232213ec935021964014f4abc71de2655f9a88e",
+      "file": "files/7.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x1c",
+      "contentId": "-b-2-0-0-0-10",
+      "guid": "first_eb17e2d298ad8205",
+      "iModelId": "dfac2750-4c3e-41de-afe7-5f4d97375006",
+      "changesetId": "",
+      "byteLength": 125976,
+      "sha256": "49b7b04e7502d971184b045d113c04a36da4083efd1c19e1a6ddfecf710f5748",
+      "file": "files/8.imdl"
+    }
+  ]
+}
