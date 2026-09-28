@@ -11,9 +11,12 @@
 // DanQing adaptation (registered): the reference's default factory produces the
 // model-selector-driven SpatialRefs family (PrimaryTileTree.ts:608-861,
 // per-model PrimaryTreeReference from GeometricModelState); DanQing has no
-// per-model tile production yet, so the default yields an EMPTY reference
-// set — spatial content arrives via TiledGraphicsProvider (application
-// injection) or a factory override (frontend-tiles pattern).
+// per-model tile production yet, so the default factory produces per-model
+// PLACEHOLDER refs (synthetic owner id "<modelId>|0/0/0/0|…" standing in for
+// requestTileTreeProps——SpatialTileTreeReferences.cpp:49-78 实态；会产生
+// "modelId/0/0/0/0" 形噪音请求，非 EMPTY 集合——M-H(3) 终审订正本注释）。
+// 真实空间内容经 TiledGraphicsProvider（应用注入——M-H 打开链通道）或
+// factory override（frontend-tiles pattern）进入；SpatialRefs 全移植登记后续。
 #pragma once
 
 #include "../Export.h"
