@@ -804,6 +804,10 @@ TEST(RpcDumpRender, Instances60RendersAllInstances)
 
     // ① 内容存活：着色实例像素 ≥ 20000（首绿实测 123069 的 0.16×——0 实例
     //    消费恒 0、个位数实例 ~2k 亦红；阈值是首绿实测的钉死比例，非调参）。
+    //    复测登记（2026-09-28 M-G(2) 终审）：colored=139796（首绿的 1.136×，
+    //    隔离 ×2 确定性复现）——漂移窗口含 M-F setContent 归位与本任务
+    //    maxInitialTilesToSkip 接线，源未归因；阈值/bbox/质心锚余量充足，
+    //    请求键/字节钉值不变（§11.11 实测登记，非判据调参）。
     EXPECT_GE(colored, 20000l)
         << "no instanced content rendered — instances modifier not consumed "
            "(TD-25 regression)";
