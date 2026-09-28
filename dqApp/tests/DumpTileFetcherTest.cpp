@@ -388,6 +388,126 @@ TEST(DumpTileFetcherTest, MissingDumpFailsLoadGracefully)
 }
 
 // ---------------------------------------------------------------------------
+// 多根合并回放契约（阶段1 M-H Task 2——instances60 sweep∪drill 联合域）。
+//
+// Authored: 多根合并回放契约（M-H 设计——dump 为本仓只读资产；
+//           no reference test exists in itwinjs-core/imodel-native for
+//           multi-root dump replay composition）。
+// 键域事实（manifest 实测，§11.11 只读资产）：两 dump 同 treeId
+// （25_1d-E:6_0x1c）；sweep=instances60-v1（3587 瓦，含根键
+// -b-0-0-0-0-1[11436B/files/7.imdl]）；drill=instances60-drill-v1（5 瓦
+// -b-2-0-0-0-{1,2,4,8,10}，最深键 125976B/files/8.imdl——sweep 域外）；
+// 共享键 -b-2-0-0-0-1 两域字节级一致（M-G 取证钉死——合并前置条件）。
+// ---------------------------------------------------------------------------
+TEST(DumpTileFetcherTest, MergedRootsServeUnionDomain)
+{
+    std::string const drillRoot = kDumpRoot + "/instances60-drill-v1";
+    std::string const sweepRoot = kDumpRoot + "/instances60-v1";
+
+    // primary = drill（5 瓦视口面，无根键）+ fallback = sweep（3587 瓦）。
+    dqApp::DumpTileFetcher fetcher(drillRoot, {sweepRoot});
+    ASSERT_TRUE(fetcher.isValid());
+    // 树 props/计数仍单源（primary——多根只影响字节服务面）。
+    EXPECT_EQ(1u, fetcher.getTreeCount());
+    EXPECT_EQ(5u, fetcher.getTileCount());
+    ASSERT_EQ(1u, fetcher.fallbackRoots().size());
+    EXPECT_EQ(sweepRoot, fetcher.fallbackRoots()[0]);
+    EXPECT_TRUE(fetcher.fallbackWarnings().empty());
+
+    StubTree stubTree;
+
+    // ① 根键（仅 sweep 有）→ primary miss → fallback 命中 Completed。
+    StubTile tile1(stubTree);
+    FetchResult got1;
+    fetchAndWait(fetcher, kCompatTreeId + "/-b-0-0-0-0-1", tile1, got1);
+    ASSERT_TRUE(got1.completed) << got1.error;
+    EXPECT_EQ(11436u, got1.data.size());
+    // 字节来自 fallback 根目录（sweep files/7.imdl）——磁盘直读逐字节比对。
+    auto disk1 = readAllBytes(sweepRoot + "/files/7.imdl");
+    ASSERT_EQ(11436u, disk1.size()) << "asset files/7.imdl missing/truncated";
+    EXPECT_EQ(disk1, got1.data);
+
+    // ② drill 最深键（仅 drill 有——sweep 域外）→ primary 命中 Completed。
+    StubTile tile2(stubTree);
+    FetchResult got2;
+    fetchAndWait(fetcher, kCompatTreeId + "/-b-2-0-0-0-10", tile2, got2);
+    ASSERT_TRUE(got2.completed) << got2.error;
+    EXPECT_EQ(125976u, got2.data.size());
+    auto disk2 = readAllBytes(drillRoot + "/files/8.imdl");
+    ASSERT_EQ(125976u, disk2.size());
+    EXPECT_EQ(disk2, got2.data);
+
+    // ③ 共享键（两域都有、字节一致）→ 首命中即服务 = primary（drill）。
+    StubTile tile3(stubTree);
+    FetchResult got3;
+    fetchAndWait(fetcher, kCompatTreeId + "/-b-2-0-0-0-1", tile3, got3);
+    ASSERT_TRUE(got3.completed) << got3.error;
+    EXPECT_EQ(20844u, got3.data.size());
+    auto disk3Primary = readAllBytes(drillRoot + "/files/4.imdl");
+    auto disk3Fallback = readAllBytes(sweepRoot + "/files/8.imdl");
+    ASSERT_EQ(20844u, disk3Primary.size());
+    ASSERT_EQ(disk3Primary, disk3Fallback)
+        << "shared key bytes diverged — merged-root precondition broken";
+    EXPECT_EQ(disk3Primary, got3.data);
+
+    // ④ 域外键（两域全 miss）→ NotFound。
+    StubTile tile4(stubTree);
+    FetchResult miss;
+    fetchAndWait(fetcher, kCompatTreeId + "/-b-3-3-3-3-1", tile4, miss);
+    EXPECT_FALSE(miss.completed);
+    EXPECT_TRUE(miss.errored);
+
+    // ⑤ requestLog 命中源可观测：①记 fallback 命中、②③记 primary 命中、
+    //    ④ NotFound（outcome 语义不变——对账锁消费面只增命中源维度）。
+    auto const& log = fetcher.requestLog();
+    ASSERT_EQ(4u, log.size());
+    using Outcome = dqApp::DumpTileFetcher::DumpFetchOutcome;
+    EXPECT_EQ(Outcome::Completed, log[0].outcome);
+    EXPECT_EQ(1u, log[0].hitRoot);  // 根键由 fallback[0]（sweep）服务
+    EXPECT_EQ(11436u, log[0].bytes);
+    EXPECT_EQ(Outcome::Completed, log[1].outcome);
+    EXPECT_EQ(0u, log[1].hitRoot);  // drill 最深键由 primary 服务
+    EXPECT_EQ(125976u, log[1].bytes);
+    EXPECT_EQ(Outcome::Completed, log[2].outcome);
+    EXPECT_EQ(0u, log[2].hitRoot);  // 共享键首命中 = primary（drill）
+    EXPECT_EQ(20844u, log[2].bytes);
+    EXPECT_EQ(Outcome::NotFound, log[3].outcome);
+}
+
+// ---------------------------------------------------------------------------
+// 无效 fallback 根：warning 不致命——主根语义（isValid 只看主根），主根照常
+// 服务，无效 fallback 不进查找域。
+// ---------------------------------------------------------------------------
+TEST(DumpTileFetcherTest, InvalidFallbackRootWarnsButPrimaryServes)
+{
+    std::string const drillRoot = kDumpRoot + "/instances60-drill-v1";
+    std::string const badRoot = kDumpRoot + "/no-such-dump";
+
+    dqApp::DumpTileFetcher fetcher(drillRoot, {badRoot});
+    EXPECT_TRUE(fetcher.isValid());  // 主根有效即有效（主根语义不变）
+    ASSERT_EQ(1u, fetcher.fallbackRoots().size());
+    ASSERT_EQ(1u, fetcher.fallbackWarnings().size());
+    EXPECT_EQ(badRoot, fetcher.fallbackWarnings()[0]);
+
+    StubTree stubTree;
+
+    // 主根键照常 Completed。
+    StubTile tile(stubTree);
+    FetchResult got;
+    fetchAndWait(fetcher, kCompatTreeId + "/-b-2-0-0-0-1", tile, got);
+    ASSERT_TRUE(got.completed) << got.error;
+    EXPECT_EQ(20844u, got.data.size());
+
+    // 联合域 = 仅主根（无效 fallback 不进查找域）→ sweep 独有的根键
+    // 在本构型下域外 → NotFound。
+    StubTile tile2(stubTree);
+    FetchResult miss;
+    fetchAndWait(fetcher, kCompatTreeId + "/-b-0-0-0-0-1", tile2, miss);
+    EXPECT_FALSE(miss.completed);
+    EXPECT_TRUE(miss.errored);
+}
+
+// ---------------------------------------------------------------------------
 // 零网络结构锁（§8.2 + TD-24 清退回归锁）。
 //
 // Authored: no reference test exists（参考的取数在宿主 TS 侧）；本锁钉的是
