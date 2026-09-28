@@ -396,9 +396,12 @@ TEST(ImdlTileTreeTest, MaximumSizeChainAndSseTest)
               dqRender::TileVisibility::TooCoarse);
 }
 
-// readContent 回填 maximumSize（IModelTile.ts:140-142——content.graphic 到达
+// setContent 回填 maximumSize（IModelTile.ts:140-142——content.graphic 到达
 // 且 maximumSize==0 时取 tree.tileScreenSize；非零不被覆盖）。
 // Ported from: itwinjs-core IModelTile.setContent (:140-142)。
+// M-F(1) 归位：回填随 IModelTile.setContent 语义落在 ImdlTile::setContent
+// （经 Tile& 虚分派——生产路径 TileAdmin::deliverTileContent 的
+// readContent → setContent 链）。
 TEST(ImdlTileTreeTest, MaximumSizeBackfilledWhenContentLoaded)
 {
     dqRender::ImdlTreeMetadata meta;
@@ -416,6 +419,7 @@ TEST(ImdlTileTreeTest, MaximumSizeBackfilledWhenContentLoaded)
 
     auto content = tile.readContent(V1_1::rectangleBytes, V1_1::rectangleSize);
     ASSERT_NE(content.graphic, nullptr);
+    tile.setContent(std::move(content));  // deliverTileContent 的生产链形态
     EXPECT_DOUBLE_EQ(tile.getMaximumSize(),
                      static_cast<double>(tree.metadata().tileScreenSize));
 
@@ -425,7 +429,108 @@ TEST(ImdlTileTreeTest, MaximumSizeBackfilledWhenContentLoaded)
     auto presetContent =
         preset.readContent(V1_1::rectangleBytes, V1_1::rectangleSize);
     ASSERT_NE(presetContent.graphic, nullptr);
+    preset.setContent(std::move(presetContent));
     EXPECT_DOUBLE_EQ(preset.getMaximumSize(), 64.0);
+}
+
+// ---------------------------------------------------------------------------
+// ImdlTile::setContent — IModelTile.setContent 语义锁（M-F(1)）。
+//
+// Ported from: itwinjs-core IModelTile.setContent (IModelTile.ts:134-148 ——
+//              emptySubRangeMask 赋值 (:136) / maximumSize 回填 (:140-142) /
+//              sizeMultiplier 升门控 (:145) + contentId 覆写 (:147) /
+//              子代 >1 disposeChildren (:148))。
+// Authored: 场景自写（参考无 setContent 直接单测——覆盖在树集成）。
+// 桩树/provider 复用本文件 V4 键域形态（TreeOverridesRootKeyWhenPropsCarry-
+// FormatVersion——formatVersion=37.0 → provider 覆写根键为 "-b-0-0-0-0-1"）。
+// ---------------------------------------------------------------------------
+
+// Ported from: IModelTile.setContent (IModelTile.ts:134-148)。
+// Authored: 场景自写（参考无 setContent 直接单测——覆盖在树集成）。
+TEST(ImdlTileTreeTest, SetContentConsumesSizeMultiplierAndRewritesContentId)
+{
+    // 桩树 V4 provider（-b- 键域）+ 根瓦 "-b-0-0-0-0-1"（m_sizeMultiplier=0=undefined 态）。
+    dqRender::ImdlTreeMetadata meta;
+    meta.contentRange = box(-100.005, -100.005, -100.005, -97.505, -97.505, -97.505);
+    meta.tileScreenSize = 2048;
+    meta.formatVersion = 37u << 0x10;
+    dqRender::ImdlTileTree tree("25_1d-E:6_0x1c", "0/0/0/0/1",
+                                box(-100.015, -100.015, -100.015, 100.015, 100.015, 100.015),
+                                meta);
+    auto* root = static_cast<dqRender::ImdlTile*>(tree.getRootTile());
+    ASSERT_NE(root, nullptr);
+    ASSERT_EQ(root->getContentId(), "-b-0-0-0-0-1");  // 构造器 provider->rootContentId() 覆写
+    ASSERT_DOUBLE_EQ(root->getSizeMultiplier(), 0.0);
+
+    // 预置 2 个假子代（:148 disposeChildren 门的 children.length > 1 判定）。
+    std::vector<std::unique_ptr<dqRender::Tile>> kids;
+    kids.push_back(std::make_unique<dqRender::ImdlTile>(
+        tree, root, "-b-1-0-0-0-1",
+        box(-100.015, -100.015, -100.015, 0.0, 0.0, 0.0), 0.0, 2048.0));
+    kids.push_back(std::make_unique<dqRender::ImdlTile>(
+        tree, root, "-b-1-0-1-0-1",
+        box(-100.015, 0.0, -100.015, 0.0, 100.015, 0.0), 0.0, 2048.0));
+    root->setChildren(std::move(kids));
+    ASSERT_EQ(root->getChildren().size(), 2u);
+
+    // content{graphic!=null, sizeMultiplier=1.0, emptySubRangeMask=0x5}
+    // （sizeMultiplier=1.0 = 该模型 header 的描述形态——decode 的
+    // TileMetadata.ts:924-927 分支赋值形态）。
+    dqRender::TileContent content;
+    content.graphic = std::make_unique<ReadContentStubGraphic>();
+    content.sizeMultiplier = 1.0;
+    content.emptySubRangeMask = 0x5;
+    root->setContent(std::move(content));
+
+    // ① 升门控赋值（:145-146）：m_sizeMultiplier 0→1.0
+    //   （hasSizeMultiplier = m_sizeMultiplier > 0.0，IModelTile.ts:81）。
+    EXPECT_DOUBLE_EQ(root->getSizeMultiplier(), 1.0);
+    // ② contentId 覆写 = idFromParentAndMultiplier(root, 1)（:147，V4 形钉死值——
+    //    末段替换为 hex(1)；根键末段本就是 1 → 钉同串锁 V4 hex 形态合同）。
+    EXPECT_EQ(root->getContentId(), "-b-0-0-0-0-1");
+    // ③ emptySubRangeMask 写入可观察（:136 → IModelTile.emptySubRangeMask :78）。
+    EXPECT_EQ(root->getEmptySubRangeMask(), 0x5u);
+    // ④ 子代 >1 → disposeChildren 等价（:148 → setChildren({}) 释放）→ children 空。
+    EXPECT_TRUE(root->getChildren().empty());
+
+    // 链式升级（:145-148 的 magnification 链 1→2 派生形态——覆写机制的非恒等串
+    // 可观察锁，亦为本里程碑根因场景的参考行为：根瓦升级后 loadChildren 走
+    // magnification 派生 "-b-0-0-0-0-2" 而非细分 "-b-1-0-0-0-1"）。
+    dqRender::TileContent upgrade;
+    upgrade.graphic = std::make_unique<ReadContentStubGraphic>();
+    upgrade.sizeMultiplier = 2.0;
+    root->setContent(std::move(upgrade));
+    EXPECT_DOUBLE_EQ(root->getSizeMultiplier(), 2.0);
+    EXPECT_EQ(root->getContentId(), "-b-0-0-0-0-2");
+}
+
+// Ported from: IModelTile.setContent 的 :145 门控（IModelTile.ts:145
+//              `sizeMult > this._sizeMultiplier`——降值不触发）。
+// Authored: 场景自写（参考无 setContent 直接单测——覆盖在树集成）。
+TEST(ImdlTileTreeTest, SetContentSizeMultiplierNeverDowngrades)
+{
+    dqRender::ImdlTreeMetadata meta;
+    meta.contentRange = box(-100.005, -100.005, -100.005, -97.505, -97.505, -97.505);
+    meta.tileScreenSize = 2048;
+    meta.formatVersion = 37u << 0x10;
+    dqRender::ImdlTileTree tree("25_1d-E:6_0x1c", "0/0/0/0/1",
+                                box(-100.015, -100.015, -100.015, 100.015, 100.015, 100.015),
+                                meta);
+    auto* root = static_cast<dqRender::ImdlTile*>(tree.getRootTile());
+    ASSERT_NE(root, nullptr);
+
+    // 现值 2.0 的瓦（magnification 链中段形态），content.sizeMultiplier=1.0。
+    dqRender::ImdlTile tile(tree, root, "-b-0-0-0-0-2",
+                            box(-100.015, -100.015, -100.015, 100.015, 100.015, 100.015),
+                            2.0, 2048.0);
+    dqRender::TileContent content;
+    content.graphic = std::make_unique<ReadContentStubGraphic>();
+    content.sizeMultiplier = 1.0;
+    tile.setContent(std::move(content));
+
+    // :142 门控——不降级、不覆写 contentId。
+    EXPECT_DOUBLE_EQ(tile.getSizeMultiplier(), 2.0);
+    EXPECT_EQ(tile.getContentId(), "-b-0-0-0-0-2");
 }
 
 // ---------------------------------------------------------------------------

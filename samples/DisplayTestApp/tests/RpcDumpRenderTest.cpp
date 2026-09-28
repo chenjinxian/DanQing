@@ -450,11 +450,29 @@ TEST(RpcDumpRender, CompatSeedReplaysLodChainToGraphicsReady)
         style.setViewFlags(dqCommon::ViewFlags(p));
     }
     view.getUeViewport()->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+    // M-F(1) 确定性钻取：采集 manifest 的细分链是参考前端钻取（zoom-in）时
+    // 逐级 Visible→insertMissing 的产物；本锁只要求 ≥2 瓦就绪，故一步缩到
+    // d1/d2 均 Visible 的视距（fit 视距下 d1=20821px > 2048 TooCoarse、其子
+    // 出 frustum——SelectParent 协议下无请求面；模拟采集的钻取 mid-point）。
+    // 不跑 StandardViewTool（Instances60FullLoad 成熟配方——避免
+    // animateFrustumChange 的动画期未稳视距；LookAtVolume+synch 即刻 settle）。
     {
-        auto* tool = new dqApp::StandardViewTool(view.getUeViewport(),
-                                                 dqApp::StandardViewId::Iso);
-        if (!tool->run())
-            delete tool;
+        auto* view3d = view.getUeViewport()->GetView()->AsViewState3d();
+        ASSERT_NE(view3d, nullptr);
+        dqGeom::Range3d const fit = dta::mountDumpFitVolume(mount->fitRange);
+        auto const center = fit.Center();
+        double constexpr kZoom = 12.0;  // 20821/12 ≈ 1735 ≤ 2048（d1 Visible）
+        dqGeom::Range3d const zoomed = dqGeom::Range3d::CreateXYZXYZ(
+            center.x - (center.x - fit.low.x) / kZoom,
+            center.y - (center.y - fit.low.y) / kZoom,
+            center.z - (center.z - fit.low.z) / kZoom,
+            center.x + (fit.high.x - center.x) / kZoom,
+            center.y + (fit.high.y - center.y) / kZoom,
+            center.z + (fit.high.z - center.z) / kZoom);
+        view3d->LookAtVolume(zoomed);
+        view.getUeViewport()->InvalidateController();
+        view.getUeViewport()->synchWithView(
+            dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
     }
 
     // 泵帧到 ≥2 瓦就绪（-b-0 根 + -b-1 子——SSE refine 的前两层）。

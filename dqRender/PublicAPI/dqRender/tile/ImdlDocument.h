@@ -37,7 +37,9 @@ class RenderSystem;
 struct DQ_RENDER_EXPORT ImdlContentDescription {
     dqGeom::Range3d contentRange;
     bool isLeaf = false;
-    double sizeMultiplier = 1.0;
+    // 0.0 = undefined（DanQing 约定，同 ImdlTileMetadata.sizeMultiplier；
+    // 参考 `sizeMultiplier?: number` 的 undefined，TileMetadata.ts:875）。
+    double sizeMultiplier = 0.0;
     uint32_t emptySubRangeMask = 0;
 };
 

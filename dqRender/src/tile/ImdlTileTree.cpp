@@ -528,6 +528,13 @@ TileContent ImdlTile::readContent(uint8_t const* data, size_t dataSize)
         return content;
     content.contentRange = desc->contentRange;
     content.isLeaf = desc->isLeaf;
+    // decode 产物的全字段接线：sizeMultiplier/emptySubRangeMask 经 TileContent
+    // 进 setContent 的 :134-148 消费（M-F(1) 根因修复——此前丢失，根瓦恒
+    // m_sizeMultiplier=0，放大-细分混合树走错分支）。desc 语义对齐参考
+    // decodeTileContentDescription 的 `sizeMultiplier?: number`
+    //（TileMetadata.ts:875——0.0 = undefined，DanQing 约定）。
+    content.sizeMultiplier = desc->sizeMultiplier;
+    content.emptySubRangeMask = desc->emptySubRangeMask;
 
     auto doc = parseImdlDocument(stream, &ftHeader, &featureWords);
     if (!doc.has_value())
@@ -585,21 +592,60 @@ TileContent ImdlTile::readContent(uint8_t const* data, size_t dataSize)
         content.graphic.reset(list);
     }
 
-    // maximumSize 回填：内容到达且从未获得 maximumSize（0 = undisplayable）
-    // 时取树的 tileScreenSize。
-    // Ported from: IModelTile.setContent (IModelTile.ts:140-142):
-    //   if (undefined !== content.graphic && 0 === this.maximumSize)
-    //     this._maximumSize = this.iModelTree.tileScreenSize;
-    // DanQing adaptation: the backfill lives here (readContent) — TileAdmin::
-    // deliverTileContent runs readContent immediately before setContent and
-    // setContent is non-virtual, so the reference's IModelTile.setContent
-    // override has no C++ dispatch path; the observable state at the point of
-    // consumption is the same.
-    if (content.graphic && 0.0 == getMaximumSize()) {
-        auto& imdlTree = static_cast<ImdlTileTree&>(getTree());
-        m_maximumSize = static_cast<double>(imdlTree.metadata().tileScreenSize);
-    }
+    // maximumSize 回填已归位 ImdlTile::setContent（IModelTile.ts:140-142）——
+    // setContent 现为 virtual，参考的 IModelTile.setContent 覆写有 C++ 分派
+    // 路径（TileAdmin::deliverTileContent 经 Tile& 调用，M-F(1)）。
     return content;
+}
+
+void ImdlTile::setContent(TileContent content)
+{
+    // rvalue 顺序：TileContent 经基类按值参 move 走 graphic——参考语义是
+    // "读 content 字段后 super.setContent"（IModelTile.ts:135-147），DanQing
+    // 基类先 move，故标量字段须在 move 前抓本地再消费。
+    double const sizeMultLocal = content.sizeMultiplier;
+    uint32_t const emptyMaskLocal = content.emptySubRangeMask;
+
+    Tile::setContent(std::move(content));
+
+    // Ported from: IModelTile.setContent (IModelTile.ts:134-148) 逐行：
+    // this._emptySubRangeMask = content.emptySubRangeMask;  (:136)
+    m_emptySubRangeMask = emptyMaskLocal;
+
+    // NB: If this tile has no graphics, it may or may not have children - but
+    // we don't want to load the children until this tile is too coarse for
+    // view based on its size in pixels.
+    // That is different than an "undisplayable" tile (maximumSize=0) whose
+    // children should be loaded immediately.  (:138-141)
+    if (getGraphic() && 0.0 == getMaximumSize())
+        m_maximumSize = static_cast<double>(iModelTree().metadata().tileScreenSize);
+
+    // const sizeMult = content.sizeMultiplier;  (:144)
+    double const sizeMult = sizeMultLocal;
+    // undefined !== sizeMult && (undefined === this._sizeMultiplier ||
+    //                            sizeMult > this._sizeMultiplier)  (:145)
+    // ——DanQing 的 0=undefined 约定：> 0.0 即"已设"。
+    if (sizeMult > 0.0 && (!(m_sizeMultiplier > 0.0) || sizeMult > m_sizeMultiplier)) {
+        m_sizeMultiplier = sizeMult;                                            // :146
+        // this._contentId = this.iModelTree.contentIdProvider
+        //     .idFromParentAndMultiplier(this.contentId, sizeMult);  (:147)
+        if (auto const* provider = iModelTree().contentIdProvider()) {
+            m_contentId = provider->idFromParentAndMultiplier(
+                m_contentId, static_cast<uint32_t>(sizeMult));
+        } else {
+            // legacy V1 id 路径（props 无 formatVersion）：mult 形态经
+            // LegacyContentIdAdapter 重写（与 computeImdlChildTileProps 的
+            // 2 参形态同一 id 合同，本文件匿名命名空间）。
+            m_contentId = s_legacyContentIdAdapter.idFromParentAndMultiplier(
+                m_contentId, static_cast<uint32_t>(sizeMult));
+        }
+        // if (undefined !== this.children && this.children.length > 1)
+        //     this.disposeChildren();  (:148) —— disposeChildren 等价 =
+        // 释放子代（Tile.ts:378-385 逐子 dispose；DanQing setChildren({}) 释放
+        // m_ownedChildren）。
+        if (getChildren().size() > 1)
+            setChildren({});
+    }
 }
 
 void ImdlTile::loadChildren()
