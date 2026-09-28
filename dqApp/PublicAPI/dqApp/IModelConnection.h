@@ -12,6 +12,7 @@
 #include <memory>
 #include "EcefLocation.h"
 #include "SelectionSet.h"
+#include "ViewStateProps.h"  // Views::RpcHooks::getViewStateData 返回载体
 
 #include <dqBase/RefCounted.h>
 #include <dqBase/DqEvent.h>
@@ -19,6 +20,8 @@
 #include <dqGeom/Point3d.h>
 #include <dqGeom/Range3d.h>
 
+#include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -71,10 +74,35 @@ public:
             bool wantPrivate = false;
         };
 
+        // --- IModelReadRpcInterface 回放缝（§8.2 零网络——数据经宿主注入） ---
+        // Authored: 参考的三 RPC 路由（IModelReadRpcInterface.getClientForRouting
+        // .queryElementProps / .getDefaultViewId / .getViewStateData——
+        // IModelConnection.ts:1502/:1537/:1548）在 DanQing 无网络层对应物；
+        // 打开链（M-H Task 3）的 dump 回放宿主经本缝注入等价数据面。宿主
+        // （DumpIModelConnection）构造时安装；未安装 = 无后端（现状短路语义
+        // 零行为变化）。三方法名 1:1 对齐参考 RPC 接口方法。
+        struct RpcHooks {
+            // ← IModelReadRpcInterface.queryElementProps 的 getViewList 数据面
+            //    （ViewDefinitionProps → ViewSpec 的映射 :1520-1524 由宿主完成）。
+            std::function<std::vector<ViewSpec>(bool wantPrivate)> getViewList;
+            // ← IModelReadRpcInterface.getDefaultViewId（:1537）。
+            std::function<dqBase::DqId()> getDefaultViewId;
+            // ← IModelReadRpcInterface.getViewStateData（:1548）——nullopt =
+            //    视图未采集/不存在（RPC 失败语义——ViewPicker.ts:39-44 的
+            //    catch 分支在 DanQing 经 load 返回无效 RefPtr 表达）。
+            std::function<std::optional<ViewStateProps>(dqBase::DqId viewDefinitionId)>
+                getViewStateData;
+        };
+
         explicit Views(IModelConnection& iModel) : m_iModel(iModel) {}
 
+        // 安装/清除回放缝（宿主注入点——打开链连接的构造路径调用）。
+        void SetRpcHooks(RpcHooks hooks) { m_rpcHooks = std::move(hooks); }
+        void ClearRpcHooks() { m_rpcHooks = std::nullopt; }
+        bool HasRpcHooks() const noexcept { return m_rpcHooks.has_value(); }
+
         // ← IModelConnection.Views.getViewList (IModelConnection.ts:1518-1526);
-        //    empty for a closed connection (queryProps short-circuit, :1490-1491).
+        //    empty for a closed connection (queryProps short-circuit, :1490-1491)。
         std::vector<ViewSpec> getViewList(QueryParams const& params) const;
         // ← IModelConnection.Views.queryDefaultViewId (:1535-1538);
         //    Id64.invalid when the connection is not open.
@@ -86,7 +114,13 @@ public:
         dqBase::RefPtr<ViewState> load(dqBase::DqId viewDefinitionId) const;
 
     private:
+        // ← IModelConnection.Views.convertViewStatePropsToViewState (:1553-1565)：
+        //    className 判定 → CreateFromProps → viewState.load()。
+        dqBase::RefPtr<ViewState> convertViewStatePropsToViewState(
+            ViewStateProps const& viewProps) const;
+
         IModelConnection& m_iModel;  // ← _iModel
+        std::optional<RpcHooks> m_rpcHooks;  // 回放缝（未安装 = 无后端）
     };
 
     virtual ~IModelConnection();

@@ -87,6 +87,40 @@ private:
 };
 
 // ---------------------------------------------------------------------------
+// OwningRenderGraphicAdapter — RenderGraphicAdapter 的拥有语义变体（M-H
+// Task 3）：location 包裹（ImdlTileTree readContent 的 Branch 子节点）需要
+// 所有权转移——被包的 graphic 可能是公共 GraphicBranch（createGraphicList
+// 多 mesh 返回，仅继承 RenderGraphic——OpenGLRenderSystem.cpp:252 注释），
+// 不能 static_cast<Graphic*>，故经本 adapter 持有并按同一判型分派。
+// ---------------------------------------------------------------------------
+class OwningRenderGraphicAdapter : public Graphic {
+public:
+    explicit OwningRenderGraphicAdapter(RenderGraphic* graphic)
+        : m_owned(graphic), m_delegate(graphic)
+    {
+    }
+
+    void addCommands(RenderCommands& commands) override
+    {
+        m_delegate.addCommands(commands);
+    }
+
+    void addHiliteCommands(RenderCommands& commands, RenderPass pass) override
+    {
+        m_delegate.addHiliteCommands(commands, pass);
+    }
+
+    void unionRange(dqGeom::Range3d& range) const override
+    {
+        m_delegate.unionRange(range);
+    }
+
+private:
+    std::unique_ptr<RenderGraphic> m_owned;  // Owned（~RenderGraphic 虚分派）
+    RenderGraphicAdapter m_delegate;         // 判型分派（非拥有复用）
+};
+
+// ---------------------------------------------------------------------------
 // Utility: convert a public GraphicList to an internal GraphicsArray
 // ---------------------------------------------------------------------------
 inline std::unique_ptr<GraphicsArray> AdaptGraphicList(GraphicList const& list)

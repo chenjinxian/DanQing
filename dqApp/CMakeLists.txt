@@ -60,6 +60,7 @@ target_sources(dqApp
         src/FileTileFetcher.cpp
         src/tile/DumpTileFetcher.cpp
         src/tile/DumpTileTreeProps.cpp
+        src/tile/DumpIModelConnection.cpp  # 已存 iModel 打开连接回放（M-H Task 3——imodel.json → Views 数据面）
         src/tile/Tiles.cpp
         src/tile/TileTreeReference.cpp
         src/tile/DisclosedTileTreeSet.cpp
@@ -157,6 +158,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/LookToolTest.cpp
         tests/TileTreeRegistryTest.cpp  # 忠实路径 F3：Tiles 注册表（Ported from Tiles.test.ts）
         tests/DumpTileFetcherTest.cpp  # RPC-dump 本地回放契约（零网络 §8.2/TD-24）
+        tests/DumpIModelConnectionTest.cpp  # imodel.json 解析 + Views 回放缝 + saved 视图应用锁（M-H Task 3）
     )
     target_link_libraries(dqAppTest
         PRIVATE

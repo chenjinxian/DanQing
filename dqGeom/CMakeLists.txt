@@ -89,6 +89,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/Matrix3dRowColumnTest.cpp
         tests/AngleSweepPeriodicFractionTest.cpp
         tests/ClipPlanesTest.cpp
+        tests/YawPitchRollAnglesTest.cpp  # angles→rotation 链（M-H Task 3：ViewState3d 构造的 angles 应用面）
     )
     target_link_libraries(dqGeomTest
         PRIVATE

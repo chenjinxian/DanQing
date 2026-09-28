@@ -12,6 +12,7 @@
 
 #include <dqCommon/Npc.h>
 #include <dqGeom/Ray3d.h>
+#include <dqGeom/YawPitchRollAngles.h>  // CreateFromProps 的 angles→rotation（ViewState.ts:1502）
 
 #include <algorithm>
 #include <cmath>
@@ -1606,6 +1607,67 @@ dqBase::RefPtr<SpatialViewState> SpatialViewState::CreateBlank(
     view->SetExtents(extents);
     if (rotation)  // SpatialViewState.ts:84-85  if (undefined !== rotation) view.setRotation(rotation)
         view->SetRotation(*rotation);
+    return view;
+}
+
+// Ported from: itwinjs-core SpatialViewState.createFromProps
+//              (SpatialViewState.ts:90-95) + ViewState3d constructor's props
+//              application (ViewState.ts:1497-1515) + ViewState constructor
+//              (:301-318 description/isPrivate 面)。
+dqBase::RefPtr<SpatialViewState> SpatialViewState::CreateFromProps(
+    ViewStateProps const& props, IModelConnection* iModel)
+{
+    // SpatialViewState.ts:91-94 — cat/displayStyle/modelSelector 三 selector
+    // 从 props 构造后 new this(viewDefinitionProps, iModel, ...)；DanQing 的
+    // selector 是 ViewState 值成员（无独立状态对象构造器——§3.4 适配），
+    // 构造后逐字段应用等价。
+    dqBase::RefPtr<SpatialViewState> view(new SpatialViewState());
+    view->SetIModel(iModel);
+
+    auto const& vd = props.viewDefinitionProps;
+
+    // --- ViewState ctor (:303-304) ---
+    view->SetDescription(vd.description);
+    // isPrivate 无载体（ViewState 无该成员——登记，参考 :304）。
+
+    // --- ViewState3d ctor (:1497-1515) ---
+    // :1499  this._cameraOn = JsonUtils.asBool(props.cameraOn)
+    if (vd.cameraOn)
+        view->EnableCamera();
+    else
+        view->TurnCameraOff();
+    // :1500-1501  origin/extents
+    view->SetOrigin(vd.origin);
+    view->SetExtents(vd.extents);
+    // :1502-1503  this.rotation = YawPitchRollAngles.fromJSON(props.angles).toMatrix3d();
+    //             assert(this.rotation.isRigid())
+    view->SetRotation(dqGeom::YawPitchRollAngles::FromJsonDegrees(
+                          vd.yawDegrees, vd.pitchDegrees, vd.rollDegrees)
+                          .ToMatrix3d());
+    // :1504  this.camera = new Camera(props.camera)（Camera.ts:66-76——
+    //        lens=Angle.fromJSON(degrees)/focusDist/eye）
+    view->setEyePoint(vd.camera.eye);
+    view->setFocusDistance(vd.camera.focusDist);
+    view->SetLensAngle(dqGeom::Angle::DegreesToRadians(vd.camera.lensDegrees));
+    // :1506-1508  if (this.is3d() && this.isCameraOn) this.centerEyePoint()
+    if (view->IsCameraOn())
+        view->centerEyePoint();
+
+    // --- SpatialViewState.ts:91-93 三 selector 的 props 应用 ---
+    // CategorySelectorState(props.categorySelectorProps) → categories 数组。
+    view->GetCategorySelector().addCategories(props.categorySelectorProps.categories);
+    // ModelSelectorState(expectDefined(props.modelSelectorProps)) —— 空间视图
+    // 必携（:93 expectDefined）；缺省 = 空集合（dump/2d 判别的优雅面）。
+    if (props.modelSelectorProps.has_value())
+        view->GetModelSelector().addModels(props.modelSelectorProps->models);
+    // DisplayStyle3dState(props.displayStyleProps) —— 消费面 = styles.viewflags
+    //（ViewFlags.fromJSON ViewFlags.ts:471-511）；styles 其余段登记未移植
+    //（ViewStateProps.h 文件头）。
+    if (props.displayStyleProps.viewflags.has_value()) {
+        view->GetDisplayStyle().setViewFlags(
+            dqCommon::ViewFlags::fromJSON(&*props.displayStyleProps.viewflags));
+    }
+
     return view;
 }
 
