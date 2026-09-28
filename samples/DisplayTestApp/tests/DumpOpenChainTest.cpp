@@ -270,9 +270,10 @@ TEST(DumpOpenChain, OpensInstances60WithReferenceIsomorphicSequence)
     //       opened->viewState 与 viewport 同实例、已被 SetupFromView 的
     //       aspect fix 原地改写——ViewState::SetExtents 直写成员）；
     //   (b) viewport 当前视图 = saved + 参考的窗口 aspect fix
-    //       （Viewport.setupFromView Viewport.ts:2001-2022——extents.y 按
-    //       窗口 aspect 调整、origin 随视域中心平移；x/z/rotation/cameraOn
-    //       不受 fix 影响——钉这四项锁"非 fit"）。
+    //       （Viewport.setupFromView → doSetupFromView Viewport.ts:2041-2042 调
+    //       fixAspectRatio ViewState.ts:868-880——extents.y 按窗口 aspect
+    //       调整、origin 随视域中心平移；x/z/rotation/cameraOn 不受 fix
+    //       影响——钉这四项锁"非 fit"）。
     {
         dqApp::ViewList reloadViews = dqApp::ViewList::create(opened->connection.Get());
         auto reloaded = reloadViews.getDefaultView(opened->connection.Get());

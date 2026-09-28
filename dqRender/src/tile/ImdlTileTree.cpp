@@ -1098,6 +1098,12 @@ TileVisibility ImdlTileTree::computeVisibility(TileDrawArgs& args, Tile* tile)
         // iModel→world 平移）域错位剔除（saved 视域内内容被整树剔成
         // OutsideFrustum——[SEL] 取证实锤）；恒等 location 下两形同值
         //（M-E/M-F/M-G 锁全绿的既有面不受影响）。
+        // EQUIVALENCE 登记（M-H(3) 终审 Minor 清偿）：参考 Frustum.transformBy
+        // 对 range 做 8 角精确变换；此处 MultiplyRange 变换 8 角后取 AABB
+        // 并集重装箱——旋转型 location 下为保守超集（少剔→可能多请求，不破
+        // 正确性）。发散：旋转 location 出现时请求面可能与参考不同构。
+        // 验证法：当前 21 棵采集树 location 全为纯平移（逐树解析核实）不可
+        // 观测；旋转型 location 资产出现时以请求面对账锁复核。
         dqGeom::Range3d const worldRange =
             args.treeToWorld.MultiplyRange(tile->getRange());
         dqGeom::Point3d const worldCenter = args.treeToWorld.MultiplyPoint3d(
