@@ -17,7 +17,6 @@
 
 #include <QApplication>
 #include <QEvent>
-#include <QComboBox>
 #include <QCoreApplication>
 #include <QMdiArea>
 #include <QMenu>
@@ -26,7 +25,6 @@
 #include <QString>
 #include <QTabBar>
 #include <QTextEdit>
-#include <QToolButton>
 #include <QWidget>
 
 #include "QtTestFixtures.h"
@@ -37,14 +35,15 @@
 #include "Gui/MainWindow.h"
 #include "Gui/MenuManager.h"
 #include "Gui/Workbench.h"
-#include "GeneralSettingsWidget.h"      // Region 4 task 4 (StartGui::GeneralSettingsWidget)
-#include "ThemeSelectorWidget.h"        // Region 4 task 5 (StartGui::ThemeSelectorWidget)
-#include "FirstStartWidget.h"           // Region 4 task 5 (StartGui::FirstStartWidget integration)
+
+// M-H(4)（2026-09-28 用户指令"Start 页去 FreeCAD 无关功能"）：
+// GeneralSettingsWidget/ThemeSelectorWidget/FirstStartWidget 三件全删——原
+// Region 4 task 4/5 的 4 项结构锁测试（GeneralSettingsWidgetHasThreeCombos/
+// GeneralSettingsWidgetCombosPopulated/ThemeSelectorHasThreeAutoExclusiveButtons/
+// FirstStartWidgetContainsSubWidgets）随被测对象一并移除（§5(f) Authored 测试
+// 随被测件生命周期）。
 
 #include <App/Application.h>
-#include <Base/UnitsApi.h>
-#include <Gui/Language/Translator.h>
-#include <Gui/Navigation/NavigationStyle.h>
 
 // Per-test helper ensureAppReady() is defined in CommandTest.cpp and declared in
 // QtTestFixtures.h. MainWindow ctor reads App::GetApplication().GetUserParameter() for the
@@ -564,105 +563,6 @@ TEST(MDIChromeTest, SetCurrentViewModeChildToTopLevelAndBack)
     EXPECT_NE(qobject_cast<QMdiSubWindow*>(view->parentWidget()), nullptr);
 
     delete view;
-}
-
-// =====================================================================
-// Region 4 task 4: GeneralSettingsWidget (Language/Unit/NavStyle combos)
-// FreeCAD has no test for GeneralSettingsWidget — the widget is exercised
-// manually via the Start page FirstStartWidget. These tests assert the
-// 1:1 structural shape ported from FreeCAD GeneralSettingsWidget.cpp.
-// =====================================================================
-
-// Ported from: FreeCAD src/Mod/Start/Gui/GeneralSettingsWidget.cpp:75-87 (3 combos)
-// Authored: no reference test exists in FreeCAD for GeneralSettingsWidget structure
-TEST(MDIChromeTest, GeneralSettingsWidgetHasThreeCombos)
-{
-    ensureAppReady();
-    StartGui::GeneralSettingsWidget w;
-    EXPECT_NE(w.findChild<QComboBox*>(QStringLiteral("languageComboBox")), nullptr);
-    EXPECT_NE(w.findChild<QComboBox*>(QStringLiteral("unitSystemComboBox")), nullptr);
-    EXPECT_NE(w.findChild<QComboBox*>(QStringLiteral("navigationStyleComboBox")), nullptr);
-}
-
-// Ported from: FreeCAD src/Mod/Start/Gui/GeneralSettingsWidget.cpp:97-143, 220-261
-// Authored: no reference test exists in FreeCAD for GeneralSettingsWidget population
-TEST(MDIChromeTest, GeneralSettingsWidgetCombosPopulated)
-{
-    ensureAppReady();
-    StartGui::GeneralSettingsWidget w;
-
-    auto* language = w.findChild<QComboBox*>(QStringLiteral("languageComboBox"));
-    auto* unitSystem = w.findChild<QComboBox*>(QStringLiteral("unitSystemComboBox"));
-    auto* navStyle = w.findChild<QComboBox*>(QStringLiteral("navigationStyleComboBox"));
-    ASSERT_NE(language, nullptr);
-    ASSERT_NE(unitSystem, nullptr);
-    ASSERT_NE(navStyle, nullptr);
-
-    // Language: combo contains "English" plus one entry per supported locale;
-    // FreeCAD GeneralSettingsWidget.cpp:104-131 adds English first then iterates
-    // supportedLocales(). After model->sort(0) the order is alphabetical, so we
-    // only assert count and that "English" is present (not its index).
-    Gui::TStringMap locales = Gui::Translator::instance()->supportedLocales();
-    EXPECT_EQ(language->count(), 1 + static_cast<int>(locales.size()));
-    bool foundEnglish = false;
-    for (int i = 0; i < language->count(); ++i) {
-        if (language->itemText(i) == QLatin1String("English")) {
-            foundEnglish = true;
-            break;
-        }
-    }
-    EXPECT_TRUE(foundEnglish) << "Language combo must contain English";
-
-    // Unit System: count matches Base::UnitsApi::getDescriptions()
-    auto descriptions = Base::UnitsApi::getDescriptions();
-    EXPECT_EQ(unitSystem->count(), static_cast<int>(descriptions.size()));
-    for (int i = 0; i < unitSystem->count() && i < static_cast<int>(descriptions.size()); ++i) {
-        EXPECT_EQ(unitSystem->itemText(i).toStdString(), descriptions[i])
-            << "Unit System item " << i << " should match UnitsApi::getDescriptions()";
-    }
-
-    // Navigation Style: count matches Gui::UserNavigationStyle::getUserFriendlyNames()
-    auto styles = Gui::UserNavigationStyle::getUserFriendlyNames();
-    EXPECT_EQ(navStyle->count(), static_cast<int>(styles.size()));
-}
-
-// =====================================================================
-// Region 4 task 5: ThemeSelectorWidget (3 auto-exclusive theme buttons)
-//   FreeCAD ThemeSelectorWidget.cpp:109-160 (setupButtons) — 3 QToolButton
-//   Classic/Light/Dark, autoExclusive + ToolButtonTextUnderIcon.
-// FreeCAD has no test for ThemeSelectorWidget — exercised manually via
-// the Start page. These tests assert the 1:1 structural shape.
-// =====================================================================
-
-// Ported from: FreeCAD src/Mod/Start/Gui/ThemeSelectorWidget.cpp:109-160 (setupButtons)
-// Authored: no reference test exists in FreeCAD for ThemeSelectorWidget structure
-TEST(MDIChromeTest, ThemeSelectorHasThreeAutoExclusiveButtons)
-{
-    ensureAppReady();
-    StartGui::ThemeSelectorWidget w;
-    auto buttons = w.findChildren<QToolButton*>();
-    EXPECT_EQ(buttons.size(), 3);
-    for (auto* b : buttons) {
-        EXPECT_TRUE(b->autoExclusive());
-        EXPECT_TRUE(b->isCheckable());
-        EXPECT_EQ(b->toolButtonStyle(), Qt::ToolButtonStyle::ToolButtonTextUnderIcon);
-    }
-}
-
-// =====================================================================
-// Region 4 task 5: FirstStartWidget integrates both sub-widgets
-//   FreeCAD FirstStartWidget.cpp:65-69 instantiates ThemeSelectorWidget
-//   + GeneralSettingsWidget as children of the outer layout.
-// =====================================================================
-
-// Ported from: FreeCAD src/Mod/Start/Gui/FirstStartWidget.cpp:56-79 (setupUi embeds both)
-// Authored: no reference test exists in FreeCAD for FirstStartWidget sub-widget assertion
-TEST(MDIChromeTest, FirstStartWidgetContainsSubWidgets)
-{
-    ensureAppReady();
-    StartGui::FirstStartWidget fs;
-    EXPECT_NE(fs.findChild<StartGui::GeneralSettingsWidget*>(), nullptr);
-    EXPECT_NE(fs.findChild<StartGui::ThemeSelectorWidget*>(), nullptr);
 }
 
 // =====================================================================

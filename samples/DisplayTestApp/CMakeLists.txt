@@ -56,18 +56,13 @@ add_executable(DisplayTestApp WIN32
     src/Gui/PropertyView.cpp    # PropertyEditor placeholder + PropertyView container
 
     # === src/Mod/Start/Gui/ — 1:1 port of FreeCAD src/Mod/Start/Gui/ ===
+    # M-H(4)（2026-09-28 用户指令"去 FreeCAD 无关功能"）：FileCardView/
+    # FileCardDelegate/FirstStartWidget/GeneralSettingsWidget/ThemeSelectorWidget
+    # + App/RecentFilesModel/App/DisplayedFilesModel 全清（裁决表见 commit
+    # message）；保留 = StartView + NewFileButton（卡片控件）+ FlowLayout。
     src/Mod/Start/Gui/StartView.cpp
     src/Mod/Start/Gui/FlowLayout.cpp
     src/Mod/Start/Gui/NewFileButton.cpp
-    src/Mod/Start/Gui/FileCardView.cpp
-    src/Mod/Start/Gui/FileCardDelegate.cpp
-    src/Mod/Start/Gui/FirstStartWidget.cpp
-    src/Mod/Start/Gui/GeneralSettingsWidget.cpp
-    src/Mod/Start/Gui/ThemeSelectorWidget.cpp  # Region 4 task 5 (Classic/Dark/Light theme buttons)
-
-    # === src/Mod/Start/App/ — 1:1 port of FreeCAD src/Mod/Start/App/ ===
-    src/Mod/Start/App/RecentFilesModel.cpp
-    src/Mod/Start/App/DisplayedFilesModel.cpp
 )
 
 target_include_directories(DisplayTestApp PRIVATE
@@ -128,6 +123,9 @@ endif()
 target_compile_definitions(DisplayTestApp PRIVATE
     DANQING_SPRITE_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/itwinjs-sprites"
     DANQING_CURSOR_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/itwinjs-cursors"
+    # M-H(4)：Start 页双模型入口的 dump 包根（与 DtaTest 同宏同路径——
+    # main.cpp dumpPackageForModel 消费；运行时 DANQING_RPC_DUMP env 覆写）。
+    DANQING_TILE_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/tile-sample-assets"
 )
 
 if(APPLE)
@@ -193,9 +191,9 @@ if(TARGET gtest_main)
         src/Gui/MDIView.cpp
         src/Gui/Window.cpp
         src/Gui/PropertyView.cpp    # PropertyEditor placeholder + PropertyView container
-        src/Mod/Start/Gui/GeneralSettingsWidget.cpp  # Region 4 task 4 (Language/Unit/NavStyle combos)
-        src/Mod/Start/Gui/ThemeSelectorWidget.cpp    # Region 4 task 5 (Classic/Dark/Light theme buttons)
-        src/Mod/Start/Gui/FirstStartWidget.cpp       # Region 4 task 5 (embeds Theme + GeneralSettings)
+        # M-H(4)：Start 页 FreeCAD-only widget 全清——GeneralSettingsWidget/
+        # ThemeSelectorWidget/FirstStartWidget 源文件与 MDIChromeTest 对应
+        # 4 测试同步移除（被测对象删除，裁决表见 commit message）。
     )
 
     target_include_directories(DisplayTestAppTest PRIVATE

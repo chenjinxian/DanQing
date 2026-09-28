@@ -24,20 +24,17 @@
 #pragma once
 
 // Ported from: FreeCAD src/Mod/Start/Gui/StartView.h
+// M-H(4)（2026-09-28 用户指令）：FreeCAD-only 功能全清——New/Open File 卡片、
+// recent-files 卡片面（FileCardView/FileCardDelegate/RecentFilesModel/
+// DisplayedFilesModel）、FirstStart 向导页（FirstStartWidget/ThemeSelector/
+// GeneralSettings）、ShowOnStartup/footer、postStart 死代码一并移除；保留面 =
+// DTA 对齐入口（Blank Connection / Decoration Geometry Example）+ 新增两模型
+// 打开入口（requestOpenDumpModel——DumpOpenHelper 打开链，M-H Task 3）。
 #include <Base/Type.h>
 #include "MDIView.h"
 
-#include "../App/DisplayedFilesModel.h"
-#include "../App/RecentFilesModel.h"
-
-class QCheckBox;
 class QEvent;
 class QLabel;
-class QListView;
-class QMdiSubWindow;
-class QScrollArea;
-class QStackedWidget;
-class QPushButton;
 
 namespace StartGui
 {
@@ -56,58 +53,25 @@ public:
         return "StartView";
     }
 
-    void newEmptyFile();
-    void newPartDesignFile();
-    void openExistingFile();
-    void newAssemblyFile();
-    void newDraftFile();
-    void newArchFile();
-    void recentFileAdded(const QString& filename);
-
     bool onHasMsg(const char* pMsg) const override;
 
     // DanQing integration signals (replace FreeCAD command calls)
 Q_SIGNALS:
-    void requestNewFile();
-    void requestOpenFile();
     void requestBlankConnection();
-    void requestDecorationGeometryExample();   // Surface.ts:155-165 entry
-
-public:
-    enum class PostStartBehavior
-    {
-        switchWorkbench,
-        doNotSwitchWorkbench
-    };
+    void requestDecorationGeometryExample();      // Surface.ts:155-165 entry
+    void requestOpenDumpModel(QString modelId);   // M-H(4)："joeshouse" / "instances60"
 
 protected:
     void changeEvent(QEvent* e) override;
-    void showEvent(QShowEvent* event) override;
 
-    void configureNewFileButtons(QLayout* layout) const;
-    static void configureFileCardWidget(QListView* fileCardWidget);
-    void configureRecentFilesListWidget(QListView* recentFilesListWidget, QLabel* recentFilesLabel);
-
-    void postStart(PostStartBehavior behavior);
-
-    void fileCardSelected(const QModelIndex& index);
-    void showOnStartupChanged(bool checked);
-    void openFirstStartClicked();
-    void firstStartWidgetDismissed();
-
-private Q_SLOTS:
-    void onMdiSubWindowActivated(QMdiSubWindow* subWindow);
+    void configureModelButtons(QLayout* layout);
+    void configureExampleButtons(QLayout* layout);
 
 private:
     void retranslateUi();
-    void setListViewUpdatesEnabled(bool enabled);
 
-    QStackedWidget* _contents = nullptr;
-    Start::RecentFilesModel _recentFilesModel;
-    QLabel* _newFileLabel;
-    QLabel* _recentFilesLabel;
-    QPushButton* _openFirstStart;
-    QCheckBox* _showOnStartupCheckBox;
+    QLabel* _modelsLabel = nullptr;
+    QLabel* _examplesLabel = nullptr;
 
     bool isInitialized = false;
 
