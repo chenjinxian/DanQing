@@ -721,9 +721,12 @@ void ImdlTile::loadChildren()
 //   NotFound 子代态无表示）。残留发散："已加载但空数组"（isLeaf=true，参考
 //   Tile.ts:361-364）塌缩为"未加载"→ :228-229 返 Yes 而非 markUsed+返 No
 //   ——不可达（leaf → computeVisibility 叶分支 → Visible → :214 段）。
-//   另五：:232-241 钻取循环当前死分支——maxInitialTilesToSkip 恒 0（树
-//   props 无该字段载体、无 setter，IModelTileTree.ts:390 的 ?? 0 缺省），
-//   循环体不可进入；参考原形忠实保留，props 载体/setter 归后续里程碑。
+//   另五：:232-241 钻取循环的可达性随 maxInitialTilesToSkip 载体接线
+//   （M-G(2)，ImdlTreeMetadata::maxInitialTilesToSkip——TileProps.ts:63 →
+//   IModelTileTree.ts:390）成立：props 携带预算的树（RPC dump 域——
+//   compatseed 6 / instances60 3 / mirukuru 2）depth < 预算的瓦进入该循环；
+//   默认构造的元数据（存量 TileTreeRender/单测域）仍为 0，循环保持死分支
+//   形态。参考原形忠实保留。
 // MSVC：参考 :232-241 的循环体两条路径都在首孩子上 return——C4702（代码
 // 生成期告警，pragma 须在函数入口前生效）把 range-for 的隐藏推进判为
 // unreachable。保留参考原形，函数级豁免 4702（登记：语义与参考逐字一致）。
@@ -894,11 +897,12 @@ ImdlTileTree::ImdlTileTree(std::string treeId, std::string rootContentId,
     , m_treeId(std::move(treeId))
     , m_metadata(treeMetadata)
       // Ported from: IModelTileTree constructor (IModelTileTree.ts:390-391) —
-      // maxInitialTilesToSkip = params.maxInitialTilesToSkip ?? 0 (DanQing's
-      // tree constructor has no props-injection path — the RPC dump props
-      // carry the field but it cannot reach here; see the accessor note in
-      // the header); maxTilesToSkip = TileAdmin.maximumLevelsToSkip.
-    , m_maxInitialTilesToSkip(0)
+      // maxInitialTilesToSkip = params.maxInitialTilesToSkip ?? 0 (the props
+      // carrier is ImdlTreeMetadata::maxInitialTilesToSkip, TileProps.ts:63 —
+      // the reference receives it via IModelTileTreeParams destructure
+      // (:51/:76); DanQing's metadata struct is the props-injection path,
+      // wired M-G(2)); maxTilesToSkip = TileAdmin.maximumLevelsToSkip.
+    , m_maxInitialTilesToSkip(treeMetadata.maxInitialTilesToSkip)
     , m_maxTilesToSkip(TileAdmin::instance().maximumLevelsToSkip())
     // Ported from: IModelTileTree.ts:396-398 — contentIdProvider =
     // ContentIdProvider.create(params.options.allowInstancing, tileAdmin,

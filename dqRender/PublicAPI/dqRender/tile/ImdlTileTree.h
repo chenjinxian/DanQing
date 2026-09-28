@@ -59,6 +59,16 @@ struct ImdlTreeMetadata {
     // ids base-10/4-segment; verification = this header's provider tests +
     // TileTreeRender pixel locks (legacy) + RpcDumpRender (V4 path).
     uint32_t formatVersion = 0;
+    // IModelTileTreeProps.maxInitialTilesToSkip (TileProps.ts:63 — "If
+    // defined, specifies the number of levels of the tile tree that can be
+    // skipped when selecting tiles."). Consumed by the ImdlTileTree
+    // constructor (IModelTileTree.ts:390 `params.maxInitialTilesToSkip ?? 0`
+    // — 0 = absent, the ?? 0 default). The SelectParent protocol's initial
+    // skip budget (IModelTile.ts:265/:269 — tiles whose depth is below it are
+    // always skippable, so a NotFound root does not block descent; M-G(2)
+    // RED forensics: the drill dump has no root bytes by collection
+    // provenance, and without this carrier the replay stalled at the root).
+    uint32_t maxInitialTilesToSkip = 0;
 };
 
 // Content-id components — V1 scheme (ContentIdProvider, TileMetadata.ts:665-674:
@@ -328,12 +338,11 @@ public:
     /// Ported from: IModelTree.maxInitialTilesToSkip / maxTilesToSkip
     /// (IModelTileTree.ts:361-362 — maxInitialTilesToSkip = tree-props field
     /// ?? 0 (:390); maxTilesToSkip = TileAdmin.maximumLevelsToSkip (:391)).
-    /// DanQing's tree constructor has no props-injection path (the reference
-    /// receives the parsed props via IModelTileTreeParams) — the members exist
-    /// (this class) but the props values cannot reach them, so the ?? 0
-    /// default holds even where the RPC dump props carry maxInitialTilesToSkip
-    /// (e.g. compatseed 6 — parsed by DumpTileTreeProps, registered
-    /// unconsumed). The carrier/injection path is a later-milestone item.
+    /// The props carrier is ImdlTreeMetadata::maxInitialTilesToSkip
+    /// (TileProps.ts:63) — wired since M-G(2); before that the member existed
+    /// but the props value could not reach it, so the ?? 0 default held even
+    /// where the RPC dump props carry the field (e.g. compatseed 6,
+    /// instances60 3 — registered gap, closed by the metadata carrier).
     uint32_t getMaxInitialTilesToSkip() const noexcept
     {
         return m_maxInitialTilesToSkip;
@@ -372,7 +381,9 @@ private:
     std::string m_treeId;
     ImdlTreeMetadata m_metadata;
     // SelectParent 协议的树级跳级预算（IModelTileTree.ts:361-362/:390-391）。
-    uint32_t m_maxInitialTilesToSkip = 0;  // :390 — props ?? 0
+    uint32_t m_maxInitialTilesToSkip = 0;  // :390 — props ?? 0（载体
+                                           // ImdlTreeMetadata::maxInitialTilesToSkip，
+                                           // 构造器初始化列表消费）
     uint32_t m_maxTilesToSkip = 1;         // :391 — TileAdmin.maximumLevelsToSkip
     // The tree's content Id scheme (:396-398 contentIdProvider.create +
     // :398 rootContentId override) — null
