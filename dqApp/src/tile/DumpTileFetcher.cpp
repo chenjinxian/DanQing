@@ -47,13 +47,25 @@ bool readFileBytes(std::string const& path, std::vector<uint8_t>& out)
 
 }  // namespace
 
-DumpTileFetcher::DumpTileFetcher(std::string const& dumpRoot)
-    : m_dumpRoot(dumpRoot)
+DumpTileFetcher::DumpTileFetcher(std::string const& primaryRoot,
+                                 std::vector<std::string> fallbackRoots)
+    : m_dumpRoot(primaryRoot)
+    , m_fallbackRoots(std::move(fallbackRoots))
 {
     // manifest 装载（唯一键域——trees/tiles 索引；stats 计数门在 loader 内）。
-    if (auto manifest = loadDumpManifest(dumpRoot)) {
+    // 主根失败 → isValid()==false（现状语义不变）。
+    if (auto manifest = loadDumpManifest(primaryRoot)) {
         m_manifest = std::move(*manifest);
         m_valid = true;
+    }
+    // fallback 根（M-H Task 2 多根合并）：同一解析路径逐根装载；失败记
+    // warning 不致命（主根语义），不进查找域。
+    for (auto const& root : m_fallbackRoots) {
+        if (auto manifest = loadDumpManifest(root)) {
+            m_fallbacks.push_back(FallbackRoot{root, std::move(*manifest)});
+        } else {
+            m_fallbackWarnings.push_back(root);
+        }
     }
 }
 
@@ -97,12 +109,30 @@ void DumpTileFetcher::fetch(std::string const& url, dqRender::Tile& tile,
     record.treeId = treeId;
     record.contentId = contentId;
 
-    // manifest 查表（线性——dump 规模为十数量级条目）。
+    // manifest 查表（线性——dump 规模为十数量级条目）。多根合并查找序：
+    // 主根 → fallback[0] → fallback[1]…，首命中即服务（字节读自命中根目录，
+    // 命中源记 record.hitRoot——0=主根，i+1=fallbackRoots()[i]）。
     DumpManifestTileEntry const* tileEntry = nullptr;
-    for (auto const& item : m_manifest.tiles) {
-        if (item.treeId == treeId && item.contentId == contentId) {
-            tileEntry = &item;
-            break;
+    std::string const* hitFileRoot = nullptr;
+    auto lookup = [&treeId, &contentId, &tileEntry, &hitFileRoot](
+                      std::string const& root, DumpManifest const& manifest) {
+        for (auto const& item : manifest.tiles) {
+            if (item.treeId == treeId && item.contentId == contentId) {
+                tileEntry = &item;
+                hitFileRoot = &root;
+                return true;
+            }
+        }
+        return false;
+    };
+    if (lookup(m_dumpRoot, m_manifest)) {
+        record.hitRoot = 0;
+    } else {
+        for (size_t i = 0; i < m_fallbacks.size(); ++i) {
+            if (lookup(m_fallbacks[i].root, m_fallbacks[i].manifest)) {
+                record.hitRoot = i + 1;
+                break;
+            }
         }
     }
     if (!tileEntry) {
@@ -117,10 +147,10 @@ void DumpTileFetcher::fetch(std::string const& url, dqRender::Tile& tile,
     }
 
     std::vector<uint8_t> bytes;
-    if (!readFileBytes(m_dumpRoot + "/" + tileEntry->file, bytes)) {
+    if (!readFileBytes(*hitFileRoot + "/" + tileEntry->file, bytes)) {
         entry.ok = false;
         entry.error = "DumpTileFetcher: cannot open " + tileEntry->file
-                      + " (dump root: " + m_dumpRoot + ")";
+                      + " (dump root: " + *hitFileRoot + ")";
     } else if (bytes.size() != tileEntry->byteLength) {
         // 完整性下界（brief Step 3 决策点登记）：manifest.sha256 由采集侧
         // collector 已算（danqing-rpc-tools，Task 1 入库前全量复算一致）；

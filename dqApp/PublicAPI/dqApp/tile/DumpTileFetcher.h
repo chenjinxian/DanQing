@@ -49,15 +49,40 @@ public:
         std::string contentId;
         DumpFetchOutcome outcome;
         uint64_t bytes = 0;  // Completed 时的回放字节数（== manifest byteLength）
+        // 命中源（M-H Task 2 多根合并）：0 = 主根，i+1 = fallbackRoots()[i]。
+        // 仅在 manifest 命中（Completed/Error）时有意义；NotFound 恒 0（无命中）。
+        size_t hitRoot = 0;
     };
 
-    // 装载 <dumpRoot>/manifest.json；失败 → isValid()==false（fetch 走 onError，
-    // 不崩——MissingDumpFailsLoadGracefully 锁）。
-    explicit DumpTileFetcher(std::string const& dumpRoot);
+    // 装载 <primaryRoot>/manifest.json；失败 → isValid()==false（fetch 走
+    // onError，不崩——MissingDumpFailsLoadGracefully 锁）。
+    //
+    // 多根合并（M-H Task 2——instances60 sweep∪drill 联合域）：fallbackRoots
+    // 为有序只读备根清单（默认空 = 单根现状零行为变化）。查找序 primary →
+    // fallback[0] → fallback[1]…，首命中即服务（字节读自命中根目录，命中源记
+    // requestLog 的 hitRoot——outcome 语义不变）。树 props 仍仅取自主根
+    // （DumpTileTreeProps 不动——同 treeId 语义单源；getTreeCount/
+    // getTileCount 同为主根计数）。fallback 根 manifest 缺失/坏 → 记
+    // fallbackWarnings() 不致命（主根语义：isValid 只看主根），不进查找域。
+    explicit DumpTileFetcher(std::string const& primaryRoot,
+                             std::vector<std::string> fallbackRoots = {});
 
     bool isValid() const noexcept { return m_valid; }
     size_t getTreeCount() const noexcept { return m_manifest.trees.size(); }
     size_t getTileCount() const noexcept { return m_manifest.tiles.size(); }
+
+    // 构造入参的 fallback 根清单（原序，含装载失败者）。
+    std::vector<std::string> const& fallbackRoots() const noexcept
+    {
+        return m_fallbackRoots;
+    }
+
+    // manifest 装载失败的 fallback 根（warning 不致命——InvalidFallbackRoot
+    // WarnsButPrimaryServes 锁）。
+    std::vector<std::string> const& fallbackWarnings() const noexcept
+    {
+        return m_fallbackWarnings;
+    }
 
     // 全部被请求键的轨迹（fetch 调用即追加——每条一次；TileAdmin 对
     // 非 NotLoaded 态不重建请求（TileAdmin.cpp processRequestsForUser），
@@ -88,6 +113,16 @@ private:
     std::string m_dumpRoot;
     DumpManifest m_manifest;
     bool m_valid = false;
+    // 多根合并（M-H Task 2）：m_fallbackRoots 为构造入参原序（含失败者——
+    // 观测面）；m_fallbacks 仅持装载成功的（根目录 + manifest——字节服务
+    // 查找域）；m_fallbackWarnings 记装载失败根（warning 不致命）。
+    struct FallbackRoot {
+        std::string root;
+        DumpManifest manifest;
+    };
+    std::vector<std::string> m_fallbackRoots;
+    std::vector<FallbackRoot> m_fallbacks;
+    std::vector<std::string> m_fallbackWarnings;
     std::vector<Completed> m_completed;
     std::vector<DumpRequestRecord> m_requestLog;
 };
