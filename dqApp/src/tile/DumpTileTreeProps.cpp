@@ -241,6 +241,15 @@ std::optional<DumpTreeProps> DumpTileTreeProps::byTreeId(std::string const& tree
     if (dumpjson::JsonValue const* v = doc->find("formatVersion"))
         out.metadata.formatVersion = static_cast<uint32_t>(v->number);
 
+    // IModelTileTreeProps.maxInitialTilesToSkip（TileProps.ts:63）→ metadata
+    // 载体（iModelTileTreeParamsFromJSON 的 destructure+params 透传
+    // IModelTileTree.ts:51/:76 → 构造器 :390 消费——SelectParent 协议的初始
+    // 跳级预算；缺失保留 0 = ?? 0 缺省。M-G(2) 接线：drill dump 无根瓦字节
+    // 是采集实态，无此载体时根 NotFound 阻断整树下潜——RED 取证见
+    // RpcDumpRender.Instances60DrillReplaysViewportChain 锁头）。
+    if (dumpjson::JsonValue const* v = doc->find("maxInitialTilesToSkip"))
+        out.metadata.maxInitialTilesToSkip = static_cast<uint32_t>(v->number);
+
     // TileTreeProps.contentRange（:51）→ 仅在字段存在且为对象时置值
     // （IModelTileTree.ts:54-56；缺失/null 保留 null range——"unknown" 约定；
     // null 视同缺省不硬失败——参考 Range3d.setFromJSON 的 `if (!json) return`

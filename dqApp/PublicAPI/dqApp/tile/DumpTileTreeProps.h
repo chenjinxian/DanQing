@@ -303,7 +303,8 @@ loadDumpManifest(std::string const& dumpRoot);
 //     （IModelTileTreeProps.tileScreenSize，:67，缺省 512——TileProps.ts:66 与
 //     iModelTileTreeParamsFromJSON IModelTileTree.ts:52 的 ?? 512）/ is2d（非
 //     树 props 字段——参考来自视图侧 PrimaryTreeId.is3d → options.is3d，
-//     PrimaryTileTree.ts:68；离线 dump 全为空间树 → false）。
+//     PrimaryTileTree.ts:68；离线 dump 全为空间树 → false）/ formatVersion
+//     （:65）/ maxInitialTilesToSkip（:63）。
 //   - rootTile：TileProps（:23-36）→ ImdlTileMetadata 六字段
 //     （contentId/range/contentRange/isLeaf/sizeMultiplier/emptySubRangeMask）。
 //   - rootMaximumSize：TileProps.maximumSize（:31）——ImdlTileMetadata 无载体，
@@ -311,14 +312,17 @@ loadDumpManifest(std::string const& dumpRoot);
 //     iModelTileParamsFromJSON(params.rootTile) 携带，IModelTileTree.ts:406）。
 //
 // 未消费的 props 字段（解析期忽略，登记——载体归后续里程碑，与 M-C 登记同源）：
-//   location（TransformProps——ImdlTileTree 无变换载体）、maxTilesToSkip、
-//   maxInitialTilesToSkip（**载体在、注入路径缺**：ImdlTileTree.h:349-350 的
-//   预算成员存在，但树构造器无 props 入参，props 值无法到达——预算仍为
-//   ?? 0 / TileAdmin 缺省，IModelTileTree.ts:390-391）、contentIdQualifier、
-//   geometryGuid、transformNodeRanges、extentsBasis/baseExtents（TileProps.ts
-//   之外的后端扩展域，参考类型亦无）。
+//   location（TransformProps——ImdlTileTree 无变换载体）、maxTilesToSkip
+//   （参考亦不消费 props 值——IModelTileTree.ts:391 取 TileAdmin.
+//   maximumLevelsToSkip）、contentIdQualifier、geometryGuid、
+//   transformNodeRanges、extentsBasis/baseExtents（TileProps.ts 之外的后端
+//   扩展域，参考类型亦无）。
 //   formatVersion 原在本清单——M-D(3) 起已消费（metadata.formatVersion →
 //   ImdlTileTree 的 ContentIdProvider 方案选择，IModelTileTree.ts:396-398）。
+//   maxInitialTilesToSkip 原在本清单（"载体在、注入路径缺"）——M-G(2) 起
+//   已消费（metadata.maxInitialTilesToSkip → ImdlTileTree 构造器，
+//   TileProps.ts:63 → IModelTileTree.ts:390；drill dump 回放 RED 取证见
+//   RpcDumpRender.Instances60DrillReplaysViewportChain 锁头）。
 // ---------------------------------------------------------------------------
 struct DumpTreeProps {
     dqRender::ImdlTreeMetadata metadata;
