@@ -12,6 +12,11 @@
 #include <QStyleFactory>
 #include <QTimer>
 
+#include <map>
+#include <memory>
+#include <optional>
+#include <string>
+
 #ifdef _WIN32
 // TEMP-DIAG（2026-09-19 真实 app 锚定崩溃取证）：vectored SEH 崩溃栈打印——
 // 先于一切 __except 帧触发，stderr 落盘前 flush（参考 CursorStateTest 同款）。
@@ -52,6 +57,7 @@ static LONG WINAPI dtaCrashPrinter(EXCEPTION_POINTERS* ep)
 #include <dqApp/IModelConnection.h>  // DANQING_AUTO_OPEN_DECO refit 用 GetProjectExtents
 
 #include "src/Mod/Start/Gui/StartView.h"
+#include "src/DumpOpenHelper.h"
 #include "src/Gui/MainWindow.h"
 #include "src/Gui/Application.h"
 #include "src/Gui/DtaToolBars.h"
@@ -66,6 +72,58 @@ static LONG WINAPI dtaCrashPrinter(EXCEPTION_POINTERS* ep)
 // Global stub instances
 App::Application* App::Application::_pcSingleton = nullptr;
 std::map<std::string, std::string> App::Application::m_config;
+
+// === M-H(4)：Start 页双模型打开入口支撑 ===
+// assets 根寻址（与 tests 同惯例——RpcDumpRenderTest.cpp:226-228）：编译期
+// DANQING_TILE_ASSETS_DIR（DisplayTestApp 目标同 DtaTest 定义，CMakeLists）+
+// 运行时 DANQING_RPC_DUMP env 覆写整个 dump 根。
+#ifndef DANQING_TILE_ASSETS_DIR
+#define DANQING_TILE_ASSETS_DIR "."
+#endif
+
+namespace {
+
+// 模型→包根映射表（一处集中，M-H(4) Step 2）：
+//   joeshouse   = imodel joeshouse-v1/imodel.json + tiles [joeshouse-v1]
+//                 + fallback [joeshouse-drill-v1]（drill 域外键补字节，M-H Task 2）
+//   instances60 = imodel instances60-imodel-v1/imodel.json + tiles [instances60-v1]
+//                 + fallback [instances60-drill-v1]
+// （与 DumpOpenChainTest.cpp:256-258/:508-510 的同构锁包定义一致。）
+std::optional<dta::DumpOpenPackage> dumpPackageForModel(QString const& modelId)
+{
+    std::string dumpRoot = std::string(DANQING_TILE_ASSETS_DIR) + "/rpc-dumps";
+    if (char const* env = std::getenv("DANQING_RPC_DUMP"))
+        dumpRoot = env;
+    dta::DumpOpenPackage pkg;
+    if (modelId == QLatin1String("joeshouse")) {
+        pkg.imodelRoot = dumpRoot + "/joeshouse-v1";
+        pkg.tileRoots = {dumpRoot + "/joeshouse-v1", dumpRoot + "/joeshouse-drill-v1"};
+    }
+    else if (modelId == QLatin1String("instances60")) {
+        pkg.imodelRoot = dumpRoot + "/instances60-imodel-v1";
+        pkg.tileRoots = {dumpRoot + "/instances60-v1", dumpRoot + "/instances60-drill-v1"};
+    }
+    else {
+        return std::nullopt;
+    }
+    return pkg;
+}
+
+// 打开产物生命周期注册表：DumpOpenResult 持有 trees/provider（viewport 注册的
+// 是 provider 裸指针——DumpOpenHelper.h:97-101），必须活得比 viewport 久。
+// 按 view 登记；view destroyed（~QObject 在 ~View3DInventor 之后发射——先拆
+// 视口后拆树，TD-22 危险序的反向）时擦除。捕获的 view 指针仅作 map 键，从不
+// 解引用。注册表本体堆驻留不析构（有意泄漏）——进程退出时静态析构序会让
+// ImdlTileTree 撞上已死的 RenderSystem/TileAdmin 单例。
+std::map<Gui::View3DInventor*, std::unique_ptr<dta::DumpOpenResult>>& openedDumps()
+{
+    static auto* s_registry =
+        new std::map<Gui::View3DInventor*, std::unique_ptr<dta::DumpOpenResult>>();
+    return *s_registry;
+}
+
+}  // namespace
+
 
 int main(int argc, char** argv)
 {
@@ -187,15 +245,49 @@ int main(int argc, char** argv)
                              Gui::openDecorationGeometryExample(*view3d);
                          mainWindow->showStatus(0, QObject::tr("Decoration Geometry Example opened"));
                      });
-    QObject::connect(startView, &StartGui::StartView::requestOpenFile,
-                     mainWindow, [mainWindow]() {
-                         // TODO Step 3/4: File dialog + open IModelConnection
-                         mainWindow->showStatus(0, QObject::tr("Open File — not yet implemented"));
-                     });
-    QObject::connect(startView, &StartGui::StartView::requestNewFile,
-                     mainWindow, [mainWindow]() {
-                         // TODO Step 4: File dialog + glTF import
-                         mainWindow->showStatus(0, QObject::tr("New File — not yet implemented"));
+    // M-H(4)：双模型打开入口（2026-09-28 用户指令——"点击直接进行渲染视图"）。
+    // Start 页模型卡片 → 新建 MDI 视图（newDocument 工厂 = blank connection
+    // View3DInventor）→ DumpOpenHelper 打开链（M-H Task 3：imodel.json →
+    // saved ViewState → modelSelector 逐 model 树装载 → 多根 fetcher）→
+    // saved 视图直接渲染。TileAdmin 全局 fetcher 装/卸按 DumpOpenHelper 既有
+    // 语义（后开者替换前者；多视图并存的多 fetcher 路由登记范围外）。
+    QObject::connect(startView, &StartGui::StartView::requestOpenDumpModel,
+                     mainWindow, [mainWindow](QString modelId) {
+                         auto pkg = dumpPackageForModel(modelId);
+                         if (!pkg.has_value()) {
+                             mainWindow->showStatus(
+                                 1, QObject::tr("Unknown model id: %1").arg(modelId));
+                             return;
+                         }
+                         auto* mdView = Gui::Application::Instance()->newDocument();
+                         auto* view3d = qobject_cast<Gui::View3DInventor*>(mdView);
+                         if (view3d == nullptr) {
+                             mainWindow->showStatus(
+                                 1, QObject::tr("Open %1 failed: no 3D view").arg(modelId));
+                             return;
+                         }
+                         auto opened = dta::openDumpIModel(*view3d, *pkg);
+                         if (!opened.has_value()) {
+                             mainWindow->showStatus(
+                                 1, QObject::tr("Open %1 failed: dump package unreadable "
+                                                "(assets root: %2)")
+                                        .arg(modelId)
+                                        .arg(QString::fromStdString(pkg->imodelRoot)));
+                             return;
+                         }
+                         view3d->setWindowTitle(
+                             modelId == QLatin1String("joeshouse")
+                                 ? QObject::tr("Joe's House")
+                                 : QObject::tr("60 Instances (Properties)"));
+                         QString const treeSummary = QString::fromStdString(
+                             std::to_string(opened->treeLoadLog.size()));
+                         openedDumps().emplace(view3d,
+                             std::make_unique<dta::DumpOpenResult>(std::move(*opened)));
+                         QObject::connect(view3d, &QObject::destroyed, mainWindow,
+                                          [view3d]() { openedDumps().erase(view3d); });
+                         mainWindow->showStatus(
+                             0, QObject::tr("Opened %1 (%2 tile trees) — saved view rendered")
+                                    .arg(modelId, treeSummary));
                      });
 
     // DTA 功能分类工具栏区（替代原 FreeCAD 6 条 + 临时 2 条）。
