@@ -238,6 +238,7 @@ if(TARGET gtest_main AND TARGET dqApp)
         tests/TileTreeRenderTest.cpp    # 离线 3D Tiles tileset 加载渲染像素回归（2026-09-19，RED 锁）
         tests/RpcDumpRenderTest.cpp     # RPC 真实数据端到端渲染锁（M-D(3)，2026-09-27——注册在 TileTreeRenderTest 之后：同进程直跑时其 fetcher 替换不回溢）
         tests/DumpOpenChainTest.cpp     # 已存 iModel 打开链流程同构锁（M-H Task 3——注册在 RpcDumpRenderTest 之后：同因 fetcher 替换不回溢）
+        tests/DumpBrowseTest.cpp        # 双模型浏览零缺失锁（M-H Task 5——注册在 DumpOpenChainTest 之后：同因 fetcher 替换不回溢）
         src/Gui/View3DInventor.cpp       # 测试构造真实 View3DInventor（真视口）
         src/DumpOpenHelper.cpp           # 打开链装配（M-H Task 3——DumpOpenChain 锁的被测面）
         src/Gui/DecorationGeometryExample.cpp   # DtaToolBars 引用（Deco 按钮）
