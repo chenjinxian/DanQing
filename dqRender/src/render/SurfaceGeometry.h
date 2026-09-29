@@ -97,11 +97,24 @@ public:
     rhi::BufferObjectHandle getLutIndexBuffer() const noexcept { return m_lutIndexBuffer; }
 
     // u_color（量化路径均匀色）：量化 Surface shader 无 a_color attribute，
-    // v_color 取自 u_color uniform（Color.ts:51-60 ← lutGeom.getColor(target)；
-    // 非均匀色表的 LUT color-table 采样为登记 TODO）。
+    // v_color 取自 u_color uniform（Color.ts:51-60 ← lutGeom.getColor(target)）。
     // 对齐 PolylineGeometry::getColor（Polyline.ts:129-131）。
     dqCommon::ColorDef getColor() const noexcept { return m_color; }
     void setColor(dqCommon::ColorDef color) { m_color = color; }
+
+    // 非均匀（色表）顶点色形态位——参考语义：VertexTable.uniformColor
+    // undefined → ColorInfo.createFromVertexTable → createNonUniform
+    //（ColorInfo.ts:35 ← VertexLUT.ts:97 createFromVertexTable）→ 每 draw
+    // setShaderFlags 置 u_shaderFlags[kShaderBit_NonUniformColor]=1
+    //（Common.ts:59-73）+ u_color 免绑（Color.ts:56 仅 isUniform 时 bind）。
+    // 色表字节无需独立上传：appendColorTable 把色表追加在顶点表数据尾部
+    //（VertexTableBuilder.ts:185-193——numVertices*numRgbaPerVertex 之后），
+    // LUT 纹理直传时已在内，shader 按 colorTableStart 定位采样（Color.ts:18-23）。
+    // 命名注（§3.4 碰撞避让）：几何上已有 getColor() 返回均匀 ColorDef
+    //（PolylineGeometry 先例），故本位以 isNonUniformColor 表达参考
+    // colorInfo.isNonUniform，不覆盖 getColor 的均匀值语义。
+    void setNonUniformColor() noexcept { m_nonUniformColor = true; }
+    bool isNonUniformColor() const noexcept { return m_nonUniformColor; }
 
     /// Check if this surface is lit.
     bool isLit() const noexcept { return getSurfaceType() != SurfaceType::Unknown; }
@@ -149,6 +162,7 @@ private:
     rhi::VertexBufferInfoHandle m_lutVertexBufferInfo;  // attribute 布局（UBYTE3@0）
     bool m_usesQuantizedPositions = false;
     dqCommon::ColorDef m_color = dqCommon::ColorDef::create();  // u_color 均匀色（默认黑——对齐 ColorDef.create()）
+    bool m_nonUniformColor = false;  // 色表形态位（ColorInfo.createNonUniform——见 isNonUniformColor 注）
 };
 
 // ---------------------------------------------------------------------------

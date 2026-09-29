@@ -14,6 +14,7 @@
 
 #include "CommonShaders.h"   // addFrustum
 #include "InstancingShaders.h"  // addInstancedModelMatrixRTC / addInstanceColor（TD-25）
+#include "shader/ColorShaders.h"  // kColorComputeVertexColorQuantized[Instanced]（Color.ts getComputeColor 全文）
 #include "RenderPassShaders.h"  // addRenderPass (authoritative u_renderPass + kRenderPass_*)
 #include "ShaderBindings.h"  // wireProjectionMatrix, wireModelViewMatrix
 #include "ShaderBuilder.h"
@@ -175,13 +176,13 @@ inline void createCommon(ProgramBuilder& builder, bool instanced, bool quantized
 //
 // Non-quantized (§3.4 deviation): reads color from a_color attribute instead
 // of the color LUT texture appended to the vertex data.
-// Quantized: reads the per-vertex color via u_color uniform. The reference
-// getComputeElementColor() decodes colorIndex = decodeUInt16(g_vertLutData1.zw)
-// and samples the color table appended after the vertex data in u_vertLUT,
-// selecting lutColor vs u_color via u_shaderFlags[kShaderBit_NonUniformColor];
-// the color-table sampling is a registered TODO — the current imdl fixture has
-// no color table (uniform color), so the uniform path is the minimal faithful
-// subset (Color.ts:24 selects u_color when the color is uniform).
+// Quantized: full getComputeElementColor() — colorIndex =
+// decodeUInt16(g_vertLutData1.zw)，colorTableStart = u_vertParams.z ×
+// u_vertParams.w（顶点表字节尾部的色表——VertexTableBuilder.appendColorTable
+// 追加段，随 u_vertLUT 直传已在纹理内），computeLUTCoords 定位采样 + 预乘
+// 还原（rgb /= alpha），u_shaderFlags[kShaderBit_NonUniformColor] 位选
+// lutColor : u_color（Color.ts:24）。均匀色（flag=false）时即 u_color——
+// 与旧"仅 u_color"路径逐位同结果（既有均匀色资产零行为变化）。
 //
 // Adds:
 //   Vertex:  (non-quantized: a_color attribute) / (quantized: u_color uniform)
@@ -198,13 +199,9 @@ inline void addColor(ProgramBuilder& builder, bool quantized = false, bool insta
 
     if (quantized) {
         // Quantized LUT path — Ported from: itwinjs-core Color.ts addColor()
-        // (line 51-62). u_color uniform carries the uniform element color.
-        // TODO: color-table sampling per getComputeElementColor()
-        // (Color.ts:16-26) — colorIndex = decodeUInt16(g_vertLutData1.zw),
-        // texel = computeLUTCoords(u_vertParams.z*u_vertParams.w + colorIndex,
-        // u_vertParams.xy, g_vert_center, 1.0) sample of u_vertLUT, selected
-        // by u_shaderFlags[kShaderBit_NonUniformColor]. Deferred: the imdl
-        // fixture consumes uniform colors only.
+        // (line 51-62)。u_color uniform：均匀元素色（非均匀时 dispatch 侧
+        // 不绑——Color.ts:56 仅 color.isUniform 才 bind；flag 位选权在
+        // u_shaderFlags[kShaderBit_NonUniformColor]，见 getComputeElementColor）。
         vert.addUniform("u_color", VariableType::Vec4, nullptr);
 
         if (instanced) {
@@ -214,14 +211,13 @@ inline void addColor(ProgramBuilder& builder, bool quantized = false, bool insta
             // :32-35 在元素色之上 mix 逐实例 rgb/alpha）。
             addInstanceColor(vert);
             vert.setVertexComponent(VertexShaderComponent::ComputeBaseColor,
-                "    vec4 color = u_color;\n"
-                "    color.rgb = mix(color.rgb, a_instanceRgba.rgb / 255.0, u_applyInstanceColor * extractInstanceBit(kOvrBit_Rgb));\n"
-                "    color.a = mix(color.a, a_instanceRgba.a / 255.0, u_applyInstanceColor * extractInstanceBit(kOvrBit_Alpha));\n"
-                "    return color;\n");
+                std::string(kColorComputeVertexColorQuantizedInstanced));
         } else {
-            // Vertex ComputeBaseColor: return the uniform color.
+            // Vertex ComputeBaseColor: getComputeColor(quantized) 全文
+            //（getComputeElementColor + returnColor——ColorShaders.h 的常量
+            // 即 Color.ts:16-26/:28-30 的逐行 GLSL）。
             vert.setVertexComponent(VertexShaderComponent::ComputeBaseColor,
-                                    "    return u_color;\n");
+                                    std::string(kColorComputeVertexColorQuantized));
         }
     } else {
         // a_color attribute

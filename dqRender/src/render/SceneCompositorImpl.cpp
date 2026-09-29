@@ -1563,14 +1563,33 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                                     params.setVec3("u_qScale", qs);
                             }
                             dqCommon::ColorDef const surfColor = surfGeom->getColor();
-                            dqCommon::ColorComponents const scc = surfColor.getColors();
-                            float surfColorRgba[4] = {
-                                static_cast<float>(scc.r) / 255.0f,
-                                static_cast<float>(scc.g) / 255.0f,
-                                static_cast<float>(scc.b) / 255.0f,
-                                static_cast<float>(255 - scc.t) / 255.0f,
-                            };
-                            params.setVec4("u_color", surfColorRgba);
+                            // u_shaderFlags 每 draw 全数组上传（setShaderFlags——
+                            // glsl/Common.ts:53-73：先清零再按几何置位）。
+                            // kShaderBit_NonUniformColor=1 ⇔ 几何色非均匀
+                            //（色表形态，ColorInfo.createNonUniform）。uniform
+                            // 是 per-program 状态：同一量化 Surface 变体被均匀/
+                            // 非均匀几何共享，漏传清零数组会把上一 draw 的位
+                            // 泄漏给后续均匀色几何（参考每 draw 重传全数组的
+                            // 语义即为此）。
+                            // Ported from: itwinjs-core glsl/Common.ts:59-73
+                            //              + ShaderProgram.ts:27 ShaderFlags.NonUniformColor = 1<<1。
+                            int surfShaderFlags[5] = {0, 0, 0, 0, 0};
+                            if (surfGeom->isNonUniformColor())
+                                surfShaderFlags[1] = 1;
+                            params.setIntArray("u_shaderFlags", surfShaderFlags, 5);
+                            // u_color 仅均匀色时绑定（glsl/Color.ts:56——
+                            // `if (color.isUniform) color.uniform.bind(uniform)`
+                            // ；非均匀时位选 lutColor，u_color 值不消费）。
+                            if (!surfGeom->isNonUniformColor()) {
+                                dqCommon::ColorComponents const scc = surfColor.getColors();
+                                float surfColorRgba[4] = {
+                                    static_cast<float>(scc.r) / 255.0f,
+                                    static_cast<float>(scc.g) / 255.0f,
+                                    static_cast<float>(scc.b) / 255.0f,
+                                    static_cast<float>(255 - scc.t) / 255.0f,
+                                };
+                                params.setVec4("u_color", surfColorRgba);
+                            }
                         }
                         // TD-25：实例化 surface 的 per-draw uniform 组。
                         // Ported from: itwinjs-core BranchUniforms.bindModelViewMatrix

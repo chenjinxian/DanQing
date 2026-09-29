@@ -301,15 +301,16 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
             prim.isPlanar, /*hasTextures*/ false, lutVbh, lutVbih);
         geom->setPrimitive(primitive);
 
-        // 均匀色：u_color 源（glsl/Color.ts:51-60 ← lutGeom.getColor——
-        // ColorInfo.createFromVertexTable 的 uniformColor 路径，
-        // VertexLUT.ts:99 → ColorInfo；ParseImdlDocument.ts:1020
-        // ColorDef.fromJSON(json.uniformColor)）。无 uniformColor 时
-        // 缺省白（ColorInfo 缺省）。
+        // 色信息：ColorInfo.createFromVertexTable 两形态（VertexLUT.ts:97——
+        // uniformColor 有 → createFromColorDef（u_color 源，ParseImdlDocument
+        // .ts:1020 ColorDef.fromJSON）；无 → createNonUniform（ColorInfo.ts:35
+        // 色表形态——色表字节已随顶点表 LUT 直传在内，shader 侧
+        // kShaderBit_NonUniformColor 位选 lutColor 采样，Color.ts:16-26；
+        // 此前此处曾强制白 0xFFFFFFFF——M-I(3) 归位参考语义）。
         if (prim.vertices.hasUniformColor)
             geom->setColor(dqCommon::ColorDef::create(prim.vertices.uniformColor));
         else
-            geom->setColor(dqCommon::ColorDef::create(0xFFFFFFFFu));
+            geom->setNonUniformColor();
 
         // -------------------------------------------------------------------
         // TD-25：instances 修饰消费（ImdlSchema.ts:160-166 → InstancedGraphicParams
@@ -380,6 +381,11 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
         dqCommon::ColorDef const meshColor = prim.vertices.hasUniformColor
             ? dqCommon::ColorDef::create(prim.vertices.uniformColor)
             : dqCommon::ColorDef::create(0xFFFFFFFFu);
+        // 注：非均匀 prim 的 meshColor 仅剩 edge 路径消费（EdgeGeometry/
+        // SilhouetteEdgeGeometry/indexed LUT 的 u_color——M-I(3) 后 surface
+        // 已走色表采样，不再消费此值）。参考侧 edge 基色 = computeEdgeColor
+        //（Target.ts:607-610——无 EdgeSettings 覆盖时透传非均匀 colorInfo），
+        // edge 变体的色表采样随 Task 4 边线两段接线（登记于该任务）。
         // instances 修饰：InstancedGeometry 包裹 LUT surface（wrapper 非拥有
         // 观察 geom——所有权经 addInstancedSurface 入 MeshGraphic）。
         if (instanceBuffers) {
