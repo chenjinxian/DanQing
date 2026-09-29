@@ -27,6 +27,44 @@ RenderSystem& OpenGLRenderTarget::renderSystem()
     return m_system;
 }
 
+// Pick 视图的数据源喂入/撤销：把当前 Scene 装进 TargetGraphics（pick 命令
+// 装配的唯一场景口），pick 回读结束后撤销。参考语义——Target.readPixelsFromFbo
+// → beginReadPixels → RenderCommands.initForReadPixels(this.graphics)
+//（Target.ts:917，drawForReadPixels :933-938）每次拾取从 TargetGraphics 重画
+// **当前场景**；容器在参考里由 Target.changeScene → graphics.changeScene
+//（Target.ts:426-427 → TargetGraphics.ts:31-35）于 changeScene 时镜像。此前
+// DanQing 的 Scene 只进正常帧合并（drawFrame → setScene），从不进
+// TargetGraphics（TargetGraphics::setScene 全仓零生产调用方——
+// ported-but-uncalled，M-I(2) 清偿）→ pick 命令 0 → PickAtPoint 恒 0 →
+// 点选恒 processMiss。
+//
+// EQUIVALENCE（§11.10）：DanQing 在 pick 入口喂容器、pick 尾撤销，不在
+// changeScene 时喂。发散=喂入时点（pick 作用域 vs changeScene 持续镜像）；
+// 未发现的发散=喂入后 initForReadPixels 读到的是同一 Scene 指针的同一图形
+// 列表（Viewport::m_scene 成员地址稳定，pick 发生在帧间，列表存活至下一
+// createScene——与参考 this.graphics 的生存期语义一致），验证法=PickDumpScene
+// 三像素判据（瓦 pick/点选/高亮）+ 既有 PickHiliteSelection 6 项（装饰 pick
+// 不受影响）。不取 changeScene 时（持续）喂的原因：TargetImpl::
+// populateCommandsFromScene（TargetImpl.cpp:340）以"容器非空"为正常帧命令
+// 装配的分流判据——容器一旦非空，dqApp 生产绘制主路径即从 drawFrame 合并树
+// 改道 initForRender(container)（首版实测：首次拾取后正常帧只重画场景子集
+// ——高亮清选不复原的直接根因），故容器必须只在 pick 作用域内非空。
+// 回流登记：若后续把正常帧装配统一切到容器路径（参考形态），本喂入点应随之
+// 移回 changeScene 并去掉撤销。
+void OpenGLRenderTarget::feedPickScene()
+{
+    if (m_impl)
+        m_impl->setSceneContainer(m_scene);
+}
+
+// pick 回读尾——撤销容器（见 feedPickScene 的 EQUIVALENCE 登记：容器非空会
+// 改变正常帧命令装配的分流）。
+void OpenGLRenderTarget::endPickScene()
+{
+    if (m_impl)
+        m_impl->setSceneContainer(nullptr);
+}
+
 // Debug control routing (TargetImpl's per-frame snapshot + toggle).
 OpenGLRenderTarget::RenderCommandCount OpenGLRenderTarget::getRenderCommands() const
 {
@@ -256,7 +294,9 @@ bool OpenGLRenderTarget::readPickData(int32_t x, int32_t y, uint32_t width, uint
     if (!m_impl || !outIds || outCount == 0 || width == 0 || height == 0
         || outCount < width * height)
         return false;
+    feedPickScene();
     m_impl->readPixels(x, y, width, height, outIds, outCount);
+    endPickScene();
     return true;
 }
 
@@ -267,7 +307,10 @@ bool OpenGLRenderTarget::readPickDepth(int32_t x, int32_t y, uint32_t width, uin
 {
     if (!m_impl || !outFractions || outCount < width * height)
         return false;
-    return m_impl->readPickDepth(x, y, width, height, outFractions, outCount);
+    feedPickScene();
+    bool const ok = m_impl->readPickDepth(x, y, width, height, outFractions, outCount);
+    endPickScene();
+    return ok;
 }
 
 void OpenGLRenderTarget::setHiliteSet(uint32_t const* elementIds, size_t count)
