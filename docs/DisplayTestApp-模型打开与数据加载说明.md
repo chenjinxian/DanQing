@@ -84,7 +84,7 @@
 
 | 入口卡片 | modelId | iModel 面（imodel.json） | 瓦主根（树 props 源 + 字节） | fallback 根（域外键补字节） |
 |---|---|---|---|---|
-| Joe's House | `joeshouse` | `joeshouse-v1/` | `joeshouse-v1/`（10 树/173,876 瓦 sweep 全树） | `joeshouse-drill-v1/`（15 瓦——×16/×32 放大键在 sweep 域外） |
+| Joe's House | `joeshouse` | `joeshouse-v1/` | `joeshouse-v1/`（10 树/173,876 瓦 sweep 全树） | `joeshouse-drill-v1/`（15 瓦——×16/×32 放大键在 sweep 域外）→ `joeshouse-drill-v2/`（20 瓦——M-I(5) P2c：缩远态 depth-1 键 `-b-1-0-0-0-1`×6 在前两根域外） |
 | 60 Instances | `instances60` | `instances60-imodel-v1/` | `instances60-v1/`（1 树/3,587 瓦 sweep） | `instances60-drill-v1/`（5 瓦——×16 键域外） |
 
 多根查找序（`DumpTileFetcher`）：主根 → fallback[0] → …，**首命中即服务**；树 props **仅取自主根**（同 treeId 语义单源）；每请求命中源记 `requestLog.hitRoot`（0=主根，i+1=fallback[i]）。
@@ -181,11 +181,13 @@
 | 项 | 影响 | 登记号 |
 |---|---|---|
 | `numRgbaPerVertex=5`（unquantized-LUT）顶点表形态未消费 | JoesHouse ×32 极端放大下 1 枚瓦零 graphic（父瓦 LOD 兜底显示，不可见差异） | TD-27 |
-| sweep 采集域 = 全树前缀（joeshouse depth≤10 cap；放大 ×≤8） | 更深细分/更高放大键在非中心支深放大时 NotFound（父瓦兜底——参考后端无更细瓦时同形） | 各 dump README |
+| sweep 采集域 = 全树前缀（joeshouse depth≤10 cap；放大 ×≤8） | 更深细分/更高放大键在非中心支深放大时 NotFound（父瓦兜底——参考后端无更细瓦时同形）；缩远态粗层已由 drill-v2 补齐（M-I(5)） | 各 dump README |
 | displayStyle 深层字段（环境/光照/排除元素等）未消费 | 风格细节与参考有差（viewflags/背景已消费） | TD 表/M-H(3) 缺口表 G8 |
-| joeshouse 打开首轮 >20s | 17 万瓦 manifest 首次装载耗时（交互期不受影响） | M-H(5) 实测登记 |
+| 选择高亮的批次归属粒度（feature 表缺失/粗粒度 batch） | 点选高亮可能覆盖同 batch 的相邻元素（非参考的单元素粒度）——非阻断忠实度台账 | TD-28 |
 | "取景杀 selection"（重定中心后零请求） | **instances60 模型特异**（JoesHouse 不复现）；影响该模型补采，不影响回放浏览 | 工具 README 坑 16 |
+
+> M-I(1) 已清偿：joeshouse 打开首轮 >20s（M-H(5) 实测登记）——manifest 单次解析共享 + 哈希索引 + 解析器瘦身，实测 **2.87s**（<3s；instances60 0.42-0.48s）。
 
 ---
 
-*本文档描述 M-H 收口时的实态；代码演进以 `DumpOpenHelper.h` 文件头注释（流程①-⑤与参考锚）与 `DumpOpenChainTest.cpp`（判据）为准，两者随代码更新。*
+*本文档描述 M-I 收口时的实态；代码演进以 `DumpOpenHelper.h` 文件头注释（流程①-⑤与参考锚）与 `DumpOpenChainTest.cpp`（判据）为准，两者随代码更新。*

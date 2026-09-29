@@ -172,7 +172,8 @@ TEST(JoesHouseColor, PipeTilesRenderColorTableNotWhite)
 
     dta::DumpOpenPackage pkg;
     pkg.imodelRoot = kDumpRoot + "/joeshouse-v1";
-    pkg.tileRoots = {kDumpRoot + "/joeshouse-v1", kDumpRoot + "/joeshouse-drill-v1"};
+    pkg.tileRoots = {kDumpRoot + "/joeshouse-v1", kDumpRoot + "/joeshouse-drill-v1",
+                     kDumpRoot + "/joeshouse-drill-v2"};
     auto opened = dta::openDumpIModel(view, pkg);
     ASSERT_TRUE(opened.has_value()) << "open chain failed: " << pkg.imodelRoot;
 

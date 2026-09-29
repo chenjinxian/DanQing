@@ -565,9 +565,9 @@ TEST(DumpBrowse, Instances60BrowseSessionZeroMissing)
 // ③ ×0.5 回退 2 级（128×→32×）+ 平移 ±（0.75×视图宽沿世界 X——房屋域内，
 //   平移面保持在 sweep 全树域/drill 中轴域内）：新增请求键实测钉死；
 // ④ 终态对账：零 Error/零重复；Completed ⊆ 联合域（joeshouse-v1 ∪
-//   joeshouse-drill-v1）；域外白名单 = 恰 3 枚过冲放大子（0x4d/-20、
-//   0x3f/-40、0x4d/-40——DumpOpenChain 锁 2 ③d 同钉）；Completed→graphics
-//   对账 + 零在途；
+//   joeshouse-drill-v1 ∪ joeshouse-drill-v2[M-I(5) P2c 缩远态域]）；域外白名单 = 恰 3 枚
+//   过冲放大子（0x4d/-20、0x3f/-40、0x4d/-40——DumpOpenChain 锁 2 ③d 同钉）；
+//   Completed→graphics 对账 + 零在途；
 // ⑤ 双像素锚：saved 帧（DumpOpenChain 锁 2 ④ 同钉值源——首绿 1798847 px
 //   的 0.2× 门 + 质心中央带）+ 最深饱和帧（64×——首绿实测钉死）。
 TEST(DumpBrowse, JoesHouseBrowseSessionZeroMissing)
@@ -587,7 +587,8 @@ TEST(DumpBrowse, JoesHouseBrowseSessionZeroMissing)
 
     dta::DumpOpenPackage pkg;
     pkg.imodelRoot = kDumpRoot + "/joeshouse-v1";
-    pkg.tileRoots = {kDumpRoot + "/joeshouse-v1", kDumpRoot + "/joeshouse-drill-v1"};
+    pkg.tileRoots = {kDumpRoot + "/joeshouse-v1", kDumpRoot + "/joeshouse-drill-v1",
+                     kDumpRoot + "/joeshouse-drill-v2"};
     auto opened = dta::openDumpIModel(view, pkg);
     ASSERT_TRUE(opened.has_value()) << "open chain failed: " << pkg.imodelRoot;
     ASSERT_EQ(10u, opened->trees.size());

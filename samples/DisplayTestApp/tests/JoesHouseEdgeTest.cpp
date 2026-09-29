@@ -165,7 +165,8 @@ TEST(JoesHouseEdge, PanelEdgesRenderBlackLinesFromHlineOverride)
 
     dta::DumpOpenPackage pkg;
     pkg.imodelRoot = kDumpRootJHE + "/joeshouse-v1";
-    pkg.tileRoots = {kDumpRootJHE + "/joeshouse-v1", kDumpRootJHE + "/joeshouse-drill-v1"};
+    pkg.tileRoots = {kDumpRootJHE + "/joeshouse-v1", kDumpRootJHE + "/joeshouse-drill-v1",
+                     kDumpRootJHE + "/joeshouse-drill-v2"};
     auto opened = dta::openDumpIModel(view, pkg);
     ASSERT_TRUE(opened.has_value()) << "open chain failed: " << pkg.imodelRoot;
 
@@ -262,13 +263,13 @@ TEST(JoesHouseEdge, PanelEdgesRenderBlackLinesFromHlineOverride)
 
     // ①边线存在（修复前实测 = 30 噪声命中：indexed 边着色器 qpos 协议缺失
     //    → 6 顶点退化零片元；A 段未接时即便上屏也是白边落白面）。
-    //    首绿实测 1541；阈值 ≈ 0.45× 余量。
+    //    首绿实测 1540±1（终审独立复跑 1540——AA 抖动）；阈值 ≈ 0.45× 余量。
     EXPECT_GE(edgePixels, 700l)
         << "no black panel edge lines on panels — compact/indexed edges "
            "produce zero fragments (qpos protocol missing in function-call "
            "vertex main) or hline black override not wired";
     // ②WHERE 分布：边线遍布全屋面板边界（非单点伪影）。首绿实测
-    //    457 行/870 列；阈值 ≈ 0.4× 余量。
+    //    457 行/870 列（终审复跑 456/869——AA 抖动）；阈值 ≈ 0.4× 余量。
     EXPECT_GE(edgeRows.size(), 200u)
         << "edge pixels not spread across rows — WHERE attribution failed";
     EXPECT_GE(edgeCols.size(), 350u)
