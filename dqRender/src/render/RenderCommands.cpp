@@ -6,6 +6,7 @@
 #include "CachedGeometry.h"
 #include "Graphic.h"
 #include "Matrix.h"
+#include "PlanarClassifier.h"
 #include "RenderGraphicAdapter.h"
 #include "TargetGraphics.h"
 #include "TargetImpl.h"
@@ -317,10 +318,32 @@ void RenderCommands::addBatch(Batch& batch)
 
     pushAndPop(*push, *pop, [&batch, this]() {
         // Set opaque/translucent overrides from feature overrides.
-        // Ported from: itwinjs-core addBatch (line 669-677)
-        if (batch.hasFeatureOverrides()) {
-            m_opaqueOverrides = true;
-            m_translucentOverrides = true;
+        // Ported from: itwinjs-core addBatch (RenderCommands.ts:668-677):
+        //   if (this.currentViewFlags.transparency || overrides.anyViewIndependentTranslucent) {
+        //     this._opaqueOverrides = overrides.anyOpaque;
+        //     this._translucentOverrides = overrides.anyTranslucent;
+        //     if (undefined !== classifier) { ... ||= classifier.anyOpaque/anyTranslucent; }
+        //   }
+        // overrides.anyOpaque/anyTranslucent 是"逐 feature 的 appearance 透明度
+        // 覆盖是否落在了 opaque/半透明侧"（FeatureOverrides.setTransparency
+        // :127-149）——没有任何 feature 携带透明度覆盖时两者皆 false：geometry
+        // 只进它的主 pass（不产生 opaque+translucent 双份绘制）。
+        // DanQing 此前无条件置 true（只要 batch 有 LUT）——全部带 FeatureTable
+        // 的瓦几何都被加进 Translucent pass 重复绘制；而 surface 变体的 OIT
+        // 双输出（Translucency.ts addTranslucency）未接线，单输出预乘色写进
+        // accum 附件 + blendFuncSeparate(One,Zero,One,OMSA) 把 accum.a 清成 0
+        // → Composite 把不透明球像素替换成多片元累加色——instances60 实例球
+        // 透明回归（M-J(1)）的引入机制。
+        auto const* batchLut = batch.getFeatureOverrideLUT();
+        auto const& curVf = m_stack->getCurrentViewFlags();
+        if (curVf.transparency
+            || (batchLut && batchLut->anyViewIndependentTranslucent())) {
+            m_opaqueOverrides = batchLut && batchLut->anyOpaque();
+            m_translucentOverrides = batchLut && batchLut->anyTranslucent();
+            if (auto const* classifier = m_stack->getTop().getPlanarClassifier()) {
+                m_opaqueOverrides = m_opaqueOverrides || classifier->isAnyOpaque();
+                m_translucentOverrides = m_translucentOverrides || classifier->isAnyTranslucent();
+            }
         }
 
         // add child graphic commands.

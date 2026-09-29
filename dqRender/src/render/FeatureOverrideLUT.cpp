@@ -247,4 +247,47 @@ bool FeatureOverrideLUT::allHidden() const noexcept
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// anyOpaque / anyTranslucent / anyViewIndependentTranslucent
+// Ported from: itwinjs-core FeatureOverrides.setTransparency (:127-149) — the
+// three any* flags are derived per feature from the resolved appearance's
+// transparency override, and only when the appearance actually carries one
+// (buildLookupTable :243-246 gates setTransparency behind
+// `undefined !== app.transparency`, which sets OvrFlags.Alpha alongside).
+//   alpha == 0xff → _anyOpaque = true (:139-142)
+//   alpha != 0xff → _anyTranslucent = true (:143) (+ ViewIndependentTransparency
+//                    bit / _anyViewIndependentTranslucent when !viewDependent)
+// DanQing's LUT carries the same two state carriers — the OvrFlag::Alpha bit
+// (set whenever the alpha byte is authored) and the OvrFlags16::
+// ViewIndependentTransparency bit — so the any* values are the scans over
+// them (same pattern as anyHilited above; the reference accumulates during
+// buildLookupTable, DanQing's LUT is mutable per feature).
+// ---------------------------------------------------------------------------
+bool FeatureOverrideLUT::anyOpaque() const noexcept
+{
+    for (auto const& data : m_overrides) {
+        if (dqCommon::HasFlag(data.flags, dqCommon::OvrFlag::Alpha) && data.alpha == 255)
+            return true;
+    }
+    return false;
+}
+
+bool FeatureOverrideLUT::anyTranslucent() const noexcept
+{
+    for (auto const& data : m_overrides) {
+        if (dqCommon::HasFlag(data.flags, dqCommon::OvrFlag::Alpha) && data.alpha != 255)
+            return true;
+    }
+    return false;
+}
+
+bool FeatureOverrideLUT::anyViewIndependentTranslucent() const noexcept
+{
+    for (auto const& data : m_overrides) {
+        if (dqCommon::HasFlag(data.flags16, dqCommon::OvrFlags16::ViewIndependentTransparency))
+            return true;
+    }
+    return false;
+}
+
 END_DQ_RENDER_NAMESPACE
