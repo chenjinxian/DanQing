@@ -63,6 +63,11 @@ public:
     TargetImpl& getImpl() noexcept { return *m_impl; }
 
 private:
+    // Pick 视图数据源喂入/撤销——当前 Scene → TargetGraphics（pick 命令装配
+    // 口），pick 作用域外容器必须为空（正常帧分流判据，见 .cpp EQUIVALENCE）。
+    void feedPickScene();
+    void endPickScene();
+
     OpenGLRenderSystem& m_system;
     std::unique_ptr<TargetImpl> m_impl;
     Scene* m_scene = nullptr;           // Not owned — stored for drawFrame()
