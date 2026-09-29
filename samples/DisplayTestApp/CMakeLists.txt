@@ -240,6 +240,7 @@ if(TARGET gtest_main AND TARGET dqApp)
         tests/DumpOpenChainTest.cpp     # 已存 iModel 打开链流程同构锁（M-H Task 3——注册在 RpcDumpRenderTest 之后：同因 fetcher 替换不回溢）
         tests/DumpBrowseTest.cpp        # 双模型浏览零缺失锁（M-H Task 5——注册在 DumpOpenChainTest 之后：同因 fetcher 替换不回溢）
         tests/PickDumpSceneTest.cpp     # dump 场景拾取/点选/高亮贯通像素锁（M-I Task 2——注册在 DumpBrowseTest 之后：同因 fetcher 替换不回溢）
+        tests/JoesHouseColorTest.cpp    # JoesHouse 管线蓝/红回归像素锁（M-I Task 3 色表顶点色——注册在 PickDumpSceneTest 之后：同因 fetcher 替换不回溢）
         src/Gui/View3DInventor.cpp       # 测试构造真实 View3DInventor（真视口）
         src/DumpOpenHelper.cpp           # 打开链装配（M-H Task 3——DumpOpenChain 锁的被测面）
         src/Gui/DecorationGeometryExample.cpp   # DtaToolBars 引用（Deco 按钮）
