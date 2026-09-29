@@ -330,3 +330,121 @@ TEST(FeatureOverrideLutWebGlTest, BatchUniformsLutBind)
     // FeatureSymbology = GL::TextureUnit::One = 0x84C1; Zero = 0x84C0; index = 1.
     EXPECT_EQ(h.getIntData()[0], 1);
 }
+
+// --- M-J(2)：override 归属门（hover 高亮构件颜色丢失修复的机制锁） ---
+
+// anyOverridden covers the HIGH byte of the override word: a Hilited-only row
+// (flags16.Hilited, no low-byte flag) counts as overridden — the reference
+// counts the full OvrFlags word on BOTH the build path (:279-280) and the
+// flash/hilite update path (:329-331), so selection-hilite keeps the batch's
+// Overrides variant active. The prior form scanned only the low byte.
+// Ported from: itwinjs-core internal/render/webgl/FeatureOverrides.ts
+//              buildLookupTable (:279-280) + updateFlashedAndHilited (:329-331)
+// Authored: no reference test isolates anyOverridden's high-byte half
+//           (FeatureOverrides.test.ts drives it through full update flows).
+TEST(FeatureOverrideLutWebGlTest, anyOverriddenCoversHighByte)
+{
+    // Hilited-only row: flags16 = Hilited (low byte None).
+    FeatureOverrideLUT lut;
+    FeatureTable ft(1, DqId{1});
+    ft.insert(Feature(DqId{7}));
+    lut.initialize(PackedFeatureTable::pack(ft));
+    ASSERT_FALSE(lut.anyOverridden());  // all-defaults rows are not overridden
+    lut.setFeatureHilited(0, true);
+    EXPECT_TRUE(lut.anyOverridden())
+        << "hilited-only row must count as overridden (reference counts the "
+           "full 16-bit override word) — otherwise selection hilite loses the "
+           "Overrides variant";
+
+    // Flash-only row (low byte) still counts.
+    FeatureOverrideLUT lutFlash;
+    FeatureTable ft2(1, DqId{1});
+    ft2.insert(Feature(DqId{8}));
+    lutFlash.initialize(PackedFeatureTable::pack(ft2));
+    lutFlash.setFeatureFlashed(0, true);
+    EXPECT_TRUE(lutFlash.anyOverridden());
+}
+
+// The always-on "row is visible" marker (DanQing's inverted-Visibility
+// convention — OvrFlags16.h:48, FeatureOverrideLUT.cpp:52) does NOT count as
+// an override: an all-defaults LUT must stay inactive, or every batched tile
+// renders the Overrides variant from its first draw (the prior gate's form).
+// EQUIVALENCE: 参考源 = FeatureOverrides.buildLookupTable :279-280（Visibility
+// 位在参考是"隐藏"标记，仅隐藏行携带并计入 nOverridden）；发散 = DanQing 把
+// 该位反极性用作"可见"行标记（每行携带）；验证法 = 本锁（全默认表恒 false）
+// + FeatureOverrideLutWebGlTest.anyOverriddenCoversHighByte（真实覆盖位恒 true）。
+// Authored: no reference test exists for the marker-polarity equivalence.
+TEST(FeatureOverrideLutWebGlTest, anyOverriddenNotFiredByVisibilityMarker)
+{
+    FeatureOverrideLUT lut;
+    setupUniformLut(lut, FeatureOverrideData{});  // flags16 = Visibility marker only
+    EXPECT_FALSE(lut.anyOverridden())
+        << "the always-on visible-row marker must not count as an override";
+
+    // After a flash add+remove cycle (updateFeatureStates's full recompute),
+    // rows return to the marker-only state — still not overridden.
+    lut.setFeatureFlashed(0, true);
+    ASSERT_TRUE(lut.anyOverridden());
+    lut.setFeatureFlashed(0, false);
+    EXPECT_FALSE(lut.anyOverridden());
+}
+
+// A batch WITHOUT a feature table has no override LUT: getOrCreateFeature-
+// OverrideLUT returns nullptr and hasFeatureOverrides stays false. The prior
+// form conjured a dead LUT object for a tableless batch — hasFeatureOverrides
+// reported true while the draw path bound no texture for it, so the Overrides
+// variant would sample whatever LUT the previous batch left on the sampler
+// unit (cross-batch override contamination — TD-28③).
+// Ported from: itwinjs-core FeatureOverrides.initFromMap (:397-410) — the
+//              overrides object is built from the batch's feature table only
+//              (`assert(0 < nFeatures)`, :399).
+// Authored: no reference test exists for the tableless-batch form (the
+//           reference's Batch constructor requires a feature table).
+TEST(FeatureOverrideLutWebGlTest, TablelessBatchHasNoOverrideLut)
+{
+    Batch batch(1);  // featureCount=1, no feature table
+    EXPECT_FALSE(batch.hasFeatureOverrides());
+    EXPECT_EQ(batch.getOrCreateFeatureOverrideLUT(), nullptr);
+    EXPECT_EQ(batch.getFeatureOverrideLUT(), nullptr);
+
+    // The lazy feature-state update is a no-op for a tableless batch (the
+    // reference's per-batch overrides are defined by the table).
+    std::vector<uint32_t> const hiliteIds = {42u};
+    batch.updateFeatureStates(hiliteIds, 42u);
+    EXPECT_EQ(batch.getFeatureOverrideLUT(), nullptr);
+}
+
+// BatchUniforms.setCurrentBatch resolves the ACTIVE override set exactly as
+// the reference's _setCurrentBatch (:74): LUT present AND anyOverridden —
+// else nullptr (FeatureMode falls back to Pick/None at :84-89, covered by
+// BatchUniformsSetCurrentBatch above).
+// Ported from: itwinjs-core internal/render/webgl/BatchUniforms.ts:74
+//              TEST(FeatureOverrideLutWebGlTest, BatchUniformsSetCurrentBatch)
+TEST(FeatureOverrideLutWebGlTest, SetCurrentBatchActiveOverridesRequireAnyOverridden)
+{
+    // Batch WITH a table, no overridden features: LUT exists after the lazy
+    // update but the active set stays null (Pick mode, not Overrides).
+    auto table = std::make_unique<FeatureTable>(2, DqId{1});
+    table->insert(Feature(DqId{42}));
+    table->insert(Feature(DqId{43}));
+    Batch batch(2, std::move(table));
+    BatchState state;
+    BatchUniforms bu;
+    bu.setCurrentBatch(batch, state);
+    ASSERT_NE(batch.getFeatureOverrideLUT(), nullptr);
+    EXPECT_EQ(bu.getFeatureMode(), uint8_t(1));  // Pick — not Overrides
+    bu.clearCurrentBatch(state);
+
+    // Flash one feature -> the set activates (Overrides mode = 2).
+    std::vector<uint32_t> const none;
+    batch.updateFeatureStates(none, 42u);
+    bu.setCurrentBatch(batch, state);
+    EXPECT_EQ(bu.getFeatureMode(), uint8_t(2));  // Overrides
+    bu.clearCurrentBatch(state);
+
+    // Hilite-only (no flash, no rgb) also activates — full-word scan.
+    batch.updateFeatureStates({42u}, 0u);
+    bu.setCurrentBatch(batch, state);
+    EXPECT_EQ(bu.getFeatureMode(), uint8_t(2));  // Overrides
+    bu.clearCurrentBatch(state);
+}

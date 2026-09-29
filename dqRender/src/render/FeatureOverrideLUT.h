@@ -152,11 +152,24 @@ public:
     }
 
     /// True if any feature carries a non-default override.
-    /// Ported from: itwinjs-core FeatureOverrides.anyOverridden
+    /// Ported from: itwinjs-core FeatureOverrides.buildLookupTable (:279-280 —
+    /// `if (OvrFlags.None !== flags) nOverridden++` counts the FULL 16-bit
+    /// override word) + updateFlashedAndHilited (:329-331 — the flash/hilite
+    /// update path recounts the same full word, so a Hilited-only row counts).
+    /// EQUIVALENCE (§11.10): DanQing's flags16.Visibility is the always-on
+    /// "row is visible" marker (inverted from the reference's invisible-only
+    /// Visibility bit — OvrFlags16.h:48 and FeatureOverrideLUT.cpp:52), so it
+    /// is excluded here; the reference's Visibility bit is set only on hidden
+    /// rows and counts as overridden there. Divergence = marker bit polarity;
+    /// verification = FeatureOverrideLutWebGlTest.anyOverriddenCoversHighByte
+    /// + anyOverriddenNotFiredByVisibilityMarker.
     bool anyOverridden() const noexcept
     {
-        for (FeatureOverrideData const& o : m_overrides)
+        uint8_t const kVisibilityMarker = static_cast<uint8_t>(dqCommon::OvrFlags16::Visibility);
+        for (FeatureOverrideData const& o : m_overrides) {
             if (o.flags != dqCommon::OvrFlag::None) return true;
+            if ((static_cast<uint8_t>(o.flags16) & ~kVisibilityMarker) != 0) return true;
+        }
         return false;
     }
 

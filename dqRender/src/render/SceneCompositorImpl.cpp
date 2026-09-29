@@ -1369,8 +1369,34 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                 if (m_target.isReadPixelsInProgress()) {
                     flags.featureMode = FeatureMode::Pick;
                 } else {
+                    // Overrides variant only while the current batch's override
+                    // set is ACTIVE (exists AND carries at least one overridden
+                    // feature). Ported from: itwinjs-core BatchUniforms.
+                    // _setCurrentBatch (:74-89):
+                    //   this._overrides = (undefined !== overrides &&
+                    //     overrides.anyOverridden) ? overrides : undefined;
+                    //   if (undefined !== this._overrides)
+                    //     this._featureMode = FeatureMode.Overrides;
+                    //   else if (0 !== batchId) this._featureMode = FeatureMode.Pick;
+                    //   else this._featureMode = FeatureMode.None;
+                    // (consumed by TechniqueFlags.init :100 → the shader variant
+                    // key). The prior gate keyed on LUT-object existence, so
+                    // every batched tile rendered the Overrides variant and
+                    // sampled the override sampler unit from its first draw —
+                    // an all-defaults LUT is pixel-neutral, but any LUT-sampling
+                    // imperfection (a dead tableless-batch LUT with no texture
+                    // bound, a wrong feature index) turned into fragments
+                    // discarded or recolored by ANOTHER batch's LUT — the
+                    // "hover 触发后部分构件颜色丢失" class (TD-28③). The
+                    // reference renders overrides-free batches without touching
+                    // the LUT, so cross-batch sampling is structurally
+                    // impossible there. DanQing's present path maps the
+                    // reference's Pick fall-back (:86-88) to None: pick data is
+                    // rendered by the dedicated pick pass (the present FBO
+                    // carries no pick MRT for this variant split).
                     auto* currentBatch = m_batchState.getCurrentBatch();
-                    if (currentBatch && currentBatch->hasFeatureOverrides()) {
+                    if (currentBatch && currentBatch->hasFeatureOverrides()
+                        && currentBatch->getFeatureOverrideLUT()->anyOverridden()) {
                         flags.featureMode = FeatureMode::Overrides;
                     }
                 }
@@ -1481,22 +1507,27 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
 
                     // Set feature override uniforms
                     // Ported from: itwinjs-core FeatureOverrides bindLUTParams /
-                    //               bindLUT (FeatureOverrides.ts:443-450)
+                    //               bindLUT (FeatureOverrides.ts:443-450) — the
+                    // reference binds them only while _overrides is active
+                    // (BatchUniforms.bindLUT :130-134 / bindLUTParams :136-139);
+                    // flags.featureMode == Overrides now implies an active set.
                     auto* currentBatch = m_batchState.getCurrentBatch();
                     if (flags.featureMode == FeatureMode::Overrides && currentBatch && currentBatch->hasFeatureOverrides()) {
-                        auto& lut = currentBatch->getOrCreateFeatureOverrideLUT();
-                        float width = static_cast<float>(lut.getWidth());
-                        params.setFloat("u_featureOverrideWidth", width > 0.0f ? 1.0f / width : 0.0f);
-                        params.setInt("u_featureOverrides", 7);
-                        // u_hiliteColor feeds the override shader's Hilited mix
-                        // (kOvrBit_Hilited → mix(baseColor, u_hiliteColor, ratio)，
-                        //  ratio = 参考默认 visibleRatio 0.25，Hilite.ts:53).
-                        params.setVec4("u_hiliteColor", m_hiliteColor);
-                        // Flash uniforms（doApplyFlash，glsl/FeatureSymbology.ts:698-706）：
-                        // intensity 逐帧（processFlash 爬升）；mode 默认 Brighten=1
-                        // （FlashSettings.ts:15-20）。
-                        params.setFloat("u_flashIntensity", m_target.getFlashIntensity());
-                        params.setFloat("u_flashMode", 1.0f);
+                        auto* lut = currentBatch->getOrCreateFeatureOverrideLUT();
+                        if (lut) {
+                            float width = static_cast<float>(lut->getWidth());
+                            params.setFloat("u_featureOverrideWidth", width > 0.0f ? 1.0f / width : 0.0f);
+                            params.setInt("u_featureOverrides", 7);
+                            // u_hiliteColor feeds the override shader's Hilited mix
+                            // (kOvrBit_Hilited → mix(baseColor, u_hiliteColor, ratio)，
+                            //  ratio = 参考默认 visibleRatio 0.25，Hilite.ts:53).
+                            params.setVec4("u_hiliteColor", m_hiliteColor);
+                            // Flash uniforms（doApplyFlash，glsl/FeatureSymbology.ts:698-706）：
+                            // intensity 逐帧（processFlash 爬升）；mode 默认 Brighten=1
+                            // （FlashSettings.ts:15-20）。
+                            params.setFloat("u_flashIntensity", m_target.getFlashIntensity());
+                            params.setFloat("u_flashMode", 1.0f);
+                        }
                     }
 
                     // Set thematic uniforms when thematic display is active.
@@ -2220,14 +2251,25 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                         }
                     }
                     // Create the LUT when the batch has a feature table: the
-                    // Overrides variant (drawPass featureMode check reads
-                    // hasFeatureOverrides()) samples it. A tableless batch has
-                    // no LUT rows — the dead-LUT object would sample garbage.
+                    // Overrides variant (gated on an ACTIVE override set —
+                    // BatchUniforms._setCurrentBatch :74) samples it. A
+                    // tableless batch has no LUT object at all
+                    // (Batch::getOrCreateFeatureOverrideLUT → nullptr — the
+                    // dead-LUT form let hasFeatureOverrides() report true with
+                    // no texture to bind, sampling the previous batch's LUT).
                     if (batch->getFeatureTable()) {
-                        auto& lut = batch->getOrCreateFeatureOverrideLUT();
-                        lut.upload(driver);
-                        if (lut.getTextureHandle()) {
-                            driver.bindTexture(7, lut.getTextureHandle());
+                        auto* lut = batch->getOrCreateFeatureOverrideLUT();
+                        if (lut) {
+                            lut->upload(driver);
+                            // Ported from: itwinjs-core BatchUniforms.bindLUT
+                            // (:130-134) — the LUT texture binds only while the
+                            // batch's overrides are active (_overrides non-
+                            // undefined); an inactive batch never samples the
+                            // unit, so binding nothing leaves no stale-LUT
+                            // exposure on the sampler.
+                            if (lut->getTextureHandle() && lut->anyOverridden()) {
+                                driver.bindTexture(7, lut->getTextureHandle());
+                            }
                         }
                     }
                 }

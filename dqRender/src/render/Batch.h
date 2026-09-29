@@ -95,8 +95,17 @@ public:
     /// Get the feature override LUT (may be nullptr).
     FeatureOverrideLUT const* getFeatureOverrideLUT() const noexcept { return m_featureOverrideLUT.get(); }
 
-    /// Get or create the feature override LUT.
-    FeatureOverrideLUT& getOrCreateFeatureOverrideLUT();
+    /// Get or create the feature override LUT (nullptr when the batch has no
+    /// feature table).
+    /// Ported from: itwinjs-core FeatureOverrides.initFromMap (:397-410) — the
+    /// overrides object is built FROM the batch's feature table (`assert(0 <
+    /// nFeatures)`, :399); a batch without a feature table carries no override
+    /// data, so no LUT object exists for it. The prior form conjured a dead
+    /// LUT for a tableless batch, making hasFeatureOverrides() report true
+    /// while the draw path bound no texture for it — the Overrides variant
+    /// would sample whatever LUT the previous batch left on the sampler unit
+    /// (cross-batch override contamination — TD-28③).
+    FeatureOverrideLUT* getOrCreateFeatureOverrideLUT();
 
     /// Update this batch's LUT hilite/flash flags from the target's state when
     /// either changed since the last update (the reference keeps per-batch
