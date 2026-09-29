@@ -799,3 +799,115 @@ TEST(DumpOpenChain, OpensJoesHouseWithTenModelTrees)
     view.close();
     spin(200);
 }
+// ---------------------------------------------------------------------------
+// 锁 3：instances60 实例球实心性（M-J(1) 透明回归锁）。
+// ---------------------------------------------------------------------------
+// 用户报告（M-J(1)）：instances60 打开链 saved 视图下 60 实例球全部呈
+// 透明（此前 M-H 实心——build/mh4-inst-initial.png 同视图取证）。根因
+// （取证链见 commit）：RenderCommands::addBatch 无条件置
+// m_opaqueOverrides=m_translucentOverrides=true（只要 batch 带 LUT）——
+// 偏离参考 RenderCommands.ts:668-677 的
+// `viewFlags.transparency || overrides.anyViewIndependentTranslucent` 门 +
+// overrides.anyOpaque/anyTranslucent 逐 feature 透明度覆盖语义（本资产
+// instances.symbologyOverrides 全 60 实例 flags=0x02 仅 Rgb 位、alpha=255
+// ——参考侧 anyOpaque=anyTranslucent=false → 不产生 Translucent pass 副本
+// 绘制）。DanQing 的副本进了 Translucent pass 后撞上第二事实：surface
+// 变体的 OIT 双输出（Translucency.ts addTranslucency assignFragData）未
+// 移植，单输出预乘色写进 accum 附件 +
+// blendFuncSeparate(One,Zero,One,OneMinusSrcAlpha) 把 accum.a 清成 0 →
+// Composite 把不透明球像素替换成多片元累加色 = 洗白透明。
+//
+// Authored: no reference test exists in itwinjs-core/imodel-native for
+//           dump-replay solid-rendering fidelity（§5(f)；渲染像素回归授权
+//           §5(g) + §11.11 判据有效性：主判据 = 洗白淡彩像素计数（透明
+//           失败模式的自由度 = 全带替换，淡彩判据直接钉住）；WHERE =
+//           饱和色球内容展布 bbox（单球/局部盒不可能满足））。
+// 复现配方 = 打开链（双根 fetcher）→ saved 视图泵至静默 → readPixels。
+// RED-GREEN 双向验证：修复前 pastel=2035（stride2 采样，下同）RED /
+// 修复后 55 GREEN（同一构建双向实测）。
+//
+// 既有锚登记（本任务取证）：本视图既有 content 计数锚（首绿 410953 /
+// 阈值 82000）对透明不敏感——洗白态实测 410953 vs 实心态 231842 双双
+// 过阈（洗白把像素推离黑背景反而抬高计数）。实心性维度由本锁补齐。
+TEST(DumpOpenChain, Instances60SavedViewSpheresRenderSolid)
+{
+    auto& app = dqApp::Application::Get();
+    if (!app.isInitialized()) {
+        dqApp::Application::Options opts;
+        opts.applicationId = "DumpOpenChain";
+        opts.applicationVersion = "1.0";
+        ASSERT_TRUE(app.Startup(opts));
+    }
+
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    view.resize(1000, 700);
+    view.show();
+    spin(400);
+
+    dta::DumpOpenPackage pkg;
+    pkg.imodelRoot = kDumpRoot + "/instances60-imodel-v1";
+    pkg.tileRoots = {kDumpRoot + "/instances60-v1", kDumpRoot + "/instances60-drill-v1"};
+    auto opened = dta::openDumpIModel(view, pkg);
+    ASSERT_TRUE(opened.has_value()) << "open chain failed: " << pkg.imodelRoot;
+
+    // 泵至静默（saved 视图请求面 = 视口自然请求——锁 1 同配方）。
+    PumpContext ctx{&view, &*opened};
+    int const quiesceIter = pumpToQuiesce(ctx);
+    ASSERT_GE(quiesceIter, 0)
+        << "open-chain tile load never quiesced (log="
+        << opened->fetcher->requestLog().size() << " ready=" << ctx.readyTiles << ")";
+    view.getUeViewport()->RenderFrame();
+
+    std::vector<uint8_t> frame;
+    uint32_t w = 0, h = 0;
+    ASSERT_TRUE(view.getUeViewport()->ReadFrameForTest(frame, w, h));
+    dumpBmp(frame, w, h,
+            DANQING_TILE_ASSETS_DIR "/../../build/open-chain-instances60.bmp");
+
+    // 像素分类（stride 2 采样——2000x1400 帧实测口径）：
+    //   洗白淡彩 = max通道 ≥ 150 且通道散 ≤ 40（OIT 累加把重叠球像素推成
+    //     低饱和亮色——实心态唯一来源是 ACS 三轴装饰的灰白轴，首绿 55）；
+    //   饱和球色 = max ≥ 180 且散 ≥ 100（实例 symbologyOverrides 六色 +
+    //     context 绿，首绿 9532）。
+    long pastel = 0, saturated = 0;
+    uint32_t minXS = w, maxXS = 0, minYS = h, maxYS = 0;
+    for (uint32_t y = 0; y < h; y += 2) {
+        for (uint32_t x = 0; x < w; x += 2) {
+            uint8_t const* p = &frame[(static_cast<size_t>(y) * w + x) * 4];
+            int const r = p[0], g = p[1], b = p[2];
+            int const mx = std::max(r, std::max(g, b));
+            int const mn = std::min(r, std::min(g, b));
+            if (mx >= 150 && mx - mn <= 40)
+                ++pastel;
+            if (mx >= 180 && mx - mn >= 100) {
+                ++saturated;
+                if (x < minXS) minXS = x;
+                if (x > maxXS) maxXS = x;
+                if (y < minYS) minYS = y;
+                if (y > maxYS) maxYS = y;
+            }
+        }
+    }
+    printf("[OPEN-CHAIN] instances60 solidity: pastel=%ld saturated=%ld "
+           "satBbox=(%u,%u)-(%u,%u) frame=%ux%u\n",
+           pastel, saturated, minXS, minYS, maxXS, maxYS, w, h);
+
+    // ① 实心性（主判据）：洗白淡彩 ≤ 500——首绿 55 的 9× 余量 / 修复前
+    //    实测 2035 的 0.25×（RED→GREEN 双向钉死的分离带中点）。
+    EXPECT_LE(pastel, 500l)
+        << "spheres rendered translucent/washed — OIT composite replaced "
+           "opaque pixels (M-J(1) regression signature)";
+    // ② 内容存活 + WHERE 展布：饱和球色内容 ≥ 4000（首绿 9532 的 0.42×
+    //    ——0 实例消费恒 0）且 bbox 显著展布（首绿 1772x516——单球 ~100px
+    //    不可能满足）。
+    EXPECT_GE(saturated, 4000l)
+        << "no saturated instance-sphere content rendered";
+    if (saturated > 0) {
+        EXPECT_GE(maxXS - minXS, 1000u) << "sphere content not spread in x";
+        EXPECT_GE(maxYS - minYS, 300u) << "sphere content not spread in y";
+    }
+
+    view.getUeViewport()->DropTiledGraphicsProvider(opened->provider.get());
+    view.close();
+    spin(200);
+}

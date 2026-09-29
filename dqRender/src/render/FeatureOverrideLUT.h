@@ -92,6 +92,25 @@ public:
     /// Ported from: itwinjs-core FeatureOverrides.anyHilited
     bool anyHilited() const noexcept;
 
+    /// Check if any feature's appearance overrides alpha to fully opaque.
+    /// Ported from: itwinjs-core FeatureOverrides.anyOpaque (:64) — set by
+    /// setTransparency (:139-143) iff the appearance carries a transparency
+    /// override (OvrFlags.Alpha) whose resolved alpha is 0xff.
+    bool anyOpaque() const noexcept;
+
+    /// Check if any feature's appearance overrides alpha to non-opaque.
+    /// Ported from: itwinjs-core FeatureOverrides.anyTranslucent (:62) — set by
+    /// setTransparency iff the appearance carries a transparency override
+    /// (OvrFlags.Alpha) whose resolved alpha is below 0xff.
+    bool anyTranslucent() const noexcept;
+
+    /// Check if any feature carries view-independent transparency.
+    /// Ported from: itwinjs-core FeatureOverrides.anyViewIndependentTranslucent
+    /// (:63) — set by setTransparency (:144-148) iff the appearance carries a
+    /// transparency override with `viewDependentTransparency` falsy (the
+    /// OvrFlags.ViewIndependentTransparency bit).
+    bool anyViewIndependentTranslucent() const noexcept;
+
     /// Check if all features are hidden.
     /// Ported from: itwinjs-core FeatureOverrides.allHidden
     bool allHidden() const noexcept;
