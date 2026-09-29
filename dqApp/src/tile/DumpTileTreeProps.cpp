@@ -15,7 +15,9 @@ namespace {
 
 std::vector<uint8_t> readFileBytes(std::string const& path, bool* ok = nullptr)
 {
-    std::ifstream in(path, std::ios::binary);
+    // 整块读（M-I(1)——原 istreambuf_iterator 逐字符抽取对 59MB manifest 是
+    // 秒级开销；与 DumpTileFetcher.cpp readFileBytes 同款 seek/tellg/read）。
+    std::ifstream in(path, std::ios::binary | std::ios::ate);
     if (!in.is_open()) {
         if (ok)
             *ok = false;
@@ -23,7 +25,15 @@ std::vector<uint8_t> readFileBytes(std::string const& path, bool* ok = nullptr)
     }
     if (ok)
         *ok = true;
-    return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    auto const size = in.tellg();
+    in.seekg(0, std::ios::beg);
+    std::vector<uint8_t> bytes(static_cast<size_t>(size));
+    if (size > 0 && !in.read(reinterpret_cast<char*>(bytes.data()), size)) {
+        if (ok)
+            *ok = false;
+        return {};
+    }
+    return bytes;
 }
 
 std::string joinPath(std::string const& base, std::string const& rel)
@@ -34,6 +44,21 @@ std::string joinPath(std::string const& base, std::string const& rel)
     if (base.back() == '/' || base.back() == '\\')
         return base + rel;
     return base + "/" + rel;
+}
+
+// manifest 文本直读为 std::string（M-I(1)——大 manifest 免 vector→string 的
+// 二次 59MB 拷贝；json 解析走 string_view，不要求容器形态）。
+bool readManifestText(std::string const& path, std::string& out)
+{
+    std::ifstream in(path, std::ios::binary | std::ios::ate);
+    if (!in.is_open())
+        return false;
+    auto const size = in.tellg();
+    in.seekg(0, std::ios::beg);
+    out.resize(static_cast<size_t>(size));
+    if (size > 0 && !in.read(&out[0], size))
+        return false;
+    return true;
 }
 
 // Range3dProps {low:[x,y,z], high:[x,y,z]} → dqGeom::Range3d。
@@ -85,125 +110,609 @@ bool parseTransform3x4(dumpjson::JsonValue const& json, dqGeom::Transform& out)
     return true;
 }
 
-bool parseManifest(std::string const& jsonText, DumpManifest& out,
-                   std::optional<DumpIModelInfo>* iModelInfoOut)
-{
-    auto doc = dumpjson::parseJsonDocument(jsonText);
-    if (!doc || doc->type != dumpjson::JsonValue::Type::Object)
-        return false;
+// ---------------------------------------------------------------------------
+// manifest 流式读取器（M-I(1)——大 manifest 免 DOM 物化）。
+//
+// 大 manifest（joeshouse-v1 59MB/173,876 瓦）的 DOM 物化是打开链的残余
+// 成本主体（/MDd /Od 实测：JSON DOM 构建 13.2s vs 同一原语免 DOM 结构遍历
+// 3.6s——Temp/dqi_bench 探针 bench_parser2，机器负载同况对拍）。本读取器
+// 用同一 dumpjson 原语（skipWs/consume/literal/parseString/parseNumber）
+// 直读结构，不物化 JsonValue；props 文件/imodel.json（小文件）仍走 DOM
+// 解析器。语义与原 DOM 路径（parseJsonDocument + parseManifest）逐分支
+// 同构：
+//   - 全文有效性：单个 JSON 值 + 仅余空白（parseJsonDocument 的
+//     p.pos != text.size() 门）；
+//   - 顶层须对象；trees/tiles 须存在且为数组（元素逐条校验）；
+//   - 字段必需性/类型容错逐项同构：treeId/contentId 类型检查为 String
+//     （非同型 → 整个 manifest 失败）；其余字段按 DOM find 的取值语义
+//     直取（.str/.number——非同型值为空/0，不失败）；
+//   - 同键重复：首键优先（DOM find 首命中）；
+//   - stats 完整性门：仅对出现的键比对（缺省容错——采集器总写出，防御
+//     未来格式；stats 非对象 → 门静默跳过——DOM 对非对象 find 落空同语义）；
+//   - provenance.iModel：对象才置值；name 仅字符串；extents 坏形态（非
+//     对象/low-high 缺轴）忽略该字段不置值；其余键全结构校验后丢弃；
+//   - 未知键（provenance 的 defaultView/sweep 等嵌套结构——真实 dump 域）：
+//     全结构校验后丢弃。
+// ---------------------------------------------------------------------------
+class ManifestStreamReader {
+public:
+    explicit ManifestStreamReader(std::string_view text)
+        : m_p{text}
+    {
+    }
 
-    dumpjson::JsonValue const* trees = doc->find("trees");
-    dumpjson::JsonValue const* tiles = doc->find("tiles");
-    if (!trees || !tiles || trees->type != dumpjson::JsonValue::Type::Array
-        || tiles->type != dumpjson::JsonValue::Type::Array)
-        return false;
+    bool run(DumpManifest& out, std::optional<DumpIModelInfo>* iModelInfoOut)
+    {
+        // 顶层对象（parseJsonDocument + doc->type == Object 门）。
+        if (!m_p.consume('{'))
+            return false;
+        bool hasTrees = false;
+        bool hasTiles = false;
+        bool hasProvenance = false;
+        double statTrees = 0.0;
+        double statTiles = 0.0;
+        bool hasStatTrees = false;
+        bool hasStatTiles = false;
+        bool statsSeen = false;
+        if (!objectBody([&](std::string const& key) -> bool {
+                if (key == "trees" && !hasTrees) {
+                    hasTrees = true;
+                    return readTrees(out);  // 非数组/元素坏 → 失败（DOM 同）
+                }
+                if (key == "tiles" && !hasTiles) {
+                    hasTiles = true;
+                    return readTiles(out);
+                }
+                if (key == "stats" && !statsSeen) {
+                    statsSeen = true;
+                    return statsValue(statTrees, hasStatTrees, statTiles, hasStatTiles);
+                }
+                if (key == "provenance" && !hasProvenance) {
+                    hasProvenance = true;
+                    if (iModelInfoOut != nullptr)
+                        return provenanceValue(*iModelInfoOut);
+                    return skipValue();
+                }
+                return skipValue();
+            }))
+            return false;
 
-    for (auto const& entry : trees->arr) {
-        if (entry.type != dumpjson::JsonValue::Type::Object)
+        // 全文有效性门（parseJsonDocument 的 p.pos != text.size() 同款）。
+        m_p.skipWs();
+        if (m_p.failed || m_p.pos != m_p.text.size())
             return false;
-        dumpjson::JsonValue const* treeId = entry.find("treeId");
-        if (!treeId || treeId->type != dumpjson::JsonValue::Type::String)
+
+        // trees/tiles 必需（DOM 的 find + type 检查门——缺失/非数组 → 失败；
+        // 本读取器在读到时已逐条校验，此处只补"键缺失"形态）。
+        if (!hasTrees || !hasTiles)
             return false;
-        DumpManifestTreeEntry item;
-        item.treeId = treeId->str;
-        if (auto const* v = entry.find("iModelId"))
-            item.iModelId = v->str;
-        if (auto const* v = entry.find("formatVersion"))
-            item.formatVersion = static_cast<uint32_t>(v->number);
-        if (auto const* v = entry.find("byteLength"))
-            item.byteLength = static_cast<uint64_t>(v->number);
-        if (auto const* v = entry.find("file"))
-            item.file = v->str;
+
+        // stats 计数门（语义不变——仅对出现的键比对；n->number 直取，
+        // 非数值 stats 值为 0 同 DOM）。
+        if (hasStatTrees && static_cast<size_t>(statTrees) != out.trees.size())
+            return false;
+        if (hasStatTiles && static_cast<size_t>(statTiles) != out.tiles.size())
+            return false;
+        return true;
+    }
+
+private:
+    dumpjson::JsonParser m_p;
+
+    // --- 原语包装 ---
+
+    // 对象成员遍历（parseObject 逐分支同构——'{' 已由调用方消费；键
+    // parseString → ':' → 值（onKey 消费）→ ','/'}'）。
+    template <typename OnKey>
+    bool objectBody(OnKey&& onKey)
+    {
+        m_p.skipWs();
+        if (m_p.pos < m_p.text.size() && m_p.text[m_p.pos] == '}') {
+            m_p.pos++;
+            return true;
+        }
+        while (true) {
+            m_p.skipWs();
+            std::string key = m_p.parseString();
+            if (m_p.failed)
+                return false;
+            if (!m_p.consume(':'))
+                return false;
+            if (!onKey(key))
+                return false;
+            m_p.skipWs();
+            if (m_p.pos < m_p.text.size() && m_p.text[m_p.pos] == ',') {
+                m_p.pos++;
+                continue;
+            }
+            if (m_p.pos < m_p.text.size() && m_p.text[m_p.pos] == '}') {
+                m_p.pos++;
+                return true;
+            }
+            m_p.failed = true;
+            return false;
+        }
+    }
+
+    // 数组成员遍历（parseArray 逐分支同构——'[' 已由调用方消费）。
+
+    void skipWs() { m_p.skipWs(); }
+    char peek()
+    {
+        return m_p.pos < m_p.text.size() ? m_p.text[m_p.pos] : '\0';
+    }
+
+    // 值丢弃扫描（结构校验全程——parseValue 的丢弃对应物；失败置 failed）。
+    bool skipValue()
+    {
+        m_p.skipWs();
+        if (m_p.pos >= m_p.text.size()) {
+            m_p.failed = true;
+            return false;
+        }
+        char const c = peek();
+        if (c == '{')
+            return skipObject();
+        if (c == '[')
+            return skipArray();
+        if (c == '"') {
+            m_p.parseString();
+            return !m_p.failed;
+        }
+        if (m_p.literal("true") || m_p.literal("false") || m_p.literal("null"))
+            return true;
+        m_p.parseNumber();
+        return !m_p.failed;
+    }
+
+    bool skipObject()
+    {
+        // '{' 由本函数消费（skipValue 只 peek 分派——parseObject 的
+        // consume('{') 对应物）。
+        if (!m_p.consume('{'))
+            return false;
+        return objectBody([this](std::string const&) { return skipValue(); });
+    }
+
+    bool skipArray()
+    {
+        // '[' 由本函数消费（skipValue 只 peek 分派——parseArray 的
+        // consume('[') 对应物）。
+        if (!m_p.consume('['))
+            return false;
+        m_p.skipWs();
+        if (peek() == ']') {
+            m_p.pos++;
+            return true;
+        }
+        while (true) {
+            if (!skipValue())
+                return false;
+            m_p.skipWs();
+            if (peek() == ',') {
+                m_p.pos++;
+                continue;
+            }
+            if (peek() == ']') {
+                m_p.pos++;
+                return true;
+            }
+            m_p.failed = true;
+            return false;
+        }
+    }
+
+    // 松散字符串直取（DOM 的 v->str 语义——字符串取其值，其他同型值跳过
+    // 且取空串，不失败；仅结构坏才失败）。
+    bool looseString(std::string& out)
+    {
+        m_p.skipWs();
+        if (peek() == '"') {
+            out = m_p.parseString();
+            return !m_p.failed;
+        }
+        if (!skipValue())
+            return false;
+        out.clear();  // DOM：非字符串 JsonValue 的 .str == ""
+        return true;
+    }
+
+    // 松散数值直取（DOM 的 v->number 语义——数值取其值，其他同型值取 0
+    // 不失败；仅结构坏才失败）。
+    bool looseNumber(double& out)
+    {
+        m_p.skipWs();
+        char const c = peek();
+        if (c != '{' && c != '[' && c != '"') {
+            // parseValue 的分派序：非 { [ " 且非 true/false/null 字面量 →
+            // parseNumber（无数字 → failed——与 DOM 同为文档失败）。
+            if (m_p.literal("true") || m_p.literal("false")
+                || m_p.literal("null")) {
+                out = 0.0;
+                return true;
+            }
+            out = m_p.parseNumber().number;
+            return !m_p.failed;
+        }
+        if (!skipValue())
+            return false;
+        out = 0.0;
+        return true;
+    }
+
+    // --- 结构域读取 ---
+
+    bool readTrees(DumpManifest& out)
+    {
+        m_p.skipWs();
+        if (peek() != '[') {
+            m_p.failed = true;
+            return false;
+        }
+        m_p.pos++;
+        m_p.skipWs();
+        if (peek() == ']') {
+            m_p.pos++;
+            return true;
+        }
+        while (true) {
+            DumpManifestTreeEntry item;
+            if (!treeEntry(item))
+                return false;
+            out.trees.push_back(std::move(item));
+            m_p.skipWs();
+            if (peek() == ',') {
+                m_p.pos++;
+                continue;
+            }
+            if (peek() == ']') {
+                m_p.pos++;
+                return true;
+            }
+            m_p.failed = true;
+            return false;
+        }
+    }
+
+    bool treeEntry(DumpManifestTreeEntry& item)
+    {
+        // 元素须对象（DOM：entry.type != Object → false）。
+        if (!m_p.consume('{'))
+            return false;
+        bool seenTreeId = false;
+        bool seenIModelId = false;
+        bool seenFormatVersion = false;
+        bool seenByteLength = false;
+        bool seenFile = false;
+        bool seenPropsFile = false;
+        bool treeIdOk = false;
+        if (!objectBody([&](std::string const& key) -> bool {
+                if (key == "treeId" && !seenTreeId) {
+                    seenTreeId = true;
+                    // DOM：treeId->type != String → false（必需字符串字段）。
+                    m_p.skipWs();
+                    if (peek() != '"') {
+                        if (!skipValue())
+                            return false;
+                        return false;
+                    }
+                    item.treeId = m_p.parseString();
+                    treeIdOk = !m_p.failed;
+                    return treeIdOk;
+                }
+                if (key == "iModelId" && !seenIModelId) {
+                    seenIModelId = true;
+                    return looseString(item.iModelId);
+                }
+                if (key == "formatVersion" && !seenFormatVersion) {
+                    seenFormatVersion = true;
+                    double v = 0.0;
+                    if (!looseNumber(v))
+                        return false;
+                    item.formatVersion = static_cast<uint32_t>(v);
+                    return true;
+                }
+                if (key == "byteLength" && !seenByteLength) {
+                    seenByteLength = true;
+                    double v = 0.0;
+                    if (!looseNumber(v))
+                        return false;
+                    item.byteLength = static_cast<uint64_t>(v);
+                    return true;
+                }
+                if (key == "file" && !seenFile) {
+                    seenFile = true;
+                    return looseString(item.file);
+                }
+                if (key == "propsFile" && !seenPropsFile) {
+                    seenPropsFile = true;
+                    return looseString(item.propsFile);
+                }
+                return skipValue();
+            }))
+            return false;
+
         // propsFile 与 file 是同值别名（Task 1 评审钉死②）——优先显式
-        // propsFile，缺省回退 file。
-        if (auto const* v = entry.find("propsFile"))
-            item.propsFile = v->str;
+        // propsFile，缺省回退 file；都空 → 失败（树条目必须可达 props 文件）。
         if (item.propsFile.empty())
             item.propsFile = item.file;
         if (item.propsFile.empty())
-            return false;  // 树条目必须可达 props 文件
-        out.trees.push_back(std::move(item));
+            return false;
+        return treeIdOk;
     }
 
-    for (auto const& entry : tiles->arr) {
-        if (entry.type != dumpjson::JsonValue::Type::Object)
+    bool readTiles(DumpManifest& out)
+    {
+        m_p.skipWs();
+        if (peek() != '[') {
+            m_p.failed = true;
             return false;
-        dumpjson::JsonValue const* treeId = entry.find("treeId");
-        dumpjson::JsonValue const* contentId = entry.find("contentId");
-        if (!treeId || !contentId || treeId->type != dumpjson::JsonValue::Type::String
-            || contentId->type != dumpjson::JsonValue::Type::String)
+        }
+        m_p.pos++;
+        m_p.skipWs();
+        if (peek() == ']') {
+            m_p.pos++;
+            return true;
+        }
+        while (true) {
+            DumpManifestTileEntry item;
+            if (!tileEntry(item))
+                return false;
+            out.tiles.push_back(std::move(item));
+            m_p.skipWs();
+            if (peek() == ',') {
+                m_p.pos++;
+                continue;
+            }
+            if (peek() == ']') {
+                m_p.pos++;
+                return true;
+            }
+            m_p.failed = true;
             return false;
-        DumpManifestTileEntry item;
-        item.treeId = treeId->str;
-        item.contentId = contentId->str;  // 前端请求键原样（评审钉死①）
-        if (auto const* v = entry.find("guid"))
-            item.guid = v->str;
-        if (auto const* v = entry.find("iModelId"))
-            item.iModelId = v->str;
-        if (auto const* v = entry.find("changesetId"))
-            item.changesetId = v->str;  // 快照 iModel 为空串——非异常（Task 1 报告③）
-        if (auto const* v = entry.find("byteLength"))
-            item.byteLength = static_cast<uint64_t>(v->number);
-        if (auto const* v = entry.find("sha256"))
-            item.sha256 = v->str;
-        if (auto const* v = entry.find("file"))
-            item.file = v->str;
+        }
+    }
+
+    bool tileEntry(DumpManifestTileEntry& item)
+    {
+        if (!m_p.consume('{'))
+            return false;
+        bool seenTreeId = false;
+        bool seenContentId = false;
+        bool seenGuid = false;
+        bool seenIModelId = false;
+        bool seenChangesetId = false;
+        bool seenByteLength = false;
+        bool seenSha256 = false;
+        bool seenFile = false;
+        bool treeIdOk = false;
+        bool contentIdOk = false;
+        if (!objectBody([&](std::string const& key) -> bool {
+                if (key == "treeId" && !seenTreeId) {
+                    seenTreeId = true;
+                    m_p.skipWs();
+                    if (peek() != '"') {
+                        if (!skipValue())
+                            return false;
+                        return false;
+                    }
+                    item.treeId = m_p.parseString();
+                    treeIdOk = !m_p.failed;
+                    return treeIdOk;
+                }
+                if (key == "contentId" && !seenContentId) {
+                    seenContentId = true;
+                    // 前端请求键原样（Task 1 评审钉死①）。
+                    m_p.skipWs();
+                    if (peek() != '"') {
+                        if (!skipValue())
+                            return false;
+                        return false;
+                    }
+                    item.contentId = m_p.parseString();
+                    contentIdOk = !m_p.failed;
+                    return contentIdOk;
+                }
+                if (key == "guid" && !seenGuid) {
+                    seenGuid = true;
+                    return looseString(item.guid);
+                }
+                if (key == "iModelId" && !seenIModelId) {
+                    seenIModelId = true;
+                    return looseString(item.iModelId);
+                }
+                if (key == "changesetId" && !seenChangesetId) {
+                    seenChangesetId = true;
+                    // 快照 iModel 为空串——非异常（Task 1 报告③）。
+                    return looseString(item.changesetId);
+                }
+                if (key == "byteLength" && !seenByteLength) {
+                    seenByteLength = true;
+                    double v = 0.0;
+                    if (!looseNumber(v))
+                        return false;
+                    item.byteLength = static_cast<uint64_t>(v);
+                    return true;
+                }
+                if (key == "sha256" && !seenSha256) {
+                    seenSha256 = true;
+                    return looseString(item.sha256);
+                }
+                if (key == "file" && !seenFile) {
+                    seenFile = true;
+                    return looseString(item.file);
+                }
+                return skipValue();
+            }))
+            return false;
+
         if (item.file.empty())
             return false;
-        out.tiles.push_back(std::move(item));
+        return treeIdOk && contentIdOk;
     }
 
-    // stats 计数门：数组计数与 stats 域一致（损坏 manifest 的廉价完整性探针；
-    // stats 缺省容错——采集器总是写出，防御未来格式）。
-    if (dumpjson::JsonValue const* stats = doc->find("stats")) {
-        if (dumpjson::JsonValue const* n = stats->find("trees")) {
-            if (static_cast<size_t>(n->number) != out.trees.size())
-                return false;
-        }
-        if (dumpjson::JsonValue const* n = stats->find("tiles")) {
-            if (static_cast<size_t>(n->number) != out.tiles.size())
-                return false;
-        }
-    }
-
-    // provenance.iModel → iModel 级元数据（M-E Task 2）。优雅语义：
-    // provenance 缺失 / iModel 缺失 / iModel 非对象 → 不置值（nullopt——
-    // 采集工具未写字段，非损坏）；iModel 为对象 → 消费其内可用的
-    // name（字符串）与 extents（Range3dProps {low,high}——与 dump 内全部
-    // 范围域同构）——extents 坏形态（非对象/low-high 缺轴）忽略该字段。
-    if (iModelInfoOut) {
-        if (dumpjson::JsonValue const* provenance = doc->find("provenance")) {
-            if (provenance->type == dumpjson::JsonValue::Type::Object) {
-                if (dumpjson::JsonValue const* imodel = provenance->find("iModel")) {
-                    if (imodel->type == dumpjson::JsonValue::Type::Object) {
-                        DumpIModelInfo info;
-                        if (dumpjson::JsonValue const* name = imodel->find("name")) {
-                            if (name->type == dumpjson::JsonValue::Type::String)
-                                info.name = name->str;
-                        }
-                        if (dumpjson::JsonValue const* extents = imodel->find("extents"))
-                            parseRange3d(*extents, info.extents);
-                        *iModelInfoOut = std::move(info);
-                    }
-                }
+    // stats 门域（DOM：非对象 stats 的 find 落空 → 门静默跳过；对象内
+    // trees/tiles 键首键优先，其余键丢弃）。
+    bool statsValue(double& statTrees, bool& hasStatTrees, double& statTiles,
+                    bool& hasStatTiles)
+    {
+        m_p.skipWs();
+        if (peek() != '{')
+            return skipValue();
+        m_p.pos++;
+        bool seenTrees = false;
+        bool seenTiles = false;
+        return objectBody([&](std::string const& key) -> bool {
+            if (key == "trees" && !seenTrees) {
+                seenTrees = true;
+                hasStatTrees = true;
+                return looseNumber(statTrees);
             }
-        }
+            if (key == "tiles" && !seenTiles) {
+                seenTiles = true;
+                hasStatTiles = true;
+                return looseNumber(statTiles);
+            }
+            return skipValue();
+        });
     }
-    return true;
-}
+
+    // provenance.iModel（M-E Task 2 语义——provenance 非对象/iModel 非对象
+    // → 不置值；name 仅字符串；extents 坏形态忽略该字段）。
+    bool provenanceValue(std::optional<DumpIModelInfo>& out)
+    {
+        m_p.skipWs();
+        if (peek() != '{')
+            return skipValue();
+        m_p.pos++;
+        bool seenIModel = false;
+        return objectBody([&](std::string const& key) -> bool {
+            if (key == "iModel" && !seenIModel) {
+                seenIModel = true;
+                return iModelValue(out);
+            }
+            return skipValue();
+        });
+    }
+
+    bool iModelValue(std::optional<DumpIModelInfo>& out)
+    {
+        m_p.skipWs();
+        if (peek() != '{')
+            return skipValue();
+        m_p.pos++;
+        DumpIModelInfo info;
+        bool seenName = false;
+        bool seenExtents = false;
+        if (!objectBody([&](std::string const& key) -> bool {
+                if (key == "name" && !seenName) {
+                    seenName = true;
+                    // DOM：仅字符串 name 消费（非字符串忽略不置值）。
+                    m_p.skipWs();
+                    if (peek() != '"')
+                        return skipValue();
+                    info.name = m_p.parseString();
+                    return !m_p.failed;
+                }
+                if (key == "extents" && !seenExtents) {
+                    seenExtents = true;
+                    range3dValue(info.extents);  // 失败忽略（不置值——DOM 同）
+                    return !m_p.failed;
+                }
+                return skipValue();
+            }))
+            return false;
+        out = std::move(info);
+        return true;
+    }
+
+    // Range3dProps {low:[x,y,z], high:[x,y,z]}（与 parseRange3d 同条件：
+    // 对象 + low/high 数组 ≥3 轴；失败不置值——返回 false 不置 failed）。
+    bool range3dValue(dqGeom::Range3d& out)
+    {
+        m_p.skipWs();
+        if (peek() != '{') {
+            if (!skipValue())
+                return false;
+            return false;
+        }
+        m_p.pos++;
+        double low[3] = {0.0, 0.0, 0.0};
+        double high[3] = {0.0, 0.0, 0.0};
+        bool lowOk = false;
+        bool highOk = false;
+        bool seenLow = false;
+        bool seenHigh = false;
+        if (!objectBody([&](std::string const& key) -> bool {
+                if (key == "low" && !seenLow) {
+                    seenLow = true;
+                    lowOk = axis3Value(low);
+                    return !m_p.failed;
+                }
+                if (key == "high" && !seenHigh) {
+                    seenHigh = true;
+                    highOk = axis3Value(high);
+                    return !m_p.failed;
+                }
+                return skipValue();
+            }))
+            return false;
+        if (!lowOk || !highOk)
+            return false;
+        out = dqGeom::Range3d(dqGeom::Point3d::From(low[0], low[1], low[2]),
+                              dqGeom::Point3d::From(high[0], high[1], high[2]));
+        return true;
+    }
+
+    // [x,y,z] 轴数组（DOM：数组且 size >= 3，元素取 .number——非数值元素
+    // 为 0；形态坏 → false 不置 failed）。
+    bool axis3Value(double xyz[3])
+    {
+        m_p.skipWs();
+        if (peek() != '[') {
+            if (!skipValue())
+                return false;
+            return false;
+        }
+        m_p.pos++;
+        size_t n = 0;
+        m_p.skipWs();
+        if (peek() == ']') {
+            m_p.pos++;
+            return false;  // 空数组——< 3 轴（形态坏）
+        }
+        while (true) {
+            double v = 0.0;
+            if (!looseNumber(v))
+                return false;
+            if (n < 3)
+                xyz[n] = v;
+            ++n;
+            m_p.skipWs();
+            if (peek() == ',') {
+                m_p.pos++;
+                continue;
+            }
+            if (peek() == ']') {
+                m_p.pos++;
+                break;
+            }
+            m_p.failed = true;
+            return false;
+        }
+        return n >= 3;
+    }
+};
 
 }  // namespace
 
 std::optional<DumpManifest> loadDumpManifest(std::string const& dumpRoot)
 {
-    bool ok = false;
-    std::vector<uint8_t> const bytes =
-        readFileBytes(joinPath(dumpRoot, "manifest.json"), &ok);
-    if (!ok)
+    std::string text;
+    if (!readManifestText(joinPath(dumpRoot, "manifest.json"), text))
         return std::nullopt;
     DumpManifest manifest;
-    if (!parseManifest(
-            std::string(bytes.begin(), bytes.end()), manifest, nullptr))
+    if (!ManifestStreamReader(text).run(manifest, nullptr))
         return std::nullopt;
     return manifest;
 }
@@ -214,17 +723,24 @@ std::optional<DumpManifest> loadDumpManifest(std::string const& dumpRoot)
 
 std::optional<DumpTileTreeProps> DumpTileTreeProps::load(std::string const& dumpRoot)
 {
-    bool ok = false;
-    std::vector<uint8_t> const bytes =
-        readFileBytes(joinPath(dumpRoot, "manifest.json"), &ok);
-    if (!ok)
+    std::string text;
+    if (!readManifestText(joinPath(dumpRoot, "manifest.json"), text))
         return std::nullopt;
     DumpTileTreeProps props;
-    if (!parseManifest(std::string(bytes.begin(), bytes.end()), props.m_manifest,
-                       &props.m_iModelInfo))
+    if (!ManifestStreamReader(text).run(props.m_manifest, &props.m_iModelInfo))
         return std::nullopt;
     props.m_dumpRoot = dumpRoot;
     return props;
+}
+
+DumpManifest DumpTileTreeProps::takeManifest()
+{
+    // 瓦键域移动（大头——大 dump 的解析成本主体）；树条目复制保留
+    //（byTreeId 的 propsFile 查找面——每模型 1~2 条短串，成本可忽略）。
+    DumpManifest out;
+    out.trees = m_manifest.trees;
+    out.tiles = std::move(m_manifest.tiles);  // 移出即清空源（vector 转移缓冲）
+    return out;
 }
 
 std::optional<DumpTreeProps> DumpTileTreeProps::byTreeId(std::string const& treeId) const

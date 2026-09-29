@@ -25,10 +25,13 @@
 #include <dqRender/tile/Tile.h>
 #include <dqRender/tile/TileTree.h>
 
+#include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #ifndef DANQING_TEST_ASSET_ROOT
@@ -505,6 +508,198 @@ TEST(DumpTileFetcherTest, InvalidFallbackRootWarnsButPrimaryServes)
     fetchAndWait(fetcher, kCompatTreeId + "/-b-0-0-0-0-1", tile2, miss);
     EXPECT_FALSE(miss.completed);
     EXPECT_TRUE(miss.errored);
+}
+
+// ---------------------------------------------------------------------------
+// 打开性能锁（M-I(1)——用户 2026-09-29 报告①"Start 页点击到加载完成长等待
+// （joeshouse >20s）"的回归门）：joeshouse-v1 manifest（59MB/173,876 瓦/
+// 10 树——§11.11 只读资产）单次解析的 Debug 计时预算。打开链此前对它解析
+// 两遍（DumpTileTreeProps::load + DumpTileFetcher 路径构造各一遍——
+// DumpOpenHelper.cpp:28/:36）≈18.7s（侦察实测：DOM 解析 7,196ms + manifest
+// 构建 1,347ms + DOM 析构 769ms/遍）。本锁钉"单次解析 + manifest 共享通道
+// + 哈希索引"的打开链解析段全预算。
+// Authored: no reference test exists in itwinjs-core/imodel-native（dump
+// 回放层是 §8.2 零网络缝，参考无对应物）；阈值 = 首绿实测 ×3（CI 机器抖动
+// 余量），断言失败信息打印实测值（诊断友好）。
+// ---------------------------------------------------------------------------
+TEST(DumpTileFetcherTest, JoeshouseManifestSingleParseWithinBudget)
+{
+    std::string const dumpRoot = kDumpRoot + "/joeshouse-v1";
+
+    // 打开链解析段三步（DumpOpenHelper 单次解析共享后的实际序列）：
+    // ① props 装载（唯一一次 manifest 解析——原第二遍经 fetcher 路径构造，
+    //    已被共享通道消灭）；② takeManifest 移交；③ fetcher 构造（含
+    //    哈希索引建立）。
+    auto t0 = std::chrono::steady_clock::now();
+    auto props = dqApp::DumpTileTreeProps::load(dumpRoot);
+    auto t1 = std::chrono::steady_clock::now();
+    ASSERT_TRUE(props.has_value()) << "manifest load failed: " << dumpRoot;
+    EXPECT_EQ(10u, props->getTreeCount());
+    EXPECT_EQ(173876u, props->getTileCount());
+    double const parseMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+    auto t2 = std::chrono::steady_clock::now();
+    dqApp::DumpManifest manifest = props->takeManifest();
+    dqApp::DumpTileFetcher fetcher(std::move(manifest), dumpRoot);
+    auto t3 = std::chrono::steady_clock::now();
+    double const shareMs = std::chrono::duration<double, std::milli>(t3 - t2).count();
+
+    ASSERT_TRUE(fetcher.isValid());
+    EXPECT_EQ(10u, fetcher.getTreeCount());
+    EXPECT_EQ(173876u, fetcher.getTileCount());
+
+    printf("[OPEN-PERF] joeshouse single parse=%.0f ms takeManifest+index=%.0f ms"
+           " total=%.0f ms\n",
+           parseMs, shareMs, parseMs + shareMs);
+    fflush(stdout);
+    // 预算 = 首绿实测 ×3（CI 机器抖动余量——本机实测负载有 2× 摆动：
+    // 同一探针 DOM 解析 6.5s↔13.2s）。首绿实测（2026-09-29，/MDd /Od）：
+    // parse 2343 ms + takeManifest/index 190 ms = 2533 ms → 预算 7600 ms。
+    // 修复前基线（同机同法）：单次 loadDumpManifest 12148 ms（读入
+    // istreambuf 逐字符 + vector→string 拷贝 + DOM 物化 7.2s + 构建遍历 +
+    // DOM 析构），打开链解析两遍 ≈24 s。
+    double const kBudgetMs = 7600.0;
+    EXPECT_LT(parseMs + shareMs, kBudgetMs)
+        << "joeshouse single-parse open chain exceeded budget: measured "
+        << (parseMs + shareMs) << " ms (parse " << parseMs
+        << " + takeManifest/index " << shareMs << ", budget " << kBudgetMs << " ms)";
+}
+
+// ---------------------------------------------------------------------------
+// 共享 manifest 构造与路径构造的语义对拍（M-I(1)——同构型下相同请求序列的
+// requestLog[outcome/bytes/hitRoot/treeId/contentId] 与交付字节逐项同值）。
+// 键域覆盖：fallback 独有键（hitRoot=1）/ 主根独有键（hitRoot=0）/ 两域
+// 共享键（首命中=主根）/ 全 miss（NotFound）/ 未知树键 / 畸形 url。
+// Authored: no reference test exists（回放层组合契约——M-I(1) 设计锁；
+//           等值对拍形态 = MergedRootsServeUnionDomain 的双构造器版）。
+// ---------------------------------------------------------------------------
+TEST(DumpTileFetcherTest, SharedManifestConstructorMatchesRootConstructor)
+{
+    std::string const drillRoot = kDumpRoot + "/instances60-drill-v1";
+    std::string const sweepRoot = kDumpRoot + "/instances60-v1";
+
+    // 共享路径：主根 manifest 经 props 装载移入（打开链构型——
+    // DumpOpenHelper 同款：props::load → takeManifest → fetcher 构造）。
+    auto props = dqApp::DumpTileTreeProps::load(drillRoot);
+    ASSERT_TRUE(props.has_value());
+    dqApp::DumpTileFetcher shared(props->takeManifest(), drillRoot, {sweepRoot});
+
+    // 路径路径（既有构造器——同构型）。
+    dqApp::DumpTileFetcher byPath(drillRoot, {sweepRoot});
+
+    ASSERT_TRUE(shared.isValid());
+    ASSERT_TRUE(byPath.isValid());
+    EXPECT_EQ(byPath.getTreeCount(), shared.getTreeCount());
+    EXPECT_EQ(byPath.getTileCount(), shared.getTileCount());
+    EXPECT_EQ(byPath.fallbackRoots(), shared.fallbackRoots());
+    EXPECT_EQ(byPath.fallbackWarnings(), shared.fallbackWarnings());
+
+    StubTree stubTree;
+    std::vector<std::string> const urls = {
+        kCompatTreeId + "/-b-0-0-0-0-1",   // 仅 sweep（fallback）有 → hitRoot=1
+        kCompatTreeId + "/-b-2-0-0-0-10",  // 仅 drill（主根）有 → hitRoot=0
+        kCompatTreeId + "/-b-2-0-0-0-1",   // 两域共享 → 首命中 = 主根
+        kCompatTreeId + "/-b-3-3-3-3-1",   // 全 miss → NotFound
+        "25_1d-E:6_0x28/-b-0-0-0-0-1",     // 树在 props 域但无瓦条目 → NotFound
+        "malformed",                       // 畸形 url（无 <treeId>/<contentId> 两段）
+    };
+
+    for (auto const& url : urls) {
+        StubTile tileShared(stubTree);
+        FetchResult resultShared;
+        fetchAndWait(shared, url, tileShared, resultShared);
+        StubTile tileByPath(stubTree);
+        FetchResult resultByPath;
+        fetchAndWait(byPath, url, tileByPath, resultByPath);
+        SCOPED_TRACE(url);
+        EXPECT_EQ(resultByPath.completed, resultShared.completed);
+        EXPECT_EQ(resultByPath.errored, resultShared.errored);
+        EXPECT_EQ(resultByPath.error, resultShared.error);
+        EXPECT_EQ(resultByPath.data, resultShared.data);
+    }
+
+    // requestLog 逐项对拍。
+    auto const& logShared = shared.requestLog();
+    auto const& logByPath = byPath.requestLog();
+    ASSERT_EQ(logByPath.size(), logShared.size());
+    for (size_t i = 0; i < logShared.size(); ++i) {
+        SCOPED_TRACE(std::to_string(i));
+        EXPECT_EQ(logByPath[i].outcome, logShared[i].outcome);
+        EXPECT_EQ(logByPath[i].bytes, logShared[i].bytes);
+        EXPECT_EQ(logByPath[i].hitRoot, logShared[i].hitRoot);
+        EXPECT_EQ(logByPath[i].treeId, logShared[i].treeId);
+        EXPECT_EQ(logByPath[i].contentId, logShared[i].contentId);
+    }
+    // 命中源维度的自证（锁确实覆盖三态——不空转）：fallback 命中 / 主根
+    // 命中 / NotFound。
+    ASSERT_EQ(6u, logShared.size());
+    EXPECT_EQ(dqApp::DumpTileFetcher::DumpFetchOutcome::Completed, logShared[0].outcome);
+    EXPECT_EQ(1u, logShared[0].hitRoot);
+    EXPECT_EQ(dqApp::DumpTileFetcher::DumpFetchOutcome::Completed, logShared[1].outcome);
+    EXPECT_EQ(0u, logShared[1].hitRoot);
+    EXPECT_EQ(dqApp::DumpTileFetcher::DumpFetchOutcome::NotFound, logShared[3].outcome);
+    EXPECT_EQ(0u, logShared[3].hitRoot);
+    EXPECT_EQ(dqApp::DumpTileFetcher::DumpFetchOutcome::Error, logShared[5].outcome);
+}
+
+// ---------------------------------------------------------------------------
+// 索引首命中锁（M-I(1) 哈希索引的唯一语义险点）：manifest 同键重复条目时
+// 服务 = 首条目（线性扫首命中语义——索引 emplace 首写不覆盖）。合成最小
+// dump（系统临时目录——不动只读资产 §11.11），两构造器同拍。
+// ---------------------------------------------------------------------------
+TEST(DumpTileFetcherTest, DuplicateKeysServeFirstEntryUnderIndex)
+{
+    namespace fs = std::filesystem;
+    fs::path const dir = fs::temp_directory_path() / "danqing-dump-dupkey-test";
+    fs::remove_all(dir);
+    fs::create_directories(dir / "files");
+    {
+        std::ofstream out(dir / "files" / "0.json");
+        out << R"({"id":"tree-0","rootTile":{"contentId":"0/0/0/0/1","range":{"low":[0,0,0],"high":[1,1,1]}}})";
+    }
+    // 同键两条目：首条 files/1.imdl（3 字节），次条 files/2.imdl（5 字节）
+    // ——首命中服务必为 3 字节文件。
+    {
+        std::ofstream out(dir / "files" / "1.imdl", std::ios::binary);
+        out << "abc";
+    }
+    {
+        std::ofstream out(dir / "files" / "2.imdl", std::ios::binary);
+        out << "abcde";
+    }
+    {
+        std::ofstream out(dir / "manifest.json");
+        out << R"({"stats":{"trees":1,"tiles":2},"trees":[{"treeId":"tree-0","propsFile":"files/0.json"}],)"
+               R"("tiles":[{"treeId":"tree-0","contentId":"-b-0-0-0-0-1","byteLength":3,"file":"files/1.imdl"},)"
+               R"({"treeId":"tree-0","contentId":"-b-0-0-0-0-1","byteLength":5,"file":"files/2.imdl"}]})";
+    }
+
+    StubTree stubTree;
+
+    // 路径构造器（索引化后的既有路径）。
+    dqApp::DumpTileFetcher byPath(dir.string());
+    ASSERT_TRUE(byPath.isValid());
+    EXPECT_EQ(2u, byPath.getTileCount());
+    StubTile tilePath(stubTree);
+    FetchResult resultPath;
+    fetchAndWait(byPath, "tree-0/-b-0-0-0-0-1", tilePath, resultPath);
+    ASSERT_TRUE(resultPath.completed) << resultPath.error;
+    EXPECT_EQ(3u, resultPath.data.size());
+    EXPECT_EQ(3u, byPath.requestLog()[0].bytes);
+
+    // 共享构造器同拍。
+    auto props = dqApp::DumpTileTreeProps::load(dir.string());
+    ASSERT_TRUE(props.has_value());
+    dqApp::DumpTileFetcher shared(props->takeManifest(), dir.string());
+    ASSERT_TRUE(shared.isValid());
+    StubTile tileShared(stubTree);
+    FetchResult resultShared;
+    fetchAndWait(shared, "tree-0/-b-0-0-0-0-1", tileShared, resultShared);
+    ASSERT_TRUE(resultShared.completed) << resultShared.error;
+    EXPECT_EQ(3u, resultShared.data.size());
+    EXPECT_EQ(resultPath.data, resultShared.data);
+
+    fs::remove_all(dir);
 }
 
 // ---------------------------------------------------------------------------

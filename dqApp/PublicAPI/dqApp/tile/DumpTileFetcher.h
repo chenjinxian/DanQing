@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #ifndef BEGIN_DQ_APP_NAMESPACE
@@ -65,6 +66,18 @@ public:
     // getTileCount 同为主根计数）。fallback 根 manifest 缺失/坏 → 记
     // fallbackWarnings() 不致命（主根语义：isValid 只看主根），不进查找域。
     explicit DumpTileFetcher(std::string const& primaryRoot,
+                             std::vector<std::string> fallbackRoots = {});
+
+    // 已解析 manifest 移入构造（M-I(1) 打开性能——单次解析共享）：manifest
+    // 必须来自成功装载（DumpTileTreeProps::load → takeManifest——load 侧的
+    // 缺失/坏 JSON/stats 完整性门语义不变，props 仅经 load 构造）；本构造
+    // 不重读盘、不重解析，isValid() 恒 true（主根有效性由装载侧保证——
+    // 打开链 props 装载失败时在 fetcher 构造前已返回）。fallback 根仍按
+    // 路径逐根装载（语义与路径构造器同）。观测面（树/瓦计数、fallback
+    // 清单、requestLog、交付字节）与路径构造器在同构型下逐项同值
+    //（SharedManifestConstructorMatchesRootConstructor 对拍锁）。
+    explicit DumpTileFetcher(DumpManifest&& primaryManifest,
+                             std::string const& primaryRoot,
                              std::vector<std::string> fallbackRoots = {});
 
     bool isValid() const noexcept { return m_valid; }
@@ -113,18 +126,31 @@ private:
     std::string m_dumpRoot;
     DumpManifest m_manifest;
     bool m_valid = false;
+    // 瓦键哈希索引（M-I(1)——大 dump 线性扫 1.8ms/键 → O(1)；键 =
+    // treeId '\0' contentId，值 = manifest tiles[] 条目指针——manifest 在
+    // 构造期定型后不再变更，索引在两构造器共有的 buildIndexes 尾段统一
+    // 建立[此时各 manifest 已在最终位置——指针稳定]。emplace 首写不覆盖 =
+    // 线性扫"首条目命中"同语义）。
+    using TileKeyIndex = std::unordered_map<std::string, DumpManifestTileEntry const*>;
+    TileKeyIndex m_primaryIndex;
     // 多根合并（M-H Task 2）：m_fallbackRoots 为构造入参原序（含失败者——
-    // 观测面）；m_fallbacks 仅持装载成功的（根目录 + manifest——字节服务
-    // 查找域）；m_fallbackWarnings 记装载失败根（warning 不致命）。
+    // 观测面）；m_fallbacks 仅持装载成功的（根目录 + manifest + 索引——
+    // 字节服务查找域）；m_fallbackWarnings 记装载失败根（warning 不致命）。
     struct FallbackRoot {
         std::string root;
         DumpManifest manifest;
+        TileKeyIndex index;
     };
     std::vector<std::string> m_fallbackRoots;
     std::vector<FallbackRoot> m_fallbacks;
     std::vector<std::string> m_fallbackWarnings;
     std::vector<Completed> m_completed;
     std::vector<DumpRequestRecord> m_requestLog;
+
+    // 两构造器共有的尾段（M-I(1)）：fallback 逐根装载 + 全根索引建立
+    //（索引必须在各 manifest 定型后建立——FallbackRoot 向量不再增长）。
+    void loadFallbacks();
+    void buildIndexes();
 };
 
 END_DQ_APP_NAMESPACE

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <fstream>
 #include <iterator>
+#include <utility>
 
 BEGIN_DQ_APP_NAMESPACE
 
@@ -45,6 +46,18 @@ bool readFileBytes(std::string const& path, std::vector<uint8_t>& out)
     return true;
 }
 
+// 瓦键 = treeId '\0' contentId（两段为 manifest 契约字符串，均不含 '\0'
+// ——'\0' 分隔使拼接键无歧义）。
+std::string tileKey(std::string const& treeId, std::string const& contentId)
+{
+    std::string key;
+    key.reserve(treeId.size() + 1 + contentId.size());
+    key.append(treeId);
+    key.push_back('\0');
+    key.append(contentId);
+    return key;
+}
+
 }  // namespace
 
 DumpTileFetcher::DumpTileFetcher(std::string const& primaryRoot,
@@ -58,14 +71,50 @@ DumpTileFetcher::DumpTileFetcher(std::string const& primaryRoot,
         m_manifest = std::move(*manifest);
         m_valid = true;
     }
+    loadFallbacks();
+    buildIndexes();
+}
+
+DumpTileFetcher::DumpTileFetcher(DumpManifest&& primaryManifest,
+                                 std::string const& primaryRoot,
+                                 std::vector<std::string> fallbackRoots)
+    : m_dumpRoot(primaryRoot)
+    , m_manifest(std::move(primaryManifest))
+    // 主根有效性由装载侧保证（DumpTileTreeProps 仅经 load 构造——.h 前置
+    // 条件）；装载门语义在 load 侧不变。
+    , m_valid(true)
+    , m_fallbackRoots(std::move(fallbackRoots))
+{
+    loadFallbacks();
+    buildIndexes();
+}
+
+void DumpTileFetcher::loadFallbacks()
+{
     // fallback 根（M-H Task 2 多根合并）：同一解析路径逐根装载；失败记
     // warning 不致命（主根语义），不进查找域。
     for (auto const& root : m_fallbackRoots) {
         if (auto manifest = loadDumpManifest(root)) {
-            m_fallbacks.push_back(FallbackRoot{root, std::move(*manifest)});
+            m_fallbacks.push_back(FallbackRoot{root, std::move(*manifest), {}});
         } else {
             m_fallbackWarnings.push_back(root);
         }
+    }
+}
+
+void DumpTileFetcher::buildIndexes()
+{
+    // 每根一份索引（查找按根序逐根查——hitRoot 首命中语义不变）。建立点 =
+    // 各 manifest 已定型（m_manifest 成员 + m_fallbacks 向量此后不再增长，
+    // FallbackRoot 移动为 vector 缓冲转移——tiles 条目地址稳定）。
+    m_primaryIndex.reserve(m_manifest.tiles.size());
+    for (auto const& item : m_manifest.tiles)
+        m_primaryIndex.emplace(tileKey(item.treeId, item.contentId), &item);
+
+    for (auto& fallback : m_fallbacks) {
+        fallback.index.reserve(fallback.manifest.tiles.size());
+        for (auto const& item : fallback.manifest.tiles)
+            fallback.index.emplace(tileKey(item.treeId, item.contentId), &item);
     }
 }
 
@@ -109,27 +158,24 @@ void DumpTileFetcher::fetch(std::string const& url, dqRender::Tile& tile,
     record.treeId = treeId;
     record.contentId = contentId;
 
-    // manifest 查表（线性——dump 规模为十数量级条目）。多根合并查找序：
-    // 主根 → fallback[0] → fallback[1]…，首命中即服务（字节读自命中根目录，
-    // 命中源记 record.hitRoot——0=主根，i+1=fallbackRoots()[i]）。
+    // manifest 查表（哈希索引——M-I(1)；大 dump 线性扫 1.8ms/键 → O(1)）。
+    // 多根合并查找序不变：主根 → fallback[0] → fallback[1]…，首命中即服务
+    //（索引按根各建一份、按序逐根查；索引 emplace 首写不覆盖 = 线性扫
+    // 首条目命中同语义；字节读自命中根目录，命中源记 record.hitRoot——
+    // 0=主根，i+1=fallbackRoots()[i]）。
     DumpManifestTileEntry const* tileEntry = nullptr;
     std::string const* hitFileRoot = nullptr;
-    auto lookup = [&treeId, &contentId, &tileEntry, &hitFileRoot](
-                      std::string const& root, DumpManifest const& manifest) {
-        for (auto const& item : manifest.tiles) {
-            if (item.treeId == treeId && item.contentId == contentId) {
-                tileEntry = &item;
-                hitFileRoot = &root;
-                return true;
-            }
-        }
-        return false;
-    };
-    if (lookup(m_dumpRoot, m_manifest)) {
+    std::string const key = tileKey(treeId, contentId);
+    if (auto const it = m_primaryIndex.find(key); it != m_primaryIndex.end()) {
+        tileEntry = it->second;
+        hitFileRoot = &m_dumpRoot;
         record.hitRoot = 0;
     } else {
         for (size_t i = 0; i < m_fallbacks.size(); ++i) {
-            if (lookup(m_fallbacks[i].root, m_fallbacks[i].manifest)) {
+            if (auto const fb = m_fallbacks[i].index.find(key);
+                fb != m_fallbacks[i].index.end()) {
+                tileEntry = fb->second;
+                hitFileRoot = &m_fallbacks[i].root;
                 record.hitRoot = i + 1;
                 break;
             }
