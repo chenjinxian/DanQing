@@ -109,6 +109,11 @@ void dumpBmpJHC(std::vector<uint8_t> const& frame, uint32_t w, uint32_t h,
     std::vector<unsigned char> row(rowBytes);
     for (uint32_t y = 0; y < h; ++y) {
         memcpy(row.data(), &frame[static_cast<size_t>(y) * rowBytes], rowBytes);
+        // BI_RGB 32bpp 文件字节序 = BGRX，内存帧 = RGBA（glReadPixels GL_RGBA）
+        // ——逐像素换 R/B 落盘（M-J(3) 仪器修正，RpcDumpRenderTest.cpp dumpBmp
+        // 同注：历史 dump 的 R/B 互换曾伪造"实例球行色发散"取证）。
+        for (uint32_t x = 0; x < w; ++x)
+            std::swap(row[x * 4 + 0], row[x * 4 + 2]);
         fwrite(row.data(), 1, rowBytes, f);
     }
     fclose(f);
