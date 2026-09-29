@@ -216,7 +216,7 @@ private:
 // with the exact call chain from the reference.
 // ---------------------------------------------------------------------------
 enum class VertexShaderComponent : uint8_t {
-    ComputeQuantizedPosition,                    // 0  vec4 computeQuantizedPosition()
+    ComputeQuantizedPosition,                    // 0  vec3 computeQuantizedPosition()
     AdjustRawPosition,                           // 1  vec4 adjustRawPosition(vec4 rawPos)
     CheckForEarlyDiscard,                        // 2  bool checkForEarlyDiscard(vec4 rawPos)
     ComputeFeatureOverrides,                     // 3  void computeFeatureOverrides()

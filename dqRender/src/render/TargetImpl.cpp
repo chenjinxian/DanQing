@@ -671,17 +671,21 @@ void TargetImpl::drawCanvasDecorations(std::vector<CanvasDecoration> const& canv
 // changeRenderPlan — update view flags, 3D mode, frustum
 // Ported from: itwinjs-core Target.changeRenderPlan() (line 495-544)
 // ---------------------------------------------------------------------------
-void TargetImpl::changeRenderPlan(ViewFlags const& viewFlags, bool is3d)
+void TargetImpl::changeRenderPlan(ViewFlags const& viewFlags, bool is3d,
+                                  dqCommon::HiddenLineSettings const* hline)
 {
     // Update 3D flag
     if (m_is3d != is3d) {
         m_is3d = is3d;
         // Update decorations state for dimensionality change
+        //（Target.ts:510——decorations 的 changeRenderPlan 恒 undefined hline）
         m_decorationsState.changeRenderPlan(m_decorationsState.getViewFlags(), is3d);
     }
 
     // Update branch stack with new view flags
-    m_branchStack.changeRenderPlan(viewFlags, is3d);
+    //（Target.ts:533——vf + is3d + hline 透传；BranchState.ts:93-96 消费
+    // edgeSettings.init(hline)）
+    m_branchStack.changeRenderPlan(viewFlags, is3d, hline);
 }
 
 // ---------------------------------------------------------------------------

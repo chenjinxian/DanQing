@@ -95,12 +95,22 @@ void BranchState::recomputeTechniqueFlags()
 // ---------------------------------------------------------------------------
 // changeRenderPlan — update view flags and 3D mode
 // Ported from: itwinjs-core BranchState.changeRenderPlan()
+//（BranchState.ts:93-96——`this.edgeSettings.init(hline)`：hline 是
+// RenderPlan.hline（RenderPlan.ts:58/:124——3d 时 = display style 的
+// hiddenLineSettings），nullptr = 参考 undefined → EdgeSettings::init 的
+// clear() 语义归默认。M-I(4) 前此链缺 hline 形参——edgeSettings 恒默认，
+// hline.visible.color=0 黑边覆盖从未到达绘制（ported-but-uncalled）。）
 // ---------------------------------------------------------------------------
-void BranchState::changeRenderPlan(ViewFlags const& viewFlags, bool is3d)
+void BranchState::changeRenderPlan(ViewFlags const& viewFlags, bool is3d,
+                                   dqCommon::HiddenLineSettings const* hline)
 {
     setViewFlags(viewFlags);
     m_is3d = is3d;
-    m_edgeSettings = EdgeSettings();  // Reset edge settings
+    // EdgeSettings::create = 新默认对象 + init(hline)（EdgeSettings.ts:32-36）——
+    // 参考在既有对象上 init（init 内 clear()，:38-41）；DanQing 侧 EdgeSettings
+    // 另有参考不存在的 simple-flag 兼容成员（visibleEdges/edgeWeight 等——
+    // 不归 init/clear 管），整只替换使它们同步归默认，语义 ⊇ 参考。
+    m_edgeSettings = EdgeSettings::create(hline);
 }
 
 // ---------------------------------------------------------------------------
@@ -326,10 +336,11 @@ BranchState const& BranchStack::getBottom() const
 // changeRenderPlan
 // Ported from: itwinjs-core BranchStack.changeRenderPlan()
 // ---------------------------------------------------------------------------
-void BranchStack::changeRenderPlan(ViewFlags const& viewFlags, bool is3d)
+void BranchStack::changeRenderPlan(ViewFlags const& viewFlags, bool is3d,
+                                   dqCommon::HiddenLineSettings const* hline)
 {
     assert(m_stack.size() == 1);
-    m_stack.front().changeRenderPlan(viewFlags, is3d);
+    m_stack.front().changeRenderPlan(viewFlags, is3d, hline);
 }
 
 // ---------------------------------------------------------------------------

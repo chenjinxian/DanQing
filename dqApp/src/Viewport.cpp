@@ -1993,6 +1993,21 @@ void Viewport::ValidateRenderPlan()
         newPlan.is3d = m_view->AsViewState3d() != nullptr;
         m_viewingSpace.getFrustum(newPlan.frustum, dqCommon::CoordSystem::World);
         newPlan.fraction = m_viewingSpace.getFrustFraction();
+
+        // hline 边线设置（M-I(4) 接线——此前载体缺失，EdgeSettings 恒默认）。
+        // Ported from: itwinjs-core RenderPlan.ts:124——
+        //   const hline = style.is3d() ? style.settings.hiddenLineSettings : undefined;
+        // EQUIVALENCE（§11.10）：参考源=DisplayStyle3dState.settings（
+        // DisplayStyle3dSettings._hline，DisplayStyleSettings.ts:1104 ctor
+        // fromJSON）；DanQing 的 dqApp::DisplayStyle 恒持 3d 设置载体
+        //（DisplayStyle.h:167 m_settings 是 DisplayStyle3dSettings——无 2d
+        // 变体），style.is3d() 判别退化为视图的 3d 判别（newPlan.is3d——
+        // dump 打开链恒真；2d 视图 DanQing 未移植）。
+        // 发散=若未来引入 2d display style 载体，此处须回到 style 侧判别；
+        // 验证法=JoesHouseEdge.PanelEdgesRenderBlackLinesFromHlineOverride
+        // 像素锁（hline.visible.color=0 黑边上屏）。
+        if (newPlan.is3d)
+            newPlan.hline = style.getSettings().getHiddenLineSettings();
     }
 
     // Attach feature overrides

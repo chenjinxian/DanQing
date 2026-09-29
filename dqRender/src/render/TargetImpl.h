@@ -167,6 +167,17 @@ public:
     /// Ported from: itwinjs-core Target.branchStack
     BranchStack& getBranchStack() noexcept { return m_branchStack; }
 
+    /// Get the current branch's edge settings.
+    /// Ported from: itwinjs-core Target.currentEdgeSettings（Target.ts:257——
+    /// `this.currentBranch.edgeSettings`）。M-I(4)：边 dispatch 的消费点——
+    /// 参考侧 compositor 与 target 共享同一 BranchStack（uniforms.branch）；
+    /// DanQing 的 SceneCompositor 另有工作栈（仅承载逐分支矩阵），vf 已从
+    /// target 栈读取（getCurrentViewFlags），edgeSettings 同源读取保持一致。
+    EdgeSettings const& getCurrentEdgeSettings() const noexcept
+    {
+        return m_branchStack.getTop().getEdgeSettings();
+    }
+
     /// Get the batch state (feature batch stack).
     /// Ported from: itwinjs-core Target.batchState
     BatchState& getBatchState() noexcept { return m_batchState; }
@@ -208,7 +219,10 @@ public:
 
     /// Change the render plan (view flags, 3D mode, frustum).
     /// Ported from: itwinjs-core Target.changeRenderPlan()
-    void changeRenderPlan(ViewFlags const& viewFlags, bool is3d);
+    ///（Target.ts:533——`uniforms.branch.changeRenderPlan(vf, plan.is3d,
+    /// plan.hline, plan.contours)` 的 hline 段；contours 未移植）。
+    void changeRenderPlan(ViewFlags const& viewFlags, bool is3d,
+                          dqCommon::HiddenLineSettings const* hline = nullptr);
 
     /// Get the current view flags from the branch stack.
     /// Ported from: itwinjs-core Target.currentViewFlags

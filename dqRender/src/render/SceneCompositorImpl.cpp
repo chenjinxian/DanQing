@@ -1670,11 +1670,14 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                         };
                         params.setVec2("u_viewport", viewport);
 
-                        // 当前分支的 edge settings（BranchStack 逐分支携带，
-                        // changeRenderPlan 时重置为默认——BranchState 同参考
-                        // BranchState.edgeSettings；参考 target.currentEdgeSettings
-                        // 即此链路）。
-                        EdgeSettings const& edgeSettings = m_branchStack.getTop().getEdgeSettings();
+                        // 当前分支的 edge settings。参考 target.currentEdgeSettings
+                        //（Target.ts:257——currentBranch.edgeSettings；compositor 与
+                        // target 共享同一 BranchStack）。DanQing 的 compositor 工作栈
+                        // 只承载逐分支矩阵（mv/mvp），计划级状态（vf/edgeSettings）的
+                        // 权威源是 target 栈——vf 已从 m_target 读（下行），
+                        // edgeSettings 同源（M-I(4) 前从 compositor 栈读——该栈从未
+                        // 收 changeRenderPlan 的 hline，恒默认 → 覆盖色丢失）。
+                        EdgeSettings const& edgeSettings = m_target.getCurrentEdgeSettings();
                         auto const& vf = m_target.getCurrentViewFlags();
                         dqCommon::ViewFlags const commonVf(vf);
 
