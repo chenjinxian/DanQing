@@ -98,7 +98,7 @@
 | 测试入口（无 GUI 点击） | `ctest -R "DumpOpenChain|DumpBrowse"` | 打开链同构锁 + 浏览零缺失锁（与 app 同一 `openDumpIModel` 代码路径） |
 | 重采数据 | 仓外 `danqing-rpc-tools`（README 坑清单 1-23 先读） | 输出到**新目录名**再入库；既有 dump 永不覆盖 |
 
-构建：`cmake --build build -j --config Debug --target DisplayTestApp`（仓库根）。注意 joeshouse 打开链首轮装载 >20s（10 树 17 万瓦索引——sweep 主根 manifest 线性查表，实测 45s 等待已钉入冒烟脚本）；后续请求走内存索引。
+构建：`cmake --build build -j --config Debug --target DisplayTestApp`（仓库根）。打开性能（M-I(1) 清偿后实测）：Debug 构建 joeshouse 打开 ~2.9s、instances60 ~0.4s（`DANQING_OPEN_TRACE=1` 计时桩）——manifest 单次解析共享 + 哈希索引 + 流式读取器；RelWithDebInfo 构建可再快一个量级。
 
 ---
 
