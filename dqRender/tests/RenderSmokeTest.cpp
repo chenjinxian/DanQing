@@ -1094,7 +1094,7 @@ TEST(RenderSmokeTest, HilitePassShiftsSelectedFeatureColor) {
     // batch LUT 是 addBatch 检查的 override 载体（hilite 命令的触发条件
     // hasFeatureOverrides && anyHilited）；target 的 hiliteColor 单独供给
     // u_hiliteColor。先建 LUT 再置 hilite 位——参考 setHiliteSet 的等价物。
-    batch->getOrCreateFeatureOverrideLUT().setFeatureHilited(0, true);
+    batch->getOrCreateFeatureOverrideLUT()->setFeatureHilited(0, true);
     batch->setChild(std::unique_ptr<Graphic>(prim));
 
     Scene scene;

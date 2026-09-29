@@ -193,8 +193,14 @@ public:
         uint32_t const batchId = state.getCurrentBatchId();
         setBatchId(batchId);
 
-        FeatureOverrideLUT& lut = batch.getOrCreateFeatureOverrideLUT();
-        m_overrides = lut.anyOverridden() ? &lut : nullptr;
+        // Ported from: itwinjs-core BatchUniforms._setCurrentBatch (:74) —
+        //   this._overrides = (undefined !== overrides && overrides.anyOverridden)
+        //     ? overrides : undefined;
+        // the active override set requires BOTH a LUT and at least one
+        // overridden feature (FeatureMode.Overrides is gated on this at
+        // :84-89 — see SceneCompositorImpl's draw-pass gate).
+        FeatureOverrideLUT* lut = batch.getOrCreateFeatureOverrideLUT();
+        m_overrides = (lut && lut->anyOverridden()) ? lut : nullptr;
         // FeatureMode: Overrides if any override active, else Pick if batched, else None.
         m_featureMode = (nullptr != m_overrides) ? uint8_t(2)
                       : (0 != batchId)        ? uint8_t(1)

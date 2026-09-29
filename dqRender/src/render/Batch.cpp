@@ -22,17 +22,21 @@ Batch::Batch(uint32_t featureCount, std::unique_ptr<dqCommon::FeatureTable> feat
 {
 }
 
-FeatureOverrideLUT& Batch::getOrCreateFeatureOverrideLUT()
+FeatureOverrideLUT* Batch::getOrCreateFeatureOverrideLUT()
 {
     if (!m_featureOverrideLUT) {
+        // Ported from: itwinjs-core FeatureOverrides.initFromMap (:397-410) —
+        // overrides are built from the batch's feature table only (`assert(0 <
+        // nFeatures)`, :399). A tableless batch has no override data — no LUT
+        // object (TD-28③; see the header note).
+        if (!m_featureTable)
+            return nullptr;
         m_featureOverrideLUT = std::make_unique<FeatureOverrideLUT>();
-        if (m_featureTable) {
-            // Initialize LUT from the feature table.
-            dqCommon::PackedFeatureTable packed = dqCommon::PackedFeatureTable::pack(*m_featureTable);
-            m_featureOverrideLUT->initialize(packed);
-        }
+        // Initialize LUT from the feature table.
+        dqCommon::PackedFeatureTable packed = dqCommon::PackedFeatureTable::pack(*m_featureTable);
+        m_featureOverrideLUT->initialize(packed);
     }
-    return *m_featureOverrideLUT;
+    return m_featureOverrideLUT.get();
 }
 
 // ---------------------------------------------------------------------------
@@ -51,7 +55,9 @@ void Batch::updateFeatureStates(std::vector<uint32_t> const& hiliteElementIds,
     if (!m_featureTable)
         return;
 
-    FeatureOverrideLUT& lut = getOrCreateFeatureOverrideLUT();
+    FeatureOverrideLUT* lut = getOrCreateFeatureOverrideLUT();
+    if (!lut)
+        return;
     int const n = m_featureTable->getSize();
     for (int i = 0; i < n; ++i) {
         auto const feature = m_featureTable->findFeature(i);
@@ -62,8 +68,8 @@ void Batch::updateFeatureStates(std::vector<uint32_t> const& hiliteElementIds,
         bool const hilited = std::find(hiliteElementIds.begin(), hiliteElementIds.end(),
                                        elemId) != hiliteElementIds.end();
         bool const flashed = (flashedElementId != 0u) && (elemId == flashedElementId);
-        lut.setFeatureHilited(static_cast<uint32_t>(i), hilited);
-        lut.setFeatureFlashed(static_cast<uint32_t>(i), flashed);
+        lut->setFeatureHilited(static_cast<uint32_t>(i), hilited);
+        lut->setFeatureFlashed(static_cast<uint32_t>(i), flashed);
     }
 }
 
