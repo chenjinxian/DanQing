@@ -11,13 +11,16 @@
 //   - ViewDefinitionProps（3d 段）：classFullName/id/code.value/description/
 //     isPrivate/cameraOn/origin/extents/angles/camera；
 //   - CategorySelectorProps.categories / ModelSelectorProps.models /
-//     DisplayStyleProps.jsonProperties.styles.viewflags。
+//     DisplayStyleProps.jsonProperties.styles.viewflags；
+//   - DisplayStyleProps.jsonProperties.styles.hline（M-I(4)——visible/hidden
+//     边色/宽/图案 + transThreshold；消费链 = DisplayStyle3dSettings ctor
+//     DisplayStyleSettings.ts:1104 → RenderPlan.ts:124 → EdgeSettings）。
 // 登记未移植（载体归对应特性落地时补）：
 //   - jsonProperties.viewDetails（ViewDetails——acs/gridOrient 等，ViewState
 //     无 ViewDetails 载体）；
 //   - displayStyleProps.jsonProperties.styles 的其余段（environment sky/ground
-//     色与 display、hline、sceneLights sunDir/ambient、excludedElements、
-//     scheduleScript——DisplayStyleSettings 有 environment/hline 载体但
+//     色与 display、sceneLights sunDir/ambient、excludedElements、
+//     scheduleScript——DisplayStyleSettings 有 environment 载体但
 //     JSON→载体映射不在本任务判据面；sceneLights 无载体）；
 //   - 2d 视图段（sheetProps/sheetSize/modelExtents/baseModelId——DanQing 无
 //     2d 视图）；
@@ -28,6 +31,7 @@
 #include "Export.h"
 
 #include <dqBase/DqId.h>
+#include <dqCommon/HiddenLine.h>  // HiddenLineSettingsProps（styles.hline）
 #include <dqCommon/ViewFlags.h>  // ViewFlagProps
 #include <dqGeom/Point3d.h>
 #include <dqGeom/Vector3d.h>
@@ -94,12 +98,16 @@ struct ModelSelectorProps {
 // ---------------------------------------------------------------------------
 // DisplayStyleProps — Ported from: itwinjs-core DisplayStyleProps。
 // 消费面 = jsonProperties.styles.viewflags（DisplayStyle3dState 的 ViewFlags
-// 应用——ViewFlags.fromJSON ViewFlags.ts:471-511）；styles 其余段登记未移植
-//（见文件头）。
+// 应用——ViewFlags.fromJSON ViewFlags.ts:471-511）+ styles.hline（M-I(4)——
+// DisplayStyle3dSettings ctor DisplayStyleSettings.ts:1104 的
+// HiddenLine.Settings.fromJSON 段）；styles 其余段登记未移植（见文件头）。
 // ---------------------------------------------------------------------------
 struct DisplayStyleProps {
     dqBase::DqId id;
     std::optional<dqCommon::ViewFlagProps> viewflags;  // ← styles.viewflags
+    // ← styles.hline（HiddenLine.SettingsProps——visible/hidden/transThreshold；
+    // dump 实态：visible={color:0,ovrColor:true,pattern:0,width:1} = 黑边覆盖）。
+    std::optional<dqCommon::HiddenLineSettingsProps> hline;
 };
 
 // ---------------------------------------------------------------------------

@@ -11,10 +11,12 @@
 
 #include <dqCommon/FeatureOverrides.h>
 #include <dqCommon/Frustum.h>
+#include <dqCommon/HiddenLine.h>
 #include <dqCommon/LightSettings.h>
 #include <dqCommon/ViewFlags.h>
 
 #include <cstdint>
+#include <optional>
 
 #ifndef BEGIN_DQ_RENDER_NAMESPACE
 #define BEGIN_DQ_RENDER_NAMESPACE namespace dqRender {
@@ -70,6 +72,15 @@ struct DQ_RENDER_EXPORT RenderPlan {
     dqCommon::Frustum frustum;
     double fraction = 0.0;
 
+    // Hidden line settings（边线色/宽/图案覆盖源）。
+    // Ported from: itwinjs-core RenderPlan.ts:58（`readonly hline?: HiddenLine.
+    // Settings`——`hline?` optional → std::optional，§3.4）+ :124 填充
+    //（`style.is3d() ? style.settings.hiddenLineSettings : undefined`）。
+    // 消费链：Target.ts:533 changeRenderPlan → BranchState.ts:96
+    // edgeSettings.init(hline)。M-I(4) 前载体缺失（ViewStateProps 登记面
+    // 的最后一跳）。
+    std::optional<dqCommon::HiddenLineSettings> hline;
+
     // Check if this plan equals another (for change detection)
     bool equals(RenderPlan const& rhs) const {
         if (!viewFlags.equals(rhs.viewFlags)) return false;
@@ -88,6 +99,10 @@ struct DQ_RENDER_EXPORT RenderPlan {
         if (is3d != rhs.is3d) return false;
         if (fraction != rhs.fraction) return false;
         if (!frustum.equals(rhs.frustum)) return false;
+        // hline 段（RenderPlan.ts:58）——HiddenLine.Settings.equals
+        //（HiddenLine.ts:221-228）。
+        if (hline.has_value() != rhs.hline.has_value()) return false;
+        if (hline.has_value() && !hline->equals(*rhs.hline)) return false;
         // Feature overrides pointer comparison is sufficient
         // (overrides are rebuilt when they change)
         if (featureOverrides != rhs.featureOverrides) return false;

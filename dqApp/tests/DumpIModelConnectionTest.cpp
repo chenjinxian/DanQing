@@ -130,6 +130,26 @@ TEST(DumpIModelConnectionTest, ParsesJoesHouseIModelJson)
     EXPECT_TRUE(*vf.noFill);
     ASSERT_TRUE(vf.visEdges.has_value());
     EXPECT_TRUE(*vf.visEdges);
+
+    // displayStyleProps.hline（M-I(4)——styles.hline 段搬运。钉值 = 文件实态：
+    // visible={color:0(黑),ovrColor:true,pattern:0(Solid),width:1}、
+    // hidden={color:0,ovrColor:true,pattern:0xCCCCCCCC(HiddenLine),width:1}、
+    // transThreshold:0.3——HiddenLine.ts StyleProps/SettingsProps 键名 1:1）。
+    ASSERT_TRUE(vs.displayStyleProps.hline.has_value());
+    auto const& hl = *vs.displayStyleProps.hline;
+    ASSERT_TRUE(hl.visible.has_value());
+    EXPECT_TRUE(hl.visible->ovrColor.has_value() && *hl.visible->ovrColor);
+    ASSERT_TRUE(hl.visible->color.has_value());
+    EXPECT_EQ(0u, *hl.visible->color);
+    ASSERT_TRUE(hl.visible->pattern.has_value());
+    EXPECT_EQ(dqCommon::LinePixels::Solid, *hl.visible->pattern);
+    ASSERT_TRUE(hl.visible->width.has_value());
+    EXPECT_EQ(1, *hl.visible->width);
+    ASSERT_TRUE(hl.hidden.has_value());
+    ASSERT_TRUE(hl.hidden->pattern.has_value());
+    EXPECT_EQ(dqCommon::LinePixels::HiddenLine, *hl.hidden->pattern);
+    ASSERT_TRUE(hl.transThreshold.has_value());
+    EXPECT_NEAR(0.3, *hl.transThreshold, kTol);
 }
 
 // ---------------------------------------------------------------------------
@@ -253,6 +273,18 @@ TEST(DumpIModelConnectionTest, ViewsHooksLoadSavedViewWithAllFieldsApplied)
     EXPECT_TRUE(applied.visibleEdges());
     EXPECT_FALSE(applied.fill());   // noFill=true → fill=false
     EXPECT_FALSE(applied.grid());   // 键缺席 → asBool(false)
+
+    // hline 应用（M-I(4)——DisplayStyleSettings.ts:1104 ctor 段的 DanQing
+    // 等价跳：CreateFromProps → DisplayStyle3dSettings.setHiddenLineSettings。
+    // instances60 dump 的 hline 与 joeshouse 同形：visible.color=0 黑覆盖 +
+    // ovrColor → HiddenLineStyle.color 置位；transThreshold 0.3）。
+    auto const& hlApplied =
+        spatial->GetDisplayStyle().getSettings().getHiddenLineSettings();
+    ASSERT_TRUE(hlApplied.visible.color.has_value());
+    EXPECT_EQ(0u, hlApplied.visible.color->getTbgr());
+    ASSERT_TRUE(hlApplied.visible.width.has_value());
+    EXPECT_EQ(1, *hlApplied.visible.width);
+    EXPECT_NEAR(0.3, hlApplied.transparencyThreshold, kTol);
     // clone 语义（ViewPicker.ts:49-50——缓存视图保持持久态）：再次 getView
     // 与首次逐项相等。
     auto view2 = views.getDefaultView(conn.Get());

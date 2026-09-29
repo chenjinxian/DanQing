@@ -482,7 +482,10 @@ std::string_view ShaderBuilder::getVertexComponentSignature(
 {
     switch (component) {
         case VertexShaderComponent::ComputeQuantizedPosition:
-            return "vec4 computeQuantizedPosition()";
+            // Ported from: ShaderBuilder.ts:758 — `vec3 computeQuantizedPosition()`
+            //（参考是 vec3；DanQing 历史上误写 vec4，连本槽零调用的
+            // function-call main 缺口一起未暴露——M-I(4) 修复）。
+            return "vec3 computeQuantizedPosition()";
         case VertexShaderComponent::AdjustRawPosition:
             return "vec4 adjustRawPosition(vec4 rawPos)";
         case VertexShaderComponent::CheckForEarlyDiscard:
@@ -679,16 +682,35 @@ std::string ShaderBuilder::buildVertexMain() const
             out += funcDef(VertexShaderComponent::FinalizePosition);
 
         // main() chain — Ported from: itwinjs-core ShaderBuilder.ts:746-840.
-        // Non-quantized subset; the quantized/computeVertexPosition path is
-        // deferred to the VertexLUT work (Task 2).
         std::string main = "void main()\n{\n";
+        // Ported from: ShaderBuilder.ts:757-759——qpos 协议：computeQuantizedPosition
+        // 是 main 的**首行**（在全部初始器之前）。缺省 `return a_pos;`（:757 ??
+        // 分支——DanQing 由 addVertexTable 置位）；indexed 边等变体在此解码每
+        // 顶点状态（g_quadIndex/g_otherIndexIndex/g_normals/g_isSilhouette），
+        // 后续初始器（initializeVertLUTCoords 消费 qpos、initializeIndexed 消费
+        // g_otherIndexIndex）依赖其结果。缺失本行 = indexed 边 6 顶点
+        // g_quadIndex 恒 0 → 退化零面积 → 零片元（M-I(4) 取证实锤）。
+        bool const hasQPos = has(VertexShaderComponent::ComputeQuantizedPosition);
+        if (hasQPos)
+            main += "    vec3 qpos = computeQuantizedPosition();\n";
         for (auto const& init : m_initializers)
             main += "    " + init + "\n";
 
-        if (has(VertexShaderComponent::AdjustRawPosition))
+        // Ported from: ShaderBuilder.ts:770-774——LUT 路径 rawPosition =
+        // computeVertexPosition(qpos)（LUT 变体消费预读全局、实参被忽略——
+        // Vertex.ts:36-41）；adjustRawPosition（动画位移等）是**复合**加算，
+        // 不是槽位替换（参考主行永远先跑 computeVertexPosition）。非 LUT 的
+        // function-call main 用户（如非量化 Surface 的 a_position 直通）无
+        // qpos 协议，保持既有 adjustRawPosition 直通形。
+        if (hasQPos) {
+            main += "    vec4 rawPosition = computeVertexPosition(qpos);\n";
+            if (has(VertexShaderComponent::AdjustRawPosition))
+                main += "    rawPosition = adjustRawPosition(rawPosition);\n";
+        } else if (has(VertexShaderComponent::AdjustRawPosition)) {
             main += "    vec4 rawPosition = adjustRawPosition(vec4(0.0, 0.0, 0.0, 1.0));\n";
-        else
+        } else {
             main += "    vec4 rawPosition = vec4(0.0, 0.0, 0.0, 1.0);\n";
+        }
 
         if (has(VertexShaderComponent::CheckForEarlyDiscard))
             main += "    if (checkForEarlyDiscard(rawPosition)) return;\n";

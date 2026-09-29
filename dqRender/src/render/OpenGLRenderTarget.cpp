@@ -122,7 +122,7 @@ void OpenGLRenderTarget::changeRenderPlan(RenderPlan const& plan)
 
     // View flags → branch stack (bottom BranchState) — BEFORE changeFrustum,
     // matching the reference order. Ported from: itwinjs-core Target.changeRenderPlan
-    // (Target.ts:520-532):
+    // (Target.ts:520-533):
     //   let vf = plan.viewFlags;
     //   if (!plan.is3d) vf = vf.withRenderMode(RenderMode.Wireframe);
     //   ... (AO gate :524-530 — DanQing's plan has no `ao` payload yet; AO stays
@@ -131,10 +131,14 @@ void OpenGLRenderTarget::changeRenderPlan(RenderPlan const& plan)
     // Previously only bgColor/frustum/uniforms were forwarded — the branch stack
     // stayed at its BranchState default (renderMode=Wireframe), so any viewFlags
     // consumer (wantNormalMaps' SmoothShade gate) never saw the real plan flags.
+    // M-I(4)：plan.hline 接线（RenderPlan.ts:58/:124——3d 时 = display style 的
+    // hiddenLineSettings；此前 hline 段从未搬运 → EdgeSettings 恒默认、
+    // hline.visible.color=0 黑边覆盖从未到达边绘制）。
     dqCommon::ViewFlagsProperties vf = plan.viewFlags.Properties();
     if (!plan.is3d)
         vf.renderMode = dqCommon::RenderMode::Wireframe;
-    m_impl->changeRenderPlan(vf, plan.is3d);
+    m_impl->changeRenderPlan(vf, plan.is3d,
+                             plan.hline.has_value() ? &*plan.hline : nullptr);
 
     // Frustum uniforms FIRST — the projection/view pair (u_proj/u_mv) comes from
     // FrustumUniforms.changeFrustum (lookIn + ortho(0,depth) / frustum()), the

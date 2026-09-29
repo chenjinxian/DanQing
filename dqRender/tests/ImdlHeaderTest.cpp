@@ -1274,8 +1274,19 @@ TEST(EdgeShaderVariant, QuantizedVariantConsumesVertexLut)
 
     // a_pos 24-bit 索引 attribute（参考 AttributeMap edge 条目名）+ 对端点
     // 解码 initializer（Edge.ts decodeEndPointAndQuadIndices :26-30）。
-    EXPECT_NE(vert.find("decodeUInt24(a_pos)"), std::string::npos)
-        << "vertex LUT key decode (initializeVertLUTCoords) must read a_pos";
+    // M-I(4) 重钉（§11.11 更忠实方向）：initializeVertLUTCoords 消费 qpos
+    //（Vertex.ts:20-23 `g_vertexLUTIndex = decodeUInt24(qpos)`——qpos 是
+    // main 首行 computeQuantizedPosition() 的结果，ShaderBuilder.ts:759；
+    // 旧钉值 "decodeUInt24(a_pos)" 是 DanQing 缺 qpos 协议时代的硬编码直读
+    // 形——它使 indexed 边把边表索引当顶点表索引消费）。SegmentEdge 变体
+    // 的 qpos == a_pos（缺省槽 `return a_pos;`，ShaderBuilder.ts:757），
+    // 语义不变。
+    EXPECT_NE(vert.find("vec3 qpos = computeQuantizedPosition();"), std::string::npos)
+        << "function-call main must open with the qpos protocol (ShaderBuilder.ts:759)";
+    EXPECT_NE(vert.find("g_vertexLUTIndex = decodeUInt24(qpos);"), std::string::npos)
+        << "vertex LUT key decode (initializeVertLUTCoords) must read qpos";
+    EXPECT_NE(vert.find("vec4 rawPosition = computeVertexPosition(qpos);"), std::string::npos)
+        << "rawPosition main line (ShaderBuilder.ts:770) must decode from the LUT pre-read";
     EXPECT_NE(vert.find("g_otherIndex = decodeUInt24(a_endPointAndQuadIndices.xyz)"),
               std::string::npos);
     EXPECT_NE(vert.find("g_otherPos = samplePosition(g_otherIndex)"), std::string::npos)

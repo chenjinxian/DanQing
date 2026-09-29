@@ -1661,11 +1661,19 @@ dqBase::RefPtr<SpatialViewState> SpatialViewState::CreateFromProps(
     if (props.modelSelectorProps.has_value())
         view->GetModelSelector().addModels(props.modelSelectorProps->models);
     // DisplayStyle3dState(props.displayStyleProps) —— 消费面 = styles.viewflags
-    //（ViewFlags.fromJSON ViewFlags.ts:471-511）；styles 其余段登记未移植
-    //（ViewStateProps.h 文件头）。
+    //（ViewFlags.fromJSON ViewFlags.ts:471-511）+ styles.hline（M-I(4)——
+    // DisplayStyle3dSettings ctor DisplayStyleSettings.ts:1104
+    // `this._hline = HiddenLine.Settings.fromJSON(this._json3d.hline)`；
+    // DanQing 载体 = dqApp::DisplayStyle::m_settings（DisplayStyle3dSettings）
+    // 的 setHiddenLineSettings）。styles 其余段登记未移植（ViewStateProps.h
+    // 文件头）。
     if (props.displayStyleProps.viewflags.has_value()) {
         view->GetDisplayStyle().setViewFlags(
             dqCommon::ViewFlags::fromJSON(&*props.displayStyleProps.viewflags));
+    }
+    if (props.displayStyleProps.hline.has_value()) {
+        view->GetDisplayStyle().getSettings().setHiddenLineSettings(
+            dqCommon::HiddenLineSettings::fromJSON(*props.displayStyleProps.hline));
     }
 
     return view;

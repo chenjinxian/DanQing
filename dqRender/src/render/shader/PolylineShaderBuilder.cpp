@@ -225,7 +225,9 @@ ProgramBuilder createPolylineProgramBuilder(FeatureMode featureMode, PositionTyp
     //              the VertexShaderBuilder constructor → addPosition(this, true).
     // Wires u_vertLUT / u_vertParams / u_qOrigin / u_qScale, g_vertLutData0-5
     // pre-read globals, compute_vert_coords, computeVertexPosition, and the
-    // AdjustRawPosition slot (returns position decoded from the pre-read).
+    // ComputeQuantizedPosition default `return a_pos;`（ShaderBuilder.ts:757——
+    // main 的 qpos 协议首行消费它，M-I(4) 起 rawPosition 主行 =
+    // computeVertexPosition(qpos)，ShaderBuilder.ts:770）。
     // Pass attrName="a_pos" to match itwinjs AttributeMap.ts:69-74 verbatim.
     addVertexTable(builder, quantized, /*attrName*/ "a_pos");
 

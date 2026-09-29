@@ -110,7 +110,10 @@ public:
 
     /// Update view flags and related settings for a new render plan.
     /// Ported from: itwinjs-core BranchState.changeRenderPlan()
-    void changeRenderPlan(ViewFlags const& viewFlags, bool is3d);
+    ///（BranchState.ts:93-96——含 `edgeSettings.init(hline)`；hline 缺省
+    /// nullptr = 参考 undefined → EdgeSettings 归默认）。
+    void changeRenderPlan(ViewFlags const& viewFlags, bool is3d,
+                          dqCommon::HiddenLineSettings const* hline = nullptr);
 
     /// Create a BranchState suitable for rendering decorations.
     /// Ported from: itwinjs-core BranchState.createForDecorations()
@@ -248,7 +251,9 @@ public:
 
     /// Update the render plan on the bottom state.
     /// Ported from: itwinjs-core BranchStack.changeRenderPlan()
-    void changeRenderPlan(ViewFlags const& viewFlags, bool is3d);
+    ///（BranchStack.ts:70-72——透传 hline 到底层 BranchState）。
+    void changeRenderPlan(ViewFlags const& viewFlags, bool is3d,
+                          dqCommon::HiddenLineSettings const* hline = nullptr);
 
     /// Seed the bottom (base) state's view matrices: mv = view, mvp = proj·view.
     /// The reference composes u_mv = frustum.viewMatrix · model at draw time

@@ -183,7 +183,20 @@ static constexpr char const* kComputeIndexedQuantizedPosition = R"(
 
   g_normals = isEven ? vec4(s1.zw, s2.xy) : s2;
 
-  return vec4(g_quadIndex < 2.0 ? i0 : i1, 1.0);
+  return g_quadIndex < 2.0 ? i0 : i1;
+)";
+
+// Ported from: itwinjs-core LookupTable.ts initializerTemplate（:30-34，
+// lutName="edge"）——Edge.ts:263 把它**前置进** ComputeQuantizedPosition 体
+//（`${initLut}\n\n${computeIndexedQuantizedPosition}`）：main 首行的
+// computeQuantizedPosition() 调用先于一切初始器（ShaderBuilder.ts:759），
+// 边表采样所需的 g_edge_stepX/g_edge_center 必须在体内先行初始化。
+//（独立初始器同样保留——参考 addLookupTable 的 addInitializer 缺省 true，
+// 幂等双跑。）
+static constexpr char const* kEdgeLutInit = R"(
+  g_edge_stepX = 1.0 / u_edgeParams.x;
+  float edge_stepY = 1.0 / u_edgeParams.y;
+  g_edge_center = vec2(0.5*g_edge_stepX, 0.5*edge_stepY);
 )";
 
 // Ported from: itwinjs-core Edge.ts initializeIndexed (line 94-97)
@@ -249,10 +262,12 @@ static ProgramBuilder createBase(EdgeBuilderType type, FeatureMode /*featureMode
     // 解码 getSamplePositionQuantizedPostlude :71-79）。惯序：先 addVertexTable
     // （提供 compute_vert_coords/g_vert_stepX/decodeUInt16/unquantizePosition）
     // 再 addSamplePosition（samplePosition 函数体引用它们）。
-    // AdjustRawPosition 槽由 addVertexTable 置为
-    // `return computeVertexPosition(vec3(a_pos));`——即参考 main 的
-    // `qpos = computeQuantizedPosition(); rawPosition = computeVertexPosition(qpos);`
-    // （ShaderBuilder.ts:757-770）在 DanQing function-call 约定下的等价形。
+    // addVertexTable 同时置 ComputeQuantizedPosition 缺省 `return a_pos;`
+    //（ShaderBuilder.ts:757——segment/silhouette 变体即消费此缺省：a_pos =
+    // 顶点表索引）；function-call main 首行 `vec3 qpos =
+    // computeQuantizedPosition();` + 主行 `rawPosition =
+    // computeVertexPosition(qpos);`（ShaderBuilder.ts:759/:770——
+    // ShaderBuilder.cpp hasQPos 分支装配）。
     addVertexTable(builder, /*quantized*/true, "a_pos");
     addSamplePosition(vert);
 
@@ -272,14 +287,21 @@ static ProgramBuilder createBase(EdgeBuilderType type, FeatureMode /*featureMode
         // Edge LUT coordinate computation
         vert.addFunction(std::string(kEdgeLutFunctions));
 
-        // LUT initialization (step size + center)
+        // LUT initialization (step size + center)——独立初始器（参考
+        // addLookupTable 缺省 addInitializer=true 的那一份；另一份前置在
+        // ComputeQuantizedPosition 体内，见下）。
         vert.addInitializer(
             "g_edge_stepX = 1.0 / u_edgeParams.x;\n"
             "g_edge_center = vec2(0.5 * g_edge_stepX, 0.5 / u_edgeParams.y);");
 
-        // Full indexed quantized position reading from edge LUT
+        // Full indexed quantized position reading from edge LUT。
+        // Ported from: Edge.ts:263——`vert.set(ComputeQuantizedPosition,
+        // `${initLut}\n\n${computeIndexedQuantizedPosition}`)`（initLut 前置；
+        // function-call main 首行 `vec3 qpos = computeQuantizedPosition();`
+        // 消费本槽——ShaderBuilder.ts:759。历史上本槽被置位却零调用 +
+        // 返回类型误 vec4 → indexed 边零片元，M-I(4) 修复）。
         vert.setVertexComponent(VertexShaderComponent::ComputeQuantizedPosition,
-            kComputeIndexedQuantizedPosition);
+            std::string(kEdgeLutInit) + "\n" + kComputeIndexedQuantizedPosition);
         vert.addInitializer(kInitializeIndexed);
 
         // Render order constants

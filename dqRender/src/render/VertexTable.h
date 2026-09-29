@@ -48,8 +48,14 @@ BEGIN_DQ_RENDER_NAMESPACE
 //                     computeVertexPosition (from LUT)
 //   Vertex uniforms: u_vertLUT (sampler2D), u_vertParams (vec4),
 //                    u_qOrigin (vec3), u_qScale (vec3)
-//   Vertex initializers: LUT step/center init, vertex data pre-read
-//   AdjustRawPosition: calls computeVertexPosition (LUT decode)
+//   Vertex slots:     ComputeQuantizedPosition 缺省 `return <attrName>;`
+//                     （ShaderBuilder.ts:757——变体可覆盖，Edge.ts:263）
+//   Vertex initializers: LUT step/center init, qpos→LUT 坐标初始化, vertex
+//                     data pre-read
+//   main 的 rawPosition 主行（computeVertexPosition(qpos)，ShaderBuilder.ts
+//   :770）由 function-call main 装配（ShaderBuilder.cpp hasQPos 分支）——
+//   本函数不占用 AdjustRawPosition 槽（该槽归动画位移等复合加算，
+//   ShaderBuilder.ts:771-774）。
 // ---------------------------------------------------------------------------
 inline void addVertexTable(ProgramBuilder& builder, bool quantized,
                            char const* attrName = "a_qPosition")
@@ -118,23 +124,34 @@ inline void addVertexTable(ProgramBuilder& builder, bool quantized,
     // "a_pos" (Polyline, matching itwinjs AttributeMap.ts:69-74 verbatim).
     vert.addVariable({attrName, VariableType::Vec3, VariableScope::Attribute, 0});
 
-    // --- AdjustRawPosition: LUT decode ---
-    // In the function-call convention, AdjustRawPosition returns the decoded
-    // position.  The LUT decode happens in the initializer (pre-read), and
-    // computeVertexPosition reads from the pre-read g_vertLutData globals.
-    // AdjustRawPosition calls computeVertexPosition with the vertex index.
-    // Ported from: itwinjs-core ShaderBuilder.ts line 725 + Vertex.ts
-    vert.setVertexComponent(VertexShaderComponent::AdjustRawPosition,
-        std::string("    return computeVertexPosition(vec3(") + attrName + "));\n");
+    // --- ComputeQuantizedPosition 缺省 ---
+    // Ported from: itwinjs-core ShaderBuilder.ts:757——
+    // `const computeQPos = this.get(ComputeQuantizedPosition) ?? "return a_pos;"`
+    // （本路径的 "a_pos" = attrName——Surface 为 a_qPosition）。function-call
+    // main 的首行是 `vec3 qpos = computeQuantizedPosition();`（:759——
+    // ShaderBuilder.cpp buildVertexMain）；indexed 边等变体随后覆盖本槽
+    // （Edge.ts:263——qpos 变为边表解码出的顶点表索引）。
+    vert.setVertexComponent(VertexShaderComponent::ComputeQuantizedPosition,
+        std::string("return ") + attrName + ";");
+
+    // --- rawPosition 来源（ShaderBuilder.ts:770）---
+    // 参考 main 是 `vec4 rawPosition = computeVertexPosition(qpos);`（主行，
+    // 非槽位）+ `rawPosition = adjustRawPosition(rawPosition)` 复合（:771-774，
+    // 动画位移加算）。DanQing 的 function-call main 同形（ShaderBuilder.cpp
+    // hasQPos 分支）；本函数**不再占用 AdjustRawPosition 槽**（历史上占槽会
+    // 被 addAnimation 的位移体替换 → LUT 解码整段丢失——M-I(4) 修复）。
+    // 注意：computeVertexPosition 的 LUT 变体消费预读全局、忽略实参
+    //（Vertex.ts:36-41 computeVertexPositionFromLUT）。
 
     // --- Vertex index initializer ---
-    // Must run BEFORE the pre-read (reads the LUT-key attribute to compute
-    // base coords). Ported from: itwinjs-core Vertex.ts initializeVertLUTCoords
-    // (line 20-23). The reference uses `qpos` (the result of the default
-    // computeQuantizedPosition() → `return a_pos;`); DanQing's function-call
-    // convention has no `qpos` local, so we reference the attribute directly.
-    vert.addInitializer(std::string("  g_vertexLUTIndex = decodeUInt24(") +
-                        attrName + ");\n" +
+    // Must run BEFORE the pre-read (reads qpos to compute base coords).
+    // Ported from: itwinjs-core Vertex.ts initializeVertLUTCoords
+    // (line 20-23)——`g_vertexLUTIndex = decodeUInt24(qpos)`：qpos =
+    // computeQuantizedPosition() 的结果（主行首行）。对 surface/polyline
+    // qpos==属性原值（语义不变）；对 indexed 边 qpos=边表解码的顶点表索引
+    //（历史上此处硬编码 decodeUInt24(a_pos) 把**边表索引**当顶点索引——
+    // M-I(4) 修复）。
+    vert.addInitializer(std::string("  g_vertexLUTIndex = decodeUInt24(qpos);\n") +
                         "  g_vertexBaseCoords = compute_vert_coords(g_vertexLUTIndex);");
 
     // --- Pre-read vertex data initializer ---

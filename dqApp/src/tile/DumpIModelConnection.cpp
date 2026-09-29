@@ -111,6 +111,49 @@ dqCommon::ViewFlagProps parseViewFlagProps(dumpjson::JsonValue const& json)
     return out;
 }
 
+// styles.hline JSON → HiddenLineSettingsProps（键名 1:1——HiddenLine.ts
+// StyleProps/SettingsProps 持久化字段名：ovrColor/color/pattern/width +
+// transThreshold；语义门——color 仅 ovrColor≠false 时生效、pattern≠Invalid、
+// width≠0 clamp[1,32]——在 dqCommon HiddenLineStyle::fromJSON 侧，本层只搬运
+// 原始值。dump 实态（joeshouse-v1 / instances60-imodel-v1 同）：
+//   visible={color:0,ovrColor:true,pattern:0,width:1}（黑/实线/1px 覆盖），
+//   hidden={color:0,ovrColor:true,pattern:3435973836(0xCCCCCCCC),width:1}，
+//   transThreshold:0.3。
+dqCommon::HiddenLineStyleProps parseHiddenLineStyleProps(dumpjson::JsonValue const& json)
+{
+    dqCommon::HiddenLineStyleProps out;
+    if (dumpjson::JsonValue const* v = json.find("ovrColor"))
+        if (v->type == dumpjson::JsonValue::Type::Bool)
+            out.ovrColor = v->boolean;
+    if (dumpjson::JsonValue const* v = json.find("color"))
+        if (v->type == dumpjson::JsonValue::Type::Number)
+            out.color = static_cast<dqCommon::ColorDefProps>(
+                static_cast<uint32_t>(static_cast<int64_t>(v->number)));
+    if (dumpjson::JsonValue const* v = json.find("pattern"))
+        if (v->type == dumpjson::JsonValue::Type::Number)
+            out.pattern = static_cast<dqCommon::LinePixels>(
+                static_cast<uint32_t>(static_cast<int64_t>(v->number)));
+    if (dumpjson::JsonValue const* v = json.find("width"))
+        if (v->type == dumpjson::JsonValue::Type::Number)
+            out.width = static_cast<int>(v->number);
+    return out;
+}
+
+dqCommon::HiddenLineSettingsProps parseHiddenLineSettingsProps(dumpjson::JsonValue const& json)
+{
+    dqCommon::HiddenLineSettingsProps out;
+    if (dumpjson::JsonValue const* v = json.find("visible"))
+        if (v->type == dumpjson::JsonValue::Type::Object)
+            out.visible = parseHiddenLineStyleProps(*v);
+    if (dumpjson::JsonValue const* v = json.find("hidden"))
+        if (v->type == dumpjson::JsonValue::Type::Object)
+            out.hidden = parseHiddenLineStyleProps(*v);
+    if (dumpjson::JsonValue const* v = json.find("transThreshold"))
+        if (v->type == dumpjson::JsonValue::Type::Number)
+            out.transThreshold = v->number;
+    return out;
+}
+
 // views.defaultViewState JSON（getViewStateData RPC 载荷原样）→ ViewStateProps。
 // 参考锚 = convertViewStatePropsToViewState 的 props 形态（IModelConnection.ts
 // :1548-1561）+ ViewState3d ctor 的消费面（ViewState.ts:1497-1515）。
@@ -184,7 +227,8 @@ std::optional<ViewStateProps> parseViewStateProps(dumpjson::JsonValue const& jso
                 out.categorySelectorProps.categories.push_back(parseId(entry));
     }
 
-    // --- displayStyleProps（消费面 = jsonProperties.styles.viewflags） ---
+    // --- displayStyleProps（消费面 = jsonProperties.styles.viewflags +
+    //     styles.hline[M-I(4)]） ---
     if (dumpjson::JsonValue const* v = dsp->find("id"))
         out.displayStyleProps.id = parseId(*v);
     if (dumpjson::JsonValue const* jp = dsp->find("jsonProperties")) {
@@ -192,6 +236,12 @@ std::optional<ViewStateProps> parseViewStateProps(dumpjson::JsonValue const& jso
             if (dumpjson::JsonValue const* vf = styles->find("viewflags")) {
                 if (vf->type == dumpjson::JsonValue::Type::Object)
                     out.displayStyleProps.viewflags = parseViewFlagProps(*vf);
+            }
+            // styles.hline（DisplayStyleSettings.ts:1104 ctor 的
+            // `this._json3d.hline` 段——HiddenLine.Settings.fromJSON 输入）。
+            if (dumpjson::JsonValue const* hl = styles->find("hline")) {
+                if (hl->type == dumpjson::JsonValue::Type::Object)
+                    out.displayStyleProps.hline = parseHiddenLineSettingsProps(*hl);
             }
         }
     }
