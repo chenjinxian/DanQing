@@ -12,6 +12,7 @@
 #include <QStyleFactory>
 #include <QTimer>
 
+#include <chrono>
 #include <map>
 #include <memory>
 #include <optional>
@@ -85,7 +86,8 @@ namespace {
 
 // 模型→包根映射表（一处集中，M-H(4) Step 2）：
 //   joeshouse   = imodel joeshouse-v1/imodel.json + tiles [joeshouse-v1]
-//                 + fallback [joeshouse-drill-v1]（drill 域外键补字节，M-H Task 2）
+//                 + fallback [joeshouse-drill-v1（drill 域外键补字节，M-H Task 2）,
+//                             joeshouse-drill-v2（M-I(5) P2c——缩远态 depth-1 键补字节）]
 //   instances60 = imodel instances60-imodel-v1/imodel.json + tiles [instances60-v1]
 //                 + fallback [instances60-drill-v1]
 // （与 DumpOpenChainTest.cpp:256-258/:508-510 的同构锁包定义一致。）
@@ -97,7 +99,8 @@ std::optional<dta::DumpOpenPackage> dumpPackageForModel(QString const& modelId)
     dta::DumpOpenPackage pkg;
     if (modelId == QLatin1String("joeshouse")) {
         pkg.imodelRoot = dumpRoot + "/joeshouse-v1";
-        pkg.tileRoots = {dumpRoot + "/joeshouse-v1", dumpRoot + "/joeshouse-drill-v1"};
+        pkg.tileRoots = {dumpRoot + "/joeshouse-v1", dumpRoot + "/joeshouse-drill-v1",
+                         dumpRoot + "/joeshouse-drill-v2"};
     }
     else if (modelId == QLatin1String("instances60")) {
         pkg.imodelRoot = dumpRoot + "/instances60-imodel-v1";
@@ -253,6 +256,17 @@ int main(int argc, char** argv)
     // 语义（后开者替换前者；多视图并存的多 fetcher 路由登记范围外）。
     QObject::connect(startView, &StartGui::StartView::requestOpenDumpModel,
                      mainWindow, [mainWindow](QString modelId) {
+                         // M-I(5) 终验计时（DANQING_OPEN_TRACE=1 门控，默认零开销）：
+                         // 点击→打开链完成（saved view 已建、graphics 已提交）的耗时
+                         // ——M-I(1) 性能清偿（18.7s→2.76s）的真实 app 侧取证。
+                         auto const tOpen0 = std::chrono::steady_clock::now();
+                         bool const openTrace =
+                             std::getenv("DANQING_OPEN_TRACE") != nullptr;
+                         if (openTrace) {
+                             fprintf(stderr, "[OPEN] %s entry\n",
+                                     modelId.toUtf8().constData());
+                             fflush(stderr);
+                         }
                          auto pkg = dumpPackageForModel(modelId);
                          if (!pkg.has_value()) {
                              mainWindow->showStatus(
@@ -274,6 +288,14 @@ int main(int argc, char** argv)
                                         .arg(modelId)
                                         .arg(QString::fromStdString(pkg->imodelRoot)));
                              return;
+                         }
+                         if (openTrace) {
+                             auto const ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                 std::chrono::steady_clock::now() - tOpen0).count();
+                             fprintf(stderr, "[OPEN] %s chain-done ms=%lld trees=%zu\n",
+                                     modelId.toUtf8().constData(),
+                                     static_cast<long long>(ms), opened->treeLoadLog.size());
+                             fflush(stderr);
                          }
                          view3d->setWindowTitle(
                              modelId == QLatin1String("joeshouse")
