@@ -166,6 +166,11 @@ void dumpBmp(std::vector<uint8_t> const& frame, uint32_t w, uint32_t h,
     std::vector<unsigned char> row(rowBytes);
     for (uint32_t y = 0; y < h; ++y) {
         memcpy(row.data(), &frame[static_cast<size_t>(y) * rowBytes], rowBytes);
+        // BI_RGB 32bpp 文件字节序 = BGRX，内存帧 = RGBA（glReadPixels GL_RGBA）
+        // ——逐像素换 R/B 落盘（M-J(3) 仪器修正，RpcDumpRenderTest.cpp dumpBmp
+        // 同注：历史 dump 的 R/B 互换曾伪造"实例球行色发散"取证）。
+        for (uint32_t x = 0; x < w; ++x)
+            std::swap(row[x * 4 + 0], row[x * 4 + 2]);
         fwrite(row.data(), 1, rowBytes, f);
     }
     fclose(f);
@@ -545,6 +550,205 @@ TEST(DumpBrowse, Instances60BrowseSessionZeroMissing)
     EXPECT_EQ(static_cast<long>(numCompleted), ctx.readyTiles)
         << "Completed tiles without graphics — readContent/graphics chain break";
     EXPECT_EQ(0u, opened->fetcher->getActiveCount()) << "requests still in flight";
+
+    view.getUeViewport()->DropTiledGraphicsProvider(opened->provider.get());
+    view.close();
+    spin(200);
+}
+
+// ---------------------------------------------------------------------------
+// 锁 1b：instances60 行色排布像素锁（M-J(3)——60 实例球 6 行×10 球的
+//   "行色↔深度"映射锚 + 跨实例插值探针 + 取证仪器自检）。
+// ---------------------------------------------------------------------------
+// Authored: no reference test exists in itwinjs-core/imodel-native for the
+//           dump-replay per-instance row-color pixel layout (§5(f)); 渲染像素
+//           回归授权 §5(g)（复现配方 = 打开链 saved 视图泵至静默 + readPixels；
+//           证据链见 M-J(3) 取证）。Ground truth（双源一致）：
+//           ① dump 数据面 = 瓦 "-b-2-0-0-0-1"（instances60-v1 files/8.imdl）
+//              instances 段 symbologyOverrides 8B/实例的 a_instanceRgba 槽
+//              （bytes 4..7，RGBA 序——InstancedGeometry.ts :392-401
+//              a_instanceOverrides@0/a_instanceRgba@4 stride 8）逐字节：
+//              6 行 ty=-3.75/-2.25/-0.75/+0.75/+2.25/+3.75 → 每行恰 10 实例，
+//              行色 = 绿(0,255,0)/紫(135,0,135)/蓝(0,0,255)/黄(255,255,0)/
+//              橙(255,127,0)/红(255,0,0)（kOvrBit_Rgb=1 位全实例置位
+//              ovr=0x02——覆盖恒生效）；
+//           ② DTA 对照帧 build/mi2-dta-inst.png（saved View 0x25）——前排红、
+//              向后依次橙/黄/蓝/紫/绿（与 ① 同一深度序）。
+//
+// 背景（M-J(3) 取证，§11.9/§11.11）：任务输入声称"当前 DanQing 前排呈蓝、
+// 含 teal 球、黄/橙行缺失"。逐时点取证证明该"发散"从未在引擎中存在——
+// 它是取证写帧器伪影：dumpBmp 把 RGBA 内存帧直写 BI_RGB(BGRX) BMP，R/B
+// 互换后红→蓝、黄→青(teal)、橙→天蓝（蓝↔红互换计数相等 = 互换特征指纹）。
+// 真彩证据链：mi5-inst-1-saved.png（M-I(5) 桌面截图，六行全对）+
+// mi2-dta-inst.png（DTA）+ 当前构建双路径帧（mount fit / 打开链 saved）逐行
+// 同构。本锁把该失败类（通道互换/跨实例插值/整行缺失/行序置换）钉死为
+// 常驻回归，判据 ④ 证明判据对伪影类的判别力（仪器自检）。
+//
+// 判据（首绿实测钉值 = 2026-09-30 当前构建 saved 帧 2000x1400，阈值 0.2×）：
+// ① teal == 0（蓝绿中点系 = 跨实例插值/通道互换的直接探针）；
+// ② 六行色族像素量下限（0.2× 实测）：red≥26000/orange≥5700/yellow≥12800/
+//    blue≥5200/purple≥3300/green≥23000 + 绿族屏面上半域（readPixels 内存序
+//    y ≥ h/2——行球域，排除右下 context cone）≥14000；
+// ③ WHERE 行色↔深度链：各族屏面最低像素（= 内存 y 最小——readPixels 自下
+//    而上，行 0 = 屏底）严格递增 red<orange<blue<yellow<purple（实测内存序
+//    469<516<540<562<579；屏面 y 自顶量 = 930/883/859/837/820——saved 视图
+//    行对角线的前后顺序 = DTA 帧同构；绿族含 context 不入链）；
+// ④ 仪器自检（§11.11）：同帧 R/B 互换副本过同一分类器——必须报 teal>0 且
+//    布局判红（= 本锁能抓住 M-J(1) 伪影类；通道互换在真帧上发生时同样被
+//    ①/② 抓住）。
+namespace {
+
+// 行色族分类（亮度归一色相比——M-J(3) 取证脚本同阈值；对光照缩放不敏感，
+// 背景天空/黑与抗锯齿边均不入族）。
+enum class RowHue { Red, Orange, Yellow, Blue, Purple, Green, Teal, None };
+
+RowHue classifyRowHue(uint8_t r, uint8_t g, uint8_t b)
+{
+    int const m = std::max(r, std::max(g, b));
+    if (m < 50)
+        return RowHue::None;
+    double const rN = static_cast<double>(r) / m;
+    double const gN = static_cast<double>(g) / m;
+    double const bN = static_cast<double>(b) / m;
+    if (gN > 0.75 && rN < 0.5 && bN < 0.5) return RowHue::Green;
+    if (rN > 0.75 && gN < 0.5 && bN < 0.5) return RowHue::Red;
+    if (bN > 0.75 && rN < 0.5 && gN < 0.5) return RowHue::Blue;
+    if (rN > 0.5 && bN > 0.5 && gN < 0.25) return RowHue::Purple;
+    if (rN > 0.75 && bN < 0.35) return gN >= 0.7 ? RowHue::Yellow : RowHue::Orange;
+    if (gN > 0.5 && bN > 0.5 && rN < 0.35) return RowHue::Teal;
+    return RowHue::None;
+}
+
+struct RowColorLayout {
+    long count[7] = {0, 0, 0, 0, 0, 0, 0};      // RowHue 序
+    // 帧内存 y 语义：readPixels 自下而上（GL 原点 = 屏左下）——行 0 = 屏底。
+    // "屏面最低"（前景方向）= 内存 y 最小；"屏面最高"= 内存 y 最大。
+    int32_t minNy[7] = {-1, -1, -1, -1, -1, -1, -1};
+    int32_t maxNy[7] = {-1, -1, -1, -1, -1, -1, -1};
+    int32_t upperCount = 0;                     // 绿族屏面上半域（内存 y ≥ h/2）
+    long tealCount() const { return count[static_cast<int>(RowHue::Teal)]; }
+};
+
+RowColorLayout analyzeRowColors(std::vector<uint8_t> const& f, uint32_t w, uint32_t h)
+{
+    RowColorLayout lay;
+    for (uint32_t y = 0; y < h; ++y)
+        for (uint32_t x = 0; x < w; ++x) {
+            uint8_t const* p = &f[(static_cast<size_t>(y) * w + x) * 4];
+            RowHue const hue = classifyRowHue(p[0], p[1], p[2]);
+            if (hue == RowHue::None)
+                continue;
+            int const i = static_cast<int>(hue);
+            ++lay.count[i];
+            int32_t const yi = static_cast<int32_t>(y);
+            if (lay.minNy[i] < 0 || yi < lay.minNy[i])
+                lay.minNy[i] = yi;
+            if (lay.maxNy[i] < 0 || yi > lay.maxNy[i])
+                lay.maxNy[i] = yi;
+            if (hue == RowHue::Green && y >= h / 2)
+                ++lay.upperCount;
+        }
+    return lay;
+}
+
+// 布局判据聚合（③ 的行色↔深度链——屏面最低点内存序递增 = 前排红逐行退后；
+// ① 的 teal 探针；② 的量值下限由各 EXPECT 直接钉——自检只判"布局形"是否
+// 判红）。
+bool rowDepthChainHolds(RowColorLayout const& lay)
+{
+    auto const bottomMost = [&](RowHue h) { return lay.minNy[static_cast<int>(h)]; };
+    return bottomMost(RowHue::Red) < bottomMost(RowHue::Orange)
+        && bottomMost(RowHue::Orange) < bottomMost(RowHue::Blue)
+        && bottomMost(RowHue::Blue) < bottomMost(RowHue::Yellow)
+        && bottomMost(RowHue::Yellow) < bottomMost(RowHue::Purple);
+}
+
+}  // namespace
+
+TEST(DumpBrowse, Instances60RowColorLayout)
+{
+    auto& app = dqApp::Application::Get();
+    if (!app.isInitialized()) {
+        dqApp::Application::Options opts;
+        opts.applicationId = "DumpBrowse";
+        opts.applicationVersion = "1.0";
+        ASSERT_TRUE(app.Startup(opts));
+    }
+
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    view.resize(1000, 700);
+    view.show();
+    spin(400);
+
+    // 打开链同锁 1（saved 视图进入——症状声称面）。
+    dta::DumpOpenPackage pkg;
+    pkg.imodelRoot = kDumpRoot + "/instances60-imodel-v1";
+    pkg.tileRoots = {kDumpRoot + "/instances60-v1", kDumpRoot + "/instances60-drill-v1"};
+    auto opened = dta::openDumpIModel(view, pkg);
+    ASSERT_TRUE(opened.has_value()) << "open chain failed: " << pkg.imodelRoot;
+    ASSERT_EQ(1u, opened->trees.size());
+
+    PumpContext ctx{&view, &*opened};
+    int const openQ = pumpToQuiesce(ctx);
+    ASSERT_GE(openQ, 0) << "open face never quiesced";
+    view.getUeViewport()->RenderFrame();
+
+    std::vector<uint8_t> frame;
+    uint32_t w = 0, h = 0;
+    ASSERT_TRUE(view.getUeViewport()->ReadFrameForTest(frame, w, h));
+    dumpBmp(frame, w, h,
+            DANQING_TILE_ASSETS_DIR "/../../build/mj3-rowcolor-instances60-saved.bmp");
+
+    RowColorLayout const lay = analyzeRowColors(frame, w, h);
+    printf("[BROWSE] row-color layout: red=%ld orange=%ld yellow=%ld blue=%ld "
+           "purple=%ld green=%ld(greenUpper=%ld) teal=%ld bottomMost r/o/b/y/p/g="
+           "%d/%d/%d/%d/%d/%d frame=%ux%u\n",
+           lay.count[static_cast<int>(RowHue::Red)],
+           lay.count[static_cast<int>(RowHue::Orange)],
+           lay.count[static_cast<int>(RowHue::Yellow)],
+           lay.count[static_cast<int>(RowHue::Blue)],
+           lay.count[static_cast<int>(RowHue::Purple)],
+           lay.count[static_cast<int>(RowHue::Green)],
+           lay.upperCount,
+           lay.tealCount(),
+           lay.minNy[static_cast<int>(RowHue::Red)],
+           lay.minNy[static_cast<int>(RowHue::Orange)],
+           lay.minNy[static_cast<int>(RowHue::Blue)],
+           lay.minNy[static_cast<int>(RowHue::Yellow)],
+           lay.minNy[static_cast<int>(RowHue::Purple)],
+           lay.minNy[static_cast<int>(RowHue::Green)], w, h);
+
+    // ① 跨实例插值探针（teal=蓝绿中点系——实例边界错位/通道互换特征）。
+    EXPECT_EQ(0l, lay.tealCount())
+        << "teal (blue-green midpoint) pixels present — per-instance color "
+           "boundaries are blurred (interpolation or channel swap)";
+    // ② 六行色族量值下限（0.2× 首绿实测——整行缺失/整行改色必红）。
+    EXPECT_GE(lay.count[static_cast<int>(RowHue::Red)], 26000l) << "red row missing/recolored";
+    EXPECT_GE(lay.count[static_cast<int>(RowHue::Orange)], 5700l) << "orange row missing/recolored";
+    EXPECT_GE(lay.count[static_cast<int>(RowHue::Yellow)], 12800l) << "yellow row missing/recolored";
+    EXPECT_GE(lay.count[static_cast<int>(RowHue::Blue)], 5200l) << "blue row missing/recolored";
+    EXPECT_GE(lay.count[static_cast<int>(RowHue::Purple)], 3300l) << "purple row missing/recolored";
+    EXPECT_GE(lay.count[static_cast<int>(RowHue::Green)], 23000l) << "green row/context evaporated";
+    // 绿行球域（上半帧）单独下限——context cone 在下半帧，绿行消失而 context
+    // 仍在时本断言仍红。
+    EXPECT_GE(lay.upperCount, 14000l) << "green instance row missing (upper half)";
+    // ③ WHERE 行色↔深度链（front row = red——DTA 帧同构）。
+    EXPECT_TRUE(rowDepthChainHolds(lay))
+        << "row-color to depth mapping drifted (front row must be red, back "
+           "ball row purple; measured memory-order chain 469<516<540<562<579)";
+    // ④ 仪器自检（§11.11——判据对 M-J(1) 伪影类的判别力）：R/B 互换副本
+    //    必须判红（teal>0 + 行链判红）。
+    {
+        std::vector<uint8_t> swapped(frame);
+        for (size_t i = 0; i + 3 < swapped.size(); i += 4)
+            std::swap(swapped[i], swapped[i + 2]);
+        RowColorLayout const bad = analyzeRowColors(swapped, w, h);
+        EXPECT_GT(bad.tealCount(), 0l)
+            << "instrument self-check: the classifier did NOT flag an R/B "
+               "swapped frame (the M-J(1) artifact class would slip through)";
+        EXPECT_FALSE(rowDepthChainHolds(bad))
+            << "instrument self-check: R/B swapped frame passed the depth chain";
+    }
 
     view.getUeViewport()->DropTiledGraphicsProvider(opened->provider.get());
     view.close();

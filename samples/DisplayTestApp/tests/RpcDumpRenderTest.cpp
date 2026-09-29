@@ -202,6 +202,15 @@ void dumpBmp(std::vector<uint8_t> const& frame, uint32_t w, uint32_t h,
     std::vector<unsigned char> row(rowBytes);
     for (uint32_t y = 0; y < h; ++y) {
         memcpy(row.data(), &frame[static_cast<size_t>(y) * rowBytes], rowBytes);
+        // BI_RGB 32bpp 的文件字节序是 BGRX，而 ReadFrameForTest 回读的内存帧是
+        // RGBA（glReadPixels GL_RGBA——TargetImpl::readColorData）。逐像素交换
+        // R/B 后落盘，dump 才是真彩色。M-J(3) 取证教训（§11.11 仪器自检）：
+        // 此前 RGBA 字节直写 BGRX 文件，所有历史 dump 的 R/B 通道互换——
+        // M-J(1) 的"实例球行色发散"（前排蓝 + teal 球 + 黄/橙行缺失）即该
+        // 仪器伪影（mi5-inst-1-saved.png 真彩桌面截图同view六行全对；换算后
+        // dump 的蓝/青/缺行 = 红/黄/橙行的 R/B 互换），非引擎缺陷。
+        for (uint32_t x = 0; x < w; ++x)
+            std::swap(row[x * 4 + 0], row[x * 4 + 2]);
         fwrite(row.data(), 1, rowBytes, f);
     }
     fclose(f);
