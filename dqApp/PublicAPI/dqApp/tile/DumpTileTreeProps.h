@@ -27,6 +27,7 @@
 #include <dqGeom/Transform.h>  // DumpTreeProps.location（TileTreeProps.location 载体）
 #include <dqRender/tile/ImdlTileTree.h>  // ImdlTreeMetadata / ImdlTileMetadata
 
+#include <charconv>  // std::from_chars（dumpjson::parseNumber 直扫——M-I(1)）
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -98,7 +99,10 @@ struct JsonParser {
     {
         skipWs();
         size_t const n = std::strlen(lit);
-        if (text.size() - pos >= n && text.substr(pos, n) == lit) {
+        // memcmp 直比（M-I(1) 解析器瘦身——去每标量探测的 substr 堆分配；
+        // 大 manifest 的每个数字标量都先探 true/false/null 三字面量，
+        // substr 版每次一枚分配）。
+        if (text.size() - pos >= n && std::memcmp(text.data() + pos, lit, n) == 0) {
             pos += n;
             return true;
         }
@@ -166,48 +170,71 @@ struct JsonParser {
         skipWs();
         if (pos >= text.size() || text[pos] != '"') { failed = true; return out; }
         pos++;
+        // memchr 批扫（M-I(1) 解析器瘦身——去逐字符 out += c 的逐字符容量
+        // 检查：每段[至下一个闭引号/转义]一次 append。两段扫描均有界：闭
+        // 引号扫[0,remain)，'\\' 扫 [0,quote)——**不得**对 '\\' 直接扫全文
+        // 剩余（无 '\\' 的大文件上每串一次全文扫 = 二次方爆炸，实测 58MB
+        // manifest 挂死）。转义/闭引号语义与逐字符版逐分支同构）。
         while (pos < text.size()) {
-            char c = text[pos++];
-            if (c == '"') return out;
-            if (c == '\\' && pos < text.size()) {
-                char e = text[pos++];
-                switch (e) {
-                    case '"': out += '"'; break;
-                    case '\\': out += '\\'; break;
-                    case '/': out += '/'; break;
-                    case 'b': out += '\b'; break;
-                    case 'f': out += '\f'; break;
-                    case 'n': out += '\n'; break;
-                    case 'r': out += '\r'; break;
-                    case 't': out += '\t'; break;
-                    case 'u': {
-                        if (text.size() - pos < 4) { failed = true; return out; }
-                        unsigned code = 0;
-                        for (int i = 0; i < 4; ++i) {
-                            char h = text[pos++];
-                            code <<= 4;
-                            if (h >= '0' && h <= '9') code |= unsigned(h - '0');
-                            else if (h >= 'a' && h <= 'f') code |= unsigned(h - 'a' + 10);
-                            else if (h >= 'A' && h <= 'F') code |= unsigned(h - 'A' + 10);
-                            else { failed = true; return out; }
-                        }
-                        // UTF-8 encode (BMP only — manifest/props keys are ASCII)
-                        if (code < 0x80) {
-                            out += char(code);
-                        } else if (code < 0x800) {
-                            out += char(0xC0 | (code >> 6));
-                            out += char(0x80 | (code & 0x3F));
-                        } else {
-                            out += char(0xE0 | (code >> 12));
-                            out += char(0x80 | ((code >> 6) & 0x3F));
-                            out += char(0x80 | (code & 0x3F));
-                        }
-                        break;
+            char const* begin = text.data() + pos;
+            size_t const remain = text.size() - pos;
+            char const* quote = static_cast<char const*>(std::memchr(begin, '"', remain));
+            if (quote == nullptr) {  // 未闭合——逐字符版循环耗尽后 failed
+                pos = text.size();
+                failed = true;
+                return out;
+            }
+            char const* bslash =
+                static_cast<char const*>(std::memchr(begin, '\\', static_cast<size_t>(quote - begin)));
+            if (bslash == nullptr) {  // 无转义——整段直达闭引号
+                out.append(begin, static_cast<size_t>(quote - begin));
+                pos += static_cast<size_t>(quote - begin) + 1;
+                return out;
+            }
+            out.append(begin, static_cast<size_t>(bslash - begin));
+            pos += static_cast<size_t>(bslash - begin);
+            if (pos + 1 >= text.size()) {  // 末尾孤 '\'——逐字符版作普通字符收尾后 failed
+                out += '\\';
+                pos = text.size();
+                failed = true;
+                return out;
+            }
+            char e = text[++pos];
+            pos++;
+            switch (e) {
+                case '"': out += '"'; break;
+                case '\\': out += '\\'; break;
+                case '/': out += '/'; break;
+                case 'b': out += '\b'; break;
+                case 'f': out += '\f'; break;
+                case 'n': out += '\n'; break;
+                case 'r': out += '\r'; break;
+                case 't': out += '\t'; break;
+                case 'u': {
+                    if (text.size() - pos < 4) { failed = true; return out; }
+                    unsigned code = 0;
+                    for (int i = 0; i < 4; ++i) {
+                        char h = text[pos++];
+                        code <<= 4;
+                        if (h >= '0' && h <= '9') code |= unsigned(h - '0');
+                        else if (h >= 'a' && h <= 'f') code |= unsigned(h - 'a' + 10);
+                        else if (h >= 'A' && h <= 'F') code |= unsigned(h - 'A' + 10);
+                        else { failed = true; return out; }
                     }
-                    default: failed = true; return out;
+                    // UTF-8 encode (BMP only — manifest/props keys are ASCII)
+                    if (code < 0x80) {
+                        out += char(code);
+                    } else if (code < 0x800) {
+                        out += char(0xC0 | (code >> 6));
+                        out += char(0x80 | (code & 0x3F));
+                    } else {
+                        out += char(0xE0 | (code >> 12));
+                        out += char(0x80 | ((code >> 6) & 0x3F));
+                        out += char(0x80 | (code & 0x3F));
+                    }
+                    break;
                 }
-            } else {
-                out += c;
+                default: failed = true; return out;
             }
         }
         failed = true;
@@ -230,7 +257,17 @@ struct JsonParser {
             } else break;
         }
         if (!any) { failed = true; return v; }
-        v.number = std::strtod(std::string(text.substr(start, pos - start)).c_str(), nullptr);
+        // std::from_chars 直扫（M-I(1) 解析器瘦身——去每数字 substr+strtod
+        // 的两次堆分配）。语义对齐 strtod 的"最长合法前缀"解析：'+' 前缀
+        // from_chars 不认（strtod 认）——跳过；无法解析 → 0.0（strtod 失败
+        // 同值）；溢出/下溢（result_out_of_range）取 from_chars 置值（
+        // ±max/0——strtod 的 ±HUGE_VAL/0 同族）。
+        char const* first = text.data() + start;
+        if (*first == '+')
+            ++first;
+        double value = 0.0;
+        std::from_chars(first, text.data() + pos, value);
+        v.number = value;
         return v;
     }
 };
@@ -373,6 +410,16 @@ public:
     // manifest 计数（契约测试的 ① 面——与 manifest.json stats 域一致）。
     size_t getTreeCount() const noexcept { return m_manifest.trees.size(); }
     size_t getTileCount() const noexcept { return m_manifest.tiles.size(); }
+
+    // manifest 移出通道（M-I(1) 打开性能——单次解析共享）：装载后树 props
+    // 已物化（byTreeId 的 propsFile 查找面 = trees[]），manifest 本体的瓦键
+    // 域（tiles[]——大 dump 的解析成本主体）可移交 fetcher 复用——打开链
+    // 不再对同一 manifest.json 解析两遍（props 一遍 + fetcher 路径构造一遍
+    // ——DumpOpenHelper.cpp:28/:36 的双解析，59MB manifest Debug 实测
+    // 12.1s/遍）。树条目按值复制保留（每模型 1~2 条短串——移交后 byTreeId
+    // 仍可达）；tiles[] 移交后本对象清空（getTileCount()==0——单次移交
+    // 约定；iModelInfo()/trees()/byTreeId 不受影响）。
+    DumpManifest takeManifest();
 
 private:
     DumpTileTreeProps() = default;

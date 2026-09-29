@@ -32,8 +32,13 @@ std::optional<DumpOpenResult> openDumpIModel(Gui::View3DInventor& view,
     // fetcher 注入（TileAdmin DI 缝 §8.4——参考的 TileAdmin RPC 层
     //（generateTileContent TileAdmin.ts:694-706）在打开链全程就位；
     // 多根 = drill 域外键补字节，M-H Task 2）。
+    // 单次解析共享（M-I(1)——用户报告的打开长等待主根因）：props 装载的
+    // manifest 移交 fetcher（takeManifest——树条目复制留存 byTreeId，瓦键
+    // 域移交），打开链不再对 59MB manifest 解析两遍（原 DumpOpenHelper
+    // props 一遍 + fetcher 路径构造一遍，Debug 实测 12.1s/遍）。
     std::vector<std::string> fallbacks(pkg.tileRoots.begin() + 1, pkg.tileRoots.end());
-    auto fetcher = std::make_unique<dqApp::DumpTileFetcher>(pkg.tileRoots[0],
+    auto fetcher = std::make_unique<dqApp::DumpTileFetcher>(props->takeManifest(),
+                                                            pkg.tileRoots[0],
                                                             std::move(fallbacks));
     if (!fetcher->isValid())
         return std::nullopt;
