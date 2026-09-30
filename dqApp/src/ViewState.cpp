@@ -1618,8 +1618,58 @@ dqBase::RefPtr<SpatialViewState> SpatialViewState::CreateBlank(
 // props 应用半边（SpatialViewState::CreateFromProps 与
 // OrthographicViewState::CreateFromProps 共用——参考的 OrthographicViewState
 // ctor 只是转发 super，字段应用同一面，SpatialViewState.ts:293）。
-static void applyViewStateProps(SpatialViewState& view,
-                                ViewStateProps const& props,
+// Serialize this ViewState back to the props form CreateFromProps consumes.
+// Ported from: itwinjs-core ViewState.toProps (:327-332 — viewDefinitionProps
+// + categorySelectorProps + displayStyleProps) + ViewState3d.toJSON
+// (:1549-1557 — cameraOn/origin/extents/angles/camera) + ViewState.toJSON
+// (:370-381 — description/isPrivate; selector id 段为持久化标识，dump 回放
+// 语义下无实义不写)。M-M(6) 保存方向。
+ViewStateProps SpatialViewState::ToProps() const
+{
+    ViewStateProps props;
+
+    // --- ViewDefinition3dProps（ViewState3d.toJSON :1549-1557）---
+    auto& vd = props.viewDefinitionProps;
+    vd.cameraOn = IsCameraOn();
+    vd.origin = GetOrigin();
+    vd.extents = GetExtents();
+    // angles ← rotation 反解（ViewState.ts:1552 `YawPitchRollAngles
+    // .createFromMatrix3d(this.rotation)?.toJSON()`——非刚体 → undefined =
+    // angles 段缺省）。
+    if (auto angles = dqGeom::YawPitchRollAngles::CreateFromMatrix3d(getRotation())) {
+        vd.hasAngles = true;
+        vd.yawDegrees = angles->yaw.Degrees();
+        vd.pitchDegrees = angles->pitch.Degrees();
+        vd.rollDegrees = angles->roll.Degrees();
+    }
+    vd.camera.eye = getEyePoint();
+    vd.camera.focusDist = getFocusDistance();
+    vd.camera.lensDegrees = GetLensAngle() * dqGeom::Angle::kRadiansToDegrees;
+    vd.description = getDescription();
+
+    // --- CategorySelectorProps（toProps :329）---
+    for (auto const& id : GetCategorySelector().getCategories())
+        props.categorySelectorProps.categories.push_back(id);
+
+    // --- ModelSelectorProps（SpatialViewState.toJSON 的 modelSelector 段；
+    //     toProps 经 ViewStateProps 形态显式携带——dump 回放消费面
+    //     applyViewStateProps :1661 的对偶）---
+    ModelSelectorProps ms;
+    for (auto const& id : GetModelSelector().getModels())
+        ms.models.push_back(id);
+    props.modelSelectorProps = std::move(ms);
+
+    // --- DisplayStyleProps（消费面三段的对偶——viewflags + hline + lights；
+    //     ViewFlags.toJSON / HiddenLineSettings.toJSON / LightSettings.toJSON
+    //     均 1:1 在树）---
+    props.displayStyleProps.viewflags = GetDisplayStyle().getViewFlags().toJSON();
+    props.displayStyleProps.hline = GetDisplayStyle().getSettings().getHiddenLineSettings().toJSON();
+    props.displayStyleProps.lights = GetDisplayStyle().getSettings().getLights().toJSON();
+
+    return props;
+}
+
+static void applyViewStateProps(SpatialViewState& view,                                ViewStateProps const& props,
                                 IModelConnection* iModel)
 {
     view.SetIModel(iModel);

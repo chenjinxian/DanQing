@@ -31,6 +31,7 @@
 #include "Gui/KeyinField.h"
 #include "Gui/MainWindow.h"
 #include "Gui/SaveImageTool.h"
+#include "Gui/SnapModeTool.h"
 #include "Gui/SyncViewportsTool.h"
 #include "Gui/TileLoadIndicator.h"
 #include "Gui/View3DInventor.h"
@@ -182,6 +183,57 @@ TEST(DtaToolsWiring, KeyinFieldSubmitRunsRecordFpsThroughRegistry)
     // 历史推入（KeyinField.ts pushHistory——键入串在历史顶部）。
     // （历史是私有面——submit 后文本框清空即其可观测面。）
     EXPECT_TRUE(keyin->text().isEmpty());
+}
+
+// Authored: no reference test (DTA ships none — snap 模式面在 DTA 经 UI 设置
+// 与 DrawingAid 快捷键，无离线断言对应物）——M-M(6) 接线锁：keyin
+// `dta snapmode <mode>` → AccuSnap 活跃模式切换（App.ts:486-489
+// setActiveSnapMode 的引擎通道）+ 模式名解析面 + 无参恢复默认。
+TEST(DtaToolsWiring, SnapModeKeyinSetsAccuSnapActiveMode)
+{
+    ensureAppStubReady();
+    ensureEngineReady();
+    ViewGuardDtw guard;
+    MessageCapture capture;
+
+    // 模式名解析面（SnapMode 枚举名 1:1——HitDetail.ts:22-32）。
+    EXPECT_EQ(Gui::SetActiveSnapModeTool::parseMode("Intersection"),
+              dqApp::SnapMode::Intersection);
+    EXPECT_EQ(Gui::SetActiveSnapModeTool::parseMode("MidPoint"),
+              dqApp::SnapMode::MidPoint);
+    EXPECT_FALSE(Gui::SetActiveSnapModeTool::parseMode("Bogus").has_value());
+
+    Gui::MainWindow mw;
+    Gui::setupDtaStatusBar(&mw);
+    auto* keyin = mw.statusBar()->findChild<Gui::KeyinField*>();
+    ASSERT_NE(keyin, nullptr);
+
+    auto activeMode = []() -> int {
+        int n = 0;
+        auto const* p = dqApp::Application::Get().GetAccuSnap().getActiveSnapModes(n);
+        return n > 0 ? static_cast<int>(*p) : -1;
+    };
+    int const before = activeMode();
+
+    // keyin 设 Intersection（位值 64）。
+    keyin->setText(QStringLiteral("dta snapmode Intersection"));
+    QKeyEvent submit(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+    QApplication::sendEvent(keyin, &submit);
+    EXPECT_EQ(64, activeMode()) << "snapmode keyin did not reach AccuSnap";
+    EXPECT_TRUE(capture.hasPrefix("[SNAP] active snap mode = 0x40"));
+
+    // 无参 → 恢复默认 NearestKeypoint（App.ts:76 初值 2）。
+    keyin->setText(QStringLiteral("dta snapmode"));
+    QApplication::sendEvent(keyin, &submit);
+    EXPECT_EQ(2, activeMode()) << "bare snapmode keyin must restore NearestKeypoint";
+
+    // 未知名 → 报错不改变当前模式。
+    keyin->setText(QStringLiteral("dta snapmode Bogus"));
+    QApplication::sendEvent(keyin, &submit);
+    EXPECT_EQ(2, activeMode()) << "unknown mode must not change the active snap";
+    EXPECT_TRUE(capture.hasPrefix("[SNAP] unknown snap mode 'Bogus'"));
+
+    (void)before;
 }
 
 // Authored: no reference test (DTA ships none) — pins KeyinField 的 ToolNotFound

@@ -580,6 +580,16 @@ public:
     static dqBase::RefPtr<SpatialViewState> CreateFromProps(
         ViewStateProps const& props, IModelConnection* iModel);
 
+    // Serialize this ViewState back to the props form CreateFromProps consumes
+    // （round-trip 对偶——参考 ViewState.toProps :327-332 + ViewState3d.toJSON
+    // :1549-1557 + SpatialViewState.toJSON :70-78。M-M(6) 保存方向）。
+    // viewDefinitionProps：cameraOn/origin/extents/angles（rotation 经
+    // YawPitchRollAngles.CreateFromMatrix3d 反解——非刚体时 angles 段缺省，
+    // 与参考 `angles: ...createFromMatrix3d(...)?.toJSON()` 的 undefined 语义
+    // 一致）/camera/description；三 selector：categories/models 原序回写、
+    // displayStyle 消费面 viewflags + hline + lights 三段 toJSON。
+    ViewStateProps ToProps() const;
+
     // Type guard override (avoids dynamic_cast / RTTI).
     SpatialViewState* AsSpatialViewState() override { return this; }
     // Ported from: itwinjs-core SpatialViewState.isSpatialView()

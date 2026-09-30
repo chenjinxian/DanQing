@@ -293,6 +293,58 @@ TEST(DumpIModelConnectionTest, ViewsHooksLoadSavedViewWithAllFieldsApplied)
     ASSERT_NE(view2d, nullptr);
     expectPoint(view2d->GetOrigin(),
                 16.459991045301607, -6.777938783499056, -8.142933015137151);
+
+    // ③ ToProps round-trip（M-M(6) 保存方向——ViewState.toProps :327-332 的
+    //    对偶）：ToProps → CreateFromProps 复活视图与原视图逐项相等
+    //    （origin/extents/cameraOn/rotation[angles 反解]/camera/三 selector/
+    //    viewflags/hline/lights）。
+    {
+        auto props = spatial->ToProps();
+        // angles 反解命中（saved rotation 为刚体矩阵——ViewState.ts:1552
+        // createFromMatrix3d 非 undefined 分支）。
+        ASSERT_TRUE(props.viewDefinitionProps.hasAngles);
+        auto revived = dqApp::SpatialViewState::CreateFromProps(props, nullptr);
+        ASSERT_TRUE(revived.IsValid());
+        auto* r3d = revived->AsViewState3d();
+        ASSERT_NE(r3d, nullptr);
+        expectPoint(r3d->GetOrigin(),
+                    16.459991045301607, -6.777938783499056, -8.142933015137151);
+        EXPECT_NEAR(19.32567417568155, r3d->GetExtents().x, kTol);
+        EXPECT_NEAR(10.797911681847634, r3d->GetExtents().y, kTol);
+        EXPECT_NEAR(19.557384678145382, r3d->GetExtents().z, kTol);
+        EXPECT_FALSE(r3d->IsCameraOn());
+        // rotation 经 angles 反解 → toMatrix3d 复原（round-trip 精度：
+        // CreateFromMatrix3d 的 sanity check 已保证 IsAlmostEqual；此处以
+        // 分量级 1e-9 钉）。
+        double const kRevivedRot[9] = {
+            -0.94054349819232985, -0.33967326654909852, 0.0,
+            0.096136201592062182, -0.26619780905027829, 0.95911237985977538,
+            -0.32578483505464967, 0.90208691291288379, 0.28302551616368093,
+        };
+        expectMatrix(r3d->getRotation(), kRevivedRot);
+        // 三 selector round-trip。
+        EXPECT_EQ(1u, revived->GetModelSelector().getCount());
+        EXPECT_TRUE(revived->GetModelSelector().containsModel(
+            dqBase::DqId::FromString("0x1c")));
+        EXPECT_EQ(1u, revived->GetCategorySelector().getCount());
+        EXPECT_TRUE(revived->GetCategorySelector().containsCategory(
+            dqBase::DqId::FromString("0x17")));
+        // viewflags round-trip（renderMode/acs/clipVol/visEdges/noFill）。
+        auto const& rvf = revived->getViewFlags();
+        EXPECT_EQ(dqCommon::RenderMode::SmoothShade, rvf.renderMode());
+        EXPECT_TRUE(rvf.acsTriad());
+        EXPECT_TRUE(rvf.clipVolume());
+        EXPECT_TRUE(rvf.visibleEdges());
+        EXPECT_FALSE(rvf.fill());
+        // hline round-trip（黑覆盖/宽 1/transThreshold 0.3）。
+        auto const& rhl =
+            revived->GetDisplayStyle().getSettings().getHiddenLineSettings();
+        ASSERT_TRUE(rhl.visible.color.has_value());
+        EXPECT_EQ(0u, rhl.visible.color->getTbgr());
+        ASSERT_TRUE(rhl.visible.width.has_value());
+        EXPECT_EQ(1, *rhl.visible.width);
+        EXPECT_NEAR(0.3, rhl.transparencyThreshold, kTol);
+    }
 }
 
 // ---------------------------------------------------------------------------

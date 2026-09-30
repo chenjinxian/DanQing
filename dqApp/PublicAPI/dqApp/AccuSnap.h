@@ -87,6 +87,14 @@ public:
         return &m_activeSnapMode;
     }
 
+    // Set the active snap mode (App.ts:486-489 setActiveSnapMode 的 [snap]
+    // 单元素数组形态——M-M(6) 接线；参考子类 DisplayTestAppAccuSnap 的
+    // _activeSnaps 写通道）。clear() 联动（App.ts:107——挂起 snap 状态失效）。
+    void setActiveSnapMode(SnapMode mode) {
+        m_activeSnapMode = mode;
+        clear();
+    }
+
     // Clear the current snap.
     // Ported from: itwinjs-core AccuSnap.clear() (:265 — currHit = undefined;
     // the visual clear is cross.deactivate via decorate no longer firing)

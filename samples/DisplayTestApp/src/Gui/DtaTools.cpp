@@ -21,6 +21,7 @@
 #include "KeyinField.h"
 #include "MainWindow.h"
 #include "SaveImageTool.h"
+#include "SnapModeTool.h"
 #include "SyncViewportsTool.h"
 #include "TileLoadIndicator.h"
 
@@ -44,6 +45,10 @@ void registerDtaTools()
     registry.Register("SyncFrusta",
                       []() -> dqApp::InteractiveTool* { return new SyncViewportFrustaTool(); },
                       "dta frustum sync");
+    // M-M(6)：Snap modes 接线（App.ts:486-489 setActiveSnapMode 的 keyin 形态）。
+    registry.Register("SetActiveSnapMode",
+                      []() -> dqApp::InteractiveTool* { return new SetActiveSnapModeTool(); },
+                      "dta snapmode");
 }
 
 void setupDtaStatusBar(MainWindow* mainWindow)
