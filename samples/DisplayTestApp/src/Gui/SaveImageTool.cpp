@@ -23,10 +23,21 @@ bool SaveImageTool::writeFrameToFile(dqApp::Viewport& vp, QString const& path)
     //   (...); const url = canvas.toDataURL(); — the read + PNG-encode pipeline.
     // DanQing: Viewport::readImageBuffer (Viewport.ts:2803 readImageBuffer port)
     // + QImage::save (the canvas/dataURL half has no DOM here).
+    //
+    // 登记偏差（M-L(3) 终审 Minor-⑤）：参考 readImageBuffer 前有
+    // `await vp.waitForSceneCompletion()`（SaveImageTool.ts:36——在途瓦全部
+    // 落地再读帧）；DanQing 无该 API（登记），读帧取"最近一帧"——在途瓦
+    // 未落地时产物缺该批内容。前置补位随 waitForSceneCompletion 移植落地。
+    // 失败消息按参考两段区分：readImageBuffer 失败 = "Failed to read image"
+    //（:39）；PNG 编码/写文件失败 = "Failed to produce PNG"（:49）。
     std::vector<uint8_t> rgba;
     uint32_t w = 0, h = 0;
-    if (!vp.readImageBuffer(rgba, w, h) || 0 == w || 0 == h)
+    if (!vp.readImageBuffer(rgba, w, h) || 0 == w || 0 == h) {
+        dqApp::Application::Get().GetNotificationManager().OutputMessage(
+            dqApp::NotifyMessageDetails(dqApp::OutputMessagePriority::Error,
+                                        "Failed to read image"));
         return false;
+    }
 
     QImage image(w, h, QImage::Format_RGBA8888);
     for (uint32_t y = 0; y < h; ++y) {
@@ -34,7 +45,13 @@ bool SaveImageTool::writeFrameToFile(dqApp::Viewport& vp, QString const& path)
         memcpy(image.scanLine(static_cast<int>(h - 1 - y)), &rgba[static_cast<size_t>(y) * w * 4],
                static_cast<size_t>(w) * 4);
     }
-    return image.save(path, "PNG");
+    if (!image.save(path, "PNG")) {
+        dqApp::Application::Get().GetNotificationManager().OutputMessage(
+            dqApp::NotifyMessageDetails(dqApp::OutputMessagePriority::Error,
+                                        "Failed to produce PNG"));
+        return false;
+    }
+    return true;
 }
 
 bool SaveImageTool::run()

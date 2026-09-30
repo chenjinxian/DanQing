@@ -25,6 +25,10 @@ DisconnectViewportsFn connectViewports(
     std::vector<Viewport*> const& viewports,
     SynchronizeViewportsFactory syncFactory)
 {
+    // 偏差登记（M-L(3) 终审 Minor-⑦a）：size<2 早退——参考无此门（对 0/1 个
+    // 视口同样挂 listener 并做一次首视口 synchronize；行为上等价于 no-op，
+    // 差异仅在 syncFactory 的捕获副作用会多跑一次）。当前无观察面；如需
+    // 1:1 可去掉早退门（保持断言面不变）。
     if (viewports.size() < 2 || !syncFactory)
         return [] {};  // TS returns a no-op closure (no listeners were added)
 
@@ -104,6 +108,12 @@ SynchronizeViewportsFn synchronizeViewportFrusta(Viewport& source)
         if (!targetView || !pose)
             return;
         targetView->applyPose(*pose);
+        // 偏差登记（M-L(3) 终审 Minor-⑦b）：synchWithView() 未传
+        // noSaveInUndo——每次 frusta 同步往目标视口的 view-undo 栈压一条
+        // （参考 applyViewState = setView + synchWithView，不经 undo 保存；
+        // Viewport.ts:2362-2367）。同步风暴会稀释 undo 栈——消除需给
+        // synchWithView 传 ViewChangeOptions{noSaveInUndo=true}，随该参数面
+        // 的既有消费锁（DtaToolsWiring.Sync×2）一起复核。
         target.synchWithView();
         target.RequestRedraw();
     };

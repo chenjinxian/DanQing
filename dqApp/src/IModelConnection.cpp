@@ -95,17 +95,25 @@ dqBase::RefPtr<ViewState> IModelConnection::Views::convertViewStatePropsToViewSt
 {
     // Ported from: itwinjs-core IModelConnection.Views.convertViewStatePropsToViewState
     //              (IModelConnection.ts:1553-1565)。
-    // :1555-1559 — className 判定（参考经 findClassFor 查注册类；DanQing 唯一
-    // 移植的具体 ViewState 是 SpatialViewState——"BisCore:SpatialViewDefinition"
-    // = schemaName:className（EntityState.ts:74 + SpatialViewState.ts:36）。
-    // 其他类（OrthographicViewDefinition/2d 族）未移植 → 无效 RefPtr（参考的
+    // :1555-1559 — className 判定（参考经 findClassFor 查注册类；DanQing 移植
+    // 的两个具体 ViewState 类 = SpatialViewState（"BisCore:SpatialViewDefinition"
+    // ——schemaName:className，EntityState.ts:74 + SpatialViewState.ts:36）+
+    // OrthographicViewState（"BisCore:OrthographicViewDefinition"——
+    // SpatialViewState.ts:290-296，SpatialViewState 子类，唯一覆写
+    // supportsCamera(): false；M-K(2) baytown-v1 首个 OrthographicViewDefinition
+    // 默认视图打开用例）。其他类（2d 族）未移植 → 无效 RefPtr（参考的
     // WrongClass 分支 :1558-1559 的 §3.4 error-return 适配——登记）。
     std::string const& className = viewProps.viewDefinitionProps.classFullName;
-    if (className != "BisCore:SpatialViewDefinition")
+    if (className != "BisCore:SpatialViewDefinition"
+        && className != "BisCore:OrthographicViewDefinition")
         return nullptr;
 
     // :1561 — expectDefined(ctor.createFromProps(viewProps, this._iModel))。
-    auto viewState = SpatialViewState::CreateFromProps(viewProps, &m_iModel);
+    auto viewState = className == "BisCore:OrthographicViewDefinition"
+        ? dqBase::RefPtr<ViewState>(
+              OrthographicViewState::CreateFromProps(viewProps, &m_iModel))
+        : dqBase::RefPtr<ViewState>(
+              SpatialViewState::CreateFromProps(viewProps, &m_iModel));
     if (!viewState.IsValid())
         return nullptr;
 

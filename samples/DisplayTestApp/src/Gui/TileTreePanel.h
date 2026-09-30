@@ -16,7 +16,11 @@
 // (:40-53：Show All/Hide All/Invert……)。参考的逐模型显示开关 =
 // vp.addViewedModels/changeModelDisplay；本仓的对应物 = provider 通道（树全部
 // 经 DumpOpenTreeProvider 进场——逐模型开关 = provider 过滤 + InvalidateScene，
-// 见 DumpOpenHelper.h 注释）。参考共享动作中的 "Isolate/Hide Selected"（按选择
+// 见 DumpOpenHelper.h 注释）。**EQUIVALENCE 发散登记（M-L(3) 终审
+// Important-1）**：可见性位在本面板/provider 上，不在 ViewState 的
+// modelSelector——换视图（ChangeView/视图装载/视口同步）不携带隐藏位
+// （参考随 modelSelector 迁移）；发散细节与转正 TODO 见 DumpOpenHelper.h
+// DumpOpenTreeProvider 注释。参考共享动作中的 "Isolate/Hide Selected"（按选择
 // 集元素查所属 model——IdPicker.ts:190-213 ECSQL 查询）与 "Hilite Enabled"
 // （model hilite）依赖本仓没有的数据面/高亮通道，不接线（登记）。
 //

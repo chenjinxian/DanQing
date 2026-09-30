@@ -1,7 +1,7 @@
 # DisplayTestApp — Start 页模型打开与数据加载说明
 
 > **适用范围**：M-H 里程碑（2026-09-29，commits a72f893..09a17f3）之后的 DisplayTestApp。
-> **主题**：Start Views 页点击模型入口（Joe's House / 60 Instances）之后，数据如何一步一步加载并渲染；数据的来源、存放位置与打开方式。
+> **主题**：Start Views 页点击模型入口（Joe's House / 60 Instances / House_Model / Baytown / Bridge Edit[编辑大桥测试]——M-K(2) 起五入口）之后，数据如何一步一步加载并渲染；数据的来源、存放位置与打开方式。
 > **对齐原则**：加载流程与 itwinjs-core 前端（display-test-app，下称 DTA）打开 bim/ibim 的流程**逐环一致**——唯一差异是数据源：参考经 RPC 从后端取，DanQing 从本地已保存文件回放（§8.2 零网络）。逐环一致的判据由 `DumpOpenChainTest`（请求序列同构锁）与 `DumpBrowseTest`（浏览零缺失锁）钉死。
 
 ---
@@ -10,9 +10,9 @@
 
 ```
 [Start 页卡片点击]
-      │ requestOpenDumpModel("joeshouse" | "instances60")        （StartView.cpp:118-121）
+      │ requestOpenDumpModel(<modelId>——五入口)                  （StartView.cpp configureModelButtons）
       ▼
-[main.cpp 槽] dumpPackageForModel → 数据包根目录映射               （main.cpp:92-110）
+[main.cpp 槽] dumpPackageForModel → 数据包根目录映射               （main.cpp）
       │ newDocument() → 新 MDI 视图（View3DInventor）
       ▼
 [打开链 openDumpIModel]                                            （DumpOpenHelper.cpp:14-142）
@@ -80,12 +80,15 @@
 }
 ```
 
-### 3.3 两模型的包组合（`main.cpp dumpPackageForModel`）
+### 3.3 五模型的包组合（`main.cpp dumpPackageForModel`——M-K(2) 起五入口）
 
 | 入口卡片 | modelId | iModel 面（imodel.json） | 瓦主根（树 props 源 + 字节） | fallback 根（域外键补字节） |
 |---|---|---|---|---|
 | Joe's House | `joeshouse` | `joeshouse-v1/` | `joeshouse-v1/`（10 树/173,876 瓦 sweep 全树） | `joeshouse-drill-v1/`（15 瓦——×16/×32 放大键在 sweep 域外）→ `joeshouse-drill-v2/`（20 瓦——M-I(5) P2c：缩远态 depth-1 键 `-b-1-0-0-0-1`×6 在前两根域外） |
 | 60 Instances | `instances60` | `instances60-imodel-v1/` | `instances60-v1/`（1 树/3,587 瓦 sweep） | `instances60-drill-v1/`（5 瓦——×16 键域外） |
+| House_Model | `housemodel` | `housemodel-v1/` | `housemodel-v1/`（1 树/106,658 瓦 sweep——瓦数 cap 120k，d10 截断；**cameraOn=true 透视默认视图**） | `housemodel-drill-v1/`（61 瓦——d1-d6 视口请求面，全在 sweep 域内） |
+| Baytown | `baytown` | `baytown-v1/` | `baytown-v1/`（1 树/81,268 瓦 sweep——字节 cap 1GB，d10 截断；OrthographicViewDefinition） | `baytown-drill-v1/`（61 瓦三目标——d1-d7） |
+| Bridge Edit（编辑大桥测试） | `bridge-edit` | `bridge-edit-v1/` | `bridge-edit-v1/`（1 树/2 瓦取景粗瓦/166.55MB——**无 sweep**：d2 瓦 34/141MB 超预算硬门；默认视图空域坑 24 → 打开链取景 `frameToWorldContent`） | `bridge-edit-drill-v1/`（30 瓦/722MB——桥跨两端 d2→d6 细节链） |
 
 多根查找序（`DumpTileFetcher`）：主根 → fallback[0] → …，**首命中即服务**；树 props **仅取自主根**（同 treeId 语义单源）；每请求命中源记 `requestLog.hitRoot`（0=主根，i+1=fallback[i]）。
 
@@ -93,7 +96,7 @@
 
 | 方式 | 操作 | 说明 |
 |---|---|---|
-| **Start 页入口**（推荐） | 启动 `build/samples/DisplayTestApp/Debug/DisplayTestApp.exe` → Start 页 **Models** 区点击卡片 | 即本说明主题；两卡片分别对应上表两包 |
+| **Start 页入口**（推荐） | 启动 `build/samples/DisplayTestApp/Debug/DisplayTestApp.exe` → Start 页 **Models** 区点击卡片 | 即本说明主题；五卡片分别对应上表五包 |
 | 环境变量覆写 | `DANQING_RPC_DUMP=<dump 根目录>` | 覆写整个 rpc-dumps 根（调试自定义 dump 用；main.cpp:95-96） |
 | 测试入口（无 GUI 点击） | `ctest -R "DumpOpenChain|DumpBrowse"` | 打开链同构锁 + 浏览零缺失锁（与 app 同一 `openDumpIModel` 代码路径） |
 | 重采数据 | 仓外 `danqing-rpc-tools`（README 坑清单 1-23 先读） | 输出到**新目录名**再入库；既有 dump 永不覆盖 |
@@ -108,7 +111,7 @@
 
 ### 步骤 0：卡片点击 → 信号
 - **动作**：点击 Models 区卡片。
-- **DanQing**：`StartView.cpp:108-121`——两张卡片（Joe's House / 60 Instances）`clicked` → `Q_EMIT requestOpenDumpModel("joeshouse"|"instances60")`。
+- **DanQing**：`StartView.cpp` configureModelButtons——五张卡片（Joe's House / 60 Instances / House_Model / Baytown / Bridge Edit[编辑大桥测试]）`clicked` → `Q_EMIT requestOpenDumpModel(<modelId>)`。
 - **参考**：DTA Surface 的文件列表点击 → `openFile` → `openIModel`（应用层 UI，无引擎语义——DanQing 以信号槽对齐）。
 
 ### 步骤 1：数据包映射 + 新建视图窗口

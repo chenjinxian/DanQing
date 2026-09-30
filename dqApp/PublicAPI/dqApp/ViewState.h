@@ -327,7 +327,8 @@ public:
 
     /// Ported from: itwinjs-core ViewState3d.supportsCamera (:1833-1835)
     /// = allow3dManipulations()（globe 限制检查未移植——见 allow3dManipulations 注）。
-    bool supportsCamera() const;
+    /// virtual——OrthographicViewState 覆写为 false（SpatialViewState.ts:295）。
+    virtual bool supportsCamera() const;
 
     /// Ported from: itwinjs-core ViewState3d.calcLensAngle (:1871-1873)：
     /// 2·atan2(extents.x/2, focusDist)。参考返回 Angle；DanQing Camera API 为弧度制，
@@ -604,9 +605,41 @@ public:
     // Clone — deep copy including model selector.
     dqBase::RefPtr<ViewState> Clone() const override;
 
+protected:
+    // Field-application half of Clone (shared with OrthographicViewState::Clone
+    // — the reference clones memberwise on `this`, preserving the class).
+    void cloneSpatialInto(SpatialViewState* raw) const;
+
 private:
     dqCommon::ModelSelectorState m_modelSelector;
     std::unique_ptr<class SpatialTileTreeReferences> m_treeRefs;
+};
+
+// ---------------------------------------------------------------------------
+// OrthographicViewState — parallel-projection spatial view
+// Ported from: itwinjs-core SpatialViewState.ts:286-296 — OrthographicViewState
+// extends SpatialViewState; the only override is supportsCamera(): false
+// (BisCore:OrthographicViewDefinition — baytown-v1 等 OrthographicViewDefinition
+// 默认视图的打开链类选择面，IModelConnection.ts:1553-1565 findClassFor)。
+// ---------------------------------------------------------------------------
+class DQ_APP_EXPORT OrthographicViewState final : public SpatialViewState {
+public:
+    OrthographicViewState();
+    ~OrthographicViewState() override;
+
+    // Ported from: SpatialViewState.ts:295 — `public override supportsCamera():
+    // boolean { return false; }`（enableCamera 的门——相机永不开启）。
+    bool supportsCamera() const override { return false; }
+
+    // Construction shares the SpatialViewState.createFromProps field application
+    // (the reference ctor just forwards to super; the class is chosen by
+    // findClassFor at convertViewStatePropsToViewState, IModelConnection.ts:
+    // 1553-1565).
+    static dqBase::RefPtr<OrthographicViewState> CreateFromProps(
+        ViewStateProps const& props, IModelConnection* iModel);
+
+    // Clone preserves the class (the reference clones memberwise on `this`).
+    dqBase::RefPtr<ViewState> Clone() const override;
 };
 
 }  // namespace dqApp

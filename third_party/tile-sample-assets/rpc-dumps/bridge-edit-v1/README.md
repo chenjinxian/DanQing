@@ -101,3 +101,12 @@ tile cache 零增长（工具 README 坑 24 取证链）。
 ## manifest 契约
 
 与既有 dump 同（trees/tiles/sha256 全量落盘；imodel.json 并列；V4 键）。
+
+## 大瓦本地持有（GitHub 单文件硬门——2026-09-30 M-K(2) push 裁决）
+
+`files/8.imdl`（= `-b-2-0-0-0-1`，140,675,160 B = 134.2MB，sha256 `afe95030a655daa46848122fc3e1a61b8d3d22fff98063ef8f23ad895bb3d0b4`）
+超 GitHub 单文件 100MB 硬门，**git 不入库、本地持有**（已入 `.gitignore`；`bridge-edit-drill-v1/files/8.imdl`
+为同一字节[跨会话确定性]同裁）。manifest 的键/byteLength/sha256 记录不变（完整性门仍全量可验）。
+回放影响：该瓦被请求时走参考同款 NotFound → 父瓦 LOD 兜底（与"未采域"同语义）；桥锁
+`DumpOpenChain.OpensBridgeEditWithWorldContentFraming` 的请求面为 d3 键（`-b-3-0-0-0-1`，69MB 在库），
+不依赖本瓦。重采/迁移经 Git LFS 或介质。

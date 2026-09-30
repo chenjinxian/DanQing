@@ -706,11 +706,12 @@ enum class ParseAndRunResult : uint8_t {
 };
 
 // The ToolRegistry holds a mapping between toolIds and their corresponding Tool class.
-// Ported from: itwinjs-core ToolRegistry (Tool.ts:960-1034)
+// Ported from: itwinjs-core ToolRegistry (Tool.ts:964-1230——M-K 检出 @7e57d018
+// 当前行号；行号引用以本检出为准)
 class DQ_APP_EXPORT ToolRegistry {
 public:
     // A registered tool's key-in surface as exposed by getToolList. The reference
-    // getToolList returns the registered Tool classes (Tool.ts:1087-1097) and callers
+    // getToolList returns the registered Tool classes (Tool.ts:1169-1178) and callers
     // read `keyin`/`englishKeyin` off the class; C++ stores factory pointers, so the
     // strings are carried here (§3.4 adaptation).
     struct RegisteredTool {
@@ -797,8 +798,8 @@ public:
 
     // Get a list of Tools currently registered, excluding hidden tools (DanQing has
     // no hidden flag — the full set; the reference excludes `hidden` tools,
-    // Tool.ts:1088-1096 — no hidden member is ported).
-    // Ported from: itwinjs-core ToolRegistry.getToolList() (Tool.ts:1087-1097).
+    // Tool.ts:1172-1174 — no hidden member is ported).
+    // Ported from: itwinjs-core ToolRegistry.getToolList() (Tool.ts:1169-1178).
     std::vector<RegisteredTool> getToolList() const
     {
         std::vector<RegisteredTool> list;

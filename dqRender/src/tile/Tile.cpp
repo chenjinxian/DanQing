@@ -6,6 +6,7 @@
 #include "dqRender/tile/TileAdmin.h"  // onTileContentLoaded/Disposed（LRU 入/出册）
 
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 BEGIN_DQ_RENDER_NAMESPACE
@@ -106,15 +107,25 @@ Tile::Tile(TileTree& tree, Tile* parent, dqGeom::Range3d const& range,
     , m_maximumSize(maximumSize)
 {
     // Compute bounding sphere from range
-    // Ported from: itwinjs-core Tile.ts constructor
+    // Ported from: itwinjs-core Tile.ts constructor (Tile.ts:134-141):
+    //   const center = this.range.low.interpolate(0.5, this.range.high);
+    //   const radius = 0.5 * this.range.low.distance(this.range.high);
+    // —— radius = **对角线全长的一半**（half-diagonal length）。原实现取
+    //   max(half-extent)（最大轴半长 ≤ 对角线半长，√3 倍差）——球偏小，
+    //   FrustumPlanes 的 cheap sphere test（FrustumPlanes.ts:173-183）把
+    //   视锥远处的大域瓦误剔成 OutsideFrustum（M-K(2) housemodel 透视
+    //   saved 视图零请求 RED 取证：根瓦 r=118.4 被 ~120 的远平面越距
+    //   剔除，参考 r=173.2 同场景 Partial 不剔）。
     auto center = range.Center();
     m_boundingSphere.center[0] = static_cast<float>(center.x);
     m_boundingSphere.center[1] = static_cast<float>(center.y);
     m_boundingSphere.center[2] = static_cast<float>(center.z);
 
-    auto diagonal = range.Diagonal();
-    float maxExtent = static_cast<float>(std::max({diagonal.x, diagonal.y, diagonal.z}));
-    m_boundingSphere.radius = maxExtent * 0.5f;
+    auto const diagonal = range.Diagonal();
+    float const diagonalLength = static_cast<float>(
+        std::sqrt(diagonal.x * diagonal.x + diagonal.y * diagonal.y
+                  + diagonal.z * diagonal.z));
+    m_boundingSphere.radius = diagonalLength * 0.5f;
 }
 
 Tile::~Tile()

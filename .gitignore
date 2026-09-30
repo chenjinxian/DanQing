@@ -66,3 +66,9 @@ moc_*.cpp
 ui_*.h
 qrc_*.cpp
 build-asan/
+
+# M-K(1) 编辑大桥测试 dump 的 d2 粗瓦（140,675,160 B = 134.2MB，sha256
+# afe95030…）——超 GitHub 单文件 100MB 硬门，本地持有不入库（登记于两 dump
+# README"大瓦本地持有"节；回放缺该瓦走父瓦 LOD 兜底，桥锁不依赖）。
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-v1/files/8.imdl
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-drill-v1/files/8.imdl

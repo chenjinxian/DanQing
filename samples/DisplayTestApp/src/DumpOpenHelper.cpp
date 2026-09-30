@@ -13,6 +13,15 @@
 
 namespace dta {
 
+namespace {
+// 打开链失败原因轨迹（DANQING_OPEN_TRACE=1 门控——main.cpp 的 [OPEN] 计时
+// 桩同门；M-K(2) baytown 打开失败取证的插桩面）。
+bool openTrace()
+{
+    return std::getenv("DANQING_OPEN_TRACE") != nullptr;
+}
+}  // namespace
+
 std::optional<DumpOpenResult> openDumpIModel(Gui::View3DInventor& view,
                                              DumpOpenPackage const& pkg)
 {
@@ -22,14 +31,24 @@ std::optional<DumpOpenResult> openDumpIModel(Gui::View3DInventor& view,
     // ① 打开连接（imodel.json——iModelRpc 数据面回放）。
     auto connection = dqApp::DumpIModelConnection::open(pkg.imodelRoot + "/imodel.json");
     if (!connection.IsValid())
+    {
+        if (openTrace())
+            fprintf(stderr, "[OPEN] fail: imodel.json unreadable (%s)\n",
+                    (pkg.imodelRoot + "/imodel.json").c_str());
         return std::nullopt;
+    }
 
     // 树 props（主根——PrimaryTreeSupplier 对 requestTileTreeProps 返回树的
     // 逐树 createTileTree（PrimaryTileTree.ts:63-80）的离线对应物，同
     // DumpMount.h 注释）。
     auto props = dqApp::DumpTileTreeProps::load(pkg.tileRoots[0]);
     if (!props.has_value())
+    {
+        if (openTrace())
+            fprintf(stderr, "[OPEN] fail: manifest/tree props unreadable (%s)\n",
+                    pkg.tileRoots[0].c_str());
         return std::nullopt;
+    }
 
     // fetcher 注入（TileAdmin DI 缝 §8.4——参考的 TileAdmin RPC 层
     //（generateTileContent TileAdmin.ts:694-706）在打开链全程就位；
@@ -43,7 +62,12 @@ std::optional<DumpOpenResult> openDumpIModel(Gui::View3DInventor& view,
                                                             pkg.tileRoots[0],
                                                             std::move(fallbacks));
     if (!fetcher->isValid())
+    {
+        if (openTrace())
+            fprintf(stderr, "[OPEN] fail: fetcher invalid (%s)\n",
+                    pkg.tileRoots[0].c_str());
         return std::nullopt;
+    }
     dqRender::TileAdmin::instance().setFetcher(std::move(fetcher));
 
     // ② 默认视图装载（Viewer.ts:184-185：ViewList.create → getDefaultView；
@@ -73,13 +97,25 @@ std::optional<DumpOpenResult> openDumpIModel(Gui::View3DInventor& view,
     auto viewState = views.getDefaultView(connection.Get());
     dqApp::SpatialTileTreeReferences::clearCreateOverride();
     if (!viewState.IsValid())
+    {
+        if (openTrace())
+            fprintf(stderr, "[OPEN] fail: default view not loadable\n");
         return std::nullopt;
+    }
     auto* view3d = viewState->AsViewState3d();
     if (view3d == nullptr)
+    {
+        if (openTrace())
+            fprintf(stderr, "[OPEN] fail: default view is not 3d\n");
         return std::nullopt;
+    }
     auto* spatial = view3d->AsSpatialViewState();
     if (spatial == nullptr)
+    {
+        if (openTrace())
+            fprintf(stderr, "[OPEN] fail: default view is not spatial\n");
         return std::nullopt;
+    }
 
     // ③ viewport changeView（Viewer.ts:231 ScreenViewport.create(contentDiv,
     //    view) → Viewport.ts:3196-3204 vp.changeView(view)——参考 create 内
@@ -95,6 +131,13 @@ std::optional<DumpOpenResult> openDumpIModel(Gui::View3DInventor& view,
     //    单 model），容器序差对本资产不可观测——登记）。
     DumpOpenResult out;
     out.provider = std::make_unique<DumpOpenTreeProvider>();  // 堆持有——viewport 注册的地址稳定（见 .h 注释）
+    // 坑 24 取景域（frameToWorldContent——DumpOpenPackage 注释）：逐树
+    // contentRange × location 的世界域并集。contentRange 是模型几何域
+    //（TileTreeProps.contentRange）；rootTile.range 是瓦树根域（bridge-edit
+    // 根瓦 range = ±9871 对称大盒，远大于几何——两者只有 location 平移链
+    // 共享）。采集会话的 zoomToVolume 喂的是世界域 contentRange（README
+    // "默认视图空域"节——"取景后视域"由此派生）。
+    dqGeom::Range3d contentWorldRange = dqGeom::Range3d::CreateNull();
     for (auto modelId : spatial->GetModelSelector().getModels()) {
         // treeId 派生 = PrimaryTreeReference.createTreeId
         //（PrimaryTileTree.ts:268-290）：edgesRequired = vf.visibleEdges ||
@@ -119,7 +162,13 @@ std::optional<DumpOpenResult> openDumpIModel(Gui::View3DInventor& view,
         // modelSelector 引用的树不在 dump 域 = 采集缺口 → 打开失败。
         auto treeProps = props->byTreeId(treeId);
         if (!treeProps.has_value())
+        {
+            if (openTrace())
+                fprintf(stderr, "[OPEN] fail: tree props not in dump domain "
+                                "(model=%s derived treeId=%s)\n",
+                        modelId.ToString().c_str(), treeId.c_str());
             return std::nullopt;
+        }
 
         // createTileTree 装配（:79-81——iModelTileTreeParamsFromJSON →
         // IModelTileTree）；location → TileTree.iModelTransform
@@ -151,12 +200,58 @@ std::optional<DumpOpenResult> openDumpIModel(Gui::View3DInventor& view,
         out.provider->addTree(tree.get(), modelId.ToString(), treeId, worldRange);
         out.treeLoadLog.push_back(treeId);
         out.trees.push_back(std::move(tree));
+
+        if (pkg.frameToWorldContent && !treeProps->metadata.contentRange.isNull()) {
+            auto const& cr = treeProps->metadata.contentRange;
+            auto const& xf = treeProps->location;
+            auto const diag = cr.Diagonal();
+            for (int c = 0; c < 8; ++c) {
+                dqGeom::Point3d const corner(
+                    cr.low.x + ((c & 1) ? diag.x : 0.0),
+                    cr.low.y + ((c & 2) ? diag.y : 0.0),
+                    cr.low.z + ((c & 4) ? diag.z : 0.0));
+                contentWorldRange.ExtendPoint(xf.MultiplyPoint3d(corner));
+            }
+        }
     }
     if (out.trees.empty())
+    {
+        if (openTrace())
+            fprintf(stderr, "[OPEN] fail: no trees assembled (modelSelector "
+                            "models=%zu)\n",
+                    spatial->GetModelSelector().getModels().size());
         return std::nullopt;
+    }
 
     // ⑤ provider 注册（Viewport.ts:1729-1732 addTiledGraphicsProvider）。
     viewport->AddTiledGraphicsProvider(out.provider.get());
+
+    // ⑥ 坑 24 取景路径（frameToWorldContent——DumpOpenPackage 注释）：参考
+    //    zoomToVolume（Viewport.ts:2316-2319）=`view.lookAtVolume(volume,
+    //    this.viewRect.aspect, options)` + `synchWithView(options)`——volume
+    //    = 上面逐树 contentRange × location 的世界域并集；aspect = 视口
+    //    viewRect.aspect（参考原样）。invalid 取景域（空域树）→ 跳过（无
+    //    几何可取景——saved 视图原样）。
+    if (pkg.frameToWorldContent && !contentWorldRange.isNull()) {
+        double const aspect = viewport->viewRect().aspect();
+        view3d->LookAtVolume(contentWorldRange, &aspect);
+        if (openTrace()) {
+            fprintf(stderr,
+                    "[OPEN] framing: aspect=%.9f ext=(%.4f,%.4f,%.4f) org=(%.4f,%.4f,%.4f)\n",
+                    aspect, view3d->GetExtents().x, view3d->GetExtents().y,
+                    view3d->GetExtents().z, view3d->GetOrigin().x,
+                    view3d->GetOrigin().y, view3d->GetOrigin().z);
+        }
+        viewport->InvalidateController();
+        viewport->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+        if (openTrace()) {
+            fprintf(stderr,
+                    "[OPEN] framing: after synch ext=(%.4f,%.4f,%.4f) org=(%.4f,%.4f,%.4f)\n",
+                    view3d->GetExtents().x, view3d->GetExtents().y,
+                    view3d->GetExtents().z, view3d->GetOrigin().x,
+                    view3d->GetOrigin().y, view3d->GetOrigin().z);
+        }
+    }
 
     out.connection = connection;
     out.viewState = viewState;
