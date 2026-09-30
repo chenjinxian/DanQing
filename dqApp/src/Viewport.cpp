@@ -1834,6 +1834,10 @@ void Viewport::SetupFromView(bool skipAspectFix)
     //   this._inViewChangedEvent = false;
     // （ViewportSync 与装饰消费面订阅的唯一视图变更事件——参考 ViewportSync.
     //   connectViewports 只订阅 onViewChanged，ViewportSync.ts:56-58。）
+    // 偏差登记（M-L(3) 终审 Minor-⑦c）：重入门只罩 Raise 本身——参考把
+    // _inViewChangedEvent 置位保持到 doSetupFromView 尾（listener 内同步的
+    // 视图变更也被静音），DanQing 的窗口 = Raise 的同步 listener 执行期
+    // （DqEvent 同步派发下两窗重合；DqEvent 若改异步派发需先扩此窗）。
     if (!m_inViewChangedEvent) {
         m_inViewChangedEvent = true;
         onViewChanged.Raise(this);

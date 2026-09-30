@@ -25,11 +25,12 @@
 // Ported from: FreeCAD src/Mod/Start/Gui/StartView.cpp
 // Simplified for DisplayTestApp UI shell — examples/custom folder removed
 // M-H(4)（2026-09-28 用户指令"DanQing 只实现前端图形渲染，不要 FreeCAD 的
-// 任何功能"）：Start 页 = 两模型打开入口（JoesHouse / 60 Instances——点击经
-// requestOpenDumpModel 进 DumpOpenHelper 打开链直接渲染）+ DTA 对齐保留项
-//（Blank Connection / Decoration Geometry Example）。FreeCAD-only 件
-//（New/Open File 卡片、recent-files 卡片面、FirstStart 向导、ShowOnStartup、
-// postStart）全清——逐项裁决见 M-H(4) commit message。
+// 任何功能"）：Start 页 = 模型打开入口（点击经 requestOpenDumpModel 进
+// DumpOpenHelper 打开链直接渲染）+ DTA 对齐保留项（Blank Connection /
+// Decoration Geometry Example）。FreeCAD-only 件（New/Open File 卡片、
+// recent-files 卡片面、FirstStart 向导、ShowOnStartup、postStart）全清。
+// M-K(2)：Models 分组扩至五入口（两旧 + House_Model / Baytown / 编辑大桥
+// 测试——M-K(1) 三数据面包）。
 
 
 #include <QApplication>
@@ -125,15 +126,50 @@ void StartView::configureModelButtons(QLayout* layout)
          tr("Opens the saved Properties_60InstancesWithUrl2 iModel and renders its default view"),
          {}, dtaIcons, QChar(0xe9cc)}
     );
+    // M-K(2)：三模型入口（House_Model / Baytown / 编辑大桥测试——M-K(1) 采集
+    // 入库的三个数据面包；bridge-edit 的 dump 目录名按 §11.11 用 ASCII，
+    // 卡片标注中文名映射）。House_Model 的默认视图带透视相机（cameraOn=true
+    // ——M-H 打开链首个透视用例）；bridge-edit 的默认视图指向空域（坑 24
+    // ——打开链取景到世界域几何 contentRange）。
+    auto houseModel = new NewFileButton(
+        {tr("House_Model"),
+         tr("Opens the saved House_Model iModel (106k tiles, perspective default view) "
+            "and renders its default view"),
+         {}, dtaIcons, QChar(0xe9cc)}
+    );
+    auto baytown = new NewFileButton(
+        {tr("Baytown"),
+         tr("Opens the saved Baytown iModel (OpenPlant process plant) and renders "
+            "its default view"),
+         {}, dtaIcons, QChar(0xe9cc)}
+    );
+    auto bridgeEdit = new NewFileButton(
+        {tr("Bridge Edit (编辑大桥测试)"),
+         tr("Opens the saved 编辑大桥测试 iModel (1.5 km bridge) and frames its "
+            "geometry volume"),
+         {}, dtaIcons, QChar(0xe9cc)}
+    );
     connect(joesHouse, &QPushButton::clicked, this, [this]() {
         Q_EMIT requestOpenDumpModel(QStringLiteral("joeshouse"));
     });
     connect(instances60, &QPushButton::clicked, this, [this]() {
         Q_EMIT requestOpenDumpModel(QStringLiteral("instances60"));
     });
+    connect(houseModel, &QPushButton::clicked, this, [this]() {
+        Q_EMIT requestOpenDumpModel(QStringLiteral("housemodel"));
+    });
+    connect(baytown, &QPushButton::clicked, this, [this]() {
+        Q_EMIT requestOpenDumpModel(QStringLiteral("baytown"));
+    });
+    connect(bridgeEdit, &QPushButton::clicked, this, [this]() {
+        Q_EMIT requestOpenDumpModel(QStringLiteral("bridge-edit"));
+    });
 
     layout->addWidget(joesHouse);
     layout->addWidget(instances60);
+    layout->addWidget(houseModel);
+    layout->addWidget(baytown);
+    layout->addWidget(bridgeEdit);
 }
 
 void StartView::configureExampleButtons(QLayout* layout)

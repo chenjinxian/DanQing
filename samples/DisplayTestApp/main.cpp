@@ -93,7 +93,15 @@ namespace {
 //                             joeshouse-drill-v2（M-I(5) P2c——缩远态 depth-1 键补字节）]
 //   instances60 = imodel instances60-imodel-v1/imodel.json + tiles [instances60-v1]
 //                 + fallback [instances60-drill-v1]
-// （与 DumpOpenChainTest.cpp:256-258/:508-510 的同构锁包定义一致。）
+//   housemodel  = imodel housemodel-v1/imodel.json + tiles [housemodel-v1]
+//                 + fallback [housemodel-drill-v1]（M-K(1)——House_Model.bim，
+//                 首个 cameraOn=true 透视默认视图）
+//   baytown     = imodel baytown-v1/imodel.json + tiles [baytown-v1]
+//                 + fallback [baytown-drill-v1]（M-K(1)——Baytown.bim）
+//   bridge-edit = imodel bridge-edit-v1/imodel.json + tiles [bridge-edit-v1]
+//                 + fallback [bridge-edit-drill-v1]（M-K(1)——编辑大桥测试.bim，
+//                 ASCII 目录名映射；默认视图空域坑 24 → frameToWorldContent）
+// （与 DumpOpenChainTest.cpp 各锁的包定义一致。）
 std::optional<dta::DumpOpenPackage> dumpPackageForModel(QString const& modelId)
 {
     std::string dumpRoot = std::string(DANQING_TILE_ASSETS_DIR) + "/rpc-dumps";
@@ -109,10 +117,43 @@ std::optional<dta::DumpOpenPackage> dumpPackageForModel(QString const& modelId)
         pkg.imodelRoot = dumpRoot + "/instances60-imodel-v1";
         pkg.tileRoots = {dumpRoot + "/instances60-v1", dumpRoot + "/instances60-drill-v1"};
     }
+    else if (modelId == QLatin1String("housemodel")) {
+        pkg.imodelRoot = dumpRoot + "/housemodel-v1";
+        pkg.tileRoots = {dumpRoot + "/housemodel-v1", dumpRoot + "/housemodel-drill-v1"};
+    }
+    else if (modelId == QLatin1String("baytown")) {
+        pkg.imodelRoot = dumpRoot + "/baytown-v1";
+        pkg.tileRoots = {dumpRoot + "/baytown-v1", dumpRoot + "/baytown-drill-v1"};
+    }
+    else if (modelId == QLatin1String("bridge-edit")) {
+        pkg.imodelRoot = dumpRoot + "/bridge-edit-v1";
+        pkg.tileRoots = {dumpRoot + "/bridge-edit-v1", dumpRoot + "/bridge-edit-drill-v1"};
+        // 坑 24：默认视图 0x99 指向原点附近空域（不含几何——直接回放=白屏
+        // 零请求，README"默认视图空域"节）→ 打开链取景到世界域几何
+        // contentRange（DumpOpenHelper 的 zoomToVolume 应用面）。
+        pkg.frameToWorldContent = true;
+    }
     else {
         return std::nullopt;
     }
     return pkg;
+}
+
+// 模型→MDI 窗口标题（卡片/入口的展示名——bridge-edit 卡片标注中文名映射，
+// dump 目录名按 §11.11 用 ASCII）。
+QString windowTitleForModel(QString const& modelId)
+{
+    if (modelId == QLatin1String("joeshouse"))
+        return QObject::tr("Joe's House");
+    if (modelId == QLatin1String("instances60"))
+        return QObject::tr("60 Instances (Properties)");
+    if (modelId == QLatin1String("housemodel"))
+        return QObject::tr("House_Model");
+    if (modelId == QLatin1String("baytown"))
+        return QObject::tr("Baytown");
+    if (modelId == QLatin1String("bridge-edit"))
+        return QObject::tr("Bridge Edit (编辑大桥测试)");
+    return modelId;
 }
 
 // 打开产物生命周期注册表已迁入 DumpOpenHelper（dta::registerOpenedDump/
@@ -291,10 +332,7 @@ int main(int argc, char** argv)
                                      static_cast<long long>(ms), opened->treeLoadLog.size());
                              fflush(stderr);
                          }
-                         view3d->setWindowTitle(
-                             modelId == QLatin1String("joeshouse")
-                                 ? QObject::tr("Joe's House")
-                                 : QObject::tr("60 Instances (Properties)"));
+                         view3d->setWindowTitle(windowTitleForModel(modelId));
                          QString const treeSummary = QString::fromStdString(
                              std::to_string(opened->treeLoadLog.size()));
                          dta::registerOpenedDump(view3d,

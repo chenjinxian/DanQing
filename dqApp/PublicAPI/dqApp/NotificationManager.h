@@ -123,11 +123,13 @@ public:
 
     // Output a message/alert to the user.
     // Ported from: itwinjs-core NotificationManager.outputMessage() — the
-    // reference is abstract (the application provides the implementation); the
-    // DanQing base implementation fans the message out through OnMessageOutput
-    // (the application subscribes — main.cpp wires it to the status bar). The
-    // base was a silent no-op before M-L(3): the event had no raise site
-    // (ported-but-uncalled), so notifications never reached the app surface.
+    // reference base is a concrete no-op (NotificationManager.ts:204
+    // `public outputMessage(_message) { }`，应用子类覆写——DTA Notifications.
+    // ts:57 即覆写点)；the DanQing base implementation fans the message out
+    // through OnMessageOutput (the application subscribes — main.cpp wires it
+    // to the status bar). The base was a silent no-op before M-L(3): the event
+    // had no raise site (ported-but-uncalled), so notifications never reached
+    // the app surface.
     virtual void OutputMessage(const NotifyMessageDetails& message)
     {
         OnMessageOutput.Raise(message);

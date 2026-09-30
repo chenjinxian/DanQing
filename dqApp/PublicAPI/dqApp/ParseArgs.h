@@ -17,32 +17,32 @@
 namespace dqApp {
 
 // Represents parsed arguments as name-value pairs.
-// Ported from: itwinjs-core ToolArgs (ParseArgs.ts:16-30).
+// Ported from: itwinjs-core ToolArgs (parseArgs.ts:14-23——M-K 检出 @7e57d018 当前行号；文件名小写 parseArgs.ts).
 class DQ_APP_EXPORT ToolArgs {
 public:
-    // Ported from: itwinjs-core parseArgs (ParseArgs.ts:37-45) — each input string
+    // Ported from: itwinjs-core parseArgs (parseArgs.ts:36-46) — each input string
     // is expected to be of the format "name=value"; names are lower-cased, values
     // are left untouched.
     explicit ToolArgs(std::vector<std::string> const& args);
 
     // Find the value associated with the first argument that begins with the
     // specified prefix, case-insensitively; or nullopt if no such argument exists.
-    // Ported from: itwinjs-core ToolArgs.get / findArgValue (ParseArgs.ts:47-55).
+    // Ported from: itwinjs-core ToolArgs.get / findArgValue (parseArgs.ts:38-48).
     std::optional<std::string> get(std::string const& namePrefix) const;
 
     // Convert the value associated with the first argument beginning with the
     // specified prefix to an integer; nullopt if not found or not an integer.
-    // Ported from: itwinjs-core ToolArgs.getInteger (ParseArgs.ts:52-61).
+    // Ported from: itwinjs-core ToolArgs.getInteger (parseArgs.ts:59-67).
     std::optional<int> getInteger(std::string const& namePrefix) const;
 
     // Convert the value associated with the first argument beginning with the
     // specified prefix to a boolean, where "1" indicates true and "0" indicates
-    // false. Ported from: itwinjs-core ToolArgs.getBoolean (ParseArgs.ts:52-58).
+    // false. Ported from: itwinjs-core ToolArgs.getBoolean (parseArgs.ts:50-57).
     std::optional<bool> getBoolean(std::string const& namePrefix) const;
 
     // Convert the value associated with the first argument beginning with the
     // specified prefix to a float; nullopt if not found or not a float.
-    // Ported from: itwinjs-core ToolArgs.getFloat (ParseArgs.ts:63-72).
+    // Ported from: itwinjs-core ToolArgs.getFloat (parseArgs.ts:69-76).
     std::optional<double> getFloat(std::string const& namePrefix) const;
 
 private:
@@ -52,7 +52,7 @@ private:
 };
 
 // Given a list of arguments, parse the arguments into name-value pairs.
-// Ported from: itwinjs-core parseArgs (ParseArgs.ts:37-45).
+// Ported from: itwinjs-core parseArgs (parseArgs.ts:36-46).
 inline ToolArgs parseArgs(std::vector<std::string> const& args) { return ToolArgs(args); }
 
 }  // namespace dqApp

@@ -1086,6 +1086,12 @@ TileVisibility ImdlTileTree::computeVisibility(TileDrawArgs& args, Tile* tile)
     if (!tile->hasContent())
         return TileVisibility::TooCoarse;
 
+    // [SEL] 剔除轨迹（DANQING_SEL_TRACE=1 门控，默认零开销——M-K(2)
+    // housemodel 透视 saved 视图零请求取证的插桩面；§13.1 诊断表）。
+    static bool const s_selTrace = [] {
+        return std::getenv("DANQING_SEL_TRACE") != nullptr;
+    }();
+
     if (args.frustumPlanes.isValid()) {
         auto const& bs = tile->getBoundingSphere();
         // Ported from: Tile.isRegionCulled/isFrustumCulled（Tile.ts:391-411）
@@ -1115,7 +1121,23 @@ TileVisibility ImdlTileTree::computeVisibility(TileDrawArgs& args, Tile* tile)
         if (args.frustumPlanes.computeContainment(worldRange, &worldCenter,
                                                   worldRadius)
             == dqCommon::FrustumPlanes::Containment::Outside)
+        {
+            if (s_selTrace)
+                printf("[SEL] cull depth=%u range=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f) "
+                       "sphere=(%.1f,%.1f,%.1f)r%.1f\n",
+                       tile->getDepth(),
+                       worldRange.low.x, worldRange.low.y, worldRange.low.z,
+                       worldRange.high.x, worldRange.high.y, worldRange.high.z,
+                       worldCenter.x, worldCenter.y, worldCenter.z, worldRadius);
             return TileVisibility::OutsideFrustum;
+        }
+        if (s_selTrace)
+            printf("[SEL] pass depth=%u range=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f) "
+                   "sphere=(%.1f,%.1f,%.1f)r%.1f\n",
+                   tile->getDepth(),
+                   worldRange.low.x, worldRange.low.y, worldRange.low.z,
+                   worldRange.high.x, worldRange.high.y, worldRange.high.z,
+                   worldCenter.x, worldCenter.y, worldCenter.z, worldRadius);
     }
 
     // Leaf branch retained per reference computeVisibility (Tile.ts:445-449):
@@ -1130,6 +1152,10 @@ TileVisibility ImdlTileTree::computeVisibility(TileDrawArgs& args, Tile* tile)
     //   return pixelSize <= maxSize;
     double const pixelSize = args.getPixelSize(*tile) * args.pixelSizeScaleFactor;
     double const maxSize = tile->getMaximumSize() * args.tileSizeModifier;
+    if (s_selTrace)
+        printf("[SEL] sse depth=%u radius=%.1f pixelSize=%.1f maxSize=%.1f -> %s\n",
+               tile->getDepth(), tile->getBoundingSphere().radius,
+               pixelSize, maxSize, pixelSize <= maxSize ? "Visible" : "TooCoarse");
     return pixelSize <= maxSize
         ? TileVisibility::Visible
         : TileVisibility::TooCoarse;

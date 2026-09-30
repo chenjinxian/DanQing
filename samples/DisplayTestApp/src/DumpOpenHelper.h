@@ -62,6 +62,19 @@ namespace dta {
 // 进场，故逐模型显示开关在 provider 过滤 + InvalidateScene 与参考
 // changeModelDisplay（Viewport.ts addViewedModels/changeModelDisplay →
 // invalidateScene）同机制收敛）。
+//
+// EQUIVALENCE 发散登记（M-L(3) 终审 Important-1，2026-09-30）：**可见性位的
+// 状态携带面不同**——参考 changeModelDisplay 改 ViewState 持有的
+// modelSelector（ModelSelectorState.models），隐藏位随 view 的 clone /
+// saved-view 装载（views.load）/ 视口同步（changeView）自然迁移；本 provider
+// 的 visible 位挂在 **viewport 挂载的 provider 对象**上，ChangeView（装载新
+// saved 视图）/ 视图克隆 / 视口同步均**不携带**该位——换视图后隐藏的模型
+// 重新可见。参考源 = Viewport.ts changeModelDisplay/addViewedModels →
+// SpatialViewState.modelSelector（ModelSelectorState.ts）。当前单模型演示
+// 数据面（每包 1~10 树、单 saved 视图）不可观测；TODO(M+，Saved Views/
+// 多视口落地时转正)：可见性位迁回 ViewState 持有的 modelSelector（或
+// provider 读 ViewState 的 modelSelector 做 single-source-of-truth），回归
+// 锁 = ModelsPanelWiring 族 + 换视图携带性断言。
 class DumpOpenTreeProvider final : public dqApp::TiledGraphicsProvider {
 public:
     // 逐树条目（面板的复选/隔离数据面）。
@@ -136,6 +149,15 @@ public:
 struct DumpOpenPackage {
     std::string imodelRoot;
     std::vector<std::string> tileRoots;
+    // 坑 24 取景路径（M-K(2)——bridge-edit-v1）：defaultView 指向空域的模型
+    // （README"默认视图空域"节——saved 视域与几何完全不相交，直接回放=白屏
+    // 零请求，参考 DTA 同态）→ 打开链在 changeView 后按世界域几何 contentRange
+    // 取景（树 props contentRange × location——采集会话 zoomToVolume 的同一
+    // volume）。参考锚 = Viewport.zoomToVolume（Viewport.ts:2316-2319）：
+    // `this.view.lookAtVolume(volume, this.viewRect.aspect, options);
+    // this.synchWithView(options)`。false = 纯 saved 视图（openView 无 fit
+    // 补偿语义，ViewPicker.ts:29——两旧模型与 housemodel/baytown 不变）。
+    bool frameToWorldContent = false;
 };
 
 // 打开产物（断言面 + 生命周期持有）：trees/provider 由本结构持有

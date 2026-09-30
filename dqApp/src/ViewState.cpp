@@ -1563,9 +1563,8 @@ void SpatialViewState::ForEachModelTreeRef(
 }
 
 // Clone — deep copy including model selector.
-dqBase::RefPtr<ViewState> SpatialViewState::Clone() const
+void SpatialViewState::cloneSpatialInto(SpatialViewState* raw) const
 {
-    auto* raw = new SpatialViewState();
     raw->m_iModel = m_iModel;
     raw->m_displayStyle.setIModel(m_iModel);   // DisplayStyle iModel 绑定随克隆（同 SetIModel）
     raw->m_origin = m_origin;
@@ -1584,6 +1583,12 @@ dqBase::RefPtr<ViewState> SpatialViewState::Clone() const
     for (auto const& modelId : m_modelSelector.getModels()) {
         raw->m_modelSelector.addModel(modelId);
     }
+}
+
+dqBase::RefPtr<ViewState> SpatialViewState::Clone() const
+{
+    auto* raw = new SpatialViewState();
+    cloneSpatialInto(raw);
     return dqBase::RefPtr<ViewState>(raw);
 }
 
@@ -1610,6 +1615,68 @@ dqBase::RefPtr<SpatialViewState> SpatialViewState::CreateBlank(
     return view;
 }
 
+// props 应用半边（SpatialViewState::CreateFromProps 与
+// OrthographicViewState::CreateFromProps 共用——参考的 OrthographicViewState
+// ctor 只是转发 super，字段应用同一面，SpatialViewState.ts:293）。
+static void applyViewStateProps(SpatialViewState& view,
+                                ViewStateProps const& props,
+                                IModelConnection* iModel)
+{
+    view.SetIModel(iModel);
+
+    auto const& vd = props.viewDefinitionProps;
+
+    // --- ViewState ctor (:303-304) ---
+    view.SetDescription(vd.description);
+    // isPrivate 无载体（ViewState 无该成员——登记，参考 :304）。
+
+    // --- ViewState3d ctor (:1497-1515) ---
+    // :1499  this._cameraOn = JsonUtils.asBool(props.cameraOn)
+    if (vd.cameraOn)
+        view.EnableCamera();
+    else
+        view.TurnCameraOff();
+    // :1500-1501  origin/extents
+    view.SetOrigin(vd.origin);
+    view.SetExtents(vd.extents);
+    // :1502-1503  this.rotation = YawPitchRollAngles.fromJSON(props.angles).toMatrix3d();
+    //             assert(this.rotation.isRigid())
+    view.SetRotation(dqGeom::YawPitchRollAngles::FromJsonDegrees(
+                          vd.yawDegrees, vd.pitchDegrees, vd.rollDegrees)
+                          .ToMatrix3d());
+    // :1504  this.camera = new Camera(props.camera)（Camera.ts:66-76——
+    //        lens=Angle.fromJSON(degrees)/focusDist/eye）
+    view.setEyePoint(vd.camera.eye);
+    view.setFocusDistance(vd.camera.focusDist);
+    view.SetLensAngle(dqGeom::Angle::DegreesToRadians(vd.camera.lensDegrees));
+    // :1506-1508  if (this.is3d() && this.isCameraOn) this.centerEyePoint()
+    if (view.IsCameraOn())
+        view.centerEyePoint();
+
+    // --- SpatialViewState.ts:91-93 三 selector 的 props 应用 ---
+    // CategorySelectorState(props.categorySelectorProps) → categories 数组。
+    view.GetCategorySelector().addCategories(props.categorySelectorProps.categories);
+    // ModelSelectorState(expectDefined(props.modelSelectorProps)) —— 空间视图
+    // 必携（:93 expectDefined）；缺省 = 空集合（dump/2d 判别的优雅面）。
+    if (props.modelSelectorProps.has_value())
+        view.GetModelSelector().addModels(props.modelSelectorProps->models);
+    // DisplayStyle3dState(props.displayStyleProps) —— 消费面 = styles.viewflags
+    //（ViewFlags.fromJSON ViewFlags.ts:471-511）+ styles.hline（M-I(4)——
+    // DisplayStyle3dSettings ctor DisplayStyleSettings.ts:1104
+    // `this._hline = HiddenLine.Settings.fromJSON(this._json3d.hline)`；
+    // DanQing 载体 = dqApp::DisplayStyle::m_settings（DisplayStyle3dSettings）
+    // 的 setHiddenLineSettings）。styles 其余段登记未移植（ViewStateProps.h
+    // 文件头）。
+    if (props.displayStyleProps.viewflags.has_value()) {
+        view.GetDisplayStyle().setViewFlags(
+            dqCommon::ViewFlags::fromJSON(&*props.displayStyleProps.viewflags));
+    }
+    if (props.displayStyleProps.hline.has_value()) {
+        view.GetDisplayStyle().getSettings().setHiddenLineSettings(
+            dqCommon::HiddenLineSettings::fromJSON(*props.displayStyleProps.hline));
+    }
+}
+
 // Ported from: itwinjs-core SpatialViewState.createFromProps
 //              (SpatialViewState.ts:90-95) + ViewState3d constructor's props
 //              application (ViewState.ts:1497-1515) + ViewState constructor
@@ -1622,61 +1689,30 @@ dqBase::RefPtr<SpatialViewState> SpatialViewState::CreateFromProps(
     // selector 是 ViewState 值成员（无独立状态对象构造器——§3.4 适配），
     // 构造后逐字段应用等价。
     dqBase::RefPtr<SpatialViewState> view(new SpatialViewState());
-    view->SetIModel(iModel);
-
-    auto const& vd = props.viewDefinitionProps;
-
-    // --- ViewState ctor (:303-304) ---
-    view->SetDescription(vd.description);
-    // isPrivate 无载体（ViewState 无该成员——登记，参考 :304）。
-
-    // --- ViewState3d ctor (:1497-1515) ---
-    // :1499  this._cameraOn = JsonUtils.asBool(props.cameraOn)
-    if (vd.cameraOn)
-        view->EnableCamera();
-    else
-        view->TurnCameraOff();
-    // :1500-1501  origin/extents
-    view->SetOrigin(vd.origin);
-    view->SetExtents(vd.extents);
-    // :1502-1503  this.rotation = YawPitchRollAngles.fromJSON(props.angles).toMatrix3d();
-    //             assert(this.rotation.isRigid())
-    view->SetRotation(dqGeom::YawPitchRollAngles::FromJsonDegrees(
-                          vd.yawDegrees, vd.pitchDegrees, vd.rollDegrees)
-                          .ToMatrix3d());
-    // :1504  this.camera = new Camera(props.camera)（Camera.ts:66-76——
-    //        lens=Angle.fromJSON(degrees)/focusDist/eye）
-    view->setEyePoint(vd.camera.eye);
-    view->setFocusDistance(vd.camera.focusDist);
-    view->SetLensAngle(dqGeom::Angle::DegreesToRadians(vd.camera.lensDegrees));
-    // :1506-1508  if (this.is3d() && this.isCameraOn) this.centerEyePoint()
-    if (view->IsCameraOn())
-        view->centerEyePoint();
-
-    // --- SpatialViewState.ts:91-93 三 selector 的 props 应用 ---
-    // CategorySelectorState(props.categorySelectorProps) → categories 数组。
-    view->GetCategorySelector().addCategories(props.categorySelectorProps.categories);
-    // ModelSelectorState(expectDefined(props.modelSelectorProps)) —— 空间视图
-    // 必携（:93 expectDefined）；缺省 = 空集合（dump/2d 判别的优雅面）。
-    if (props.modelSelectorProps.has_value())
-        view->GetModelSelector().addModels(props.modelSelectorProps->models);
-    // DisplayStyle3dState(props.displayStyleProps) —— 消费面 = styles.viewflags
-    //（ViewFlags.fromJSON ViewFlags.ts:471-511）+ styles.hline（M-I(4)——
-    // DisplayStyle3dSettings ctor DisplayStyleSettings.ts:1104
-    // `this._hline = HiddenLine.Settings.fromJSON(this._json3d.hline)`；
-    // DanQing 载体 = dqApp::DisplayStyle::m_settings（DisplayStyle3dSettings）
-    // 的 setHiddenLineSettings）。styles 其余段登记未移植（ViewStateProps.h
-    // 文件头）。
-    if (props.displayStyleProps.viewflags.has_value()) {
-        view->GetDisplayStyle().setViewFlags(
-            dqCommon::ViewFlags::fromJSON(&*props.displayStyleProps.viewflags));
-    }
-    if (props.displayStyleProps.hline.has_value()) {
-        view->GetDisplayStyle().getSettings().setHiddenLineSettings(
-            dqCommon::HiddenLineSettings::fromJSON(*props.displayStyleProps.hline));
-    }
-
+    applyViewStateProps(*view, props, iModel);
     return view;
+}
+
+// ---------------------------------------------------------------------------
+// OrthographicViewState — Ported from: itwinjs-core SpatialViewState.ts:290-296
+//（ctor 转发 super + supportsCamera(): false）。
+// ---------------------------------------------------------------------------
+OrthographicViewState::OrthographicViewState() = default;
+OrthographicViewState::~OrthographicViewState() = default;
+
+dqBase::RefPtr<OrthographicViewState> OrthographicViewState::CreateFromProps(
+    ViewStateProps const& props, IModelConnection* iModel)
+{
+    auto view = dqBase::RefPtr<OrthographicViewState>(new OrthographicViewState());
+    applyViewStateProps(*view, props, iModel);
+    return view;
+}
+
+dqBase::RefPtr<ViewState> OrthographicViewState::Clone() const
+{
+    auto* raw = new OrthographicViewState();
+    cloneSpatialInto(raw);
+    return dqBase::RefPtr<ViewState>(raw);
 }
 
 // Ported from: itwinjs-core SpatialViewState.computeBaseExtents (SpatialViewState.ts:124-134).

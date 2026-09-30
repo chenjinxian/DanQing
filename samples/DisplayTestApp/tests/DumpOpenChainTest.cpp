@@ -916,3 +916,612 @@ TEST(DumpOpenChain, Instances60SavedViewSpheresRenderSolid)
     view.close();
     spin(200);
 }
+
+// ---------------------------------------------------------------------------
+// 锁 4：housemodel 打开链同构（M-K(2)——House_Model.bim，首个 cameraOn=true
+// 透视默认视图）。
+// ---------------------------------------------------------------------------
+// 判据（首绿实测钉值见各断言处；采集面 = housemodel-v1 sweep[d10 截断] ∪
+// housemodel-drill-v1[61 键]——README"采集域界"节）：
+// ① 初始视图 = saved ViewState（装载面 origin/extents/cameraOn/lens/
+//   focusDist/rotation 逐项 + viewport 面 aspect fix/相机钉值——eye==saved
+//   camera.eye 的机制确证见 ③ 前注释）；
+// ② 树装载 = modelSelector 驱动：1 model（0x26）→ 1 树 "25_1d-E:0_0x26"
+//   （visEdges off → edges 段 0——与 joeshouse 的 ":6_" 形态对照）；
+// ③ **请求序列同构（主判据）**：saved 透视视图请求面 = 恰 1 枚
+//   "-b-2-0-0-0-1"（Completed——root/d1 canSkip 穿透[maxInitialTilesToSkip
+//   =3]后首个 Visible 瓦，M-H instances60 同形）+ 零 Error/零重复/零
+//   NotFound + root→d1→d2 树结构对账；
+// ④ 像素锚：透视投影下房屋上屏（ViewingSpace 透视分支的首个 dump 用例）。
+//
+// **本锁 RED 取证的引擎修复（§11.8 移植缺口）**：Tile 构造器包围球半径取
+// max(half-extent)（Tile.cpp 原实现）而非参考 Tile.ts:141 的对角线全长一半
+// ——球偏小 √3 倍，FrustumPlanes cheap sphere test 把视锥远处的大域根瓦误
+// 剔成 OutsideFrustum（首绿前 RED 实测：请求面恒空、树只有根瓦零子代；
+// [SEL] 插桩轨迹实钉 cull depth=0 sphere r=118.4 vs 参考 173.2 同场景
+// Partial）。修复后本锁转绿 + 既有锁族全绿（门禁复扫）。
+// Authored: no reference test exists in itwinjs-core/imodel-native for
+//           dump-replay open-chain with perspective saved view（§5(f)；
+//           §5(g) 像素回归授权——复现配方 = 打开链 + saved 透视视图）。
+TEST(DumpOpenChain, OpensHouseModelWithPerspectiveSavedView)
+{
+    auto& app = dqApp::Application::Get();
+    if (!app.isInitialized()) {
+        dqApp::Application::Options opts;
+        opts.applicationId = "DumpOpenChain";
+        opts.applicationVersion = "1.0";
+        ASSERT_TRUE(app.Startup(opts));
+    }
+
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    view.resize(1000, 700);
+    view.show();
+    spin(400);
+
+    dta::DumpOpenPackage pkg;
+    pkg.imodelRoot = kDumpRoot + "/housemodel-v1";
+    pkg.tileRoots = {kDumpRoot + "/housemodel-v1", kDumpRoot + "/housemodel-drill-v1"};
+    auto opened = dta::openDumpIModel(view, pkg);
+    ASSERT_TRUE(opened.has_value()) << "open chain failed: " << pkg.imodelRoot;
+
+    // ② 树装载 = modelSelector 驱动（1 model → 1 树）。
+    ASSERT_EQ(1u, opened->treeLoadLog.size());
+    EXPECT_EQ("25_1d-E:0_0x26", opened->treeLoadLog[0]);
+    ASSERT_EQ(1u, opened->trees.size());
+
+    // ① 初始视图 = saved（装载面逐项——origin/extents/cameraOn/lens/
+    //   focusDist；rotation = saved angles 的 YPR 矩阵逐项——YawPitchRoll
+    //   公式 YawPitchRollAngles.ts:199-205）。
+    {
+        dqApp::ViewList reloadViews = dqApp::ViewList::create(opened->connection.Get());
+        auto reloaded = reloadViews.getDefaultView(opened->connection.Get());
+        ASSERT_TRUE(reloaded.IsValid());
+        auto const* loaded = reloaded->AsViewState3d();
+        ASSERT_NE(loaded, nullptr);
+        auto const lorg = loaded->GetOrigin();
+        EXPECT_NEAR(-7.836211316948266, lorg.x, 1.0e-9);
+        EXPECT_NEAR(32.34480620661688, lorg.y, 1.0e-9);
+        EXPECT_NEAR(-1.7311243772546279, lorg.z, 1.0e-9);
+        auto const lext = loaded->GetExtents();
+        EXPECT_NEAR(44.82454296160068, lext.x, 1.0e-9);
+        EXPECT_NEAR(18.485335024762676, lext.y, 1.0e-9);
+        EXPECT_NEAR(36.87868026189712, lext.z, 1.0e-9);
+        EXPECT_TRUE(loaded->IsCameraOn()) << "housemodel default view is the "
+                                             "first cameraOn=true dump (README)";
+        EXPECT_NEAR(1.0892212059510455, loaded->GetLensAngle(), 1.0e-12);
+        EXPECT_NEAR(37.00139055962198, loaded->getFocusDistance(), 1.0e-9);
+        double const kExpectedRot[9] = {
+            0.92271687388963386, -0.38547836598094792, 1.3877787807814457e-17,
+            -0.047694228464754213, -0.11416534175552427, 0.99231624763126602,
+            -0.38251644567324616, -0.91562694592421356, -0.12372738050651448,
+        };
+        for (int i = 0; i < 9; ++i)
+            EXPECT_NEAR(kExpectedRot[i], loaded->getRotation().coffs[static_cast<size_t>(i)],
+                        1.0e-9)
+                << "rotation differs at coffs[" << i << "]";
+    }
+
+    // ③ 泵至静默（saved 透视视图冷启动驱动）。
+    //  viewport 面相机钉值（首绿实测）：org=(-7.529, 33.081, -8.128)[aspect
+    //  fix 后]、ext=(44.825, 31.377, 36.879)[y=x×700/1000]、cameraOn=true、
+    //  eye=(-8.803843384662358, -28.112858799021033, 0.5809883850236093)
+    //  [== saved camera.eye——参考 ctor :1506-1508 的 centerEyePoint 用
+    //  getBackDistance()（由 eye 派生）回投同一 eye——saved 视图自洽的
+    //  机制确证]、focusDist=37.00139055962198、lens=1.0892212059510455
+    //  rad 全程保持（ChangeView/SetupFromView 不覆写相机）。
+    {
+        auto* vs = view.getUeViewport()->GetView()->AsViewState3d();
+        ASSERT_NE(vs, nullptr);
+        auto const org = vs->GetOrigin();
+        // 容差 1e-3：aspect-fix origin 是窗几何敏感的绝对钉（standalone 实测
+        // 1e-5 内、与其他锁同进程复跑实测漂移 ~4.4e-4——窗口落定的微小差异
+        // 经 centerEyePoint/verifyFocusPlane 透传；1e-3 仍比钉值精度高 3 个
+        // 数量级，语义 = saved + aspect fix 非 fit）。
+        EXPECT_NEAR(-7.529223, org.x, 1.0e-3);
+        EXPECT_NEAR(33.081113, org.y, 1.0e-3);
+        EXPECT_NEAR(-8.128323, org.z, 1.0e-3);
+        auto const ext = vs->GetExtents();
+        EXPECT_NEAR(44.82454296160068, ext.x, 1.0e-6);
+        EXPECT_NEAR(ext.x * 700.0 / 1000.0, ext.y, 1.0e-6);
+        EXPECT_NEAR(36.87868026189712, ext.z, 1.0e-6);
+        EXPECT_TRUE(vs->IsCameraOn());
+        auto const eye = vs->getEyePoint();
+        EXPECT_NEAR(-8.803843384662358, eye.x, 1.0e-6);
+        EXPECT_NEAR(-28.112858799021033, eye.y, 1.0e-6);
+        EXPECT_NEAR(0.5809883850236093, eye.z, 1.0e-6);
+        EXPECT_NEAR(37.00139055962198, vs->getFocusDistance(), 1.0e-9);
+        EXPECT_NEAR(1.0892212059510455, vs->GetLensAngle(), 1.0e-12);
+    }
+    PumpContext ctx{&view, &*opened};
+    int const quiesceIter = pumpToQuiesce(ctx);
+    ASSERT_GE(quiesceIter, 0)
+        << "open-chain tile load never quiesced (log="
+        << opened->fetcher->requestLog().size() << " ready=" << ctx.readyTiles << ")";
+    view.getUeViewport()->RenderFrame();
+
+    // --- 对账：请求日志 vs 联合域（sweep ∪ drill） ---
+    std::set<std::string> unionKeys;
+    {
+        auto sweepManifest = dqApp::loadDumpManifest(kDumpRoot + "/housemodel-v1");
+        auto drillManifest = dqApp::loadDumpManifest(kDumpRoot + "/housemodel-drill-v1");
+        ASSERT_TRUE(sweepManifest.has_value());
+        ASSERT_TRUE(drillManifest.has_value());
+        for (auto const& t : sweepManifest->tiles)
+            unionKeys.insert(t.treeId + "/" + t.contentId);
+        for (auto const& t : drillManifest->tiles)
+            unionKeys.insert(t.treeId + "/" + t.contentId);
+    }
+    auto const& log = opened->fetcher->requestLog();
+    std::set<std::string> requestedKeys;
+    size_t numCompleted = 0, numNotFound = 0, numError = 0;
+    for (auto const& rec : log) {
+        std::string const key = rec.treeId + "/" + rec.contentId;
+        requestedKeys.insert(key);
+        EXPECT_EQ("25_1d-E:0_0x26", rec.treeId) << "request escaped the tree domain";
+        switch (rec.outcome) {
+        case dqApp::DumpTileFetcher::DumpFetchOutcome::Completed:
+            ++numCompleted;
+            EXPECT_TRUE(unionKeys.count(key) > 0)
+                << "Completed key not in the union domain: " << rec.contentId;
+            break;
+        case dqApp::DumpTileFetcher::DumpFetchOutcome::NotFound:
+            ++numNotFound;
+            break;
+        case dqApp::DumpTileFetcher::DumpFetchOutcome::Error:
+            ++numError;
+            break;
+        }
+    }
+    printf("[OPEN-CHAIN] housemodel reconcile: requested=%zu (completed=%zu "
+           "notFound=%zu error=%zu) ready=%ld/%ld\n",
+           log.size(), numCompleted, numNotFound, numError, ctx.readyTiles,
+           ctx.totalTiles);
+    for (auto const& rec : log)
+        printf("[OPEN-CHAIN]   log %d %s\n", static_cast<int>(rec.outcome),
+               rec.contentId.c_str());
+
+    EXPECT_EQ(0u, numError) << "dump asset integrity break";
+    EXPECT_EQ(requestedKeys.size(), log.size()) << "duplicate tile requests";
+    EXPECT_EQ(0u, numNotFound) << "saved-view request face left the union domain";
+    EXPECT_GT(numCompleted, 0u) << "no manifest key was ever requested";
+    // ③a **请求序列同构实钉（主判据——首绿实测）**：saved 透视视图请求面 =
+    //    恰 1 枚 "-b-2-0-0-0-1"（Completed——d2 跳级键；root/d1 canSkip
+    //    穿透[maxInitialTilesToSkip=3]后首个 Visible 瓦——与 M-H instances60
+    //    saved 视图的请求面同形；sweep README 根瓦 -b-2 3.99MB 肥瓦在域）。
+    ASSERT_EQ(1u, log.size()) << "saved-view request face drifted from the "
+                                 "captured default-view face";
+    EXPECT_EQ("-b-2-0-0-0-1", log[0].contentId);
+    EXPECT_EQ(dqApp::DumpTileFetcher::DumpFetchOutcome::Completed, log[0].outcome);
+    EXPECT_EQ(1l, ctx.readyTiles) << "Completed → graphics reconciliation broke";
+    // ③b 树侧终态（首绿实测）：root→d1→d2 三瓦结构——根/d1 canSkip 不请求
+    //    （参考跳过语义），d2 有 graphics。
+    EXPECT_EQ(3l, ctx.totalTiles);
+
+    // ④ 像素锚（透视投影下房屋上屏——首绿实测 473953 px=帧 16.93%、
+    //    bbox (437,413)-(1662,1007) 满幅展布、质心 (1011,680) 对帧心
+    //    (1000,700) 偏移 (11,-20)）。
+    std::vector<uint8_t> frame;
+    uint32_t w = 0, h = 0;
+    ASSERT_TRUE(view.getUeViewport()->ReadFrameForTest(frame, w, h));
+    dumpBmp(frame, w, h,
+            DANQING_TILE_ASSETS_DIR "/../../build/open-chain-housemodel.bmp");
+    long count = 0;
+    double cx = 0, cy = 0;
+    uint32_t minX = 0, maxX = 0, minY = 0, maxY = 0;
+    ASSERT_TRUE(contentStats(frame, w, h, count, cx, cy, minX, maxX, minY, maxY))
+        << "no housemodel content rendered at the saved perspective view (see BMP)";
+    printf("[OPEN-CHAIN] housemodel saved-view: content=%ld px (%.3f%% of %ux%u) "
+           "bbox=(%u,%u)-(%u,%u) centroid=(%.0f,%.0f) frame center=(%.0f,%.0f)\n",
+           count, 100.0 * count / (static_cast<double>(w) * h), w, h,
+           minX, minY, maxX, maxY, cx, cy, w / 2.0, h / 2.0);
+    // 内容存活阈值 = 首绿实测 473953 px 的 0.2×——透视投影路径断裂/取景链
+    //    断/location 失效必红（WHERE：质心中央带 ±20%——首绿偏移 0.6%/0.7%
+    //    的 4× 余量；§11.11 位置断言）。
+    EXPECT_GE(count, 94000l)
+        << "saved-view content barely visible — threshold pinned at 0.2x of "
+           "the first GREEN measurement 473953";
+    EXPECT_LT(std::abs(cx - w / 2.0), w * 0.2) << "content centroid x off-center";
+    EXPECT_LT(std::abs(cy - h / 2.0), h * 0.2) << "content centroid y off-center";
+
+    view.getUeViewport()->DropTiledGraphicsProvider(opened->provider.get());
+    view.close();
+    spin(200);
+}
+
+// ---------------------------------------------------------------------------
+// 锁 5：baytown 打开链同构（M-K(2)——Baytown.bim，OpenPlant 工艺厂）。
+// ---------------------------------------------------------------------------
+// 判据（首绿实测钉值见各断言处；采集面 = baytown-v1 sweep[d10 截断] ∪
+// baytown-drill-v1[61 键三目标]——README"采集域界"节）：
+// ① 初始视图 = saved ViewState（等轴测 rotation 逐项 + cameraOn=false +
+//   origin/extents 装载面逐项——BisCore:OrthographicViewDefinition）；
+// ② 树装载 = modelSelector 驱动：1 model（0x20000000002）→ 1 树
+//   "25_1d-E:0_0x20000000002"；
+// ③ **请求序列同构（主判据——首绿实测）**：saved 视图请求面 = 恰 1 枚
+//   "-b-1-0-0-0-1"（Completed——root canSkip 穿透[maxInitialTilesToSkip=2]
+//   后首个 Visible 瓦；d1 肥瓦 1.06MB 在域）+ 零 Error/零重复/零 NotFound；
+// ④ 像素锚（可见性影响登记）：**polylines 21,323 图元 + pointString 6,136
+//   图元不渲染**（TD-20/TD-23 遗留消费缺口——工艺管线骨架/仪表点要素；
+//   README"瓦特征盘点"节）——本锁判据按实际渲染面（surface 图元 62,844
+//   numRgba4 LUT）裁剪：像素锚只断言设备/结构面上屏，不断言管线骨架；
+//   真实 app 冒烟与 CLAUDE.md TD 表按"管线骨架缺失"口径告知用户。
+//
+// **本锁 RED 取证的引擎补口（§11.8）**：默认视图类 = OrthographicViewDefinition
+// ——convertViewStatePropsToViewState 的类门只认 SpatialViewDefinition →
+// load 失败 → 参考 ViewPicker.ts:39-44 catch 分支的 manufactureSpatialView
+// 空白视图（modelSelector 空 → 打开链零树失败）。补口 = 1:1 移植
+// OrthographicViewState（SpatialViewState.ts:290-296——SpatialViewState 子类
+// 唯一覆写 supportsCamera(): false）+ 类选择面（IModelConnection.ts:1553-1565
+// findClassFor 语义）。修复后本锁转绿 + 既有锁族全绿（门禁复扫）。
+// Authored: no reference test exists in itwinjs-core/imodel-native for
+//           dump-replay open-chain with unconsumed polyline primitives
+//           （§5(f)；§5(g) 像素回归授权）。
+TEST(DumpOpenChain, OpensBaytownOrthographicSavedView)
+{
+    auto& app = dqApp::Application::Get();
+    if (!app.isInitialized()) {
+        dqApp::Application::Options opts;
+        opts.applicationId = "DumpOpenChain";
+        opts.applicationVersion = "1.0";
+        ASSERT_TRUE(app.Startup(opts));
+    }
+
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    view.resize(1000, 700);
+    view.show();
+    spin(400);
+
+    dta::DumpOpenPackage pkg;
+    pkg.imodelRoot = kDumpRoot + "/baytown-v1";
+    pkg.tileRoots = {kDumpRoot + "/baytown-v1", kDumpRoot + "/baytown-drill-v1"};
+    auto opened = dta::openDumpIModel(view, pkg);
+    ASSERT_TRUE(opened.has_value()) << "open chain failed: " << pkg.imodelRoot;
+
+    // ② 树装载 = modelSelector 驱动（1 model → 1 树）。
+    ASSERT_EQ(1u, opened->treeLoadLog.size());
+    EXPECT_EQ("25_1d-E:0_0x20000000002", opened->treeLoadLog[0]);
+    ASSERT_EQ(1u, opened->trees.size());
+
+    // ① 初始视图 = saved（装载面逐项——等轴测 rotation）。
+    {
+        dqApp::ViewList reloadViews = dqApp::ViewList::create(opened->connection.Get());
+        auto reloaded = reloadViews.getDefaultView(opened->connection.Get());
+        ASSERT_TRUE(reloaded.IsValid());
+        auto const* loaded = reloaded->AsViewState3d();
+        ASSERT_NE(loaded, nullptr);
+        auto const lorg = loaded->GetOrigin();
+        EXPECT_NEAR(396.8840805, lorg.x, 1.0e-9);
+        EXPECT_NEAR(144.52053900000004, lorg.y, 1.0e-9);
+        EXPECT_NEAR(-22.874201140000054, lorg.z, 1.0e-9);
+        auto const lext = loaded->GetExtents();
+        EXPECT_NEAR(46.279390709685146, lext.x, 1.0e-9);
+        EXPECT_NEAR(65.16443068613796, lext.y, 1.0e-9);
+        EXPECT_NEAR(64.97169297126703, lext.z, 1.0e-9);
+        EXPECT_FALSE(loaded->IsCameraOn());
+        double const kExpectedRot[9] = {
+            0.70710678118654768, -0.70710678118654746, 2.2204460492503131e-16,
+            0.40824829046386285, 0.40824829046386324, 0.81649658092772615,
+            -0.57735026918962573, -0.57735026918962584, 0.57735026918962584,
+        };
+        for (int i = 0; i < 9; ++i)
+            EXPECT_NEAR(kExpectedRot[i], loaded->getRotation().coffs[static_cast<size_t>(i)],
+                        1.0e-9)
+                << "rotation differs at coffs[" << i << "]";
+    }
+
+    // ③ 泵至静默（saved 等轴测视图冷启动驱动）。
+    PumpContext ctx{&view, &*opened};
+    int const quiesceIter = pumpToQuiesce(ctx);
+    ASSERT_GE(quiesceIter, 0)
+        << "open-chain tile load never quiesced (log="
+        << opened->fetcher->requestLog().size() << " ready=" << ctx.readyTiles << ")";
+    view.getUeViewport()->RenderFrame();
+
+    // --- 对账：请求日志 vs 联合域（sweep ∪ drill） ---
+    std::set<std::string> unionKeys;
+    {
+        auto sweepManifest = dqApp::loadDumpManifest(kDumpRoot + "/baytown-v1");
+        auto drillManifest = dqApp::loadDumpManifest(kDumpRoot + "/baytown-drill-v1");
+        ASSERT_TRUE(sweepManifest.has_value());
+        ASSERT_TRUE(drillManifest.has_value());
+        for (auto const& t : sweepManifest->tiles)
+            unionKeys.insert(t.treeId + "/" + t.contentId);
+        for (auto const& t : drillManifest->tiles)
+            unionKeys.insert(t.treeId + "/" + t.contentId);
+    }
+    auto const& log = opened->fetcher->requestLog();
+    std::set<std::string> requestedKeys;
+    size_t numCompleted = 0, numNotFound = 0, numError = 0;
+    for (auto const& rec : log) {
+        std::string const key = rec.treeId + "/" + rec.contentId;
+        requestedKeys.insert(key);
+        EXPECT_EQ("25_1d-E:0_0x20000000002", rec.treeId)
+            << "request escaped the tree domain";
+        switch (rec.outcome) {
+        case dqApp::DumpTileFetcher::DumpFetchOutcome::Completed:
+            ++numCompleted;
+            EXPECT_TRUE(unionKeys.count(key) > 0)
+                << "Completed key not in the union domain: " << rec.contentId;
+            break;
+        case dqApp::DumpTileFetcher::DumpFetchOutcome::NotFound:
+            ++numNotFound;
+            break;
+        case dqApp::DumpTileFetcher::DumpFetchOutcome::Error:
+            ++numError;
+            break;
+        }
+    }
+    printf("[OPEN-CHAIN] baytown reconcile: requested=%zu (completed=%zu "
+           "notFound=%zu error=%zu) ready=%ld/%ld\n",
+           log.size(), numCompleted, numNotFound, numError, ctx.readyTiles,
+           ctx.totalTiles);
+    for (auto const& rec : log)
+        printf("[OPEN-CHAIN]   log %d %s\n", static_cast<int>(rec.outcome),
+               rec.contentId.c_str());
+
+    EXPECT_EQ(0u, numError) << "dump asset integrity break";
+    EXPECT_EQ(requestedKeys.size(), log.size()) << "duplicate tile requests";
+    EXPECT_EQ(0u, numNotFound) << "saved-view request face left the union domain";
+    EXPECT_GT(numCompleted, 0u) << "no manifest key was ever requested";
+    // ③a **请求序列同构实钉（主判据——首绿实测）**：saved 视图请求面 = 恰
+    //    1 枚 "-b-1-0-0-0-1"（Completed——root canSkip 穿透[maxInitialTilesToSkip
+    //    =2]后首个 Visible 瓦；baytown maxInitial=2 → d1 即首请求，与
+    //    housemodel/instances60 的 d2 形态区分）。
+    ASSERT_EQ(1u, log.size()) << "saved-view request face drifted from the "
+                                 "captured default-view face";
+    EXPECT_EQ("-b-1-0-0-0-1", log[0].contentId);
+    EXPECT_EQ(dqApp::DumpTileFetcher::DumpFetchOutcome::Completed, log[0].outcome);
+    EXPECT_EQ(1l, ctx.readyTiles) << "Completed → graphics reconciliation broke";
+    // ③b 树侧终态（首绿实测）：root→d1 两瓦结构。
+    EXPECT_EQ(2l, ctx.totalTiles);
+
+    // ④ 像素锚（surface 图元渲染面——管线骨架/点要素缺口登记在锁头）。
+    //    首绿实测 516871 px（帧 18.46%）、bbox (100,0)-(1697,1399) 满幅、
+    //    质心 (869,301)（glReadPixels 坐标——y 从帧底起算 = 画面中下）。
+    //    **saved 视图的取景中心不是厂区中心**（作者保存视图：view center
+    //    世界 (399.6, 114.5, 6.1) vs 厂区 center (407.8, 122.7, 22.5)——z 低
+    //    16.4 m），质心偏离帧心是 saved 取景的数据属性；WHERE 锚 = x 中央带
+    //    ±20% + y 绝对带 [150,550]（钉住实测 301 的中下位置——垂直翻转
+    //    [~1099]/空白/fit 漂移均出带，§11.11 位置断言 ≥ 失败模式自由度）。
+    std::vector<uint8_t> frame;
+    uint32_t w = 0, h = 0;
+    ASSERT_TRUE(view.getUeViewport()->ReadFrameForTest(frame, w, h));
+    dumpBmp(frame, w, h,
+            DANQING_TILE_ASSETS_DIR "/../../build/open-chain-baytown.bmp");
+    long count = 0;
+    double cx = 0, cy = 0;
+    uint32_t minX = 0, maxX = 0, minY = 0, maxY = 0;
+    ASSERT_TRUE(contentStats(frame, w, h, count, cx, cy, minX, maxX, minY, maxY))
+        << "no baytown content rendered at the saved view (see BMP)";
+    printf("[OPEN-CHAIN] baytown saved-view: content=%ld px (%.3f%% of %ux%u) "
+           "bbox=(%u,%u)-(%u,%u) centroid=(%.0f,%.0f) frame center=(%.0f,%.0f)\n",
+           count, 100.0 * count / (static_cast<double>(w) * h), w, h,
+           minX, minY, maxX, maxY, cx, cy, w / 2.0, h / 2.0);
+    EXPECT_GE(count, 100000l)
+        << "saved-view content barely visible — threshold pinned at 0.2x of "
+           "the first GREEN measurement 516871";
+    EXPECT_LT(std::abs(cx - w / 2.0), w * 0.2) << "content centroid x off-center";
+    EXPECT_GT(cy, 150.0) << "content centroid y above the pinned band "
+                            "(projection/framing drifted)";
+    EXPECT_LT(cy, 550.0) << "content centroid y below the pinned band "
+                            "(vertical flip or framing drift)";
+
+    view.getUeViewport()->DropTiledGraphicsProvider(opened->provider.get());
+    view.close();
+    spin(200);
+}
+
+// ---------------------------------------------------------------------------
+// 锁 6：bridge-edit 打开链同构（M-K(2)——编辑大桥测试.bim，坑 24 空域默认
+// 视图 + 世界域 contentRange 取景路径）。
+// ---------------------------------------------------------------------------
+// 判据（首绿实测钉值见各断言处；采集面 = bridge-edit-v1[全桥取景粗瓦 2 瓦
+// 167MB] ∪ bridge-edit-drill-v1[桥跨两点 d2→d6 细节 30 瓦 722MB]——无 sweep
+// [d2 瓦 34/141MB 实证超预算硬门，README"统计"节]）：
+// ① 装载面 = saved 空域视图原样（坑 24 事实面——origin/extents 逐项；参考
+//   DTA 打开本模型即白屏零请求[README"默认视图空域"节取证链]）；
+// ② 树装载 = modelSelector 驱动：1 model（0x48）→ 1 树 "25_1d-E:6_0x48"
+//   （visEdges on[displayStyle viewflags] → edges 段 6——compact 边命中模型）；
+// ③ **取景面 = zoomToVolume 世界域 contentRange（坑 24 取景路径主判据）**：
+//   openDumpIModel 的 frameToWorldContent → LookAtVolume(contentRange ×
+//   location, aspect) + synchWithView（Viewport.ts:2316-2319 参考锚）——
+//   harness 窗 = 采集窗 1263×831（README provenance.defaultView.viewRect），
+//   实测取景域 org/ext 与 README"应用后视域"（org[615.0, 783.5, -622.4] /
+//   ext[1366.4, 899.0, 1155.0]）**六轴吻合**（1 位小数舍入内）——取景与
+//   采集会话同机制同域的直接确证（dilation ×1.04 + adjustViewDelta aspect
+//   分支）；
+// ④ 取景面请求序（判据按实际回放面裁剪——详见 ④a 注）：恰 1 枚 d3 键
+//   Completed（经 fallback drill 根命中——多根 fetcher 首个跨根实录）；
+//   与采集面（d2 两粗瓦）的分级差 = 窗尺寸 × SSE 的定量结果（mpp =
+//   extents.x/窗宽——采集取景窗宽 ≤ ~1108 的 provenance nuance，机制面
+//   两侧一致）；零 Error/零重复/零 NotFound（d0-d2 canSkip 穿透零请求——
+//   两 dump 均无根字节[wrapper 竞态缺口]的采集缺口不可达）。
+// ⑤ 像素锚：全桥轮廓上屏（粗瓦 = 全桥几何——README"大瓦体量"节）。
+//
+// **浏览深度界（预期管理，锁内不驱动深钻——30 瓦细节面 722MB 的回放成本
+// 超 harness 预算）**：drill README"浏览深度界"节——已采域 = 全桥粗瓦 +
+// 桥跨两端（x=500/1400）d2→d6；未采位置/深度走参考同款缺瓦路径（父瓦
+// LOD 兜底 + hasMissingTiles 语义），不崩但细节止于已采域。
+// Authored: no reference test exists in itwinjs-core/imodel-native for
+//           dump-replay open-chain framing over an empty-space default view
+//           （§5(f)；§5(g) 像素回归授权——复现配方 = 打开链 + 取景路径）。
+TEST(DumpOpenChain, OpensBridgeEditWithWorldContentFraming)
+{
+    auto& app = dqApp::Application::Get();
+    if (!app.isInitialized()) {
+        dqApp::Application::Options opts;
+        opts.applicationId = "DumpOpenChain";
+        opts.applicationVersion = "1.0";
+        ASSERT_TRUE(app.Startup(opts));
+    }
+
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    // 窗 = 采集窗 1263x831（README provenance.defaultView.viewRect）——取景面
+    // 瓦数随窗尺寸分档（首绿实测：1000x700 只请求 1 枚粗瓦），取景面同构
+    // 判据在采集窗尺寸下成立。
+    view.resize(1263, 831);
+    view.show();
+    spin(400);
+
+    dta::DumpOpenPackage pkg;
+    pkg.imodelRoot = kDumpRoot + "/bridge-edit-v1";
+    pkg.tileRoots = {kDumpRoot + "/bridge-edit-v1", kDumpRoot + "/bridge-edit-drill-v1"};
+    pkg.frameToWorldContent = true;  // 坑 24 取景路径（dumpPackageForModel 同款）
+    auto opened = dta::openDumpIModel(view, pkg);
+    ASSERT_TRUE(opened.has_value()) << "open chain failed: " << pkg.imodelRoot;
+
+    // ② 树装载 = modelSelector 驱动（1 model → 1 树；visEdges → ":6_"）。
+    ASSERT_EQ(1u, opened->treeLoadLog.size());
+    EXPECT_EQ("25_1d-E:6_0x48", opened->treeLoadLog[0]);
+    ASSERT_EQ(1u, opened->trees.size());
+
+    // ① 装载面 = saved 空域视图原样（坑 24 事实——取景只改 viewport 面，
+    //    打开链的 saved 视图产物仍是 0x99 原样）。
+    {
+        dqApp::ViewList reloadViews = dqApp::ViewList::create(opened->connection.Get());
+        auto reloaded = reloadViews.getDefaultView(opened->connection.Get());
+        ASSERT_TRUE(reloaded.IsValid());
+        auto const* loaded = reloaded->AsViewState3d();
+        ASSERT_NE(loaded, nullptr);
+        auto const lorg = loaded->GetOrigin();
+        EXPECT_NEAR(13.216261207044631, lorg.x, 1.0e-9);
+        EXPECT_NEAR(14.604691136396783, lorg.y, 1.0e-9);
+        EXPECT_NEAR(-14.442057698306405, lorg.z, 1.0e-9);
+        auto const lext = loaded->GetExtents();
+        EXPECT_NEAR(23.41312214421268, lext.x, 1.0e-9);
+        EXPECT_NEAR(15.799844424449104, lext.y, 1.0e-9);
+        EXPECT_NEAR(40.000400000000255, lext.z, 1.0e-9);
+        EXPECT_FALSE(loaded->IsCameraOn());
+    }
+
+    // ③ 取景面（viewport 面）：世界域几何 contentRange × location =
+    //    [182.17..1714.21, -12.49..313.50, 45.20..110.81]（README"默认视图
+    //    空域"节）。机制（Viewport.zoomToVolume → lookAtVolume(volume,
+    //    viewRect.aspect, options)，Viewport.ts:2316-2319）：rotation 保持
+    //    saved 等轴测、ext/org = 旋转后盒 ×1.04 经 adjustViewDelta 的 aspect
+    //    分支（dilation recenter → rot^T → origin 半移）。**首绿实测（1263×831
+    //    采集窗）ext[1366.37, 899.01, 1155.04] + org[615.02, 783.51, -622.44]
+    //    = README"应用后视域"[1366.4, 899.0, 1155.0] /
+    //    [615.0, 783.5, -622.4] 六轴全部吻合（README 值为 1 位小数舍入）——
+    //    取景路径与采集会话同机制同域的直接确证**。
+    {
+        auto* view3d = view.getUeViewport()->GetView()->AsViewState3d();
+        ASSERT_NE(view3d, nullptr);
+        auto const ext = view3d->GetExtents();
+        EXPECT_NEAR(1366.37, ext.x, 1.0) << "framed x extent = rotated content "
+                                            "box ×1.04 (window independent)";
+        EXPECT_NEAR(899.01, ext.y, 1.0)
+            << "framed y extent = x / window aspect (1263x831)";
+        EXPECT_NEAR(1155.03, ext.z, 1.0) << "framed z extent = rotated content "
+                                            "box ×1.04 (window independent)";
+        EXPECT_NEAR(615.02, view3d->GetOrigin().x, 0.5);
+        EXPECT_NEAR(783.51, view3d->GetOrigin().y, 0.5);
+        EXPECT_NEAR(-622.44, view3d->GetOrigin().z, 0.5);
+        EXPECT_FALSE(view3d->IsCameraOn());
+    }
+
+    // ④ 泵至静默（取景面请求驱动——粗瓦 167MB 的重放面）。
+    PumpContext ctx{&view, &*opened};
+    int const quiesceIter = pumpToQuiesce(ctx);
+    ASSERT_GE(quiesceIter, 0)
+        << "open-chain tile load never quiesced (log="
+        << opened->fetcher->requestLog().size() << " ready=" << ctx.readyTiles << ")";
+    view.getUeViewport()->RenderFrame();
+
+    // --- 对账：请求日志 vs 取景面 + 联合域 ---
+    std::set<std::string> unionKeys;
+    {
+        auto mainManifest = dqApp::loadDumpManifest(kDumpRoot + "/bridge-edit-v1");
+        auto drillManifest = dqApp::loadDumpManifest(kDumpRoot + "/bridge-edit-drill-v1");
+        ASSERT_TRUE(mainManifest.has_value());
+        ASSERT_TRUE(drillManifest.has_value());
+        for (auto const& t : mainManifest->tiles)
+            unionKeys.insert(t.treeId + "/" + t.contentId);
+        for (auto const& t : drillManifest->tiles)
+            unionKeys.insert(t.treeId + "/" + t.contentId);
+    }
+    auto const& log = opened->fetcher->requestLog();
+    std::set<std::string> requestedKeys;
+    size_t numCompleted = 0, numNotFound = 0, numError = 0;
+    std::vector<std::string> misses;
+    for (auto const& rec : log) {
+        std::string const key = rec.treeId + "/" + rec.contentId;
+        requestedKeys.insert(key);
+        EXPECT_EQ("25_1d-E:6_0x48", rec.treeId) << "request escaped the tree domain";
+        switch (rec.outcome) {
+        case dqApp::DumpTileFetcher::DumpFetchOutcome::Completed:
+            ++numCompleted;
+            EXPECT_TRUE(unionKeys.count(key) > 0)
+                << "Completed key not in the union domain: " << rec.contentId;
+            break;
+        case dqApp::DumpTileFetcher::DumpFetchOutcome::NotFound:
+            ++numNotFound;
+            misses.push_back(rec.contentId);
+            break;
+        case dqApp::DumpTileFetcher::DumpFetchOutcome::Error:
+            ++numError;
+            break;
+        }
+    }
+    printf("[OPEN-CHAIN] bridge-edit reconcile: requested=%zu (completed=%zu "
+           "notFound=%zu error=%zu) ready=%ld/%ld\n",
+           log.size(), numCompleted, numNotFound, numError, ctx.readyTiles,
+           ctx.totalTiles);
+    for (auto const& rec : log)
+        printf("[OPEN-CHAIN]   log %d %s\n", static_cast<int>(rec.outcome),
+               rec.contentId.c_str());
+
+    EXPECT_EQ(0u, numError) << "dump asset integrity break";
+    EXPECT_EQ(requestedKeys.size(), log.size()) << "duplicate tile requests";
+    // ④a **取景面请求序（首绿实测——判据按实际回放面裁剪）**：恰 1 枚
+    //    "-b-3-0-0-0-1"（Completed——**经 fallback drill 根命中**：主根
+    //    bridge-edit-v1 只有 d2 两粗瓦，d3 字节只在 bridge-edit-drill-v1
+    //    ——多根 fetcher 的首个跨根命中实录）。**与采集面（d2 两粗瓦
+    //    README"统计"节）的分级差 = 窗尺寸 × SSE 的定量结果**：mpp =
+    //    extents.x/窗宽 = 1366.37/1263 = 1.0818 m/px → d2（radius 2525、
+    //    [SEL] 实测 pixelSize 2334 > maxSize 2048）TooCoarse → 首个 Visible
+    //    = d3（1167 ≤ 2048）；采集面 d2 Visible ⇒ 采集会话取景窗宽
+    //    ≤ ~1108 px（mpp ≥ 1.233）——采集 provenance 未记录取景时点窗
+    //    （README 已知限制坑 25 同域），机制面（同一 lookAtVolume 域、
+    //    同一 SSE 公式）两侧一致。
+    ASSERT_EQ(1u, log.size()) << "framing request face drifted";
+    EXPECT_EQ("-b-3-0-0-0-1", log[0].contentId);
+    EXPECT_EQ(dqApp::DumpTileFetcher::DumpFetchOutcome::Completed, log[0].outcome);
+    EXPECT_EQ(1l, ctx.readyTiles) << "Completed → graphics reconciliation broke";
+    // ④b 树侧终态（首绿实测）：root→d1→d2→d3 四瓦结构（d0-d2 canSkip 穿透
+    //    [maxInitialTilesToSkip=3]不被请求——根键零请求 = 采集域无根字节的
+    //    缺口不可达，NotFound 白名单为空集）。
+    EXPECT_EQ(4l, ctx.totalTiles);
+    EXPECT_EQ(0u, numNotFound) << "unexpected misses (root/d1/d2 are canSkip, "
+                                  "never requested)";
+
+    // ⑤ 像素锚（全桥轮廓上屏）。
+    std::vector<uint8_t> frame;
+    uint32_t w = 0, h = 0;
+    ASSERT_TRUE(view.getUeViewport()->ReadFrameForTest(frame, w, h));
+    dumpBmp(frame, w, h,
+            DANQING_TILE_ASSETS_DIR "/../../build/open-chain-bridge-edit.bmp");
+    long count = 0;
+    double cx = 0, cy = 0;
+    uint32_t minX = 0, maxX = 0, minY = 0, maxY = 0;
+    ASSERT_TRUE(contentStats(frame, w, h, count, cx, cy, minX, maxX, minY, maxY))
+        << "no bridge content rendered at the framed view (see BMP)";
+    printf("[OPEN-CHAIN] bridge-edit framed-view: content=%ld px (%.3f%% of %ux%u) "
+           "bbox=(%u,%u)-(%u,%u) centroid=(%.0f,%.0f) frame center=(%.0f,%.0f)\n",
+           count, 100.0 * count / (static_cast<double>(w) * h), w, h,
+           minX, minY, maxX, maxY, cx, cy, w / 2.0, h / 2.0);
+    EXPECT_LT(std::abs(cx - w / 2.0), w * 0.2) << "content centroid x off-center";
+    EXPECT_LT(std::abs(cy - h / 2.0), h * 0.2) << "content centroid y off-center";
+    // 取景面 WHERE 强锚（首绿实测 content=767195 px=帧 18.27%、bbox 满幅、
+    // 质心 (1252,803) 对帧心 (1263,831) 偏移 (-11,-28)——取景 = 世界域
+    // contentRange 居中，质心对中是取景正确性的直接语义）。
+    EXPECT_GE(count, 150000l)
+        << "framed content barely visible — threshold pinned at 0.2x of "
+           "the first GREEN measurement 767195";
+    EXPECT_LT(std::abs(cx - w / 2.0), w * 0.05) << "framed centroid x off volume center";
+    EXPECT_LT(std::abs(cy - h / 2.0), h * 0.05) << "framed centroid y off volume center";
+
+    view.getUeViewport()->DropTiledGraphicsProvider(opened->provider.get());
+    view.close();
+    spin(200);
+}

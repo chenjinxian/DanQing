@@ -129,8 +129,9 @@ ReadMeView::ReadMeView(QWidget* parent)
         .arg(tr("FPS / tile-request statistics / tile memory / render-command "
                 "statistics / GPU profile (chrome tracing JSON) / tool settings — "
                 "aligned with the reference DiagnosticsPanel. Key-in field, FPS "
-                "monitor, tile-load indicator and viewport sync are wired in the "
-                "status bar (M-L(3))."))
+                "monitor and tile-load indicator live in the status bar; viewport "
+                "sync is wired as the key-in tools \"dta viewport sync\" / "
+                "\"dta frustum sync\" (M-L(3))."))
         .arg("DebugWindowDiag.PanelHasSevenSectionsInOrder · "
              "DebugWindowDiag.TileStatisticsTrackerWired · "
              "DebugWindowDiag.GpuProfilerDeliversRealResults")

@@ -59,7 +59,7 @@ public:
 Q_SIGNALS:
     void requestBlankConnection();
     void requestDecorationGeometryExample();      // Surface.ts:155-165 entry
-    void requestOpenDumpModel(QString modelId);   // M-H(4)："joeshouse" / "instances60"
+    void requestOpenDumpModel(QString modelId);   // M-H(4)："joeshouse"/"instances60"；M-K(2)：+"housemodel"/"baytown"/"bridge-edit"
     void requestReadMe();                         // M-L(3)：ReadMe 展示页入口
 
 protected:
