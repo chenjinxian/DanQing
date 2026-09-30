@@ -99,8 +99,11 @@ namespace {
 //   baytown     = imodel baytown-v1/imodel.json + tiles [baytown-v1]
 //                 + fallback [baytown-drill-v1]（M-K(1)——Baytown.bim）
 //   bridge-edit = imodel bridge-edit-v1/imodel.json + tiles [bridge-edit-v1]
-//                 + fallback [bridge-edit-drill-v1]（M-K(1)——编辑大桥测试.bim，
-//                 ASCII 目录名映射；默认视图空域坑 24 → frameToWorldContent）
+//                 + fallback [bridge-edit-drill-v1（M-K(1)——编辑大桥测试.bim，
+//                             ASCII 目录名映射；默认视图空域坑 24 → frameToWorldContent）,
+//                             bridge-edit-sweep-v1（M-M(5)——全树 sweep 380,738 瓦/
+//                             4.96GB[用户解除存储限制]；400k 瓦预算 cap 触顶，
+//                             浏览深度界扩至 sweep 域；>100MB 大瓦本地持有）]
 // （与 DumpOpenChainTest.cpp 各锁的包定义一致。）
 std::optional<dta::DumpOpenPackage> dumpPackageForModel(QString const& modelId)
 {
@@ -127,7 +130,8 @@ std::optional<dta::DumpOpenPackage> dumpPackageForModel(QString const& modelId)
     }
     else if (modelId == QLatin1String("bridge-edit")) {
         pkg.imodelRoot = dumpRoot + "/bridge-edit-v1";
-        pkg.tileRoots = {dumpRoot + "/bridge-edit-v1", dumpRoot + "/bridge-edit-drill-v1"};
+        pkg.tileRoots = {dumpRoot + "/bridge-edit-v1", dumpRoot + "/bridge-edit-drill-v1",
+                         dumpRoot + "/bridge-edit-sweep-v1"};
         // 坑 24：默认视图 0x99 指向原点附近空域（不含几何——直接回放=白屏
         // 零请求，README"默认视图空域"节）→ 打开链取景到世界域几何
         // contentRange（DumpOpenHelper 的 zoomToVolume 应用面）。
