@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Ported from: itwinjs-core core/common/src/DisplayStyle.ts
 // DanQing dqCommon — LightSettings and HiddenLine unit tests
+#include "dqCommon/DisplayStyleSettings.h"
 #include "dqCommon/HiddenLine.h"
 #include "dqCommon/LightSettings.h"
 
@@ -171,6 +172,56 @@ TEST(LightSettings, Equality)
     const LightSettings a;
     const LightSettings b;
     EXPECT_TRUE(a.equals(b));
+}
+
+// DisplayStyle3dSettings.lights application（M-M(1)：saved display style 的
+// 灯光段此前 applyOverrides3d 静默丢弃——渲染恒用默认 rig）。
+// Ported from: itwinjs-core core/common/src/test/DisplayStyle.test.ts
+//              (lights round-trip cases :723-728 —
+//               {numCels:2, solar:{intensity:4, alwaysEnabled:true},
+//                ambient:{intensity:2, color:{r:12, g:24, b:48}}})
+TEST(DisplayStyle3dSettings, LightsOverrideApplies)
+{
+    DisplayStyle3dSettings settings;  // defaults == reference LightSettings{}
+    EXPECT_DOUBLE_EQ(settings.getLights().portraitIntensity, 0.3);
+
+    DisplayStyle3dSettingsProps props;
+    LightSettingsProps lights;
+    lights.numCels = 2;
+    SolarLightProps solar;
+    solar.intensity = 4.0;
+    solar.alwaysEnabled = true;
+    lights.solar = solar;
+    AmbientLightProps ambient;
+    ambient.intensity = 2.0;
+    ambient.color = RgbColorProps{12, 24, 48};
+    lights.ambient = ambient;
+    props.lights = lights;
+
+    settings.applyOverrides3d(props);
+
+    EXPECT_EQ(settings.getLights().numCels, 2);
+    EXPECT_DOUBLE_EQ(settings.getLights().solar.intensity, 4.0);
+    EXPECT_TRUE(settings.getLights().solar.alwaysEnabled);
+    EXPECT_DOUBLE_EQ(settings.getLights().ambient.intensity, 2.0);
+    EXPECT_EQ(settings.getLights().ambient.color.r, 12);
+    EXPECT_EQ(settings.getLights().ambient.color.g, 24);
+    EXPECT_EQ(settings.getLights().ambient.color.b, 48);
+    // Unset fields keep the reference defaults.
+    EXPECT_DOUBLE_EQ(settings.getLights().portraitIntensity, 0.3);
+    EXPECT_DOUBLE_EQ(settings.getLights().specularIntensity, 1.0);
+}
+
+// Absent lights props leave the default rig untouched.
+TEST(DisplayStyle3dSettings, LightsAbsentKeepsDefaults)
+{
+    DisplayStyle3dSettings settings;
+    DisplayStyle3dSettingsProps props;  // no lights
+    settings.applyOverrides3d(props);
+    EXPECT_DOUBLE_EQ(settings.getLights().ambient.intensity, 0.2);
+    EXPECT_DOUBLE_EQ(settings.getLights().solar.intensity, 1.0);
+    EXPECT_FALSE(settings.getLights().solar.alwaysEnabled);
+    EXPECT_DOUBLE_EQ(settings.getLights().hemisphere.intensity, 0.0);
 }
 
 // HiddenLineStyle tests

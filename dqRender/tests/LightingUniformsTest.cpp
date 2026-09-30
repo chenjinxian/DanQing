@@ -3,11 +3,19 @@
 // Ported from: itwinjs-core core/frontend/src/test/render/webgl/LightingUniforms.test.ts
 //              (no direct reference test exists; tests are authored from LightingUniforms.ts behavior)
 #include "render/LightingUniforms.h"
+#include "render/Uniforms.h"
 
+#include <dqCommon/Frustum.h>
+#include <dqCommon/Npc.h>
+#include <dqGeom/Point3d.h>
+#include <dqGeom/Vector3d.h>
+
+#include <cmath>
 #include <gtest/gtest.h>
 
 using namespace dqRender;
 using namespace dqCommon;
+using namespace dqGeom;
 
 // Default-constructed uniforms are uninitialized (all-zero data) until update().
 // Ported from: itwinjs-core core/frontend/src/test/render/webgl/LightingUniforms.test.ts
@@ -93,4 +101,83 @@ TEST(LightingUniformsTest, UpdateEqualSettingsNoChange)
     u.update(s);
     u.update(s);  // equal -> no recompute
     EXPECT_FLOAT_EQ(u.getData()[0], 5.0f);
+}
+
+// ---------------------------------------------------------------------------
+// SunDirection（TargetUniforms 太阳方向——M-M(1) frustum 重同步腿）。
+// Authored: no reference test exists in itwinjs-core for SunDirection
+// (browser-only); the math is TargetUniforms.ts:99-113 — a world direction is
+// transformed into view space and negated; no world direction falls back to the
+// constant view-space default (0.272166, 0.680414, 0.680414). The reference
+// re-runs the transform whenever the frustum desyncs (sync(uniforms.frustum,
+// this)); the second test pins that leg with a rotated view.
+// ---------------------------------------------------------------------------
+
+static Frustum makeSunBoxFrustum()
+{
+    // Axis-aligned box: near z=-5, far z=+5 — view rows = world X/Y/Z.
+    Frustum f;
+    f.getCorner(Npc::LeftBottomRear) = Point3d::From(-10, -10, 5);
+    f.getCorner(Npc::RightBottomRear) = Point3d::From(10, -10, 5);
+    f.getCorner(Npc::LeftTopRear) = Point3d::From(-10, 10, 5);
+    f.getCorner(Npc::RightTopRear) = Point3d::From(10, 10, 5);
+    f.getCorner(Npc::LeftBottomFront) = Point3d::From(-10, -10, -5);
+    f.getCorner(Npc::RightBottomFront) = Point3d::From(10, -10, -5);
+    f.getCorner(Npc::LeftTopFront) = Point3d::From(-10, 10, -5);
+    f.getCorner(Npc::RightTopFront) = Point3d::From(10, 10, -5);
+    return f;
+}
+
+// No world direction -> constant view-space default, regardless of frustum.
+TEST(SunDirection, NoWorldDirUsesViewSpaceDefault)
+{
+    SunDirection sd;
+    FrustumUniforms fr;
+    fr.changeFrustum(makeSunBoxFrustum(), 0.0, true);
+
+    UniformHandle h;
+    sd.bind(h, fr);
+    float const* d = sd.getSunDirView();
+    EXPECT_NEAR(d[0], 0.272166f, 1e-5f);
+    EXPECT_NEAR(d[1], 0.680414f, 1e-5f);
+    EXPECT_NEAR(d[2], 0.680414f, 1e-5f);
+}
+
+// World direction (shadows-on path): view-space result follows the view matrix
+// AND is recomputed when the frustum changes without a new update() call —
+// the M-M(1) fix (previously a stale direction survived camera motion).
+TEST(SunDirection, RecomputesOnFrustumChange)
+{
+    SunDirection sd;
+    FrustumUniforms fr;
+
+    // Identity view: world +X sun -> view-space -(1,0,0).
+    Vector3d worldSun = Vector3d::From(1.0, 0.0, 0.0);
+    sd.update(&worldSun);
+    fr.changeFrustum(makeSunBoxFrustum(), 0.0, true);
+    UniformHandle h;
+    sd.bind(h, fr);
+    EXPECT_NEAR(sd.getSunDirView()[0], -1.0f, 1e-5f);
+    EXPECT_NEAR(sd.getSunDirView()[1], 0.0f, 1e-5f);
+    EXPECT_NEAR(sd.getSunDirView()[2], 0.0f, 1e-5f);
+
+    // Rotate the view 90° about world Z ((x,y,z) -> (-y,x,z) per corner):
+    // viewX = world Y, viewY = world -X. World +X sun now maps to view -Y,
+    // then negates to view +Y — WITHOUT another update() call.
+    Frustum rot = makeSunBoxFrustum();
+    auto rotCorner = [](Point3d c) { return Point3d::From(-c.y, c.x, c.z); };
+    rot.getCorner(Npc::LeftBottomRear) = rotCorner(rot.getCorner(Npc::LeftBottomRear));
+    rot.getCorner(Npc::RightBottomRear) = rotCorner(rot.getCorner(Npc::RightBottomRear));
+    rot.getCorner(Npc::LeftTopRear) = rotCorner(rot.getCorner(Npc::LeftTopRear));
+    rot.getCorner(Npc::RightTopRear) = rotCorner(rot.getCorner(Npc::RightTopRear));
+    rot.getCorner(Npc::LeftBottomFront) = rotCorner(rot.getCorner(Npc::LeftBottomFront));
+    rot.getCorner(Npc::RightBottomFront) = rotCorner(rot.getCorner(Npc::RightBottomFront));
+    rot.getCorner(Npc::LeftTopFront) = rotCorner(rot.getCorner(Npc::LeftTopFront));
+    rot.getCorner(Npc::RightTopFront) = rotCorner(rot.getCorner(Npc::RightTopFront));
+    fr.changeFrustum(rot, 0.0, true);
+    sd.bind(h, fr);
+    float const* d1 = sd.getSunDirView();
+    EXPECT_NEAR(d1[0], 0.0f, 1e-5f);
+    EXPECT_NEAR(d1[1], 1.0f, 1e-5f);
+    EXPECT_NEAR(d1[2], 0.0f, 1e-5f);
 }

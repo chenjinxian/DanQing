@@ -10,6 +10,7 @@
 #include "ShaderBindings.h"  // wireSunDirection, wireLightSettings, wireUpVector
 #include "ShaderBuilder.h"
 
+#include <cstdlib>
 #include <string>
 
 #ifndef BEGIN_DQ_RENDER_NAMESPACE
@@ -121,6 +122,22 @@ inline constexpr char const* kApplyLighting = R"(
   return baseColor;
 )";
 
+// TEMP-DIAG（M-M(1) 方向光缺失 saga）：DANQING_NO_LIGHTING=1 时整段透传——
+// 二分判别 dimming 源（applyLighting 内 vs 上游基色；§11.9 判别实验）。
+// DANQING_LIGHT_DEBUG=1 时输出片元级取证色：R=v_materialParams.x/65535、
+// G=mat_weights.x（diffuse 权重）、B=mat_weights.y（specular 权重）。
+inline std::string applyLightingBody()
+{
+    char const* noLight = getenv("DANQING_NO_LIGHTING");
+    if (noLight)
+        return std::string("  return baseColor;\n");
+    char const* lightDebug = getenv("DANQING_LIGHT_DEBUG");
+    if (lightDebug)
+        return std::string(
+            "  return vec4(g_vertLutData3.xyz / 255.0);\n");
+    return std::string(kApplyLighting);
+}
+
 // ---------------------------------------------------------------------------
 // Wiring (exact port of Lighting.ts addLighting)
 //
@@ -142,7 +159,7 @@ inline void addLighting(ProgramBuilder& builder)
     // buildFragmentMain wraps it as `vec4 applyLighting(vec4 baseColor)`.
     // Ported from: itwinjs-core Lighting.ts applyLighting.
     frag.setFragmentComponent(FragmentShaderComponent::ApplyLighting,
-                              std::string(kApplyLighting));
+                              applyLightingBody());
     wireSunDirection(frag);
     wireLightSettings(frag);
     wireUpVector(frag);

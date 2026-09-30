@@ -126,7 +126,7 @@ vec3 computeSurfaceNormal() {
     // buildSourceWithComponents emits before this slot def — so the call resolves.
     // Ported from: itwinjs-core Surface.ts finalizeNormal* (line 408-446).
     frag.setFragmentComponent(FragmentShaderComponent::FinalizeNormal,
-        std::string(kFinalizeNormalPrelude) +
+        finalizeNormalPrelude() +
         std::string(kFinalizeNormalMap) +
         std::string(kFinalizeNormalPostlude));
 }

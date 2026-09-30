@@ -902,17 +902,13 @@ void SceneCompositor::renderOpaque(RenderCommands& commands,
     // Faithful: reference params.target.uniforms.* — lets ProgramUniform binding
     // callbacks (e.g. u_frustum via Common.addFrustum) read the target at use().
     m_frameParams.setTarget(&m_target);
-    float const* sunDir = m_target.getSunDir();
-    float sunIntensity = m_target.getSunIntensity();
-    float const* ambientColor = m_target.getAmbientColor();
-
-    float sunDirNorm = std::sqrt(sunDir[0]*sunDir[0] + sunDir[1]*sunDir[1] + sunDir[2]*sunDir[2]);
-    if (sunDirNorm > 0.0f) {
-        float normalizedSunDir[3] = {sunDir[0] / sunDirNorm, sunDir[1] / sunDirNorm, sunDir[2] / sunDirNorm};
-        m_frameParams.setVec3("u_sunDir", normalizedSunDir);
-    }
-    m_frameParams.setFloat("u_sunIntensity", sunIntensity);
-    m_frameParams.setVec3("u_ambientColor", ambientColor);
+    // u_sunDir 的唯一上传路径 = wireSunDirection ProgramUniform（TargetUniforms.
+    // SunDirection——参考 Lighting.ts:120-123）。此前此处另有一条 legacy 名值
+    // 上传（m_target.getSunDir() 的世界向 (0.3,0.5,0.8) 归一化），在 draw 后经
+    // uploadUniforms 覆写了 ProgramUniform 的正确视图空间值——u_sunDir 在片元
+    // 侧恒为错误方向（M-M(1) 方向光缺失 saga 的 legacy 双写根因，已拆除）。
+    // u_sunIntensity/u_ambientColor 为旧手写 shader 的遗留名，新光源体系
+    // （u_lightSettings[16]）不消费，不再上传。
 
     // Lighting (u_sunDir view-space + u_lightSettings[16]) — dispatched by the
     // ProgramUniform bindings at use() time (wireSunDirection/wireLightSettings
@@ -2093,18 +2089,28 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     // produces zero fragments while Surface fills (u_mvp) render correctly.
                     drawParams.setModelViewMatrix(m_branchStack.getCurrentMv().data());
                     drawParams.setModelViewProjectionMatrix(m_branchStack.getCurrentMvp().data());
-                    float defaultMaterial[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-                    drawParams.setMaterialColor(defaultMaterial);
-                    // Material params (u_materialParams): read from geometry's material info,
-                    // or use default material if none specified.
-                    // Ported from: itwinjs-core Surface.ts computeMaterialParams (line 214-218)
-                    auto const* matInfo = geometry->getMaterialInfo();
-                    if (matInfo && !matInfo->isAtlas() && !matInfo->ignoresMaterial()) {
-                        drawParams.setMaterialParams(matInfo->getFragUniforms());
-                        drawParams.setMaterialColor(matInfo->getRgba());
-                    } else {
-                        auto const& defaultMat = RenderMaterialInternal::defaultMaterial();
-                        drawParams.setMaterialParams(defaultMat.getFragUniforms());
+                    // Material uniforms (u_materialColor / u_materialParams).
+                    // Ported from: itwinjs-core glsl/Surface.ts addMaterial (:206-220):
+                    //   const info = wantMaterials(vf) ? geometry.materialInfo : undefined;
+                    //   const mat = undefined !== info && !info.isAtlas ? info : Material.default;
+                    //   uniform.setUniform4fv(mat.rgba / mat.fragUniforms);
+                    // wantMaterials (SurfaceGeometry.ts:31-33) = viewFlags.materials &&
+                    // SmoothShade render mode; atlas materials read from the vertex LUT in
+                    // the shader (readMaterialAtlas) so the uniforms fall to Material.default
+                    // (rgba = -1 sentinels = no color/alpha override). The per-feature
+                    // ignore (OvrFlags.IgnoreMaterial) is applied in the shader via
+                    // v_surfaceFlags (FeatureSymbology.ts:315), not here.
+                    {
+                        auto const& vf = m_target.getCurrentViewFlags();
+                        bool const wantMat = vf.materials
+                                             && vf.renderMode == dqCommon::RenderMode::SmoothShade;
+                        auto const* matInfo = wantMat ? geometry->getMaterialInfo() : nullptr;
+                        RenderMaterialInternal const& mat =
+                            (matInfo && !matInfo->isAtlas())
+                                ? *matInfo
+                                : RenderMaterialInternal::defaultMaterial();
+                        drawParams.setMaterialColor(mat.getRgba());
+                        drawParams.setMaterialParams(mat.getFragUniforms());
                     }
                     // Surface flags: read from the current geometry (u_surfaceFlags[12]).
                     // Ported from: itwinjs-core SurfaceGeometry.computeSurfaceFlags() +
@@ -2196,6 +2202,36 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                         params.setVec3("u_frustum", m_target.getFrustumUniforms().getFrustumData());
                     }
                     shader->draw(drawParams);
+
+                    // [LIGHT] 取证探针（M-M(1) 方向光缺失 saga）：draw 之后读回 GL
+                    // 程序实际收到的光照/材质 uniform 值（GraphicUniform 派发已发生
+                    // ——此时值即片元着色所见；上传链断点定位）。
+                    if (getenv("DANQING_LIGHT_TRACE")) {
+                        static int nLightPost = 0;
+                        if (nLightPost++ < 8) {
+                            GLuint const lightProg = shader->getGlProgram();
+                            if (lightProg != 0) {
+                                auto dump4 = [&](char const* name) {
+                                    GLint loc = dqglGetUniformLocation(lightProg, name);
+                                    if (loc < 0) {
+                                        std::printf("[LIGHT-post] %s: <no location>\n", name);
+                                    } else {
+                                        GLfloat v[4] = {0, 0, 0, 0};
+                                        dqglGetUniformfv(lightProg, loc, v);
+                                        std::printf("[LIGHT-post] %s: %.4f %.4f %.4f %.4f\n",
+                                                    name, v[0], v[1], v[2], v[3]);
+                                    }
+                                };
+                                dump4("u_sunDir");
+                                dump4("u_lightSettings[0]");   // solar intensity
+                                dump4("u_lightSettings[4]");   // ambient intensity
+                                dump4("u_lightSettings[12]");  // portrait intensity
+                                dump4("u_materialParams");
+                                dump4("u_materialColor");
+                                std::fflush(stdout);
+                            }
+                        }
+                    }
 
                     // Upload per-primitive uniforms (u_mvp/u_mv/u_materialColor/...)
                     // from the legacy name->value map. Transitional: the binding

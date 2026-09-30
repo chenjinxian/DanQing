@@ -32,6 +32,7 @@
 
 #include <dqBase/DqId.h>
 #include <dqCommon/HiddenLine.h>  // HiddenLineSettingsProps（styles.hline）
+#include <dqCommon/LightSettings.h>  // LightSettingsProps（styles.lights——M-M(1)）
 #include <dqCommon/ViewFlags.h>  // ViewFlagProps
 #include <dqGeom/Point3d.h>
 #include <dqGeom/Vector3d.h>
@@ -108,6 +109,9 @@ struct DisplayStyleProps {
     // ← styles.hline（HiddenLine.SettingsProps——visible/hidden/transThreshold；
     // dump 实态：visible={color:0,ovrColor:true,pattern:0,width:1} = 黑边覆盖）。
     std::optional<dqCommon::HiddenLineSettingsProps> hline;
+    // ← styles.lights（LightSettingsProps——M-M(1)：saved display style 的自定义
+    // 灯光 rig；DisplayStyleSettings ctor 的 LightSettings.fromJSON 段）。
+    std::optional<dqCommon::LightSettingsProps> lights;
 };
 
 // ---------------------------------------------------------------------------

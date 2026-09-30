@@ -9,6 +9,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 
 #ifndef BEGIN_DQ_RENDER_NAMESPACE
 #define BEGIN_DQ_RENDER_NAMESPACE namespace dqRender {
@@ -23,6 +24,28 @@ enum class MonochromeMode : uint8_t {
     None = 0,
     Saturated = 1,
     Luminance = 2,
+};
+
+// ---------------------------------------------------------------------------
+// RenderMaterialParams — material parameter bag fed to
+// RenderMaterialInternal::fromParams (the GL Material constructor).
+// Ported from: itwinjs-core core/common/src/internal/RenderMaterialParams.ts
+// (class RenderMaterialParams — defaults diffuse 0.6 / specular 0.4 /
+// specularExponent 13.5 / alpha undefined; specularColor defaults to white
+// in the webgl Material constructor, Material.ts:84).
+// Color components use the ColorDef 0-255 domain (imdl floats 0..1 are
+// converted by the parser: v*255+0.5, ParseImdlDocument.ts:1105-1107).
+// ---------------------------------------------------------------------------
+struct RenderMaterialParams {
+    bool hasDiffuseColor = false;
+    float diffuseColor[3] = {0.0f, 0.0f, 0.0f};      // 0-255; overrides surface color when set
+    bool hasSpecularColor = false;
+    float specularColor[3] = {255.0f, 255.0f, 255.0f};  // 0-255; white when unset (Material.ts:84)
+    std::optional<float> alpha;                       // unset = no transparency override (rgba[3] = -1)
+    float diffuse = 0.6f;
+    float specular = 0.4f;
+    float specularExponent = 13.5f;
+    std::optional<float> textureWeight;               // textureMapping weight ?? 1.0 (Material.ts:83)
 };
 
 // Internal material properties used during rendering.
@@ -49,8 +72,11 @@ public:
     bool hasVertexColors() const noexcept { return m_hasVertexColors; }
     void setHasVertexColors(bool val) noexcept { m_hasVertexColors = val; }
 
-    bool ignoresMaterial() const noexcept { return m_ignoresMaterial; }
-    void setIgnoresMaterial(bool val) noexcept { m_ignoresMaterial = val; }
+    // Vertex-side diffuse-color override present (reference rgba[0] >= 0 —
+    // Material.ts:50 overridesRgb). When false the surface's own color shows.
+    bool overridesRgb() const noexcept { return m_rgba[0] >= 0.0f; }
+    // Vertex-side alpha override present (reference rgba[3] >= 0 — Material.ts:51).
+    bool overridesAlpha() const noexcept { return m_rgba[3] >= 0.0f; }
 
     // Fragment-side material parameters (packed as vec4).
     // Ported from: itwinjs-core Material.ts fragUniforms
@@ -72,19 +98,24 @@ public:
     // Set rgba from values.
     void setRgba(float const* v) { for (int i = 0; i < 4; ++i) m_rgba[i] = v[i]; }
 
-    // Pack material parameters into fragUniforms format.
-    // Ported from: itwinjs-core Material.ts constructor
-    // Weights: 0-255 (packed as lo/hi bytes in 16-bit float representation)
-    // specularExponent: float directly
-    static RenderMaterialInternal create(
-        float diffuseWeight, float specularWeight,
-        float textureWeight,
-        float specularR, float specularG, float specularB,
-        float specularExponent,
-        float alpha = -1.0f);
+    // Build the GL-side material from RenderMaterialParams.
+    // Ported from: itwinjs-core webgl/Material.ts constructor (:61-90):
+    //   rgba[0..2] = diffuseColor/255 or -1 (no override);
+    //   rgba[3]    = alpha or -1 (no override);
+    //   fragUniforms[0] = pack(scale(diffuse), scale(specular)) — weights scaled to 0-255;
+    //   fragUniforms[1] = pack(scale(textureWeight), specularColor.r);
+    //   fragUniforms[2] = pack(specularColor.g, specularColor.b);
+    //   fragUniforms[3] = specularExponent.
+    static RenderMaterialInternal fromParams(RenderMaterialParams const& params);
 
-    // Default material (matches itwinjs-core Material.default).
-    // diffuseWeight=1, specularWeight=0, textureWeight=1, specular=0, exponent=13.5
+    // Default material (matches itwinjs-core Material.default =
+    // new Material(RenderMaterialParams.defaults): diffuse 0.6 / specular 0.4 /
+    // specular color white / exponent 13.5 / no color or alpha override).
+    // NOTE (M-M(1) 归位): the previous version packed (1.0, 0.0, black) —
+    // diffuse weight 1.0 and ZERO specular — a deviation from
+    // RenderMaterialParams.defaults that suppressed the default specular
+    // highlights (two directional lights, glsl/Surface.ts:134-137 defaults
+    // (26265, 65535, 65535, 13.5)).
     static RenderMaterialInternal defaultMaterial();
 
 private:
@@ -94,7 +125,6 @@ private:
     bool m_isAtlas = false;
     bool m_hasTransform = false;
     bool m_hasVertexColors = false;
-    bool m_ignoresMaterial = false;
 
     // Fragment material parameters (packed vec4).
     // Default: {26265, 65535, 65535, 13.5} = itwinjs-core Material.default.fragUniforms

@@ -1675,6 +1675,13 @@ static void applyViewStateProps(SpatialViewState& view,
         view.GetDisplayStyle().getSettings().setHiddenLineSettings(
             dqCommon::HiddenLineSettings::fromJSON(*props.displayStyleProps.hline));
     }
+    // styles.lights（M-M(1)——DisplayStyleSettings ctor 的
+    // `this._json3d.lights = LightSettings.fromJSON(...)` 段；RenderPlan.lights
+    // 的上游，Viewport.cpp:1992 style.GetLightSettings()）。
+    if (props.displayStyleProps.lights.has_value()) {
+        view.GetDisplayStyle().getSettings().setLights(
+            dqCommon::LightSettings::fromJSON(*props.displayStyleProps.lights));
+    }
 }
 
 // Ported from: itwinjs-core SpatialViewState.createFromProps

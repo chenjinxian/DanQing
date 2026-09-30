@@ -118,7 +118,12 @@ void DisplayStyle3dSettings::applyOverrides3d(const DisplayStyle3dSettingsProps&
     if (props.thematic) m_thematic = ThematicDisplay::fromJSON(&*props.thematic);
     if (props.hline) m_hiddenLine = HiddenLineSettings::fromJSON(*props.hline);
     if (props.ao) m_ambientOcclusion = AmbientOcclusion::Settings::fromJSON(&*props.ao);
-    // TODO: lights, contours, solarShadows, planProjections
+    // Ported from: itwinjs-core DisplayStyleSettings constructor —
+    // `this._json3d.lights = LightSettings.fromJSON(this._json3d.lights)`
+    // (M-M(1): saved display styles with non-default light rigs were silently
+    // dropped before this; defaults are otherwise LightSettings{} == reference).
+    if (props.lights) m_lights = LightSettings::fromJSON(*props.lights);
+    // TODO: contours, solarShadows, planProjections
 }
 
 END_DQ_COMMON_NAMESPACE

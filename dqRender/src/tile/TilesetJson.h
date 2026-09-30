@@ -20,6 +20,7 @@
 #include "CompactEdges.h"  // U11(3)：parseImdlEdges 的 compact 兜底展开
                            //（ParseImdlDocument.ts:695-708 parseCompactEdges）
 
+#include <map>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -313,9 +314,44 @@ struct ImdlVertexTableProps {
     bool hasUniformColor = false;
 };
 
+// Ported from: ImdlSchema.ts:86-97 SurfaceMaterialParams（内联形态——
+// alpha / diffuse{color,weight} / specular{color,weight,exponent}；颜色为
+// [0..1] 三分量数组，ColorDef 域换算 v*255+0.5 在消费点，
+// ParseImdlDocument.ts:1105-1107 colorDefFromMaterialJson）。
+struct ImdlSurfaceMaterialProps {
+    bool isInline = false;  // false = string 键（key 有效）
+    std::string key;        // renderMaterials 表键
+    std::optional<float> alpha;
+    std::optional<float> diffuseWeight;
+    std::optional<float> diffuseColor[3];
+    std::optional<float> specularWeight;
+    std::optional<float> specularColor[3];
+    std::optional<float> specularExponent;
+};
+
+// Ported from: ImdlSchema.ts:90-110 RenderMaterialJson（renderMaterials 表项
+// ——ImdlGraphicsCreator.ts:196-241 getMaterial 的全字段消费面；颜色 [0..1]
+// 三分量；transparency → alpha=1-t；reflect*/refract/shadows/ambient 参考侧
+// 解析后进 RenderMaterialParams 但 shader 不消费（core-common 标注 Currently
+// unused）——此处提取保留、换算层丢弃）。textureMapping 归 textured 变体
+// （M-M(3)），此处不提取。
+struct ImdlRenderMaterialProps {
+    bool valid = false;
+    std::optional<float> diffuseWeight;
+    std::optional<float> diffuseColor[3];
+    std::optional<float> specularWeight;
+    std::optional<float> specularColor[3];
+    std::optional<float> specularExponent;
+    std::optional<float> transparency;  // alpha = 1 - transparency
+};
+
 struct ImdlSurfaceProps {
     std::string indicesView;
     uint32_t type = 0;
+    // M-M(1)：surface 材质（ImdlSchema.ts:92-104 SurfaceMaterial——string 键
+    // 指向 renderMaterials 表，或内联 SurfaceMaterialParams；atlas 形态当前
+    // 采面未命中，登记）。原始字段提取，换算归消费点（ImdlGraphics.cpp）。
+    std::optional<ImdlSurfaceMaterialProps> material;
 };
 
 // ---------------------------------------------------------------------------
@@ -455,6 +491,42 @@ inline std::vector<ImdlPrimitiveProps> parseImdlMeshPrimitives(JsonValue const& 
                     props.surface.indicesView = ind->str;
                 if (JsonValue const* t = surf->find("type"))
                     props.surface.type = static_cast<uint32_t>(t->number);
+                // M-M(1)：surface.material（ImdlSchema.ts:104 SurfaceMaterial =
+                // string 键 | 内联 SurfaceMaterialParams；ParseImdlDocument.ts
+                // :467-475 convertMaterial 的两形态）。
+                if (JsonValue const* m = surf->find("material")) {
+                    ImdlSurfaceMaterialProps sm;
+                    if (m->type == JsonValue::Type::String) {
+                        sm.key = m->str;
+                    } else if (m->type == JsonValue::Type::Object) {
+                        sm.isInline = true;
+                        if (JsonValue const* v = m->find("alpha"))
+                            if (v->type == JsonValue::Type::Number)
+                                sm.alpha = static_cast<float>(v->number);
+                        if (JsonValue const* d = m->find("diffuse")) {
+                            if (JsonValue const* v = d->find("weight"))
+                                if (v->type == JsonValue::Type::Number)
+                                    sm.diffuseWeight = static_cast<float>(v->number);
+                            if (JsonValue const* c = d->find("color"))
+                                if (c->type == JsonValue::Type::Array)
+                                    for (int i = 0; i < 3 && i < static_cast<int>(c->arr.size()); ++i)
+                                        sm.diffuseColor[i] = static_cast<float>(c->arr[i].number);
+                        }
+                        if (JsonValue const* s = m->find("specular")) {
+                            if (JsonValue const* v = s->find("weight"))
+                                if (v->type == JsonValue::Type::Number)
+                                    sm.specularWeight = static_cast<float>(v->number);
+                            if (JsonValue const* v = s->find("exponent"))
+                                if (v->type == JsonValue::Type::Number)
+                                    sm.specularExponent = static_cast<float>(v->number);
+                            if (JsonValue const* c = s->find("color"))
+                                if (c->type == JsonValue::Type::Array)
+                                    for (int i = 0; i < 3 && i < static_cast<int>(c->arr.size()); ++i)
+                                        sm.specularColor[i] = static_cast<float>(c->arr[i].number);
+                        }
+                    }
+                    props.surface.material = std::move(sm);
+                }
             }
             if (JsonValue const* pl = prim.find("isPlanar"))
                 props.isPlanar = pl->boolean;
@@ -550,6 +622,45 @@ inline std::vector<ImdlPrimitiveProps> parseImdlMeshPrimitives(JsonValue const& 
             }
             out.push_back(std::move(props));
         }
+    }
+    return out;
+}
+
+// parseImdlRenderMaterials — renderMaterials 表（M-M(1)）。
+// Ported from: ImdlGraphicsCreator.ts:192-227 getMaterial 的 string 键分支
+//（`document.json.renderMaterials[mat]` → RenderMaterialParams 全字段；本层
+// 只提取 shader 消费面字段，flat 键名 1:1 ImdlSchema.ts RenderMaterialJson）。
+// 表缺失/键缺席 → 空 map（消费方落 Material.default，参考
+// getMaterial undefined 语义）。
+inline std::map<std::string, ImdlRenderMaterialProps> parseImdlRenderMaterials(JsonValue const& doc)
+{
+    std::map<std::string, ImdlRenderMaterialProps> out;
+    JsonValue const* table = doc.find("renderMaterials");
+    if (!table || table->type != JsonValue::Type::Object)
+        return out;
+    auto colorArr = [](JsonValue const* c, std::optional<float> dst[3]) {
+        if (c && c->type == JsonValue::Type::Array)
+            for (int i = 0; i < 3 && i < static_cast<int>(c->arr.size()); ++i)
+                dst[i] = static_cast<float>(c->arr[i].number);
+    };
+    for (auto const& entry : table->obj) {
+        ImdlRenderMaterialProps m;
+        m.valid = true;
+        if (JsonValue const* v = entry.second.find("diffuse"))
+            if (v->type == JsonValue::Type::Number)
+                m.diffuseWeight = static_cast<float>(v->number);
+        colorArr(entry.second.find("diffuseColor"), m.diffuseColor);
+        if (JsonValue const* v = entry.second.find("specular"))
+            if (v->type == JsonValue::Type::Number)
+                m.specularWeight = static_cast<float>(v->number);
+        colorArr(entry.second.find("specularColor"), m.specularColor);
+        if (JsonValue const* v = entry.second.find("specularExponent"))
+            if (v->type == JsonValue::Type::Number)
+                m.specularExponent = static_cast<float>(v->number);
+        if (JsonValue const* v = entry.second.find("transparency"))
+            if (v->type == JsonValue::Type::Number)
+                m.transparency = static_cast<float>(v->number);
+        out[entry.first] = m;
     }
     return out;
 }

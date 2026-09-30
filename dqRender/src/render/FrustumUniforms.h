@@ -10,6 +10,7 @@
 
 #include "IModelFrameLifecycle.h"
 #include "Matrix.h"
+#include "Sync.h"
 #include "UniformHandle.h"
 
 #include <dqCommon/Frustum.h>
@@ -105,8 +106,11 @@ inline void frustumProjection(double left, double right, double bottom, double t
 // ---------------------------------------------------------------------------
 // FrustumUniforms — Target frustum uniform state
 // Ported from: itwinjs-core FrustumUniforms
+// Inherits SyncTarget (reference Sync.ts): observers of the frustum (e.g.
+// TargetUniforms.SunDirection, which recomputes the view-space sun direction
+// whenever the view matrix changes) detect changes via the sync key.
 // ---------------------------------------------------------------------------
-class FrustumUniforms {
+class FrustumUniforms : public SyncTarget {
 public:
     // Ported from: itwinjs-core FrustumUniformType
     using Type = FrustumUniformType;
@@ -259,6 +263,11 @@ public:
         m_viewUpVector32[2] = static_cast<float>(m_viewUpVector.z);
 
         m_projection32.initFromMatrix4d(m_projection);
+
+        // SyncTarget: frustum state changed — desync observers (SunDirection's
+        // view-space recomputation, Sync.ts pattern; M-M(1) port of
+        // TargetUniforms.ts SunDirection.bind's sync(uniforms.frustum, this)).
+        desync();
     }
 
     /// Replace the projection matrix directly.
@@ -287,6 +296,10 @@ public:
         m_viewUpVector32[0] = static_cast<float>(m_viewUpVector.x);
         m_viewUpVector32[1] = static_cast<float>(m_viewUpVector.y);
         m_viewUpVector32[2] = static_cast<float>(m_viewUpVector.z);
+
+        // SyncTarget: the view matrix changed — desync observers that derive
+        // view-space quantities from it (SunDirection).
+        desync();
     }
 
     /// Set near/far/type directly (used by the projection-matrix extraction path).

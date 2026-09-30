@@ -6,6 +6,7 @@
 // The primary geometry type for BIM elements.
 #pragma once
 
+#include "Material.h"
 #include "MeshGeometry.h"
 #include "ViewFlags.h"
 #include "dqRender/RenderMemory.h"
@@ -16,6 +17,7 @@
 #include <dqCommon/ColorDef.h>
 
 #include <algorithm>  // std::clamp (PolylineGeometry::getLineWeight)
+#include <memory>
 
 #ifndef BEGIN_DQ_RENDER_NAMESPACE
 #define BEGIN_DQ_RENDER_NAMESPACE namespace dqRender {
@@ -119,6 +121,21 @@ public:
     /// Check if this surface is lit.
     bool isLit() const noexcept { return getSurfaceType() != SurfaceType::Unknown; }
 
+    // --- Surface material（M-M(1)）---
+    // Ported from: itwinjs-core SurfaceGeometry.ts:312
+    // (`get materialInfo() { return this.mesh.materialInfo }` ← MeshData.ts:86
+    // `createMaterialInfo(params.surface.material)`，ImdlGraphicsCreator.ts
+    // :178-241 getMaterial) — u_materialColor/u_materialParams 的 per-draw 源
+    //（glsl/Surface.ts:206-220 的 graphic uniform 绑定）。
+    void setMaterialInfo(std::unique_ptr<RenderMaterialInternal> material)
+    {
+        m_materialInfo = std::move(material);
+    }
+    RenderMaterialInternal const* getMaterialInfo() const noexcept override
+    {
+        return m_materialInfo.get();
+    }
+
     /// Set the render primitive (VAO).
     void setPrimitive(rhi::RenderPrimitiveHandle primitive) { m_primitive = primitive; }
 
@@ -163,6 +180,7 @@ private:
     bool m_usesQuantizedPositions = false;
     dqCommon::ColorDef m_color = dqCommon::ColorDef::create();  // u_color 均匀色（默认黑——对齐 ColorDef.create()）
     bool m_nonUniformColor = false;  // 色表形态位（ColorInfo.createNonUniform——见 isNonUniformColor 注）
+    std::unique_ptr<RenderMaterialInternal> m_materialInfo;  // M-M(1)：surface 材质（无则 null → Material.default）
 };
 
 // ---------------------------------------------------------------------------

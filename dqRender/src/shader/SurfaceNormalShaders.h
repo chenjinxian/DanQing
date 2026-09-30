@@ -4,6 +4,8 @@
 //              addNormal() (line 529-566) + normal GLSL functions
 #pragma once
 
+#include <cstdlib>
+#include <string>
 #include <string_view>
 
 #ifndef BEGIN_DQ_RENDER_NAMESPACE
@@ -56,10 +58,15 @@ inline constexpr std::string_view kComputeSurfaceNormalNonQuantized = R"(
 // ---------------------------------------------------------------------------
 // GLSL — finalizeNormal prelude: flip normal based on gl_FrontFacing
 // Ported from: itwinjs-core Surface.ts finalizeNormalPrelude (line 408-410)
+// TEMP-DIAG（M-M(1) 方向光缺失 saga）：DANQING_NO_FACEFLIP=1 时去掉翻转——
+// 判别"绕序反向 → 可见面全报 back-facing → 法线背向光源"假设（§11.9 判别实验）。
 // ---------------------------------------------------------------------------
-inline constexpr std::string_view kFinalizeNormalPrelude = R"(
-  vec3 normal = normalize(v_n) * (2.0 * float(gl_FrontFacing) - 1.0);
-)";
+inline std::string finalizeNormalPrelude()
+{
+    if (getenv("DANQING_NO_FACEFLIP"))
+        return std::string("  vec3 normal = normalize(v_n);\n");
+    return std::string("  vec3 normal = normalize(v_n) * (2.0 * float(gl_FrontFacing) - 1.0);\n");
+}
 
 // ---------------------------------------------------------------------------
 // GLSL — finalizeNormal normal map: TBN basis + normal map sampling

@@ -154,6 +154,115 @@ dqCommon::HiddenLineSettingsProps parseHiddenLineSettingsProps(dumpjson::JsonVal
     return out;
 }
 
+// styles.lights JSON → LightSettingsProps（M-M(1)：saved display style 的自定义
+// 灯光此前静默丢弃，渲染恒用 LightSettings{} 默认值——参考 DisplayStyleSettings
+// ctor `this._json3d.lights = LightSettings.fromJSON(this._json3d.lights)`。
+// 键名 1:1 LightSettingsProps 线格式：solar{intensity,direction{x,y,z},
+// alwaysEnabled,timePoint} / ambient{color{r,g,b},intensity} / hemisphere{
+// upperColor,lowerColor,intensity} / portrait{intensity} / specularIntensity /
+// numCels / fresnel{intensity,invert}——缺席键留 nullopt，fromJSON 按参考缺省）。
+dqCommon::LightSettingsProps parseLightSettingsProps(dumpjson::JsonValue const& json)
+{
+    dqCommon::LightSettingsProps out;
+    auto numField = [&](dumpjson::JsonValue const& obj, char const* key,
+                        std::optional<double>& field) {
+        if (dumpjson::JsonValue const* v = obj.find(key))
+            if (v->type == dumpjson::JsonValue::Type::Number)
+                field = v->number;
+    };
+    auto boolField = [&](dumpjson::JsonValue const& obj, char const* key,
+                         std::optional<bool>& field) {
+        if (dumpjson::JsonValue const* v = obj.find(key))
+            if (v->type == dumpjson::JsonValue::Type::Bool)
+                field = v->boolean;
+    };
+    auto rgbField = [&](dumpjson::JsonValue const& obj, char const* key,
+                        std::optional<dqCommon::RgbColorProps>& field) {
+        if (dumpjson::JsonValue const* v = obj.find(key)) {
+            if (v->type != dumpjson::JsonValue::Type::Object)
+                return;
+            dqCommon::RgbColorProps rgb;
+            if (dumpjson::JsonValue const* c = v->find("r"))
+                if (c->type == dumpjson::JsonValue::Type::Number)
+                    rgb.r = static_cast<int>(c->number);
+            if (dumpjson::JsonValue const* c = v->find("g"))
+                if (c->type == dumpjson::JsonValue::Type::Number)
+                    rgb.g = static_cast<int>(c->number);
+            if (dumpjson::JsonValue const* c = v->find("b"))
+                if (c->type == dumpjson::JsonValue::Type::Number)
+                    rgb.b = static_cast<int>(c->number);
+            field = rgb;
+        }
+    };
+
+    if (dumpjson::JsonValue const* solar = json.find("solar")) {
+        if (solar->type == dumpjson::JsonValue::Type::Object) {
+            dqCommon::SolarLightProps p;
+            numField(*solar, "intensity", p.intensity);
+            boolField(*solar, "alwaysEnabled", p.alwaysEnabled);
+            numField(*solar, "timePoint", p.timePoint);
+            if (dumpjson::JsonValue const* d = solar->find("direction")) {
+                // XYZProps：{x,y,z} 对象（或 [x,y,z] 数组形态同取）。
+                if (d->type == dumpjson::JsonValue::Type::Object) {
+                    if (dumpjson::JsonValue const* c = d->find("x"))
+                        if (c->type == dumpjson::JsonValue::Type::Number)
+                            p.dirX = c->number;
+                    if (dumpjson::JsonValue const* c = d->find("y"))
+                        if (c->type == dumpjson::JsonValue::Type::Number)
+                            p.dirY = c->number;
+                    if (dumpjson::JsonValue const* c = d->find("z"))
+                        if (c->type == dumpjson::JsonValue::Type::Number)
+                            p.dirZ = c->number;
+                } else if (d->type == dumpjson::JsonValue::Type::Array
+                           && d->arr.size() >= 3) {
+                    p.dirX = d->arr[0].number;
+                    p.dirY = d->arr[1].number;
+                    p.dirZ = d->arr[2].number;
+                }
+            }
+            out.solar = p;
+        }
+    }
+    if (dumpjson::JsonValue const* amb = json.find("ambient")) {
+        if (amb->type == dumpjson::JsonValue::Type::Object) {
+            dqCommon::AmbientLightProps p;
+            rgbField(*amb, "color", p.color);
+            numField(*amb, "intensity", p.intensity);
+            out.ambient = p;
+        }
+    }
+    if (dumpjson::JsonValue const* hemi = json.find("hemisphere")) {
+        if (hemi->type == dumpjson::JsonValue::Type::Object) {
+            dqCommon::HemisphereLightsProps p;
+            rgbField(*hemi, "upperColor", p.upperColor);
+            rgbField(*hemi, "lowerColor", p.lowerColor);
+            numField(*hemi, "intensity", p.intensity);
+            out.hemisphere = p;
+        }
+    }
+    if (dumpjson::JsonValue const* portrait = json.find("portrait")) {
+        if (portrait->type == dumpjson::JsonValue::Type::Object) {
+            std::optional<double> intensity;
+            numField(*portrait, "intensity", intensity);
+            if (intensity)
+                out.portraitIntensity = *intensity;
+        }
+    }
+    numField(json, "specularIntensity", out.specularIntensity);
+    if (dumpjson::JsonValue const* v = json.find("numCels"))
+        if (v->type == dumpjson::JsonValue::Type::Number)
+            out.numCels = static_cast<int>(v->number);
+    if (dumpjson::JsonValue const* fresnel = json.find("fresnel")) {
+        if (fresnel->type == dumpjson::JsonValue::Type::Object) {
+            dqCommon::FresnelSettingsProps p;
+            numField(*fresnel, "intensity", p.intensity);
+            boolField(*fresnel, "invert", p.invert);
+            out.fresnel = p;
+        }
+    }
+    return out;
+}
+
 // views.defaultViewState JSON（getViewStateData RPC 载荷原样）→ ViewStateProps。
 // 参考锚 = convertViewStatePropsToViewState 的 props 形态（IModelConnection.ts
 // :1548-1561）+ ViewState3d ctor 的消费面（ViewState.ts:1497-1515）。
@@ -242,6 +351,43 @@ std::optional<ViewStateProps> parseViewStateProps(dumpjson::JsonValue const& jso
             if (dumpjson::JsonValue const* hl = styles->find("hline")) {
                 if (hl->type == dumpjson::JsonValue::Type::Object)
                     out.displayStyleProps.hline = parseHiddenLineSettingsProps(*hl);
+            }
+            // styles.lights（DisplayStyleSettings ctor 的 `this._json3d.lights`
+            // 段——LightSettings.fromJSON 输入；M-M(1) 接线）。
+            if (dumpjson::JsonValue const* ls = styles->find("lights")) {
+                if (ls->type == dumpjson::JsonValue::Type::Object)
+                    out.displayStyleProps.lights = parseLightSettingsProps(*ls);
+            } else if (dumpjson::JsonValue const* sl = styles->find("sceneLights")) {
+                // 旧格式回退（DisplayStyleSettings.ts:1109-1116）：MicroStation 遗留
+                // 灯光设置只保留 sunDir——`LightSettings.fromJSON(sunDir ?
+                // { solar: { direction: sunDir } } : undefined)`（强度/ambient 全部
+                // 忽略，用参考默认 rig）。dump 实态：五模型 saved style 均携带
+                // sceneLights（如 instances60 sunDir=[0.19, 0.78, -0.60]）。
+                if (dumpjson::JsonValue const* sd = sl->find("sunDir")) {
+                    dqCommon::LightSettingsProps props;
+                    dqCommon::SolarLightProps solar;
+                    if (sd->type == dumpjson::JsonValue::Type::Array && sd->arr.size() >= 3) {
+                        solar.dirX = sd->arr[0].number;
+                        solar.dirY = sd->arr[1].number;
+                        solar.dirZ = sd->arr[2].number;
+                    } else if (sd->type == dumpjson::JsonValue::Type::Object) {
+                        if (dumpjson::JsonValue const* c = sd->find("x"))
+                            if (c->type == dumpjson::JsonValue::Type::Number)
+                                solar.dirX = c->number;
+                        if (dumpjson::JsonValue const* c = sd->find("y"))
+                            if (c->type == dumpjson::JsonValue::Type::Number)
+                                solar.dirY = c->number;
+                        if (dumpjson::JsonValue const* c = sd->find("z"))
+                            if (c->type == dumpjson::JsonValue::Type::Number)
+                                solar.dirZ = c->number;
+                    } else {
+                        solar.dirX = 0.0;
+                    }
+                    if (solar.dirX || solar.dirY || solar.dirZ) {
+                        props.solar = solar;
+                        out.displayStyleProps.lights = props;
+                    }
+                }
             }
         }
     }

@@ -100,8 +100,21 @@ int const* SurfaceGeometry::computeSurfaceFlags(CachedGeometry const& geom,
         applyLighting = (geom.getTechniqueId() == TechniqueId::Surface);
     }
 
-    bool const ignoreMaterial = (geom.getMaterialInfo() == nullptr);
-    bool const hasMaterialAtlas = geom.hasMaterialAtlas();
+    // IgnoreMaterial is a VIEW-level gate, not geometry-level: it is set when
+    // materials are disabled for the view (wantMaterials = viewFlags.materials
+    // && SmoothShade — SurfaceGeometry.ts:31-33), regardless of whether this
+    // geometry carries a material. A geometry without a materialInfo uses
+    // Material.default via the uniform fallback (Surface.ts:206-220); a
+    // per-feature ignore arrives through the OVR flags in the shader
+    // (FeatureSymbology.ts:315). The previous DanQing form tied the flag to
+    // (materialInfo == nullptr) — equivalent-by-coincidence for default
+    // rendering (shader defaults == Material.default), but divergent whenever
+    // the view disables materials while the geometry carries one (M-M(1) 归位).
+    // Ported from: itwinjs-core SurfaceGeometry.computeSurfaceFlags (:326-328)
+    bool const wantMaterials = viewFlags.materials
+                               && viewFlags.renderMode == RenderMode::SmoothShade;
+    bool const ignoreMaterial = !wantMaterials;
+    bool const hasMaterialAtlas = wantMaterials && geom.hasMaterialAtlas();
 
     s_flags[static_cast<size_t>(SurfaceBitIndex::hasTexture)] = hasTexture ? 1 : 0;
     s_flags[static_cast<size_t>(SurfaceBitIndex::ApplyLighting)] = applyLighting ? 1 : 0;

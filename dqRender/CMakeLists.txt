@@ -308,6 +308,8 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/ViewRectUniformsTest.cpp
         tests/HiliteUniformsTest.cpp
         tests/LightingUniformsTest.cpp
+        tests/MaterialTest.cpp             # GL Material 打包（M-M(1)——Material.default=RenderMaterialParams.defaults）
+        tests/ImdlMaterialTest.cpp         # imdl surface 材质 JSON 解析（M-M(1)——renderMaterials 表 + 内联）
         tests/FrustumUniformsTest.cpp
         tests/StyleUniformsTest.cpp
         tests/TargetUniformsTest.cpp

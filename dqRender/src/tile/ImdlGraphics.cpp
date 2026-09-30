@@ -42,6 +42,60 @@
 
 BEGIN_DQ_RENDER_NAMESPACE
 
+namespace {
+
+// M-M(1)：surface 材质 → RenderMaterialParams（打包参数袋）。
+// Ported from: itwinjs-core ImdlGraphicsCreator.ts:178-241 getMaterial（string
+// 键 → renderMaterials 表全字段；内联 → toMaterialParams）+
+// ParseImdlDocument.ts:1105-1107 colorDefFromMaterialJson（[0..1] → v*255+0.5）
+// + :1130-1131（transparency → alpha = 1 - t）。缺席字段留参考缺省
+// （RenderMaterialParams：diffuse 0.6 / specular 0.4 / 镜面色白 / exponent
+// 13.5 / alpha 无覆盖）。键缺席 → nullopt（参考 getMaterial undefined →
+// materialInfo undefined → Material.default）。
+std::optional<RenderMaterialParams> resolveSurfaceMaterial(
+    tilejson::ImdlSurfaceMaterialProps const& sm,
+    std::map<std::string, tilejson::ImdlRenderMaterialProps> const& renderMaterials)
+{
+    RenderMaterialParams mp;
+    auto setRgb = [](std::optional<float> const src[3], bool& has, float dst[3]) {
+        if (src[0] && src[1] && src[2]) {
+            has = true;
+            for (int i = 0; i < 3; ++i)
+                dst[i] = std::floor(*src[i] * 255.0f + 0.5f);
+        }
+    };
+    if (sm.isInline) {
+        if (sm.alpha)
+            mp.alpha = *sm.alpha;
+        if (sm.diffuseWeight)
+            mp.diffuse = *sm.diffuseWeight;
+        setRgb(sm.diffuseColor, mp.hasDiffuseColor, mp.diffuseColor);
+        if (sm.specularWeight)
+            mp.specular = *sm.specularWeight;
+        setRgb(sm.specularColor, mp.hasSpecularColor, mp.specularColor);
+        if (sm.specularExponent)
+            mp.specularExponent = *sm.specularExponent;
+        return mp;
+    }
+    auto const it = renderMaterials.find(sm.key);
+    if (it == renderMaterials.end() || !it->second.valid)
+        return std::nullopt;
+    auto const& m = it->second;
+    if (m.diffuseWeight)
+        mp.diffuse = *m.diffuseWeight;
+    setRgb(m.diffuseColor, mp.hasDiffuseColor, mp.diffuseColor);
+    if (m.specularWeight)
+        mp.specular = *m.specularWeight;
+    setRgb(m.specularColor, mp.hasSpecularColor, mp.specularColor);
+    if (m.specularExponent)
+        mp.specularExponent = *m.specularExponent;
+    if (m.transparency)
+        mp.alpha = 1.0f - *m.transparency;
+    return mp;
+}
+
+}  // namespace
+
 std::vector<dqBase::RefPtr<dqGeom::IndexedPolyface>> DQ_RENDER_EXPORT
 decodeImdlGraphics(ImdlDocument const& doc)
 {
@@ -192,6 +246,9 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
         return graphics;
 
     auto primitives = tilejson::parseImdlMeshPrimitives(*json);
+    // M-M(1)：renderMaterials 表（string 键 surface 材质的查找源——
+    // ImdlGraphicsCreator.ts:192 `document.json.renderMaterials[mat]`）。
+    auto renderMaterials = tilejson::parseImdlRenderMaterials(*json);
     for (auto const& prim : primitives) {
         uint8_t const* vertData = nullptr;
         size_t vertSize = 0;
@@ -311,6 +368,19 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
             geom->setColor(dqCommon::ColorDef::create(prim.vertices.uniformColor));
         else
             geom->setNonUniformColor();
+
+        // -------------------------------------------------------------------
+        // M-M(1)：surface 材质消费（参考 MeshData.ts:86 createMaterialInfo(
+        // params.surface.material) → SurfaceGeometry.materialInfo :312 →
+        // u_materialColor/u_materialParams 的 per-draw 源）。无材质/键缺席
+        // → 不挂（compositor 落 Material.default——参考 undefined 语义）。
+        // -------------------------------------------------------------------
+        if (prim.surface.material) {
+            if (auto mp = resolveSurfaceMaterial(*prim.surface.material, renderMaterials)) {
+                geom->setMaterialInfo(std::make_unique<RenderMaterialInternal>(
+                    RenderMaterialInternal::fromParams(*mp)));
+            }
+        }
 
         // -------------------------------------------------------------------
         // TD-25：instances 修饰消费（ImdlSchema.ts:160-166 → InstancedGraphicParams

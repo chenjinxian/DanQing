@@ -1657,6 +1657,24 @@ void OpenGLDriver::setTextureData(TextureHandle th, uint32_t level,
         glTexSubImage2D(tex->glTarget, level, x, y, width, height,
                         pixelFormat, GL_UNSIGNED_BYTE, data.buffer());
     }
+    // TEMP-DIAG（M-M(1) 方向光缺失 saga）：DANQING_LUT_DUMP=1 时回读宽>256 的
+    // 2D 纹理（顶点 LUT 形态）首 128 字节——与 tile 的 bvVertex 字节对拍（上传
+    // 链验证）。raw glGetTexImage 同 [TEXDUMP] 先例。
+    if (tex->glTarget == GL_TEXTURE_2D && width > 256 && height == 1 && level == 0) {
+        static bool const s_lutDump = getenv("DANQING_LUT_DUMP") != nullptr;
+        if (s_lutDump) {
+            static int s_nl = 0;
+            if (s_nl++ < 6) {
+                std::vector<unsigned char> rb(128);
+                glPixelStorei(GL_PACK_ALIGNMENT, 1);
+                glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, rb.data());
+                printf("[LUTDUMP] tex=%u %ux%u bytes[0..31]:", tex->id, width, height);
+                for (int i = 0; i < 32; ++i) printf(" %u", rb[i]);
+                printf("\n");
+                fflush(stdout);
+            }
+        }
+    }
     // TEMP-DIAG（贴图 U 翻转 saga）：上传后 glGetTexImage 回读**每个** 256x256
     // 2D 纹理到 build/texdump-N.raw（RGBA），env 门控——验证是否存在第二次
     // （被镜像的）上传。

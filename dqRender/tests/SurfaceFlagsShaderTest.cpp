@@ -101,7 +101,12 @@ TEST(SurfaceFlagsShaderTest, SetUniform1ivCacheBehavior)
 // Ported from: itwinjs-core MeshGeometry.computeSurfaceFlags()
 TEST(SurfaceFlagsShaderTest, ComputeSurfaceFlagsDefaultMesh)
 {
-    // Opaque lit surface, no textures, no material info → IgnoreMaterial set.
+    // Opaque lit surface, no textures, no material info. IgnoreMaterial is a
+    // VIEW-level gate (M-M(1) 归位——SurfaceGeometry.ts:326-328:
+    // wantMaterials(vf) = materials && SmoothShade): with materials on it is
+    // 0 regardless of the geometry carrying no material — the uniform fallback
+    // (Material.default via u_materialParams) supplies the reference defaults.
+    // The previous form tied the flag to (materialInfo == nullptr).
     rhi::NullDriver driver;
     SurfaceGeometry geom(driver, rhi::IndexBufferHandle{}, 6u, SurfaceType::Opaque, /*isPlanar*/false, /*hasTextures*/false);
     // Production gates (wantNormalMaps, SurfaceGeometry.ts :416-428): the
@@ -114,7 +119,7 @@ TEST(SurfaceFlagsShaderTest, ComputeSurfaceFlagsDefaultMesh)
     EXPECT_EQ(f[static_cast<int>(GL::SurfaceBitIndex::HasNormals)], 1);
     EXPECT_EQ(f[static_cast<int>(GL::SurfaceBitIndex::HasColorAndNormal)], 1);
     EXPECT_EQ(f[static_cast<int>(GL::SurfaceBitIndex::hasTexture)], 0);
-    EXPECT_EQ(f[static_cast<int>(GL::SurfaceBitIndex::IgnoreMaterial)], 1);
+    EXPECT_EQ(f[static_cast<int>(GL::SurfaceBitIndex::IgnoreMaterial)], 0);
     // No normal map on this geometry → HasNormalMap stays 0 even with all
     // gates open (wantNormalMaps' normalMapExists term, :417).
     EXPECT_EQ(f[static_cast<int>(GL::SurfaceBitIndex::HasNormalMap)], 0);

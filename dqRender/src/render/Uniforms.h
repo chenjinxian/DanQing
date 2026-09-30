@@ -433,11 +433,17 @@ public:
         }
     }
 
-    /// Recompute the view-space direction from the frustum view matrix and bind it.
-    /// Ported from: itwinjs-core SunDirection.bind()
-    void bind(UniformHandle& uniform, FrustumUniforms const& frustum) noexcept
+    /// Recompute the view-space direction when the world direction or the
+    /// frustum (view matrix) changed; bind() uploads the result.
+    /// Ported from: itwinjs-core SunDirection.bind() (:100-113) — the reference
+    /// re-runs the transform when the frustum desyncs (`!sync(uniforms.frustum,
+    /// this)`, Sync.ts) OR the world direction was updated; without the frustum
+    /// leg, a world-space sun under camera motion keeps a stale view-space
+    /// direction (M-M(1) 归位). The upload half stays in bind() so GL-free
+    /// tests can drive the math via updateViewDir().
+    void updateViewDir(FrustumUniforms const& frustum) noexcept
     {
-        if (m_updated) {
+        if (m_updated || !m_frustumSync.isSynchronized(frustum)) {
             if (m_haveWorldDir) {
                 m_viewDir = frustum.getViewMatrix().matrix.MultiplyVector(m_worldDir);
                 m_viewDir.x = -m_viewDir.x;  // viewDir.negate()
@@ -448,8 +454,16 @@ public:
             }
             m_viewDir.Normalize();
             storeViewDir();
+            m_frustumSync.sync(frustum);
             m_updated = false;
         }
+    }
+
+    /// Recompute the view-space direction from the frustum view matrix and bind it.
+    /// Ported from: itwinjs-core SunDirection.bind()
+    void bind(UniformHandle& uniform, FrustumUniforms const& frustum) noexcept
+    {
+        updateViewDir(frustum);
         uniform.setUniform3fv(m_viewDir32);
     }
 
@@ -478,6 +492,7 @@ private:
                            static_cast<float>(kDefaultY),
                            static_cast<float>(kDefaultZ)};
     bool m_updated = true;
+    SyncObserver m_frustumSync;  // reference syncToken vs uniforms.frustum (Sync.ts)
 };
 
 // ---------------------------------------------------------------------------

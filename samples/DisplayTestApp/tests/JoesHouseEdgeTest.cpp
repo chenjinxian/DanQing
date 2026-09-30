@@ -269,15 +269,20 @@ TEST(JoesHouseEdge, PanelEdgesRenderBlackLinesFromHlineOverride)
     // ①边线存在（修复前实测 = 30 噪声命中：indexed 边着色器 qpos 协议缺失
     //    → 6 顶点退化零片元；A 段未接时即便上屏也是白边落白面）。
     //    首绿实测 1540±1（终审独立复跑 1540——AA 抖动）；阈值 ≈ 0.45× 余量。
-    EXPECT_GE(edgePixels, 700l)
+    //    M-M(1) 光照修复后重钉：u_sunDir legacy 双写拆除（方向光缺失 saga）→
+    //    面板分面亮度重排——背光面 <120 使 ±2 亮邻门在暗面区失效，计数
+    //    1540→319（边链完好：噪声 30 的 10×、均值 36.9 黑、行列仍铺开）。
+    //    阈值 ≈ 0.45× 余量。
+    EXPECT_GE(edgePixels, 150l)
         << "no black panel edge lines on panels — compact/indexed edges "
            "produce zero fragments (qpos protocol missing in function-call "
            "vertex main) or hline black override not wired";
     // ②WHERE 分布：边线遍布全屋面板边界（非单点伪影）。首绿实测
-    //    457 行/870 列（终审复跑 456/869——AA 抖动）；阈值 ≈ 0.4× 余量。
-    EXPECT_GE(edgeRows.size(), 200u)
+    //    457 行/870 列；M-M(1) 光照修复后 171 行/275 列（暗面区亮邻门失效，
+    //    见①注）；阈值 ≈ 0.45× 余量。
+    EXPECT_GE(edgeRows.size(), 80u)
         << "edge pixels not spread across rows — WHERE attribution failed";
-    EXPECT_GE(edgeCols.size(), 350u)
+    EXPECT_GE(edgeCols.size(), 130u)
         << "edge pixels not spread across columns — WHERE attribution failed";
     // ③黑度：hline.visible.color=0 纯黑覆盖（首绿实测 26.4；对比灰 178 /
     //    白边 255 均出局）。
