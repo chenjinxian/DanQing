@@ -43,12 +43,6 @@
         <!-- Structure toolbar -->
         <file alias="Group.svg">icons/Group.svg</file>
 
-        <!-- Start page workbench icons -->
-        <file alias="PartDesignWorkbench.svg">icons/PartDesignWorkbench.svg</file>
-        <file alias="AssemblyWorkbench.svg">icons/AssemblyWorkbench.svg</file>
-        <file alias="DraftWorkbench.svg">icons/DraftWorkbench.svg</file>
-        <file alias="BIMWorkbench.svg">icons/BIMWorkbench.svg</file>
-
         <!-- Dock widget and tab bar icons -->
         <file alias="images_classic/close-black.svg">icons/images_classic/close-black.svg</file>
         <file alias="images_classic/close-red.svg">icons/images_classic/close-red.svg</file>

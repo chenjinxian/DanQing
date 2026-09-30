@@ -115,8 +115,8 @@ View3DInventor::View3DInventor(Gui::Document* pcDocument, QWidget* parent,
     //              IModelApp.viewManager.addViewport(viewer.viewport)
     dqApp::Application::Get().GetViewManager().AddViewport(m_viewport);
 
-    // Setup viewer-specific toolbar.
-    setupToolBar();
+    // M-L(2)：setupToolBar 空 TODO 死桩已删（分析报告 §3.1——工具栏区由
+    // DtaToolBarSet 统一重建）。
 
     // Notify that viewport is ready.
     Q_EMIT viewportCreated();
@@ -541,16 +541,6 @@ void View3DInventor::setCurrentViewMode(ViewMode mode)
             mdi->layout()->invalidate();
         }
     }
-}
-
-// ---------------------------------------------------------------------------
-// setupToolBar — create viewer-specific toolbar.
-// Ported from: itwinjs-core Viewer.ts constructor — toolbar setup
-// ---------------------------------------------------------------------------
-void View3DInventor::setupToolBar()
-{
-    // TODO: create toolbar with view controls (fit, rotate, etc.)
-    // This will be implemented when tools are connected.
 }
 
 // ---------------------------------------------------------------------------

@@ -131,8 +131,6 @@ public Q_SLOTS:
     void statusMessageChanged();
 
     void showMessage(const QString& message, int timeout = 0);
-    void setRightSideMessage(const QString& message);
-    bool isRightSideMessageVisible() const;
 
     // Ported from: FreeCAD src/Gui/MainWindow.h:271-296 (MDI window slots)
     // Deviation: made public slots for testability (FreeCAD has these as private);

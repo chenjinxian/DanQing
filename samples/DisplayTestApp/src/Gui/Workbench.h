@@ -2,7 +2,6 @@
 #pragma once
 
 #include "MenuManager.h"
-#include "ToolBarManager.h"
 
 class QMainWindow;
 
@@ -23,14 +22,14 @@ public:
     bool activate();
 
     void setMainWindow(QMainWindow* mw) { m_mw = mw; }
-    void setManagers(CommandManager* cm, MenuManager* mm, ToolBarManager* tm) {
+    // M-L(2)：ToolBarManager 参数已随 StdWorkbench::setupToolBars 死树删除
+    //（main.cpp 传 nullptr 永不构建——分析报告 §3.1；工具栏区由 DtaToolBarSet 重建）。
+    void setManagers(CommandManager* cm, MenuManager* mm) {
         m_cm = cm;
         m_mm = mm;
-        m_tm = tm;
     }
 
-    virtual MenuItem*    setupMenuBar()  const = 0;
-    virtual ToolBarItem* setupToolBars() const = 0;
+    virtual MenuItem* setupMenuBar() const = 0;
 
     // Ported from: FreeCAD src/Gui/Workbench.cpp:360-364 (Workbench::setupContextMenu)
     // Base implementation is a no-op so non-StdWorkbench workbenches (and the DTA
@@ -49,7 +48,6 @@ protected:
     QMainWindow*    m_mw = nullptr;
     CommandManager* m_cm = nullptr;
     MenuManager*    m_mm = nullptr;
-    ToolBarManager* m_tm = nullptr;
 
 private:
     // Set by activate(); read by activeWorkbench(). DTA has a single static
@@ -58,13 +56,12 @@ private:
     static Workbench* s_activeWorkbench;
 };
 
-// Ported from: FreeCAD src/Gui/Workbench.h:151-175 + Workbench.cpp:699-906
+// Ported from: FreeCAD src/Gui/Workbench.h:151-175 + Workbench.cpp:699-844
+// M-L(2)：StdWorkbench::setupToolBars 已删（死树——分析报告 §3.1）。
 class StdWorkbench : public Workbench {
 public:
     // Ported from: FreeCAD src/Gui/Workbench.cpp:699-844
     MenuItem* setupMenuBar() const override;
-    // Ported from: FreeCAD src/Gui/Workbench.cpp:846-906
-    ToolBarItem* setupToolBars() const override;
     // Ported from: FreeCAD src/Gui/Workbench.cpp:634-660 (StdWorkbench::setupContextMenu)
     void setupContextMenu(const char* recipient, MenuItem* item) const override;
 };

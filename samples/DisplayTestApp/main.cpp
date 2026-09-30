@@ -62,6 +62,7 @@ static LONG WINAPI dtaCrashPrinter(EXCEPTION_POINTERS* ep)
 #include "src/Gui/MainWindow.h"
 #include "src/Gui/Application.h"
 #include "src/Gui/DtaToolBars.h"
+#include "src/Gui/TileTreePanel.h"
 #include "src/Gui/View3DInventor.h"
 #include "src/Gui/DecorationGeometryExample.h"
 #include "src/Gui/Command.h"
@@ -112,18 +113,8 @@ std::optional<dta::DumpOpenPackage> dumpPackageForModel(QString const& modelId)
     return pkg;
 }
 
-// 打开产物生命周期注册表：DumpOpenResult 持有 trees/provider（viewport 注册的
-// 是 provider 裸指针——DumpOpenHelper.h:97-101），必须活得比 viewport 久。
-// 按 view 登记；view destroyed（~QObject 在 ~View3DInventor 之后发射——先拆
-// 视口后拆树，TD-22 危险序的反向）时擦除。捕获的 view 指针仅作 map 键，从不
-// 解引用。注册表本体堆驻留不析构（有意泄漏）——进程退出时静态析构序会让
-// ImdlTileTree 撞上已死的 RenderSystem/TileAdmin 单例。
-std::map<Gui::View3DInventor*, std::unique_ptr<dta::DumpOpenResult>>& openedDumps()
-{
-    static auto* s_registry =
-        new std::map<Gui::View3DInventor*, std::unique_ptr<dta::DumpOpenResult>>();
-    return *s_registry;
-}
+// 打开产物生命周期注册表已迁入 DumpOpenHelper（dta::registerOpenedDump/
+// forgetOpenedDump/findOpenedDump——M-L(2)：Models/瓦树面板与打开链同源消费）。
 
 }  // namespace
 
@@ -211,9 +202,10 @@ int main(int argc, char** argv)
 
     Gui::StdWorkbench wb;
     wb.setMainWindow(mainWindow);
-    // 第三参 nullptr：activate() 的 `if (m_tm)` 守卫跳过 FreeCAD 工具栏构建（菜单照常），
-    // 工具栏区由下方 Gui::DtaToolBarSet 按 DTA 功能分类重建。
-    wb.setManagers(&mainWindow->commandManager(), &mainWindow->menuManager(), nullptr);
+    // M-L(2)：setManagers 第三参（ToolBarManager）已随 StdWorkbench::setupToolBars
+    // 死树删除——main.cpp 传 nullptr 永不构建；工具栏区由下方 Gui::DtaToolBarSet
+    // 按 DTA 功能分类重建。
+    wb.setManagers(&mainWindow->commandManager(), &mainWindow->menuManager());
     wb.activate();
 
     // 6. Create StartView and add as tab
@@ -303,10 +295,10 @@ int main(int argc, char** argv)
                                  : QObject::tr("60 Instances (Properties)"));
                          QString const treeSummary = QString::fromStdString(
                              std::to_string(opened->treeLoadLog.size()));
-                         openedDumps().emplace(view3d,
+                         dta::registerOpenedDump(view3d,
                              std::make_unique<dta::DumpOpenResult>(std::move(*opened)));
                          QObject::connect(view3d, &QObject::destroyed, mainWindow,
-                                          [view3d]() { openedDumps().erase(view3d); });
+                                          [view3d]() { dta::forgetOpenedDump(view3d); });
                          mainWindow->showStatus(
                              0, QObject::tr("Opened %1 (%2 tile trees) — saved view rendered")
                                     .arg(modelId, treeSummary));
@@ -315,6 +307,12 @@ int main(int argc, char** argv)
     // DTA 功能分类工具栏区（替代原 FreeCAD 6 条 + 临时 2 条）。
     // Ported from: itwinjs-core display-test-app Surface.ts + Viewer.ts 工具栏组织。
     new Gui::DtaToolBarSet(mainWindow);  // QObject 挂在 mainWindow 上，随其析构
+
+    // Models/瓦树停靠面板（M-L(2) 裁决档：原 FreeCAD ComboView 的
+    // TreePanel+PropertyView 无文档后端恒空，改造为已打开 iModel 的
+    // models/tile trees 陈列——数据源 = 打开产物注册表）。
+    // 必须先于 loadWindowSettings（restoreWindowState 的 dock 布局要能命中它）。
+    Gui::setupModelsPanel();
 
     // The ONE show: geometry + dock state, then (deferred) maximize — see
     // MainWindow::loadWindowSettings for the Windows DPI presentation note.

@@ -159,7 +159,6 @@ struct MainWindowP
     DimensionWidget* sizeLabel;
     StatusBarLabel* actionLabel;
     InputHintWidget* hintLabel;
-    StatusBarLabel* rightSideLabel;
     std::vector<StatusBarItem> statusBarItems;
     ParameterGrp::handle hStatusBar;
     QTimer* actionTimer;

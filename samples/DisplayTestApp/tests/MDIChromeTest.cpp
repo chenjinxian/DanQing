@@ -585,12 +585,11 @@ TEST(MDIChromeTest, StdWorkbenchSetupContextMenuViewGroup)
     StdWorkbench wb;
     wb.setupContextMenu("View", &item);
 
-    // The View context-group tree must contain (FreeCAD Workbench.cpp:638-660):
-    //   [createLinkMenu — DTA: skipped, no doc backend]
+    // The View context-group tree must contain (M-L(2) trim of FreeCAD
+    // Workbench.cpp:638-660 — FitSelection/AlignToSelection/DrawStyle/
+    // DockUndockFullscreen 存根命令族随删):
     //   "Separator"
-    //   "Std_ViewFitAll" "Std_ViewFitSelection" "Std_AlignToSelection"
-    //   "Std_DrawStyle" <Standard Views submenu> "Separator"
-    //   "Std_ViewDockUndockFullscreen"
+    //   "Std_ViewFitAll" <Standard Views submenu>
     //
     // Collect leaf + submenu command names in insertion order.
     std::vector<std::string> cmds;
@@ -604,11 +603,7 @@ TEST(MDIChromeTest, StdWorkbenchSetupContextMenuViewGroup)
     };
 
     EXPECT_TRUE(contains("Separator")) << "First separator after createLinkMenu";
-    EXPECT_TRUE(contains("Std_ViewFitAll"))   << "Workbench.cpp:650";
-    EXPECT_TRUE(contains("Std_ViewFitSelection")) << "Workbench.cpp:650";
-    EXPECT_TRUE(contains("Std_AlignToSelection")) << "Workbench.cpp:650";
-    EXPECT_TRUE(contains("Std_DrawStyle"))    << "Workbench.cpp:651";
-    EXPECT_TRUE(contains("Std_ViewDockUndockFullscreen")) << "Workbench.cpp:652";
+    EXPECT_TRUE(contains("Std_ViewFitAll")) << "Workbench.cpp:650";
 
     // Standard Views submenu (Workbench.cpp:642-648) — find the submenu and verify its children.
     bool foundStdViews = false;
@@ -623,15 +618,15 @@ TEST(MDIChromeTest, StdWorkbenchSetupContextMenuViewGroup)
                 return std::find(subCmds.begin(), subCmds.end(), name) != subCmds.end();
             };
             EXPECT_TRUE(subHas("Std_ViewIsometric"))  << "Workbench.cpp:645";
-            EXPECT_TRUE(subHas("Std_ViewHome"))       << "Workbench.cpp:645";
             EXPECT_TRUE(subHas("Std_ViewFront"))      << "Workbench.cpp:645";
             EXPECT_TRUE(subHas("Std_ViewTop"))        << "Workbench.cpp:646";
             EXPECT_TRUE(subHas("Std_ViewRight"))      << "Workbench.cpp:646";
             EXPECT_TRUE(subHas("Std_ViewRear"))       << "Workbench.cpp:647";
             EXPECT_TRUE(subHas("Std_ViewBottom"))     << "Workbench.cpp:647";
             EXPECT_TRUE(subHas("Std_ViewLeft"))       << "Workbench.cpp:647";
-            EXPECT_TRUE(subHas("Std_ViewRotateLeft"))  << "Workbench.cpp:648";
-            EXPECT_TRUE(subHas("Std_ViewRotateRight")) << "Workbench.cpp:648";
+            // M-L(2)：Home/RotateLeft/RotateRight 存根已删
+            EXPECT_FALSE(subHas("Std_ViewHome"));
+            EXPECT_FALSE(subHas("Std_ViewRotateLeft"));
             break;
         }
     }
@@ -657,11 +652,10 @@ TEST(MDIChromeTest, StdWorkbenchSetupContextMenuTreeRecipientIsEmpty)
 TEST(MDIChromeTest, BaseWorkbenchSetupContextMenuIsNoOp)
 {
     ensureAppReady();
-    // Workbench is abstract in DTA (setupMenuBar/setupToolBars are pure virtual);
+    // Workbench is abstract in DTA (setupMenuBar is pure virtual);
     // use a minimal concrete subclass to exercise the base no-op.
     struct TestWorkbench : public Workbench {
         MenuItem* setupMenuBar() const override { return nullptr; }
-        ToolBarItem* setupToolBars() const override { return nullptr; }
     };
     TestWorkbench wb;
     MenuItem item;
@@ -720,7 +714,7 @@ TEST(MDIChromeTest, CommandManagerSetupContextMenuDispatchesToActiveWorkbench)
     // Activate a StdWorkbench so CommandManager can dispatch to it.
     StdWorkbench wb;
     wb.setMainWindow(&mw);
-    wb.setManagers(&mw.commandManager(), &mw.menuManager(), &mw.toolBarManager());
+    wb.setManagers(&mw.commandManager(), &mw.menuManager());
     wb.activate();
 
     // Dispatch via CommandManager — should reach StdWorkbench::setupContextMenu.
@@ -737,8 +731,7 @@ TEST(MDIChromeTest, CommandManagerSetupContextMenuDispatchesToActiveWorkbench)
         return std::find(cmds.begin(), cmds.end(), name) != cmds.end();
     };
     EXPECT_TRUE(contains("Std_ViewFitAll"));
-    EXPECT_TRUE(contains("Std_DrawStyle"));
-    EXPECT_TRUE(contains("Std_ViewDockUndockFullscreen"));
+    // M-L(2)：DrawStyle/DockUndockFullscreen 存根已删——断言随之删。
 }
 
 // Ported from: FreeCAD src/Gui/Application.cpp:2226-2252 (null-active guard)

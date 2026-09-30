@@ -344,7 +344,9 @@ TEST(CommandManagerTest, GetAllCommands)
 // constructor metadata.
 // =====================================================================
 
-// Ported from: Authored — File/Edit commands registered via createFileEditCommands
+// Ported from: Authored — File commands registered via createFileEditCommands
+// M-L(2)：Std_Open/Std_Save/Std_SaveAs 存根已删，断言随之删；Edit 域快捷键
+// 测试（Undo/Redo/Cut/Copy/Paste/SelectAll）随域删除。
 TEST(CommandDocTest, FileCommandsHaveCorrectMetadata)
 {
     qtApp();
@@ -358,27 +360,6 @@ TEST(CommandDocTest, FileCommandsHaveCorrectMetadata)
     EXPECT_EQ(newCmd->getAction()->action()->shortcut().toString().toStdString(),
               std::string("Ctrl+N"));
     EXPECT_STREQ(newCmd->getGroupName(), "File");
-
-    // Std_Open: Ctrl+O
-    auto* openCmd = mgr.getCommandByName("Std_Open");
-    ASSERT_NE(openCmd, nullptr);
-    openCmd->initAction();
-    EXPECT_EQ(openCmd->getAction()->action()->shortcut().toString().toStdString(),
-              std::string("Ctrl+O"));
-
-    // Std_Save: Ctrl+S
-    auto* saveCmd = mgr.getCommandByName("Std_Save");
-    ASSERT_NE(saveCmd, nullptr);
-    saveCmd->initAction();
-    EXPECT_EQ(saveCmd->getAction()->action()->shortcut().toString().toStdString(),
-              std::string("Ctrl+S"));
-
-    // Std_SaveAs: Ctrl+Shift+S
-    auto* saveAsCmd = mgr.getCommandByName("Std_SaveAs");
-    ASSERT_NE(saveAsCmd, nullptr);
-    saveAsCmd->initAction();
-    EXPECT_EQ(saveAsCmd->getAction()->action()->shortcut().toString().toStdString(),
-              std::string("Ctrl+Shift+S"));
 
     // Std_Quit: Ctrl+Q（QKeySequence::Quit 平台感知：Windows 无系统默认，
     // shortcut 回退显示菜单文本 "Exit"）
@@ -394,64 +375,8 @@ TEST(CommandDocTest, FileCommandsHaveCorrectMetadata)
 #endif
 }
 
-// Ported from: Authored — Edit domain shortcut spot-checks
-TEST(CommandDocTest, EditCommandsHaveCorrectShortcuts)
-{
-    qtApp();
-    CommandManager mgr;
-    createFileEditCommands(mgr);
-
-    // Std_Undo: Ctrl+Z
-    auto* undoCmd = mgr.getCommandByName("Std_Undo");
-    ASSERT_NE(undoCmd, nullptr);
-    undoCmd->initAction();
-    EXPECT_EQ(undoCmd->getAction()->action()->shortcut().toString().toStdString(),
-              std::string("Ctrl+Z"));
-
-    // Std_Redo: Ctrl+Shift+Z（QKeySequence::Redo 平台感知：Windows 标准为 Ctrl+Y）
-    auto* redoCmd = mgr.getCommandByName("Std_Redo");
-    ASSERT_NE(redoCmd, nullptr);
-    redoCmd->initAction();
-#ifdef _WIN32
-    EXPECT_EQ(redoCmd->getAction()->action()->shortcut().toString().toStdString(),
-              std::string("Ctrl+Y"));
-#else
-    EXPECT_EQ(redoCmd->getAction()->action()->shortcut().toString().toStdString(),
-              std::string("Ctrl+Shift+Z"));
-#endif
-
-    // Std_Cut: Ctrl+X
-    auto* cutCmd = mgr.getCommandByName("Std_Cut");
-    ASSERT_NE(cutCmd, nullptr);
-    cutCmd->initAction();
-    EXPECT_EQ(cutCmd->getAction()->action()->shortcut().toString().toStdString(),
-              std::string("Ctrl+X"));
-
-    // Std_Copy: Ctrl+C
-    auto* copyCmd = mgr.getCommandByName("Std_Copy");
-    ASSERT_NE(copyCmd, nullptr);
-    copyCmd->initAction();
-    EXPECT_EQ(copyCmd->getAction()->action()->shortcut().toString().toStdString(),
-              std::string("Ctrl+C"));
-
-    // Std_Paste: Ctrl+V
-    auto* pasteCmd = mgr.getCommandByName("Std_Paste");
-    ASSERT_NE(pasteCmd, nullptr);
-    pasteCmd->initAction();
-    EXPECT_EQ(pasteCmd->getAction()->action()->shortcut().toString().toStdString(),
-              std::string("Ctrl+V"));
-
-    // Std_SelectAll: Ctrl+A
-    auto* selectAllCmd = mgr.getCommandByName("Std_SelectAll");
-    ASSERT_NE(selectAllCmd, nullptr);
-    selectAllCmd->initAction();
-    EXPECT_EQ(selectAllCmd->getAction()->action()->shortcut().toString().toStdString(),
-              std::string("Ctrl+A"));
-}
-
-// Ported from: Authored — Tooltips are non-empty for all registered commands.
-// StdCmdRecentFiles/StdCmdRecentMacros skipped: their createAction() calls
-// App::GetApplication() which requires the Application singleton (unavailable in tests).
+// Ported from: Authored — Tooltips are non-empty for the surviving File commands.
+// M-L(2)：原 35 命令遍历随 Edit 域与文档-I/O 存根删除收敛为真功能三项。
 TEST(CommandDocTest, AllCommandsHaveTooltips)
 {
     qtApp();
@@ -459,18 +384,7 @@ TEST(CommandDocTest, AllCommandsHaveTooltips)
     createFileEditCommands(mgr);
 
     const char* names[] = {
-        "Std_New", "Std_Open",
-        // "Std_RecentFiles",  // requires App::GetApplication() in createAction
-        "Std_CloseActiveWindow",
-        "Std_CloseAllWindows", "Std_Save", "Std_SaveAs", "Std_SaveCopy",
-        "Std_SaveAll", "Std_Revert", "Std_Import", "Std_Export",
-        "Std_MergeProjects", "Std_ProjectInfo", "Std_Print", "Std_PrintPreview",
-        "Std_PrintPdf", "Std_Quit", "Std_Undo", "Std_Redo",
-        "Std_Cut", "Std_Copy", "Std_Paste", "Std_DuplicateSelection",
-        "Std_SelectAll", "Std_Delete", "Std_Refresh", "Std_BoxSelection",
-        "Std_BoxElementSelection", "Std_SendToPythonConsole", "Std_Placement",
-        "Std_TransformManip", "Std_Alignment", "Std_Edit", "Std_Properties",
-        "Std_UserEditMode",
+        "Std_New", "Std_Import", "Std_Quit",
     };
 
     for (const char* name : names) {
@@ -489,7 +403,7 @@ TEST(CommandDocTest, RegistrationCount)
     CommandManager mgr;
     createFileEditCommands(mgr);
 
-    // 17 File commands + 19 Edit commands = 36 total
+    // M-L(2)：File 域清理后仅存真功能三项（New/Import/Quit）
     const auto& all = mgr.getAllCommands();
-    EXPECT_EQ(all.size(), 36u);
+    EXPECT_EQ(all.size(), 3u);
 }
