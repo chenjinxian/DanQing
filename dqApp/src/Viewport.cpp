@@ -1827,6 +1827,18 @@ void Viewport::SetupFromView(bool skipAspectFix)
         rect.bottom = height();
         m_viewingSpace.update(*view3d, rect);
     }
+
+    // Ported from: itwinjs-core doSetupFromView tail (Viewport.ts:2054-2057):
+    //   this._inViewChangedEvent = true;
+    //   this.onViewChanged.raiseEvent(this);
+    //   this._inViewChangedEvent = false;
+    // （ViewportSync 与装饰消费面订阅的唯一视图变更事件——参考 ViewportSync.
+    //   connectViewports 只订阅 onViewChanged，ViewportSync.ts:56-58。）
+    if (!m_inViewChangedEvent) {
+        m_inViewChangedEvent = true;
+        onViewChanged.Raise(this);
+        m_inViewChangedEvent = false;
+    }
 }
 
 // Ported from: itwinjs-core Viewport.setupFromView(pose?) (Viewport.ts:2062-2066)：
@@ -2144,15 +2156,19 @@ void Viewport::CollectDecorations()
 // ---------------------------------------------------------------------------
 // PickAtPoint — read feature ID at pixel coordinate from pick buffer
 // ---------------------------------------------------------------------------
-#ifdef DANQING_TESTING
-// DIAG(grid-app): 应用路径合成帧回读。
-bool Viewport::ReadFrameForTest(std::vector<uint8_t>& rgbaOut)
+// ---------------------------------------------------------------------------
+// 帧回读（M-L(3)：生产面析出——SaveImage 工具的 readImageBuffer 通道）
+// ---------------------------------------------------------------------------
+// Ported from: itwinjs-core Viewport.readImageBuffer (Viewport.ts:2803-2805) —
+// 生产回读（SaveImageTool 消费）；原 ReadFrameForTest（DIAG(grid-app) 面析出，
+// 参考 readPixels Viewport.ts:2778-2785 为 @internal 测试面）委派到本实现。
+bool Viewport::readImageBuffer(std::vector<uint8_t>& rgbaOut)
 {
     uint32_t w = 0, h = 0;
-    return ReadFrameForTest(rgbaOut, w, h);
+    return readImageBuffer(rgbaOut, w, h);
 }
 
-bool Viewport::ReadFrameForTest(std::vector<uint8_t>& rgbaOut, uint32_t& wOut, uint32_t& hOut)
+bool Viewport::readImageBuffer(std::vector<uint8_t>& rgbaOut, uint32_t& wOut, uint32_t& hOut)
 {
     if (!m_renderTarget) return false;
     // 读整个渲染目标（设备像素 = CSS 尺寸 × devicePixelRatio，itwinjs
@@ -2163,6 +2179,18 @@ bool Viewport::ReadFrameForTest(std::vector<uint8_t>& rgbaOut, uint32_t& wOut, u
     hOut = rect.height();
     rgbaOut.resize(static_cast<size_t>(rect.width()) * rect.height() * 4);
     return m_renderTarget->readPixels(0, 0, rect.width(), rect.height(), rgbaOut);
+}
+
+#ifdef DANQING_TESTING
+// DIAG(grid-app): 应用路径合成帧回读（测试面——委派 readImageBuffer）。
+bool Viewport::ReadFrameForTest(std::vector<uint8_t>& rgbaOut)
+{
+    return readImageBuffer(rgbaOut);
+}
+
+bool Viewport::ReadFrameForTest(std::vector<uint8_t>& rgbaOut, uint32_t& wOut, uint32_t& hOut)
+{
+    return readImageBuffer(rgbaOut, wOut, hOut);
 }
 #endif
 

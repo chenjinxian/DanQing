@@ -58,10 +58,12 @@ static LONG WINAPI dtaCrashPrinter(EXCEPTION_POINTERS* ep)
 #include <dqApp/IModelConnection.h>  // DANQING_AUTO_OPEN_DECO refit 用 GetProjectExtents
 
 #include "src/Mod/Start/Gui/StartView.h"
+#include "src/Mod/Start/Gui/ReadMeView.h"
 #include "src/DumpOpenHelper.h"
 #include "src/Gui/MainWindow.h"
 #include "src/Gui/Application.h"
 #include "src/Gui/DtaToolBars.h"
+#include "src/Gui/DtaTools.h"
 #include "src/Gui/TileTreePanel.h"
 #include "src/Gui/View3DInventor.h"
 #include "src/Gui/DecorationGeometryExample.h"
@@ -304,9 +306,28 @@ int main(int argc, char** argv)
                                     .arg(modelId, treeSummary));
                      });
 
+    // M-L(3) Task B：ReadMe 展示页入口（Start 页第三分组卡片 → 滚动只读页）。
+    // 新建 MDI 视口（addWindow 与 StartView 同位——TabbedView 顶栏新 tab）。
+    QObject::connect(startView, &StartGui::StartView::requestReadMe, mainWindow,
+                     [mainWindow]() {
+                         auto* readme = new StartGui::ReadMeView(mainWindow);
+                         readme->setWindowTitle(QObject::tr("ReadMe"));
+                         readme->resize(720, 640);
+                         mainWindow->addWindow(readme);
+                         mainWindow->showStatus(0, QObject::tr("ReadMe opened"));
+                     });
+
     // DTA 功能分类工具栏区（替代原 FreeCAD 6 条 + 临时 2 条）。
     // Ported from: itwinjs-core display-test-app Surface.ts + Viewer.ts 工具栏组织。
     new Gui::DtaToolBarSet(mainWindow);  // QObject 挂在 mainWindow 上，随其析构
+
+    // M-L(3)：DTA 工具注册（App.ts:393-458 SVTTools 扫描——keyin 可达的 app 工具）
+    // + 状态栏装配（index.html status-bar div：keyin-entry / fps-container /
+    // tileLoadIndicatorContainer——Surface.ts:52-60）+ ToolAssistance 提示接线
+    //（ViewTool.ts:628-655 → InputHintWidget）。
+    Gui::registerDtaTools();
+    Gui::setupDtaStatusBar(mainWindow);
+    Gui::setupToolAssistanceHints();
 
     // Models/瓦树停靠面板（M-L(2) 裁决档：原 FreeCAD ComboView 的
     // TreePanel+PropertyView 无文档后端恒空，改造为已打开 iModel 的

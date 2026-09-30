@@ -130,7 +130,25 @@ std::optional<DumpOpenResult> openDumpIModel(Gui::View3DInventor& view,
         tree->setRenderSystem(viewport->renderSystem());
         if (treeProps->hasLocation)
             tree->setIModelTransform(treeProps->location);
-        out.provider->addTree(tree.get());
+
+        // M-L(3) Models 面板数据面：逐树条目（modelId + 派生 treeId + 世界域）。
+        // 世界域 = rootTile.range × location（参考 fit 的场景域来源——
+        // computeViewRange 的 TileTree range 并集经 iModelTransform；rootTile
+        // range 是瓦局部域，8 角点变换后重张成盒）。
+        dqGeom::Range3d worldRange = treeProps->rootTile.range;
+        if (treeProps->hasLocation) {
+            auto const& xf = treeProps->location;
+            auto const diag = treeProps->rootTile.range.Diagonal();
+            worldRange = dqGeom::Range3d::CreateNull();
+            for (int c = 0; c < 8; ++c) {
+                dqGeom::Point3d const corner(
+                    treeProps->rootTile.range.low.x + ((c & 1) ? diag.x : 0.0),
+                    treeProps->rootTile.range.low.y + ((c & 2) ? diag.y : 0.0),
+                    treeProps->rootTile.range.low.z + ((c & 4) ? diag.z : 0.0));
+                worldRange.ExtendPoint(xf.MultiplyPoint3d(corner));
+            }
+        }
+        out.provider->addTree(tree.get(), modelId.ToString(), treeId, worldRange);
         out.treeLoadLog.push_back(treeId);
         out.trees.push_back(std::move(tree));
     }

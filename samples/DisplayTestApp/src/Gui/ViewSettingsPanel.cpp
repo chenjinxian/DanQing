@@ -138,9 +138,28 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
     });
     layout->addWidget(mono);
 
-    // 置灰分区标注（DTA 面板的其余分区：Environment/BackgroundMap/Edges/AO/Thematic）。
+    // Edge Display 开关（M-L(3) 接线级 #4——渲染侧 M-I(4) 已通，只差开关）。
+    // Ported from: ViewAttributes.addEdgeDisplay (:835-1008) — "Visible Edges" →
+    // viewFlags.visibleEdges (:863-869)、"Hidden Edges" → viewFlags.hiddenEdges
+    // (:878-884)（参考的 hline 色宽样式覆写编辑器 addHiddenLineEditor :906-1008
+    // 仍为移植级——登记）。参考切换后 this.sync() 同步面板；本面板的回读在
+    // syncFromViewport（弹出时）。
+    auto* visEdges = new QCheckBox(QStringLiteral("Visible Edges"), this);
+    visEdges->setObjectName(QStringLiteral("Visible Edges"));
+    connect(visEdges, &QCheckBox::toggled, this, [this](bool on) {
+        applyFlags([on](dqCommon::ViewFlagsProperties& p) { p.visibleEdges = on; });
+    });
+    layout->addWidget(visEdges);
+    auto* hidEdges = new QCheckBox(QStringLiteral("Hidden Edges"), this);
+    hidEdges->setObjectName(QStringLiteral("Hidden Edges"));
+    connect(hidEdges, &QCheckBox::toggled, this, [this](bool on) {
+        applyFlags([on](dqCommon::ViewFlagsProperties& p) { p.hiddenEdges = on; });
+    });
+    layout->addWidget(hidEdges);
+
+    // 置灰分区标注（DTA 面板的其余分区：Environment/BackgroundMap/边线样式编辑器/AO/Thematic）。
     const char* disabledSections[] = {
-        "Environment editor", "Background Map", "Edge Display",
+        "Environment editor", "Background Map", "Edge style editor (hline overrides)",
         "Ambient Occlusion", "Thematic Display",
     };
     for (auto* s : disabledSections) {
@@ -193,6 +212,8 @@ void ViewSettingsPanel::syncFromViewport()
         else if (name == "Force Surface Discard") cb->setChecked(props.forceSurfaceDiscard);
         else if (name == "White-on-white Reversal") cb->setChecked(props.whiteOnWhiteReversal);
         else if (name == "Monochrome") cb->setChecked(props.monochrome);
+        else if (name == "Visible Edges") cb->setChecked(props.visibleEdges);
+        else if (name == "Hidden Edges") cb->setChecked(props.hiddenEdges);
     }
 }
 }  // namespace Gui

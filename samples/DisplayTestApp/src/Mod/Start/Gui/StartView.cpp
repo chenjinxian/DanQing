@@ -86,6 +86,17 @@ StartView::StartView(QWidget* parent)
     contentLayout->addWidget(examplesRow);
     configureExampleButtons(examplesFlow);
 
+    // M-L(3)：第三分组 "ReadMe"（分析报告 §4.2 入口形态——卡片 → 滚动只读页）。
+    _readmeLabel = new QLabel();
+    contentLayout->addWidget(_readmeLabel);
+    auto readmeRow = new QWidget;
+    auto readmeFlow = new FlowLayout;
+    readmeFlow->setContentsMargins({});
+    readmeRow->setObjectName(QStringLiteral("ReadMeRow"));
+    readmeRow->setLayout(readmeFlow);
+    contentLayout->addWidget(readmeRow);
+    configureReadMeButtons(readmeFlow);
+
     contentLayout->setSpacing(static_cast<int>(cardSpacing));
     contentLayout->addStretch();
 
@@ -158,6 +169,23 @@ void StartView::configureExampleButtons(QLayout* layout)
     layout->addWidget(decorationGeometry);
 }
 
+void StartView::configureReadMeButtons(QLayout* layout)
+{
+    // M-L(3) Task B：ReadMe 展示页入口卡（分析报告 §4.2——"Start 页第三分组
+    // ReadMe，复用 NewFileButton 卡片形态，点击开一个滚动只读页 MDI——与
+    // StartView 同构"）。内容口径见 ReadMeView.h（已锁能力 × 判据测试名；
+    // 不放截图位）。
+    const QString dtaIcons = QStringLiteral(":/fonts/Display-Test-App-Icons.ttf");
+    auto readme = new NewFileButton(
+        {tr("ReadMe"),
+         tr("What this app demonstrates — 12 locked capabilities with their "
+            "evidence tests"),
+         {}, dtaIcons, QChar(0xe90c)}  // Viewer.ts:239 "info" 字形（Debug info 同源）
+    );
+    connect(readme, &QPushButton::clicked, this, &StartView::requestReadMe);
+    layout->addWidget(readme);
+}
+
 bool StartView::onHasMsg(const char* pMsg) const
 {
     if (strcmp("AllowsOverlayOnHover", pMsg) == 0) {
@@ -190,4 +218,5 @@ void StartView::retranslateUi()
 
     _modelsLabel->setText(h1Start + tr("Models") + h1End);
     _examplesLabel->setText(h1Start + tr("Examples") + h1End);
+    _readmeLabel->setText(h1Start + tr("ReadMe") + h1End);
 }

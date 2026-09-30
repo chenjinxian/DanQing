@@ -52,6 +52,7 @@ target_sources(dqApp
         src/DecorateContext.cpp
         src/DecorationsCache.cpp
         src/Animator.cpp
+        src/ParseArgs.cpp
         src/ViewportSync.cpp
         # Application-layer ITileFetchers (injected into dqRender TileAdmin;
         # dqRender itself is Qt-free per §8.2). 零网络协议（TD-24 清退）：
@@ -128,6 +129,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/ViewUndoTest.cpp
         tests/EntityStateTest.cpp
         tests/ToolAdminTest.cpp
+        tests/ToolRegistryKeyinTest.cpp  # ToolRegistry key-in 解析契约（M-L(3) Keyin 引擎半边——ToolRegistry.test.ts 移植）
         tests/FeatureOverrideTest.cpp
         tests/SelectionSetTest.cpp
         tests/DecoratorTest.cpp

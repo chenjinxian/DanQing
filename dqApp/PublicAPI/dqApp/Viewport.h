@@ -287,6 +287,18 @@ public:
     std::optional<dqGeom::Point3d> pickNearestVisibleGeometry(dqGeom::Point3d const& pickPoint,
                                                               double radiusPixels);
 
+    // 读取当前帧（整个渲染目标，设备像素；RGBA 字节序）——SaveImage 工具的
+    // 生产回读通道（M-L(3)：原 ReadFrameForTest 的 DIAG(grid-app) 面析出生产
+    // API——参考的生产回读即 Viewport.readImageBuffer（Viewport.ts:2803-2805 →
+    // target.readImageBuffer），readPixels（:2778-2785，DanQing ReadFrameForTest
+    // 的参考锚）才是其 @internal 测试面）。
+    // Ported from: itwinjs-core Viewport.readImageBuffer (Viewport.ts:2803-2805).
+    bool readImageBuffer(std::vector<uint8_t>& rgbaOut);
+    // 同上，并输出渲染目标（设备像素）尺寸。
+    // Ported from: itwinjs-core Viewport.readImageBuffer + viewRect 尺寸（参考
+    // ImageBuffer 自带 width/height——ImageBuffer.ts）。
+    bool readImageBuffer(std::vector<uint8_t>& rgbaOut, uint32_t& wOut, uint32_t& hOut);
+
 #ifdef DANQING_TESTING
     // DIAG(grid-app): 应用路径合成帧回读。
     bool ReadFrameForTest(std::vector<uint8_t>& rgbaOut);
@@ -587,6 +599,14 @@ public:
     // Uses DqEvent (not Qt signal) so ViewportSync can subscribe with AddListener.
     dqBase::DqEvent<ViewState*> OnChangeView;
 
+    // Raised after any view-state-affecting change has been applied to this
+    // viewport — every mutation path (changeView / synchWithView / wheel zoom /
+    // view tools) flows through doSetupFromView, whose tail raises this event
+    // (guarded against reentry while listeners synchronize other viewports).
+    // Ported from: itwinjs-core Viewport.onViewChanged (Viewport.ts:310, raised at
+    //               Viewport.ts:2054-2057 inside doSetupFromView).
+    dqBase::DqEvent<Viewport*> onViewChanged;
+
     // --- 视图撤销/重做（Viewport.ts:3164-3718） ---
     int maxUndoSteps = 20;                                     // :3166
     // :521（0.5s，公有可变——saveViewUndo :3669 的 undoDelay.isZero 分支正是置零
@@ -817,10 +837,8 @@ private:
     // ValidateRenderPlan 逐帧保存，:3602；frustum-change 动画的起点姿态）。
     std::unique_ptr<ViewPose> m_lastPose;
     // :374 echo 守卫——参考在 doSetupFromView 内 raise onViewChanged 期间置位
-    // （:2055-2057），使事件回调里的 saveViewUndo 被忽略；DanQing 的 SetupFromView
-    // 不发 onViewChanged，当前无置位路径，保留语义位。
-    // TODO: onViewChanged 事件（doSetupFromView 的 :2055-2057 置位）落地前此守卫
-    //       恒假，属预期；事件落地时恢复参考语义。
+    // （:2055-2057）；M-L(3) 起该事件已实装（SetupFromView 尾部 Raise + 本守卫
+    // 再入保护——Viewport.cpp 同名注释）。
     bool m_inViewChangedEvent = false;
 
     static int sNextViewportId;

@@ -4,6 +4,15 @@
 //
 // Provides functions to synchronize the view state between multiple viewports.
 // Useful for split-screen views, mini-map overlays, and multi-viewport layouts.
+//
+// M-L(3) 接线清偿（§11.10 ported-but-uncalled）：本单元原先的三处半成品按参考
+// 源归位——①connectViewports 订阅 onViewChanged（Viewport.ts:310，doSetupFromView
+// 尾部派发——ViewportSync.ts:56-58 只订阅它）并返回 disconnect 闭包
+// （ViewportSync.ts:52-100）；②synchronizeViewportFrusta 实装 savePose/applyPose
+// （原为 RequestRedraw 占位——ViewportSync.ts:102-112）；③TwoWayViewportSync.
+// disconnect 实装（原为注释占位）。事件签名的 SynchronizeViewports 工厂形参
+// （TS sync(changedViewport) => SynchronizeViewports，ViewportSync.ts:47）按
+// 参考归位。
 #pragma once
 
 #include "Export.h"
@@ -16,70 +25,101 @@ namespace dqApp {
 class Viewport;
 class ViewState;
 
-// Synchronization function type — called when any viewport in the group changes.
-// The function receives the source viewport and should return a function that
-// applies the synchronized state to all other viewports.
+// A function used by connectViewports that can synchronize the state of a target
+// Viewport with changes in the state of a source Viewport.
+// Ported from: itwinjs-core SynchronizeViewports (ViewportSync.ts:14-19).
 using SynchronizeViewportsFn = std::function<void(Viewport& source, Viewport& target)>;
 
-// Connect multiple viewports for bidirectional synchronization.
-// When any viewport's view changes, the sync function is called to update all others.
-// Uses an echo flag to prevent recursive synchronization.
-// Returns a disconnect function.
-// Ported from: itwinjs-core ViewportSync.ts connectViewports()
-DQ_APP_EXPORT void connectViewports(
-    std::vector<Viewport*> const& viewports,
-    SynchronizeViewportsFn syncFn);
+// A function invoked once per source-viewport change to obtain the per-target
+// synchronization function. Ported from: itwinjs-core the `sync` parameter of
+// connectViewports (ViewportSync.ts:47 — `(changedViewport: Viewport) => SynchronizeViewports`).
+using SynchronizeViewportsFactory = std::function<SynchronizeViewportsFn(Viewport& source)>;
 
-// Synchronize frustum poses between viewports.
-// When the source viewport's camera changes, the target viewport's camera
-// is updated to match.
-// Ported from: itwinjs-core ViewportSync.ts synchronizeViewportFrusta()
-DQ_APP_EXPORT SynchronizeViewportsFn synchronizeViewportFrusta();
+// Function that severs a connection formed by connectViewports.
+// Ported from: itwinjs-core the VoidFunction returned by connectViewports
+//              (ViewportSync.ts:52/100).
+using DisconnectViewportsFn = std::function<void()>;
+
+// Forms a connection between two or more viewports such that a change in any one
+// of them is reflected in all of the others. When the connection is first formed,
+// all viewports are synchronized to the current state of the FIRST viewport.
+// Returns a function that severs the connection.
+// Lifetime contract (the reference's GC hides it — here it is explicit): the
+// caller MUST sever the connection (or arrange to — e.g. ViewManager.OnViewClose)
+// before any member viewport is destroyed; a destroyed viewport inside an
+// still-connected group leaves a dangling entry in the sync set.
+// Ported from: itwinjs-core connectViewports (ViewportSync.ts:52-100).
+DQ_APP_EXPORT DisconnectViewportsFn connectViewports(
+    std::vector<Viewport*> const& viewports,
+    SynchronizeViewportsFactory syncFactory);
+
+// Returns a function that synchronizes every aspect of the target viewport's state
+// with the source's (a clone of the source's ViewState is applied).
+// Ported from: itwinjs-core synchronizeViewportViews (ViewportSync.ts:104-110).
+DQ_APP_EXPORT SynchronizeViewportsFn synchronizeViewportViews(Viewport& source);
+
+// Returns a function that synchronizes the viewed volumes of each viewport (the
+// source's view pose, captured at call time, is applied to the target).
+// Ported from: itwinjs-core synchronizeViewportFrusta (ViewportSync.ts:114-122).
+DQ_APP_EXPORT SynchronizeViewportsFn synchronizeViewportFrusta(Viewport& source);
 
 // Connect viewports for frustum synchronization.
-// Convenience wrapper that calls connectViewports with synchronizeViewportFrusta().
-// Ported from: itwinjs-core ViewportSync.ts connectViewportFrusta()
-DQ_APP_EXPORT void connectViewportFrusta(std::vector<Viewport*> const& viewports);
-
-// Synchronize full ViewState between viewports.
-// When the source viewport's view changes, the target viewport's ViewState
-// is replaced with a clone of the source's ViewState.
-// Ported from: itwinjs-core ViewportSync.ts synchronizeViewportViews()
-DQ_APP_EXPORT SynchronizeViewportsFn synchronizeViewportViews();
+// Ported from: itwinjs-core connectViewportFrusta (ViewportSync.ts:126-129).
+DQ_APP_EXPORT DisconnectViewportsFn connectViewportFrusta(std::vector<Viewport*> const& viewports);
 
 // Connect viewports for full ViewState synchronization.
-// Convenience wrapper that calls connectViewports with synchronizeViewportViews().
-// Ported from: itwinjs-core ViewportSync.ts connectViewportViews()
-DQ_APP_EXPORT void connectViewportViews(std::vector<Viewport*> const& viewports);
+// Ported from: itwinjs-core connectViewportViews (ViewportSync.ts:133-136).
+DQ_APP_EXPORT DisconnectViewportsFn connectViewportViews(std::vector<Viewport*> const& viewports);
 
-// Two-way viewport synchronization for exactly two viewports.
-// Ported from: itwinjs-core ViewportSync.ts TwoWayViewportSync
+// Forms a bidirectional connection between two viewports such that the ViewStates
+// of each are synchronized with one another. Call connect() to establish the
+// connection (the first viewport's state initializes the second), disconnect() to
+// sever it. (Two-phase init is the reference shape — the virtual syncViewports
+// must dispatch to the derived override, which a base-constructor call would not.)
+// Ported from: itwinjs-core TwoWayViewportSync (ViewportSync.ts:140-190).
 class DQ_APP_EXPORT TwoWayViewportSync {
 public:
-    TwoWayViewportSync(Viewport* first, Viewport* second);
+    TwoWayViewportSync() = default;
     virtual ~TwoWayViewportSync();
 
-    // Disconnect the synchronization.
+    // Establish the connection between two Viewports: initialize viewport2 with
+    // the state of viewport1, then subscribe both viewports for ongoing
+    // synchronization. Any prior connection is severed first.
+    // Ported from: itwinjs-core TwoWayViewportSync.connect (ViewportSync.ts:167-174).
+    void connect(Viewport* viewport1, Viewport* viewport2);
+
+    // Remove the connection between the two views.
+    // Ported from: itwinjs-core TwoWayViewportSync.disconnect (ViewportSync.ts:181-185).
     void disconnect();
 
 protected:
-    // Override to customize the synchronization behavior.
+    // Invoked each time source changes to update target to match. Default applies
+    // a clone of the source's ViewState to the target.
+    // Ported from: itwinjs-core TwoWayViewportSync.syncViewports (ViewportSync.ts:159-165).
     virtual void syncViewports(Viewport& source, Viewport& target);
 
 private:
-    Viewport* m_first;
-    Viewport* m_second;
+    Viewport* m_first = nullptr;
+    Viewport* m_second = nullptr;
     bool m_echo = false;
+    // Severance tokens for the per-viewport onViewChanged subscriptions
+    // (ViewportSync.ts:55 + :180-184 — the reference stores the disconnect fns
+    // returned by each addListener).
+    std::vector<DisconnectViewportsFn> m_disconnect;
 };
 
-// Two-way frustum synchronization for exactly two viewports.
-// Ported from: itwinjs-core ViewportSync.ts TwoWayViewportFrustumSync
+// Forms a bidirectional connection between two viewports such that the frusta of
+// each are synchronized with one another (no other aspects of the viewports are
+// synchronized).
+// Ported from: itwinjs-core TwoWayViewportFrustumSync (ViewportSync.ts:194-214).
 class DQ_APP_EXPORT TwoWayViewportFrustumSync : public TwoWayViewportSync {
 public:
-    TwoWayViewportFrustumSync(Viewport* first, Viewport* second)
-        : TwoWayViewportSync(first, second) {}
+    TwoWayViewportFrustumSync() = default;
 
 protected:
+    // Synchronizes the two viewports by applying the source's frustum to the target.
+    // Ported from: itwinjs-core TwoWayViewportFrustumSync.syncViewports
+    //              (ViewportSync.ts:197-201).
     void syncViewports(Viewport& source, Viewport& target) override;
 };
 
