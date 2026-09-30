@@ -339,16 +339,24 @@ public:
                      rhi::BufferObjectHandle posVbo,
                      rhi::BufferObjectHandle prevVbo,
                      rhi::BufferObjectHandle nextPropsVbo,
-                     uint32_t numCorners, float lineWidth, dqCommon::ColorDef color);
+                     uint32_t numCorners, float lineWidth, dqCommon::ColorDef color,
+                     bool usesQuantized = false);
     ~PolylineGeometry() override;
 
     PolylineGeometry(PolylineGeometry const&) = delete;
     PolylineGeometry& operator=(PolylineGeometry const&) = delete;
 
     // --- CachedGeometry interface ---
-    // VertexTableBuilder bakes unquantized float positions into the LUT (no
-    // QParams3d) → the Polyline technique's Unquantized variant is required.
-    bool usesQuantizedPositions() const noexcept override { return false; }
+    // Canvas polylines: VertexTableBuilder bakes UNQUANTIZED float positions
+    // (no QParams3d) → Unquantized variant. imdl polylines (M-M(2)): 12B
+    // quantized table + QParams3d → Quantized variant (ctor flag).
+    bool usesQuantizedPositions() const noexcept override { return m_usesQuantized; }
+
+    // 非均匀（色表）形态位——SurfaceGeometry::setNonUniformColor 同款语义
+    //（ColorInfo.createNonUniform；u_shaderFlags[kShaderBit_NonUniformColor] 位选
+    // 色表采样，Color.ts:16-26）。
+    void setNonUniformColor() noexcept { m_nonUniformColor = true; }
+    bool isNonUniformColor() const noexcept { return m_nonUniformColor; }
     // Ported from: itwinjs-core Polyline.ts:114 (techniqueId === TechniqueId.Polyline).
     TechniqueId getTechniqueId() const noexcept override { return TechniqueId::Polyline; }
     Pass getPass() const noexcept override { return Pass::OpaqueLinear; }
@@ -386,6 +394,8 @@ private:
     uint32_t m_numCorners = 0;
     float m_lineWidth = 1.0f;
     dqCommon::ColorDef m_color;
+    bool m_usesQuantized = false;   // imdl 量化表（M-M(2））；canvas 路径 false
+    bool m_nonUniformColor = false; // 色表形态位（M-M(2））
 };
 
 // ---------------------------------------------------------------------------
@@ -428,9 +438,15 @@ public:
     ~PointStringGeometry() override;
 
     // --- CachedGeometry interface ---
-    // MeshRenderGeometry::create uploads raw FLOAT3 positions (no VertexLUT) → must
-    // select the Unquantized variant or the triad's point string renders zero-coverage.
-    bool usesQuantizedPositions() const noexcept override { return false; }
+    // VBO 形态（MeshRenderGeometry::create 上传原生 FLOAT3）→ Unquantized 变体；
+    // LUT 形态（M-M(2) imdl point string）→ Quantized 变体（setLut 置位）。
+    bool usesQuantizedPositions() const noexcept override { return m_usesQuantized; }
+    // 安装 LUT（imdl 量化 point string——PointString.ts create 的 LUT 半边）。
+    void setLut(VertexLutTexture lut)
+    {
+        m_lut = std::move(lut);
+        m_usesQuantized = true;
+    }
     TechniqueId getTechniqueId() const noexcept override { return TechniqueId::PointString; }
     Pass getPass() const noexcept override { return Pass::OpaqueLinear; }
     RenderOrder getRenderOrder() const noexcept override { return RenderOrder::Linear; }
@@ -445,12 +461,39 @@ public:
 
     void setPrimitive(rhi::RenderPrimitiveHandle primitive) { m_primitive = primitive; }
 
+    // --- LUT 形态（M-M(2)：imdl 量化 point string——a_pos = 24-bit 顶点表索引）---
+    // Ported from: itwinjs-core PointString.ts create() (:73-84) 的 LUT 半边：
+    // indices BO（顶点表索引流）+ VertexLUT（12B 量化表 + 追加色表）。非均匀色
+    // 经 u_shaderFlags[kShaderBit_NonUniformColor] 位选色表采样（Color.ts:16-26）。
+    VertexLutTexture const& getLut() const noexcept { return m_lut; }
+    bool isNonUniformColor() const noexcept { return m_nonUniformColor; }
+    void setNonUniformColor() noexcept { m_nonUniformColor = true; }
+    dqCommon::ColorDef getColor() const noexcept { return m_color; }
+    void setColor(dqCommon::ColorDef color) { m_color = color; }
+    void setLutPrimitive(rhi::RenderPrimitiveHandle primitive,
+                         rhi::VertexBufferHandle vbh, rhi::VertexBufferInfoHandle vbih,
+                         rhi::BufferObjectHandle idxBo)
+    {
+        m_primitive = primitive;
+        m_lutVertexBuffer = vbh;
+        m_lutVertexBufferInfo = vbih;
+        m_lutIndexBuffer = idxBo;
+    }
+
 private:
     rhi::Driver& m_driver;
     rhi::IndexBufferHandle m_ibh;
     rhi::RenderPrimitiveHandle m_primitive;
     uint32_t m_vertexCount = 0;
     float m_weight = 1.0f;
+    // LUT 形态成员（VBO 形态下 m_lut 为空、句柄 nullid——SurfaceGeometry 同款）。
+    VertexLutTexture m_lut;
+    rhi::VertexBufferHandle m_lutVertexBuffer;
+    rhi::VertexBufferInfoHandle m_lutVertexBufferInfo;
+    rhi::BufferObjectHandle m_lutIndexBuffer;
+    bool m_nonUniformColor = false;
+    bool m_usesQuantized = false;
+    dqCommon::ColorDef m_color = dqCommon::ColorDef::create();
 };
 
 END_DQ_RENDER_NAMESPACE

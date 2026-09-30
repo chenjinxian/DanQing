@@ -1343,6 +1343,41 @@ TEST(DumpOpenChain, OpensBaytownOrthographicSavedView)
     EXPECT_LT(cy, 550.0) << "content centroid y below the pinned band "
                             "(vertical flip or framing drift)";
 
+    // ⑤ polyline/point 图元上屏（M-M(2) RED→GREEN 锁）：saved 瓦携带 2 polyline
+    //    + 2 point 图元（primType 1/2——12B 量化表 + 色表 + 预细分角点流/索引
+    //    流），色表 ground truth（tile 字节实测）：黄 (255,255,0)/红 (255,0,0)/
+    //    绿 (0,255,0)/chocolate (210,105,30) + point 均匀色品红 (255,0,255)。
+    //    消费前（RED）这些纯原色帧内零出现；GREEN 实测 2078-8380 sampled px
+    //    （运行间波动——1px 线 × stride2 采样 × saved 取景微抖；DTA 同视实测
+    //    8240，好轮 1.7% 内一致）。RED=0 ↔ GREEN 千级为质的分离；阈值 1500
+    //    取波动下界的 0.7×。线/点无光照（无 oct 法线）→ 平色精确匹配
+    //    （±10 容差吃 AA）。
+    {
+        long primPixels = 0;
+        struct Target { int r, g, b; };
+        Target const targets[] = {
+            {255, 255, 0}, {255, 0, 0}, {0, 255, 0}, {210, 105, 30}, {255, 0, 255},
+        };
+        for (uint32_t y = 0; y < h; y += 2) {
+            for (uint32_t x = 0; x < w; x += 2) {
+                uint8_t const* p = &frame[(static_cast<size_t>(y) * w + x) * 4];
+                for (auto const& t : targets) {
+                    if (std::abs(static_cast<int>(p[0]) - t.r) <= 10
+                        && std::abs(static_cast<int>(p[1]) - t.g) <= 10
+                        && std::abs(static_cast<int>(p[2]) - t.b) <= 10) {
+                        ++primPixels;
+                        break;
+                    }
+                }
+            }
+        }
+        printf("[OPEN-CHAIN] baytown polyline/point prim pixels=%ld (sampled)\n",
+               primPixels);
+        EXPECT_GE(primPixels, 1500l)
+            << "polyline/point primitives not rendered — imdl primType 1/2 "
+               "consumption broke (TD-20/TD-23 legacy)";
+    }
+
     view.getUeViewport()->DropTiledGraphicsProvider(opened->provider.get());
     view.close();
     spin(200);

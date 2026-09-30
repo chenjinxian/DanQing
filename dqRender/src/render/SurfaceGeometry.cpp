@@ -283,10 +283,11 @@ PolylineGeometry::PolylineGeometry(rhi::Driver& driver, VertexLutTexture lut,
                                      rhi::BufferObjectHandle prevVbo,
                                      rhi::BufferObjectHandle nextPropsVbo,
                                      uint32_t numCorners, float lineWidth,
-                                     dqCommon::ColorDef color)
+                                     dqCommon::ColorDef color, bool usesQuantized)
     : m_driver(driver)
     , m_lut(std::move(lut))
     , m_primitive(primitive)
+    , m_usesQuantized(usesQuantized)
     , m_cornerVbh(cornerVbh)
     , m_cornerVbih(cornerVbih)
     , m_posVbo(posVbo)

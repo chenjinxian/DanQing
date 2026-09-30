@@ -435,6 +435,17 @@ struct ImdlPrimitiveProps {
     std::optional<ImdlMeshEdgesProps> edges;  // ImdlSchema.ts:277-286（mesh primitive）
     std::optional<ImdlInstancesProps> instances;  // ImdlSchema.ts:181 instances?
 
+    // M-M(2)：图元类型（MeshPrimitiveType——core/frontend/src/common/internal/
+    // render/MeshPrimitive.ts:13-17：Mesh=0 / Polyline=1 / Point=2）。
+    uint32_t primType = 0;
+    // polyline 图元（ImdlSchema.ts:47-61 PolylineParams——tesselated 三视图在
+    // primitive 顶层，与 mesh 的 surface/edges 嵌套不同）。
+    std::string polylineIndicesView;              // TesselatedPolyline.indices
+    std::string polylinePrevIndicesView;          // TesselatedPolyline.prevIndices
+    std::string polylineNextIndicesAndParamsView; // TesselatedPolyline.nextIndicesAndParams
+    // point 图元（ImdlSchema.ts:41-45 PointStringParams——顶层 indices）。
+    std::string pointIndicesView;
+
     // DisplayParams 子集（width/linePixels）——materials[material] 的
     // lineWidth/linePixels（parsePrimitive ParseImdlDocument.ts:800-802 +
     // parseDisplayParams :1206-1207；ImdlEdgeParams.weight/linePixels 的来源
@@ -462,6 +473,24 @@ inline std::vector<ImdlPrimitiveProps> parseImdlMeshPrimitives(JsonValue const& 
             continue;
         for (auto const& prim : primitives->arr) {
             ImdlPrimitiveProps props;
+            // 图元类型（MeshPrimitive.ts:13-17——mesh=0/polyline=1/point=2；
+            // M-M(2) 前只解析 mesh 形态）。
+            if (JsonValue const* pt = prim.find("type"))
+                if (pt->type == JsonValue::Type::Number)
+                    props.primType = static_cast<uint32_t>(pt->number);
+            if (props.primType == 1u) {
+                // TesselatedPolyline（ImdlSchema.ts:47-51 + ParseImdlDocument.ts
+                // parsePrimitive 的 polyline 分支——顶层三视图）。
+                if (JsonValue const* v = prim.find("indices"))
+                    props.polylineIndicesView = v->str;
+                if (JsonValue const* v = prim.find("prevIndices"))
+                    props.polylinePrevIndicesView = v->str;
+                if (JsonValue const* v = prim.find("nextIndicesAndParams"))
+                    props.polylineNextIndicesAndParamsView = v->str;
+            } else if (props.primType == 2u) {
+                if (JsonValue const* v = prim.find("indices"))
+                    props.pointIndicesView = v->str;
+            }
             if (JsonValue const* verts = prim.find("vertices")) {
                 if (JsonValue const* bv = verts->find("bufferView"))
                     props.vertices.bufferView = bv->str;

@@ -1958,6 +1958,46 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                         // (0) and the point is invisible. Ported from: itwinjs-core
                         // ShaderProgramExecutor line-weight binding for PointString.
                         params.setFloat("u_pointSize", geometry->getLineWeight());
+                        // M-M(2)：LUT 形态（imdl 量化 point string——参考形态的
+                        // u_lineWeight/computeLineWeight 消费链 + 顶点表 uniform 组，
+                        // 与 Surface/Polyline 分支同源）。VBO 形态（triad）无 LUT，
+                        // 走上面的 u_pointSize 路径。
+                        if (auto* psGeom = static_cast<PointStringGeometry const*>(geometry)->usesQuantizedPositions()
+                                              ? static_cast<PointStringGeometry const*>(geometry)
+                                              : nullptr) {
+                            auto const& psLut = psGeom->getLut();
+                            if (psLut.isValid()) {
+                                params.setFloat("u_lineWeight", geometry->getLineWeight());
+                                driver.bindTexture(5, psLut.getTexture());
+                                params.setInt("u_vertLUT", 5);
+                                auto const& lp = psLut.getParams();
+                                float vertParams[4] = {
+                                    static_cast<float>(lp.texWidth),
+                                    static_cast<float>(lp.texHeight),
+                                    static_cast<float>(lp.numRgbaPerVert),
+                                    static_cast<float>(lp.numVertices),
+                                };
+                                params.setVec4("u_vertParams", vertParams);
+                                if (float const* qo = psGeom->getLut().getQOrigin())
+                                    params.setVec3("u_qOrigin", qo);
+                                if (float const* qs = psGeom->getLut().getQScale())
+                                    params.setVec3("u_qScale", qs);
+                                int shaderFlags[5] = {0, 0, 0, 0, 0};
+                                if (psGeom->isNonUniformColor())
+                                    shaderFlags[1] = 1;
+                                params.setIntArray("u_shaderFlags", shaderFlags, 5);
+                                if (!psGeom->isNonUniformColor()) {
+                                    dqCommon::ColorComponents const pcc = psGeom->getColor().getColors();
+                                    float ptColorRgba[4] = {
+                                        static_cast<float>(pcc.r) / 255.0f,
+                                        static_cast<float>(pcc.g) / 255.0f,
+                                        static_cast<float>(pcc.b) / 255.0f,
+                                        static_cast<float>(255 - pcc.t) / 255.0f,
+                                    };
+                                    params.setVec4("u_color", ptColorRgba);
+                                }
+                            }
+                        }
                     } else if (techniqueId == TechniqueId::Polyline) {
                         // Faithful thick-line dispatch (ported from: itwinjs-core
                         // ShaderProgramExecutor Polyline branch + Polyline.ts
@@ -2002,6 +2042,19 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                                 static_cast<float>(lp.numVertices),
                             };
                             params.setVec4("u_vertParams", vertParams);
+                            // M-M(2)：量化 polyline（imdl 12B 表）——量化参数 +
+                            // u_shaderFlags（非均匀色位选色表采样，Common.ts:59-73
+                            // 每 draw 全数组上传——同 Surface 分支语义）。
+                            if (pg->usesQuantizedPositions()) {
+                                if (float const* qo = lut.getQOrigin())
+                                    params.setVec3("u_qOrigin", qo);
+                                if (float const* qs = lut.getQScale())
+                                    params.setVec3("u_qScale", qs);
+                                int shaderFlags[5] = {0, 0, 0, 0, 0};
+                                if (pg->isNonUniformColor())
+                                    shaderFlags[1] = 1;
+                                params.setIntArray("u_shaderFlags", shaderFlags, 5);
+                            }
                         }
                         dqCommon::ColorDef const color = pg->getColor();
                         dqCommon::ColorComponents const cc = color.getColors();

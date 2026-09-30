@@ -94,6 +94,44 @@ std::optional<RenderMaterialParams> resolveSurfaceMaterial(
     return mp;
 }
 
+// M-M(2)：共享 LUT 构造（surface/polyline/point 三图元同源——JSON width/
+// height 优先 + computeDimensions 回退 + 末行零填充 + QParams 量化参数）。
+// 提取自 createImdlLutGraphics 的 surface 内联段（语义不变，复用为助手）。
+static std::optional<VertexLutTexture> createImdlVertexLut(
+    rhi::Driver& driver,
+    uint8_t const* vertData, size_t vertSize,
+    tilejson::ImdlVertexTableProps const& vt)
+{
+    uint32_t const numRgba = vt.numRgbaPerVertex;
+    uint32_t const count = vt.count;
+    uint32_t texWidth = vt.width;
+    uint32_t texHeight = vt.height;
+    std::vector<uint8_t> staging;
+    if (texWidth == 0u || texHeight == 0u
+        || size_t(texWidth) * texHeight * 4u > vertSize) {
+        VertexTableBuilder::computeDimensions(count, numRgba, 0u, 2048u,
+                                              texWidth, texHeight);
+    }
+    size_t const texBytes = size_t(texWidth) * texHeight * 4u;
+    uint8_t const* uploadData = vertData;
+    if (texBytes > vertSize) {
+        staging.assign(vertData, vertData + vertSize);
+        staging.resize(texBytes, 0u);
+        uploadData = staging.data();
+    }
+    VertexLutTexture lut;
+    if (!lut.create(driver, uploadData, texWidth, texHeight, count, numRgba))
+        return std::nullopt;
+    lut.setQuantization(
+        static_cast<float>(vt.decodedMin[0]),
+        static_cast<float>(vt.decodedMin[1]),
+        static_cast<float>(vt.decodedMin[2]),
+        static_cast<float>((vt.decodedMax[0] - vt.decodedMin[0]) / 65535.0),
+        static_cast<float>((vt.decodedMax[1] - vt.decodedMin[1]) / 65535.0),
+        static_cast<float>((vt.decodedMax[2] - vt.decodedMin[2]) / 65535.0));
+    return lut;
+}
+
 }  // namespace
 
 std::vector<dqBase::RefPtr<dqGeom::IndexedPolyface>> DQ_RENDER_EXPORT
@@ -256,6 +294,131 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
             continue;
         uint32_t const numRgba = prim.vertices.numRgbaPerVertex;
         uint32_t const count = prim.vertices.count;
+
+        // -------------------------------------------------------------------
+        // M-M(2)：polyline 图元（MeshPrimitiveType.Polyline——ImdlGraphicsCreator
+        // .ts:265-275 createPolylineGeometry {vertices, polyline{indices,
+        // prevIndices, nextIndicesAndParams}, weight, linePixels}）。12B 量化
+        // 顶点表（numRgba=3：qpos 6B + colorIndex 2B + feature 4B）+ 后端预
+        // 细分角点流三视图（TesselatedPolyline——3/3/4 字节/角点，字节原样入
+        // BO，零 CPU 重排）。色表（numColors>0）随 LUT 直传已在纹理内，
+        // u_shaderFlags[kShaderBit_NonUniformColor] 位选采样（Color.ts:16-26）。
+        // -------------------------------------------------------------------
+        if (prim.primType == 1u) {
+            if (numRgba != 3u || count == 0u || vertSize < size_t(count) * numRgba * 4u)
+                continue;
+            uint8_t const* idxData = nullptr; size_t idxSize = 0;
+            uint8_t const* prevData = nullptr; size_t prevSize = 0;
+            uint8_t const* nextData = nullptr; size_t nextSize = 0;
+            if (!tilejson::findBufferView(*json, prim.polylineIndicesView, doc.binary, idxData, idxSize)
+                || !tilejson::findBufferView(*json, prim.polylinePrevIndicesView, doc.binary, prevData, prevSize)
+                || !tilejson::findBufferView(*json, prim.polylineNextIndicesAndParamsView, doc.binary, nextData, nextSize))
+                continue;
+            size_t const numCorners = idxSize / 3u;
+            if (numCorners == 0 || idxSize % 3u != 0u
+                || prevSize != idxSize || nextSize != numCorners * 4u)
+                continue;
+
+            auto lutOpt = createImdlVertexLut(*driver, vertData, vertSize, prim.vertices);
+            if (!lutOpt)
+                continue;
+
+            auto uploadBo = [&driver](uint8_t const* data, size_t size) {
+                auto bo = driver->createBufferObject(
+                    static_cast<uint32_t>(size), rhi::BufferObjectBinding::VERTEX,
+                    rhi::BufferUsage::STATIC);
+                driver->updateBufferObject(bo, rhi::BufferDescriptor(data, size), 0);
+                return bo;
+            };
+            auto posBo = uploadBo(idxData, idxSize);
+            auto prevBo = uploadBo(prevData, prevSize);
+            auto nextBo = uploadBo(nextData, nextSize);
+
+            rhi::AttributeArray attrs = {};
+            attrs[0].buffer = 0; attrs[0].offset = 0; attrs[0].type = rhi::ElementType::UBYTE3;
+            attrs[1].buffer = 1; attrs[1].offset = 0; attrs[1].type = rhi::ElementType::UBYTE3;
+            attrs[2].buffer = 2; attrs[2].offset = 0; attrs[2].type = rhi::ElementType::UBYTE3;
+            attrs[3].buffer = 2; attrs[3].offset = 3; attrs[3].type = rhi::ElementType::UBYTE;
+            auto vbih = driver->createVertexBufferInfo(3, 4, attrs);
+            auto vbh = driver->createVertexBuffer(static_cast<uint32_t>(numCorners), vbih);
+            driver->setVertexBufferObject(vbh, 0, posBo);
+            driver->setVertexBufferObject(vbh, 1, prevBo);
+            driver->setVertexBufferObject(vbh, 2, nextBo);
+            auto primitive = driver->createRenderPrimitive(
+                vbh, rhi::IndexBufferHandle{}, rhi::PrimitiveType::TRIANGLES);
+
+            float const weight = prim.width > 0u ? static_cast<float>(prim.width) : 1.0f;
+            dqCommon::ColorDef const lineColor =
+                prim.vertices.hasUniformColor
+                    ? dqCommon::ColorDef::create(prim.vertices.uniformColor)
+                    : dqCommon::ColorDef::create(0xFFFFFFFFu);
+            auto pg = std::make_unique<PolylineGeometry>(
+                *driver, std::move(*lutOpt), primitive, vbh, vbih,
+                posBo, prevBo, nextBo,
+                static_cast<uint32_t>(numCorners), weight, lineColor,
+                /*usesQuantized*/ true);
+            if (!prim.vertices.hasUniformColor)
+                pg->setNonUniformColor();
+            // 每图元一个 MeshGraphic（mesh 路径同构——调用方 createGraphicList +
+            // createBatch 包裹）。
+            auto* mg = new MeshGraphic(*driver);
+            mg->addPolyline(std::move(pg));
+            graphics.push_back(mg);
+            continue;
+        }
+
+        // -------------------------------------------------------------------
+        // M-M(2)：point 图元（MeshPrimitiveType.Point——ImdlGraphicsCreator.ts
+        // :259-264 createPointStringGeometry {vertices, indices, weight}）。
+        // 24-bit 顶点表索引流单 attribute（PointString.ts:45-47 a_pos UBYTE3）。
+        // -------------------------------------------------------------------
+        if (prim.primType == 2u) {
+            if (numRgba != 3u || count == 0u || vertSize < size_t(count) * numRgba * 4u)
+                continue;
+            uint8_t const* idxData = nullptr; size_t idxSize = 0;
+            if (!tilejson::findBufferView(*json, prim.pointIndicesView, doc.binary, idxData, idxSize))
+                continue;
+            size_t const numPts = idxSize / 3u;
+            if (numPts == 0 || idxSize % 3u != 0u)
+                continue;
+
+            auto lutOpt = createImdlVertexLut(*driver, vertData, vertSize, prim.vertices);
+            if (!lutOpt)
+                continue;
+
+            auto idxBo = driver->createBufferObject(
+                static_cast<uint32_t>(idxSize), rhi::BufferObjectBinding::VERTEX,
+                rhi::BufferUsage::STATIC);
+            driver->updateBufferObject(idxBo, rhi::BufferDescriptor(idxData, idxSize), 0);
+
+            rhi::AttributeArray attrs = {};
+            attrs[0].buffer = 0; attrs[0].offset = 0; attrs[0].type = rhi::ElementType::UBYTE3;
+            auto vbih = driver->createVertexBufferInfo(1, 1, attrs);
+            auto vbh = driver->createVertexBuffer(static_cast<uint32_t>(numPts), vbih);
+            driver->setVertexBufferObject(vbh, 0, idxBo);
+            auto primitive = driver->createRenderPrimitive(
+                vbh, rhi::IndexBufferHandle{}, rhi::PrimitiveType::POINTS);
+
+            float const weight = prim.width > 0u ? static_cast<float>(prim.width) : 1.0f;
+            dqCommon::ColorDef const ptColor =
+                prim.vertices.hasUniformColor
+                    ? dqCommon::ColorDef::create(prim.vertices.uniformColor)
+                    : dqCommon::ColorDef::create(0xFFFFFFFFu);
+            auto ps = std::make_unique<PointStringGeometry>(
+                *driver, rhi::IndexBufferHandle{},
+                static_cast<uint32_t>(numPts), weight);
+            ps->setLut(std::move(*lutOpt));
+            ps->setLutPrimitive(primitive, vbh, vbih, idxBo);
+            if (prim.vertices.hasUniformColor)
+                ps->setColor(ptColor);
+            else
+                ps->setNonUniformColor();
+            auto* mg = new MeshGraphic(*driver);
+            mg->addPointString(std::move(ps));
+            graphics.push_back(mg);
+            continue;
+        }
+
         // 量化 LitMesh 顶点表为 16B（numRgba=4，Quantized.LitMeshBuilder）；
         // 12B SimpleBuilder（numRgba=3，无光照网格）本期拒绝——LUT 链路对
         // 12B 不安全：Task 3 量化 shader 的 pre-read 采样 g_vertLutData3

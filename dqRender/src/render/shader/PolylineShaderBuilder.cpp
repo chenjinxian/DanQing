@@ -249,7 +249,6 @@ ProgramBuilder createPolylineProgramBuilder(FeatureMode featureMode, PositionTyp
         // It is unexercised today (ACS is unquantized) and numerically correct,
         // but port the Vertex.ts:65-76 quantized sampler when the quantized
         // polyline path is needed (plan §8 deferred).
-        vert.addFunction(std::string(getUnquantizePosition()));
         vert.addFunction(std::string(kSamplePositionFunction));
     }
 
@@ -300,22 +299,25 @@ ProgramBuilder createPolylineProgramBuilder(FeatureMode featureMode, PositionTyp
     addLineCode(builder, kLineCodeArgs);
     addModelViewMatrix(vert);
 
-    // --- Color via u_color uniform (Color.ts:51-62 uniform-color path) ---
-    // Polyline.ts createPolylineBuilder calls addColor(builder), which in
-    // itwinjs adds u_color + v_color + ComputeBaseColor slots. For the uniform
-    // color path (no per-vertex color table), vertex ComputeBaseColor returns
-    // u_color; fragment ComputeBaseColor returns v_color.
-    // TODO(faithful): Color.ts:51-62 full path — getComputeElementColor + the
-    // u_shaderFlags[kShaderBit_NonUniformColor] ? lutColor : u_color switch —
-    // is simplified to the uniform-color branch (u_color) for ACS. Port the
-    // per-vertex color-table path when non-uniform polyline color is needed
-    // (plan §8 deferred).
-    vert.addUniform("u_color", VariableType::Vec4, nullptr);
-    builder.addVarying("v_color", VariableType::Vec4);
-    vert.setVertexComponent(VertexShaderComponent::ComputeBaseColor,
-        "    return u_color;\n");
-    frag.setFragmentComponent(FragmentShaderComponent::ComputeBaseColor,
-        "    return v_color;\n");
+    // --- Color（Color.ts addColor :51-70）---
+    // Quantized（M-M(2） imdl polyline）：全路径 getComputeElementColor——色表
+    // 追加在顶点表尾部（colorIndex = texel1.zw 的 u16，12B SimpleBuilder 布局），
+    // u_shaderFlags[kShaderBit_NonUniformColor] 位选 lutColor : u_color（复用
+    // SurfaceCommon::addColor 的量化分支；其 frag 槽归 addTexture 所有，此处
+    // 自设 `return v_color;`）。Unquantized（canvas ACS 路径）：保持既有
+    // u_color 均匀色形态（无色表资产，行为不变）。
+    if (quantized) {
+        addColor(builder, /*quantized*/ true, /*instanced*/ false);
+        frag.setFragmentComponent(FragmentShaderComponent::ComputeBaseColor,
+            "    return v_color;\n");
+    } else {
+        vert.addUniform("u_color", VariableType::Vec4, nullptr);
+        builder.addVarying("v_color", VariableType::Vec4);
+        vert.setVertexComponent(VertexShaderComponent::ComputeBaseColor,
+            "    return u_color;\n");
+        frag.setFragmentComponent(FragmentShaderComponent::ComputeBaseColor,
+            "    return v_color;\n");
+    }
 
     // --- Edge contrast (Polyline.ts createPolylineBuilder line 425 → Edge.ts
     // addEdgeContrast line 202-214). Vertex-stage slot on baseColor.
@@ -388,8 +390,65 @@ ProgramBuilder createPolylineProgramBuilder(FeatureMode featureMode, PositionTyp
 //    a_position/a_color only) rendered nothing — the ACS Z-axis tip was
 //    invisible. Includes the render-pass premultiply so overlay points blend.
 // ---------------------------------------------------------------------------
-ProgramBuilder createPointStringProgramBuilder(FeatureMode /*featureMode*/, PositionType /*posType*/)
+ProgramBuilder createPointStringProgramBuilder(FeatureMode /*featureMode*/, PositionType posType)
 {
+    bool const quantized = (posType == PositionType::Quantized);
+
+    if (quantized) {
+        // --- LUT 形态（M-M(2)：imdl 量化 point string）---
+        // 1:1 参考组合（PointString.ts createPointStringBuilder :61-67 =
+        // createBase + addShaderFlags + addColor + addWhiteOnWhiteReversal；
+        // createBase :38-51 = ComputePosition + addModelViewProjectionMatrix +
+        // addLineWeight + v_roundCorners + CheckForEarlyDiscard）。
+        ProgramBuilder builder;
+        builder.enableFunctionCallVertexMain();
+        builder.enableFunctionCallFragmentMain();
+        auto& vert = builder.getVertexBuilder();
+        auto& frag = builder.getFragmentBuilder();
+        vert.setVersion("410 core");
+        frag.setVersion("410 core");
+
+        addShaderFlags(builder);
+        // 顶点表（a_pos = 24-bit 顶点表索引；qpos 协议 → rawPosition）。
+        addVertexTable(builder, /*quantized*/ true, /*attrName*/ "a_pos");
+
+        // u_lineWeight + g_lineWeight + computeLineWeight（PointString.ts:46
+        // addLineWeight——gl_PointSize 的来源；须先加函数再设消费它的槽体）。
+        addLineWeight(vert);
+        // u_mvp（Vertex.ts addModelViewProjectionMatrix 非实例分支 :103-108）。
+        vert.addUniform("u_mvp", VariableType::Mat4, nullptr);
+
+        // v_roundCorners varying（PointString.ts:47 + :36）。
+        builder.addVarying("v_roundCorners", VariableType::Float);
+
+        // ComputePosition（PointString.ts:19-24——fudge 后 gl_PointSize）。
+        vert.setVertexComponent(VertexShaderComponent::ComputePosition,
+            "    float lineWeight = computeLineWeight();\n"
+            "    lineWeight += 0.5 * float(lineWeight > 4.0); // fudge factor for rounding fat points...\n"
+            "    gl_PointSize = lineWeight;\n"
+            "    v_roundCorners = lineWeight > 4.0 ? 1.0 : 0.0;\n"
+            "    return u_mvp * rawPos;\n");
+
+        // Color（addColor 量化分支：u_color/色表位选；frag 槽自设——addTexture
+        // 不在本组合内）。
+        addColor(builder, /*quantized*/ true, /*instanced*/ false);
+        frag.setFragmentComponent(FragmentShaderComponent::ComputeBaseColor,
+            "    return v_color;\n");
+
+        // CheckForEarlyDiscard（PointString.ts:30-34 roundCorners）。
+        frag.setFragmentComponent(FragmentShaderComponent::CheckForEarlyDiscard,
+            "    if (v_roundCorners > 0.5) {\n"
+            "        vec2 coord = gl_PointCoord - vec2(0.5);\n"
+            "        return dot(coord, coord) >= 0.25; // meets or exceeds radius of circle\n"
+            "    }\n"
+            "    return false;\n");
+
+        // Fragment 输出（共享 addFragData——与 Surface/Polyline 同路径）。
+        addFragData(builder);
+        return builder;
+    }
+
+    // --- VBO 属性形态（ACS triad——原生 FLOAT3/a_color + u_pointSize）---
     ProgramBuilder builder;
     builder.enableFunctionCallVertexMain();
     // Use the function-call fragment main (like the Surface builder) so the main
