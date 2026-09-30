@@ -114,6 +114,11 @@ public:
     bool isThematic = false;
     bool isWiremesh = false;
     PositionType positionType = PositionType::Quantized;
+    // TD-27（M-M(4)）：DanQing §3.4 偏差簿记轴——Unquantized 位置的两条实现
+    // 路径（参考全 LUT，无此轴）：canvas 属性路径（a_position FLOAT3）vs imdl
+    // unquantized-LUT（numRgba=5，20B/顶点）。仅 positionType==Unquantized
+    // 时有意义；Quantized 恒 LUT。
+    bool isLutUnquantized = false;
     bool enableAtmosphere = false;
 
     // --- Derived getters (Ported from: itwinjs-core TechniqueFlags.ts) ---
@@ -146,6 +151,7 @@ public:
             && isThematic == other.isThematic
             && isWiremesh == other.isWiremesh
             && positionType == other.positionType
+            && isLutUnquantized == other.isLutUnquantized
             && enableAtmosphere == other.enableAtmosphere
             && isHilite() == other.isHilite();
     }

@@ -41,6 +41,7 @@ SurfaceGeometry::SurfaceGeometry(rhi::Driver& driver, VertexLutTexture lut,
     , m_lutVertexBuffer(lutVertexBuffer)
     , m_lutVertexBufferInfo(lutVertexBufferInfo)
     , m_usesQuantizedPositions(true)
+    , m_usesVertexLut(true)
 {
     setLut(&m_lut);
 }

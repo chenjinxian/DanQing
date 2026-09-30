@@ -31,6 +31,7 @@
 #include "dqRender/rhi/Driver.h"
 
 #include <dqCommon/ColorDef.h>
+#include <dqCommon/Image.h>
 #include <dqGeom/IndexedPolyface.h>
 
 #include <cmath>
@@ -130,6 +131,51 @@ static std::optional<VertexLutTexture> createImdlVertexLut(
         static_cast<float>((vt.decodedMax[1] - vt.decodedMin[1]) / 65535.0),
         static_cast<float>((vt.decodedMax[2] - vt.decodedMin[2]) / 65535.0));
     return lut;
+}
+
+// M-M(3)：嵌入 namedTexture → GL 纹理（ImdlGraphicsCreator.ts:44-114
+// loadNamedTexture 的 bufferView 分支——图像字节在瓦内，ImageSource(format)
+// → 解码 → createTextureFromSource；stb 解码为 §8.3 批准偏差）。失败/缺席
+// → 空 handle（调用方不挂纹理——参考 try/catch undefined 语义）。
+static rhi::TextureHandle createEmbeddedTexture(
+    rhi::Driver& driver, tilejson::JsonValue const& json, ImdlDocument const& doc,
+    std::map<std::string, tilejson::ImdlNamedTextureProps> const& namedTextures,
+    std::string const& name)
+{
+    auto const it = namedTextures.find(name);
+    if (it == namedTextures.end() || !it->second.valid || it->second.bufferView.empty())
+        return {};
+    uint8_t const* imgData = nullptr;
+    size_t imgSize = 0;
+    if (!tilejson::findBufferView(*&json, it->second.bufferView, doc.binary, imgData, imgSize)
+        || imgSize == 0)
+        return {};
+    if (getenv("DANQING_TEXCreation_TRACE")) {
+        std::fprintf(stderr, "[TEXC] name=%s format=%u bytes=%zu\n",
+                     name.c_str(), it->second.format, imgSize);
+    }
+    if (!dqCommon::IsValidImageSourceFormat(static_cast<int>(it->second.format)))
+        return {};
+    auto image = dqCommon::DecodeImage(dqCommon::ImageSource(
+        std::vector<uint8_t>(imgData, imgData + imgSize),
+        static_cast<dqCommon::ImageSourceFormat>(it->second.format)));
+    if (!image)
+        return {};
+    if (getenv("DANQING_TEXCreation_TRACE")) {
+        std::fprintf(stderr, "[TEXC] decoded %s: %dx%d %zuB\n", name.c_str(),
+                     image->width, image->getHeight(), image->data.size());
+    }
+    uint32_t const w = static_cast<uint32_t>(image->width);
+    uint32_t const h = static_cast<uint32_t>(image->getHeight());
+    auto tex = driver.createTexture(rhi::SamplerType::SAMPLER_2D, 1,
+                                    rhi::TextureFormat::RGBA8, w, h, 1,
+                                    rhi::TextureUsage::SAMPLEABLE);
+    if (!tex)
+        return {};
+    rhi::PixelBufferDescriptor pbd(image->data.data(), image->data.size(),
+                                   0, 0, 0, 1, 0, 0, w, h, 1);
+    driver.setTextureData(tex, 0, 0, 0, 0, w, h, 0, std::move(pbd));
+    return tex;
 }
 
 }  // namespace
@@ -287,6 +333,9 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
     // M-M(1)：renderMaterials 表（string 键 surface 材质的查找源——
     // ImdlGraphicsCreator.ts:192 `document.json.renderMaterials[mat]`）。
     auto renderMaterials = tilejson::parseImdlRenderMaterials(*json);
+    // M-M(3)：namedTextures 表（嵌入纹理查找源——loadNamedTexture :92-98
+    // findTexture(name) → :70-80 bufferView 直读）。
+    auto namedTextures = tilejson::parseImdlNamedTextures(*json);
     for (auto const& prim : primitives) {
         uint8_t const* vertData = nullptr;
         size_t vertSize = 0;
@@ -420,12 +469,13 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
         }
 
         // 量化 LitMesh 顶点表为 16B（numRgba=4，Quantized.LitMeshBuilder）；
-        // 12B SimpleBuilder（numRgba=3，无光照网格）本期拒绝——LUT 链路对
-        // 12B 不安全：Task 3 量化 shader 的 pre-read 采样 g_vertLutData3
-        // （12B 表下采到下一顶点 texel0）、Task 4 LUT 构造器恒 FillFlags::Lit
-        // （评审 2026-09-25；参考侧无光照网格本不读法线，glsl/Surface.ts
-        // addNormal 仅在 wantNormals 时）。unlit 12B 接线登记 TODO。
-        if (numRgba != 4u || count == 0u)
+        // 非量化表为 20B（numRgba=5 + usesUnquantizedPositions——TD-27/M-M(4)
+        // 清偿：kComputeUnquantizedPositionFromLUT + kPreReadVertexData
+        // Unquantized + 色源/法线 texel 切换均已接线）。12B SimpleBuilder
+        // （numRgba=3，无光照网格）仍拒绝——unlit 12B 接线登记 TODO（同前）。
+        if (!((numRgba == 4u) || (numRgba == 5u && prim.vertices.usesUnquantizedPositions)))
+            continue;
+        if (count == 0u)
             continue;
         if (vertSize < size_t(count) * numRgba * 4u)
             continue;
@@ -507,19 +557,41 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
         auto const primitive = driver->createRenderPrimitive(
             lutVbh, rhi::IndexBufferHandle{}, rhi::PrimitiveType::TRIANGLES);
 
-        // SurfaceType：prim.surface.type 是 itwinjs SurfaceParams.SurfaceType
-        // （Unlit=0/Lit=1/Textured=2/TexturedLit=3——SurfaceParams.ts:13-19，
-        // 登记信息非 translucency），光照/纹理细分不在 DanQing 简化枚举
-        // （Unknown/Opaque/Translucent/Planar）表达面内；translucency 路由
-        // （vertices.hasTranslucency → Translucent pass）与 textured 变体同
-        // 登记 TODO（见头文件）。非细分恒 Opaque——与旧 polyface 路径
-        // （PolyfaceGraphic::getPass 恒 Opaque）像素等价。
-        auto const surfaceType = SurfaceType::Opaque;
+        // SurfaceType + 纹理（M-M(3)）：prim.surface.type 2/3（Textured/
+        // TexturedLit）+ DisplayParams 材质纹理引用（materials[material].
+        // texture.name）命中嵌入 namedTexture → 挂纹理 + UV 量化参数。类型
+        // 语义：Textured = 无光照 + 纹理采样（SurfaceType::Unknown——
+        // applyLighting=false，参考 SurfaceParams.ts:13-19 + Material4
+        // ignoreLighting=true）；hasTextures 位驱动 HasTexture shader 位。
+        // （TexturedLit=3 纹理+光照：本采面 0 命中[36 瓦全 type=2]，归后续
+        // 命中时接 lit+texture 组合。）
+        rhi::TextureHandle surfaceTex;
+        float texCoordParams[4] = {0.0f, 0.0f, 1.0f, 1.0f};
+        bool const textured = (prim.surface.type == 2u || prim.surface.type == 3u)
+                              && !prim.textureName.empty();
+        if (textured) {
+            surfaceTex = createEmbeddedTexture(*driver, *json, doc, namedTextures,
+                                               prim.textureName);
+            if (surfaceTex && prim.surface.hasUvParams) {
+                // unquantize2d(q, params) = params.xy + params.zw * q：
+                // xy = decodedMin（origin），zw = (max-min)/65535（scale）。
+                texCoordParams[0] = static_cast<float>(prim.surface.uvDecodedMin[0]);
+                texCoordParams[1] = static_cast<float>(prim.surface.uvDecodedMin[1]);
+                texCoordParams[2] = static_cast<float>((prim.surface.uvDecodedMax[0] - prim.surface.uvDecodedMin[0]) / 65535.0);
+                texCoordParams[3] = static_cast<float>((prim.surface.uvDecodedMax[1] - prim.surface.uvDecodedMin[1]) / 65535.0);
+            }
+        }
+        auto const surfaceType = textured ? SurfaceType::Unknown : SurfaceType::Opaque;
 
         auto geom = std::make_unique<SurfaceGeometry>(
             *driver, std::move(lut), idxBo, numIndices, surfaceType,
-            prim.isPlanar, /*hasTextures*/ false, lutVbh, lutVbih);
+            prim.isPlanar, /*hasTextures*/ textured, lutVbh, lutVbih);
         geom->setPrimitive(primitive);
+        if (surfaceTex) {
+            geom->setTexture(surfaceTex);
+            if (prim.surface.hasUvParams)
+                geom->setTexCoordParams(texCoordParams);
+        }
 
         // 色信息：ColorInfo.createFromVertexTable 两形态（VertexLUT.ts:97——
         // uniformColor 有 → createFromColorDef（u_color 源，ParseImdlDocument
@@ -531,6 +603,12 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
             geom->setColor(dqCommon::ColorDef::create(prim.vertices.uniformColor));
         else
             geom->setNonUniformColor();
+
+        // TD-27（M-M(4)）：非量化表（numRgba=5）——解码路径切 unquantized-LUT
+        // 变体（usesQuantizedPositions=false + usesVertexLut=true →
+        // TechniqueFlags.isLutUnquantized）。
+        if (prim.vertices.usesUnquantizedPositions)
+            geom->setUsesUnquantizedLut();
 
         // -------------------------------------------------------------------
         // M-M(1)：surface 材质消费（参考 MeshData.ts:86 createMaterialInfo(

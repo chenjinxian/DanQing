@@ -88,6 +88,16 @@ public:
     // usesQuantizedPositions ← this.lut.usesQuantizedPositions）——覆盖
     // MeshGeometry 的 false 约定（PolyfaceGraphic/MeshRenderGeometry 非量化路径）。
     bool usesQuantizedPositions() const noexcept override { return m_usesQuantizedPositions; }
+    // TD-27（M-M(4)）：LUT 形态恒 true（量化与非量化表皆是——VertexLUT.ts:99
+    // `!vt.usesUnquantizedPositions` 只分解码路径，不弃 LUT）；VBO 形态 false。
+    bool usesVertexLut() const noexcept override { return m_usesVertexLut; }
+    // imdl unquantized-LUT 表（numRgba=5）：置非量化位（解码路径切换）但保
+    // LUT 供给。TD-27。
+    void setUsesUnquantizedLut() noexcept
+    {
+        m_usesQuantizedPositions = false;
+        m_usesVertexLut = true;
+    }
 
     // 绘制绑定入口（SceneCompositorImpl Surface 分支的 u_vertLUT/u_vertParams 源）。
     // Ported from: itwinjs-core MeshGeometry.ts:40（get lut()）+ glsl/Vertex.ts:229-246
@@ -154,6 +164,18 @@ public:
     rhi::TextureHandle getTexture() const noexcept { return m_texture; }
     rhi::TextureHandle getSurfaceTexture() const noexcept override { return m_texture; }
 
+    // M-M(3)：UV 量化参数（textured surface——QParams2d fromRange
+    // {decodedMin/Max}；unquantize2d(q, params) 的 vec4 = xy 平移 + zw 缩放：
+    // min / (max-min)/65535）。
+    void setTexCoordParams(float const* v4) noexcept
+    {
+        for (int i = 0; i < 4; ++i)
+            m_qTexCoordParams[i] = v4[i];
+        m_hasTexCoordParams = true;
+    }
+    bool hasTexCoordParams() const noexcept { return m_hasTexCoordParams; }
+    float const* getTexCoordParams() const noexcept { return m_qTexCoordParams; }
+
     /// Ported from: itwinjs-core SurfaceGeometry.computeSurfaceFlags(params, flags)
     /// — the target-derived gates (displayNormalMaps, currentViewFlags) are
     /// passed explicitly instead of via ShaderProgramParams.target (C++ tests
@@ -178,6 +200,10 @@ private:
     rhi::VertexBufferHandle m_lutVertexBuffer;       // a_qPosition VAO 顶点缓冲句柄
     rhi::VertexBufferInfoHandle m_lutVertexBufferInfo;  // attribute 布局（UBYTE3@0）
     bool m_usesQuantizedPositions = false;
+    bool m_usesVertexLut = false;  // TD-27：LUT 形态位（LUT ctor 置 true）
+    // M-M(3)：UV 量化参数（textured surface 的 u_qTexCoordParams 源）。
+    bool m_hasTexCoordParams = false;
+    float m_qTexCoordParams[4] = {0.0f, 0.0f, 1.0f, 1.0f};
     dqCommon::ColorDef m_color = dqCommon::ColorDef::create();  // u_color 均匀色（默认黑——对齐 ColorDef.create()）
     bool m_nonUniformColor = false;  // 色表形态位（ColorInfo.createNonUniform——见 isNonUniformColor 注）
     std::unique_ptr<RenderMaterialInternal> m_materialInfo;  // M-M(1)：surface 材质（无则 null → Material.default）

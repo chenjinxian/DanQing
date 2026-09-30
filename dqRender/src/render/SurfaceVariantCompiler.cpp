@@ -45,6 +45,9 @@ BEGIN_DQ_RENDER_NAMESPACE
 void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags const& flags)
 {
     bool quantized = flags.usesQuantizedPositions();
+    // TD-27（M-M(4)）：unquantized-LUT 变体（imdl numRgba=5——§3.4 属性路径
+    // 之外的第三形态；参考全 LUT 无此轴，DanQing 簿记位）。
+    bool const lutUnquant = flags.isLutUnquantized;
     bool translucent = flags.isTranslucent;
     FeatureMode featureMode = flags.featureMode;
     bool instanced = flags.isInstanced;
@@ -69,7 +72,7 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
 
     // --- Foundation: position pipeline ---
     // Ported from: itwinjs-core Surface.ts createCommon() (line 265-298)
-    createCommon(builder, instanced, quantized);
+    createCommon(builder, instanced, quantized, lutUnquant);
 
     // --- Animation displacement ---
     // Ported from: itwinjs-core Surface.ts addAnimation() (line 760-762)
@@ -94,7 +97,7 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
     // (true) :396-406), no a_normal attribute. Instanced: the normal matrix
     // is computed in-shader from g_mv (Vertex.ts:162-166 — includes the
     // per-instance rotation; M-M(1)).
-    addNormal(builder, quantized, instanced);
+    addNormal(builder, quantized, instanced, lutUnquant);
 
     // --- Surface texture ---
     // Ported from: itwinjs-core Surface.ts addTexture() (line 571-687)
@@ -124,7 +127,7 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
     // registered TODO — getComputeElementColor Color.ts:16-26), no a_color attribute.
     // Instanced: 逐实例 symbology 色在 u_color 之上混入（Color.ts:32-35
     // applyInstanceColor——getComputeColor 的 instanced 分支）。
-    addColor(builder, quantized, instanced);
+    addColor(builder, quantized, instanced, lutUnquant);
 
     // --- Lighting ---
     // Ported from: itwinjs-core Lighting.ts addLighting()

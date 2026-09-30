@@ -162,6 +162,14 @@ public:
     virtual float const* getQOrigin() const { return nullptr; }
     virtual float const* getQScale() const { return nullptr; }
 
+    /// Whether position (and per-vertex data) come from a VertexLUT texture
+    /// rather than vertex attributes. TD-27（M-M(4)）：DanQing §3.4 偏差簿记——
+    /// 参考（CachedGeometry.ts:98 LUTGeometry）全部几何均为 LUT；DanQing 的
+    /// canvas 属性路径（a_position/a_color FLOAT3）为偏差形态。Unquantized
+    /// 位置时此位区分 imdl unquantized-LUT（numRgba=5）与属性两变体
+    ///（TechniqueFlags.isLutUnquantized）。
+    virtual bool usesVertexLut() const { return false; }
+
     // --- Draw ---
     virtual void draw(rhi::Driver& driver) = 0;
 

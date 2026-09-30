@@ -57,7 +57,8 @@ BEGIN_DQ_RENDER_NAMESPACE
 //            computeSurfaceNormal function + v_n computed varying
 //   Fragment: g_normal global + FinalizeNormal component (flip + return)
 // ---------------------------------------------------------------------------
-inline void addNormal(ProgramBuilder& builder, bool quantized = false, bool instanced = false)
+inline void addNormal(ProgramBuilder& builder, bool quantized = false, bool instanced = false,
+                      bool lutUnquant = false)
 {
     auto& vert = builder.getVertexBuilder();
     auto& frag = builder.getFragmentBuilder();
@@ -90,18 +91,16 @@ inline void addNormal(ProgramBuilder& builder, bool quantized = false, bool inst
     // Ported from: itwinjs-core Surface.ts octDecodeNormal (line 383-394)
     vert.addFunction(std::string(kOctDecodeNormal));
 
-    if (quantized) {
-        // Quantized LUT path — Ported from: itwinjs-core Surface.ts
-        // getComputeNormal(true) (line 396-406): the oct normal u16 lives in
-        // texel3.xy when the vertex has color+normal (4 texels/vertex), else
-        // texel1.zw. g_vertLutData* are pre-read in [0..255] byte range
-        // (kPreReadVertexDataQuantized = floor(TEXTURE*255+0.5), Vertex.ts
-        // :200-204), so octDecodeNormal's /255 normalization applies directly
-        // — the reference passes the vec2 through WITHOUT decodeUInt16.
-        // No a_normal attribute is declared (Task 4's VAO binds only
-        // a_qPosition at location 0).
+    if (quantized || lutUnquant) {
+        // LUT path — Ported from: itwinjs-core Surface.ts getComputeNormal
+        // (line 396-406)：量化表 oct u16 在 texel3.xy（有 colorIndex 时）/
+        // texel1.zw；非量化表（TD-27——numRgba=5，20B/顶点）在 g_vertLutData4.zw
+        // / g_vertLutData5.xy。g_vertLutData* 预读已 [0..255]（floor(TEXTURE
+        // *255+0.5)），octDecodeNormal 的 /255 归一化直接适用。无 a_normal
+        // attribute（VAO 只绑 a_qPosition @ location 0）。
         vert.addFunction(std::string("vec3 computeSurfaceNormal() {") +
-                         std::string(kComputeSurfaceNormalQuantizedPrelude) +
+                         std::string(lutUnquant ? kComputeSurfaceNormalNonQuantizedPrelude
+                                                : kComputeSurfaceNormalQuantizedPrelude) +
                          normalXform + "}\n");
     } else {
         // a_normal attribute (dedup — caller may have declared it).

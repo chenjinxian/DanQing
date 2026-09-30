@@ -14,7 +14,7 @@
 //    逐键形验 + 清单钉死）；出现任何细分/兄弟支域外键 = 配方越界或引擎
 //    发散（§11.8 处置——不烤白名单，先分析）；
 // ③ Completed→graphics 计数对账 + 树侧零在途终态（零 graphics 键 = 裁决
-//    白名单逐键钉死：空瓦叶根 + TD-27 unquantized 形态——见 joeshouse 锁
+//    白名单逐键钉死：空瓦叶根（TD-27 形态已 M-M(4) 清偿出白名单）
 //    对账块的全裁决链）；
 // ④ 双像素锚（§11.11 位置断言）——saved 初始帧 + 最深饱和帧（内容存活
 //    + 质心中央带；首绿实测钉死）。
@@ -1037,27 +1037,17 @@ TEST(DumpBrowse, JoesHouseBrowseSessionZeroMissing)
     //    (a) 4 叶根树根键（0x26/0x3d/0x43/0x4b）——**空瓦语义**：byteLength
     //        424、header numElementsIncluded=0、glTF 零 primitive（本任务
     //        取证实钉）——参考侧空内容同样零 graphic；
-    //    (b) "0x3f/-b-2-0-0-0-20"——**TD-27**：numRgbaPerVertex=5 +
-    //        usesUnquantizedPositions=true 的 unquantized-LUT 顶点表形态
-    //        （20B/顶点：位置=4 texel 转置 f32 + 每 texel .w 装
-    //        featureAndMaterial 字节，42 元素 36+6 instances 实内容）。
-    //        参考消费链在案（VertexLUT.ts:99 !usesUnquantizedPositions →
-    //        glsl Vertex.ts:227/:254 分支 + Color.ts:17 + Surface.ts:397-
-    //        398/:461 texel 源切换）；DanQing 的 shader 解码/pre-read 分支
-    //        已 1:1 预移植（VertexTableShaders.h kComputeUnquantizedPosition-
-    //        FromLUT/kPreReadVertexDataUnquantized + addVertexTable(quantized)
-    //        选择器）——缺口在解析层（TilesetJson.h 未携带该字段）与接受层
-    //       （ImdlGraphics.cpp:208 numRgba!=4 拒绝）+ 变体标志把"LUT 几何"
-    //        与"16-bit 解码"混为一维（SurfaceCommon.h:118-126——
-    //        quantized=false 走非 LUT attribute 路径）。与 TD-20 遗留清单的
-    //        "12B SimpleBuilder 拒绝入 LUT"同函数同形态先例（登记未修）。
-    //        用户可见症状限于 ×32 极端放大（父瓦 m16 LOD 兜底显示——锚 B
-    //        在 64× 实测内容 33.71% 上屏即该兜底的实证）。
+    //    (b) ~~"0x3f/-b-2-0-0-0-20"（TD-27）~~ **M-M(4) 清偿出白名单**
+    //        （2026-09-30）：numRgba=5 unquantized-LUT 形态已消费——解析层
+    //        补 usesUnquantizedPositions + 接受门放行 numRgba=4/5 + 变体轴
+    //        isLutUnquantized（LUT 供给与 16-bit 解码两维拆分）+ 色源/法线
+    //        texel 切换（g_vertLutData4.xy/4.zw-5.xy）。原白名单登记的完整
+    //        缺口链与用户可见症状（×32 极端放大父瓦兜底）随清偿消解；单测
+    //        锁 ImdlGraphicsTest.UnquantizedLutTableProducesGraphics。
     {
         std::set<std::string> const kAdjudicatedNoGraphics = {
             "25_1d-E:6_0x26/-b-0-0-0-0-1", "25_1d-E:6_0x3d/-b-0-0-0-0-1",
             "25_1d-E:6_0x43/-b-0-0-0-0-1", "25_1d-E:6_0x4b/-b-0-0-0-0-1",
-            "25_1d-E:6_0x3f/-b-2-0-0-0-20",
         };
         std::map<std::string, dqRender::Tile*> tilesByKey;
         std::function<void(dqRender::Tile*, std::string const&)> walk =
@@ -1078,7 +1068,7 @@ TEST(DumpBrowse, JoesHouseBrowseSessionZeroMissing)
                 noGraphics.insert(kv.first);
         EXPECT_EQ(kAdjudicatedNoGraphics, noGraphics)
             << "Completed-without-graphics set drifted from the adjudicated "
-               "whitelist (empty-tile roots + TD-27 unquantized form) — a new "
+               "whitelist (empty-tile roots) — a new "
                "consumption gap surfaced";
         EXPECT_EQ(static_cast<long>(numCompleted - noGraphics.size()),
                   ctx.readyTiles)

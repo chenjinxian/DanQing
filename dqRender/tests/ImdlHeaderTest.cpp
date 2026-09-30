@@ -514,6 +514,157 @@ TEST(ImdlGraphicsTest, LutPathUploadsVertexTableVerbatim)
     delete graphics[0];
 }
 
+// TD-27（M-M(4)）清偿锁：unquantized-LUT 顶点表（numRgbaPerVertex=5 +
+// usesUnquantizedPositions——20B/顶点：位置 = 跨 4 texel .w 通道转置重组的
+// IEEE f32）从"整瓦 Completed 后零 graphic"（numRgba!=4 拒绝门）转正为
+// unquantized-LUT 变体几何（usesQuantizedPositions=false + usesVertexLut=true
+// → TechniqueFlags.isLutUnquantized → kComputeUnquantizedPositionFromLUT +
+// kPreReadVertexDataUnquantized + 色源 g_vertLutData4.xy/法线 4.zw-5.xy）。
+// 资产：joeshouse-drill-v1 树 0x3f 键 "-b-2-0-0-0-20"（files/28.imdl，18,908B
+// ——42 元素 36+6 instances，DumpBrowse 零 graphics 白名单的历史键）。
+// Authored: no reference test exists in itwinjs-core/imodel-native for
+//           unquantized-LUT dump-replay consumption（§5(f)）——资产字段值
+//           为 dump 字节实测（2026-09-30 探针：2 prim 全 numRgba=5/unquant=
+//           true/count 488+32）。
+TEST(ImdlGraphicsTest, UnquantizedLutTableProducesGraphics)
+{
+    // 读真实 dump 瓦（只读，§11.11）。
+    std::string const tilePath = std::string(DANQING_TEST_ASSET_ROOT)
+        + "/third_party/tile-sample-assets/rpc-dumps/joeshouse-drill-v1/files/28.imdl";
+    std::ifstream in(tilePath, std::ios::binary);
+    ASSERT_TRUE(in.good()) << "tile not found: " << tilePath;
+    std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                               std::istreambuf_iterator<char>());
+    ASSERT_GT(bytes.size(), 100u);
+
+    dqRender::ImdlByteStream stream(bytes.data(), bytes.size());
+    auto const header = dqRender::ImdlHeader::readFrom(stream);
+    ASSERT_TRUE(header.isValid());
+    auto const desc = dqRender::decodeImdlContentDescription(header, stream);
+    ASSERT_TRUE(desc.has_value());
+    auto doc = dqRender::parseImdlDocument(stream);
+    ASSERT_TRUE(doc.has_value());
+
+    // 资产自洽（前置，非回归断言）：2 mesh prim，全部 numRgba=5 +
+    // usesUnquantizedPositions。
+    auto json = dqRender::tilejson::parseJsonDocument(doc->sceneJson);
+    ASSERT_NE(json, nullptr);
+    auto prims = dqRender::tilejson::parseImdlMeshPrimitives(*json);
+    ASSERT_EQ(prims.size(), 2u);
+    for (auto const& prim : prims) {
+        EXPECT_EQ(prim.primType, 0u);
+        EXPECT_EQ(prim.vertices.numRgbaPerVertex, 5u);
+        EXPECT_TRUE(prim.vertices.usesUnquantizedPositions)
+            << "asset drifted — this lock's asset is the numRgba=5 form";
+    }
+
+    RecordingLutDriver driver;
+    LutStubSystem system(driver);
+    auto graphics = dqRender::createImdlLutGraphics(*doc, system);
+    // 主判据（修复前 RED = 0——numRgba!=4 拒绝门）：每 prim 一个 graphic。
+    ASSERT_EQ(graphics.size(), 2u)
+        << "unquantized-LUT prims rejected (zero graphics — TD-27 regression)";
+    for (auto* g : graphics) {
+        auto* mesh = static_cast<dqRender::MeshGraphic*>(g);
+        ASSERT_NE(mesh, nullptr);
+        ASSERT_EQ(mesh->getSurfaces().size(), 1u);
+        dqRender::SurfaceGeometry const* surf = mesh->getSurfaces()[0].get();
+        ASSERT_NE(surf, nullptr);
+        // 变体分派语义：非量化解码 + LUT 供给（TechniqueFlags.isLutUnquantized
+        // 的两源）。
+        EXPECT_FALSE(surf->usesQuantizedPositions())
+            << "unquantized table must select the unquantized decode path";
+        EXPECT_TRUE(surf->usesVertexLut())
+            << "unquantized table is still LUT-fed (VertexLUT.ts:99)";
+        // LUT 参数透传：numRgbaPerVert == 5（20B/顶点）。
+        EXPECT_EQ(surf->getLut().getParams().numRgbaPerVert, 5u);
+    }
+    delete graphics[0];
+    delete graphics[1];
+}
+
+// M-M(3) 清偿锁：textured surface（surface.type=2 Textured + DisplayParams 材质
+// 纹理引用 materials[k].texture.name + namedTextures 嵌入 bufferView + surface
+// .uvParams QParams2d）从"36 瓦纹理不贴"（TD-20 遗留）转正为纹理采样几何。
+// 资产：housemodel-v1 saved 瓦 "-b-2-0-0-0-1"（roof 面即 type=2 prim——
+// Material4.texture.name="gta0"，namedTextures.gta0 = 嵌入 2048×64 PNG
+// glyph atlas 8876B；uvParams decodedMin [0.0039,0.125]/max [0.6387,0.6719]）。
+// Authored: no reference test exists for dump-replay textured consumption
+//           （§5(f)）；资产字段为 dump 字节实测（2026-09-30 探针）。
+TEST(ImdlGraphicsTest, TexturedSurfaceAttachesEmbeddedTexture)
+{
+    std::string const tilePath = std::string(DANQING_TEST_ASSET_ROOT)
+        + "/third_party/tile-sample-assets/rpc-dumps/housemodel-v1/files/12.imdl";
+    std::ifstream in(tilePath, std::ios::binary);
+    ASSERT_TRUE(in.good()) << "tile not found: " << tilePath;
+    std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
+                               std::istreambuf_iterator<char>());
+    ASSERT_GT(bytes.size(), 100u);
+
+    dqRender::ImdlByteStream stream(bytes.data(), bytes.size());
+    auto const header = dqRender::ImdlHeader::readFrom(stream);
+    ASSERT_TRUE(header.isValid());
+    auto const desc = dqRender::decodeImdlContentDescription(header, stream);
+    ASSERT_TRUE(desc.has_value());
+    auto doc = dqRender::parseImdlDocument(stream);
+    ASSERT_TRUE(doc.has_value());
+
+    auto json = dqRender::tilejson::parseJsonDocument(doc->sceneJson);
+    ASSERT_NE(json, nullptr);
+    auto prims = dqRender::tilejson::parseImdlMeshPrimitives(*json);
+    // 资产自洽（前置）：存在 type=2 prim，其材质携带 texture.name 且
+    // namedTextures 嵌入 bufferView + surface.uvParams。
+    bool foundTextured = false;
+    for (auto const& prim : prims) {
+        if (prim.surface.type == 2u && !prim.textureName.empty()
+            && prim.surface.hasUvParams) {
+            foundTextured = true;
+            EXPECT_EQ(prim.textureName, "gta0");
+        }
+    }
+    ASSERT_TRUE(foundTextured) << "asset drifted — no type=2 textured prim";
+
+    RecordingLutDriver driver;
+    LutStubSystem system(driver);
+    auto graphics = dqRender::createImdlLutGraphics(*doc, system);
+    ASSERT_FALSE(graphics.empty());
+    bool sawTexturedGeom = false;
+    // 期望 UV 参数 = 解析层 prim 值（QParams2d fromRange：xy=decodedMin、
+    // zw=(max-min)/65535）——资产内逐瓦一致由解析层自洽驱动（不同瓦的
+    // uvParams 域不同，钉常量会脆）。
+    double expTcp[4] = {0, 0, 0, 0};
+    for (auto const& prim : prims) {
+        if (prim.surface.type == 2u && prim.surface.hasUvParams) {
+            expTcp[0] = prim.surface.uvDecodedMin[0];
+            expTcp[1] = prim.surface.uvDecodedMin[1];
+            expTcp[2] = (prim.surface.uvDecodedMax[0] - prim.surface.uvDecodedMin[0]) / 65535.0;
+            expTcp[3] = (prim.surface.uvDecodedMax[1] - prim.surface.uvDecodedMin[1]) / 65535.0;
+        }
+    }
+    for (auto* g : graphics) {
+        auto* mesh = static_cast<dqRender::MeshGraphic*>(g);
+        if (!mesh)
+            continue;
+        for (auto const& surf : mesh->getSurfaces()) {
+            if (surf->hasTextures()) {
+                sawTexturedGeom = true;
+                // 纹理句柄 + UV 量化参数均就位（u_qTexCoordParams 源）。
+                EXPECT_TRUE(surf->getSurfaceTexture() != dqRender::rhi::TextureHandle{})
+                    << "hasTextures set but no texture handle";
+                ASSERT_TRUE(surf->hasTexCoordParams());
+                auto const* tcp = surf->getTexCoordParams();
+                for (int i = 0; i < 4; ++i)
+                    EXPECT_NEAR(tcp[i], static_cast<float>(expTcp[i]), 1e-7)
+                        << "texCoordParams[" << i << "]";
+            }
+        }
+    }
+    EXPECT_TRUE(sawTexturedGeom)
+        << "no textured SurfaceGeometry produced — embedded texture consumption broke";
+    for (auto* g : graphics)
+        delete g;
+}
+
 // U7 内存形态收益：LUT 路径每顶点 16B（numRgba×4）+ 每索引 3B（24-bit 流），
 // 对照旧 VBO 路径 PolyfaceGraphic 每角 sizeof(Vertex)=52B + 每索引 4B。
 // Authored: 参考无对应数值测试（行为收益条目 U7，取证

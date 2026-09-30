@@ -1342,6 +1342,11 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                 flags.positionType = geometry->usesQuantizedPositions()
                     ? PositionType::Quantized
                     : PositionType::Unquantized;
+                // TD-27（M-M(4)）：Unquantized 的双实现路径分派——LUT（imdl
+                // numRgba=5）vs 属性（canvas §3.4）。变体缓存键含此轴
+                //（:1412 的手工比较同字段）。
+                flags.isLutUnquantized = !geometry->usesQuantizedPositions()
+                                         && geometry->usesVertexLut();
 
                 // Instancing is per-geometry (cachedGeometry.asInstanced)——
                 // Ported from: itwinjs-core DrawCommand.ts:211
@@ -1410,6 +1415,7 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     flags.isThematic == m_cachedTechniqueFlags.isThematic &&
                     flags.isInstanced == m_cachedTechniqueFlags.isInstanced &&
                     flags.positionType == m_cachedTechniqueFlags.positionType &&
+                    flags.isLutUnquantized == m_cachedTechniqueFlags.isLutUnquantized &&
                     m_cachedShader) {
                     shader = m_cachedShader;
                 } else {
@@ -1568,8 +1574,10 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                         // 主题渐变(1)、u_featureOverrides(7)、s_normalMap(13) 均不冲突
                         // （polyline 分支的 0 是 headless 测试约定——surface 的 0 已被
                         // s_texture 占用）。
+                        // LUT 供给门（TD-27：量化与非量化表皆是 LUT——
+                        // usesVertexLut；属性路径[canvas]不携 LUT）。
                         SurfaceGeometry* surfGeom = geometry->asSurface();
-                        if (surfGeom != nullptr && surfGeom->usesQuantizedPositions()) {
+                        if (surfGeom != nullptr && surfGeom->usesVertexLut()) {
                             auto const& surfLut = surfGeom->getLut();
                             constexpr int32_t kSurfaceLutTexUnit = 5;  // GL::TextureUnit::VertexLUT (RenderFlags.h:141)
                             if (surfLut.isValid()) {
@@ -1588,6 +1596,12 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                                     params.setVec3("u_qOrigin", qo);
                                 if (float const* qs = surfGeom->getQScale())
                                     params.setVec3("u_qScale", qs);
+                                // M-M(3)：textured surface 的 UV 量化参数
+                                //（Surface.ts:460-467 computeTexCoord 量化形态——
+                                // unquantize2d(q, u_qTexCoordParams)）。
+                                if (surfGeom->hasTexCoordParams())
+                                    params.setVec4("u_qTexCoordParams",
+                                                   surfGeom->getTexCoordParams());
                             }
                             dqCommon::ColorDef const surfColor = surfGeom->getColor();
                             // u_shaderFlags 每 draw 全数组上传（setShaderFlags——

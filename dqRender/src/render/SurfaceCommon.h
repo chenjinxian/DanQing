@@ -60,13 +60,20 @@ inline constexpr float kRenderOrder_BlankingRegion_f = 2.0f;
 //
 // Animation/shadow-map branches omitted — TODO follow-up.
 // ---------------------------------------------------------------------------
-inline void createCommon(ProgramBuilder& builder, bool instanced, bool quantized = false)
+inline void createCommon(ProgramBuilder& builder, bool instanced, bool quantized = false,
+                         bool lutUnquant = false)
 {
     auto& vert = builder.getVertexBuilder();
     (void)builder.getFragmentBuilder();  // frag used below for varying/uniform registration
 
     // TEXTURE/TEXTURE_CUBE/TEXTURE_PROJ macros are now added automatically
     // by the ShaderBuilder constructor (ShaderBuilder.h addDefaultMacros()).
+
+    // TD-27（M-M(4)）：imdl unquantized-LUT（numRgba=5）走 addVertexTable 的
+    // 非量化分支（kComputeUnquantizedPositionFromLUT + kPreReadVertexData
+    // Unquantized——Vertex.ts:43-56/:206-212 预移植）；canvas 属性路径
+    //（§3.4 a_position）保持 lutUnquant=false。
+    (void)lutUnquant;
 
     if (instanced) {
         // Instanced attribute declarations（AttributeMap.ts:36-51 instanced 追加组——
@@ -114,13 +121,14 @@ inline void createCommon(ProgramBuilder& builder, bool instanced, bool quantized
         wireModelViewMatrix(vert);
     }
 
-    // Position attribute(s) — quantized LUT or non-quantized attribute path.
+    // Position attribute(s) — quantized LUT / unquantized LUT / attribute path.
     // Ported from: itwinjs-core Vertex.ts addPosition() (line 258-280)
-    if (quantized) {
+    if (quantized || lutUnquant) {
         // Full LUT path: delegates to addVertexTable which sets up all
         // LUT globals, coordinate computation, position decode, texture
-        // bindings, and pre-read initializers.
-        addVertexTable(builder, /*quantized*/true);
+        // bindings, and pre-read initializers. quantized=false + lutUnquant=
+        // true → the 20B/vertex unquantized table decode (TD-27).
+        addVertexTable(builder, /*quantized*/quantized);
     } else {
         // §3.4 deviation: simplified attribute path (a_position → rawPos).
         // itwinjs uses VertexLUT for all paths; DanQing uses direct attributes
@@ -190,18 +198,21 @@ inline void createCommon(ProgramBuilder& builder, bool instanced, bool quantized
 //   Varying: v_color (vec4)
 //   Fragment: ComputeBaseColor slot (return v_color)
 // ---------------------------------------------------------------------------
-inline void addColor(ProgramBuilder& builder, bool quantized = false, bool instanced = false)
+inline void addColor(ProgramBuilder& builder, bool quantized = false, bool instanced = false,
+                     bool lutUnquant = false)
 {
     auto& vert = builder.getVertexBuilder();
 
     // v_color varying
     builder.addVarying("v_color", VariableType::Vec4);
 
-    if (quantized) {
-        // Quantized LUT path — Ported from: itwinjs-core Color.ts addColor()
+    if (quantized || lutUnquant) {
+        // LUT path — Ported from: itwinjs-core Color.ts addColor()
         // (line 51-62)。u_color uniform：均匀元素色（非均匀时 dispatch 侧
         // 不绑——Color.ts:56 仅 color.isUniform 才 bind；flag 位选权在
         // u_shaderFlags[kShaderBit_NonUniformColor]，见 getComputeElementColor）。
+        // 色源随表形态：量化 g_vertLutData1.zw / 非量化 g_vertLutData4.xy
+        //（Color.ts:16-26 vertData 选择器）。
         vert.addUniform("u_color", VariableType::Vec4, nullptr);
 
         if (instanced) {
@@ -211,13 +222,15 @@ inline void addColor(ProgramBuilder& builder, bool quantized = false, bool insta
             // :32-35 在元素色之上 mix 逐实例 rgb/alpha）。
             addInstanceColor(vert);
             vert.setVertexComponent(VertexShaderComponent::ComputeBaseColor,
-                std::string(kColorComputeVertexColorQuantizedInstanced));
+                std::string(lutUnquant ? kColorComputeVertexColorUnquantizedInstanced
+                                       : kColorComputeVertexColorQuantizedInstanced));
         } else {
-            // Vertex ComputeBaseColor: getComputeColor(quantized) 全文
+            // Vertex ComputeBaseColor: getComputeColor 全文
             //（getComputeElementColor + returnColor——ColorShaders.h 的常量
             // 即 Color.ts:16-26/:28-30 的逐行 GLSL）。
             vert.setVertexComponent(VertexShaderComponent::ComputeBaseColor,
-                                    std::string(kColorComputeVertexColorQuantized));
+                                    std::string(lutUnquant ? kColorComputeVertexColorUnquantized
+                                                           : kColorComputeVertexColorQuantized));
         }
     } else {
         // a_color attribute

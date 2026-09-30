@@ -312,6 +312,10 @@ struct ImdlVertexTableProps {
     double decodedMax[3] = {0, 0, 0};
     uint32_t uniformColor = 0;  // packed 0xRRGGBB? (reference fillColor int)
     bool hasUniformColor = false;
+    // TD-27（M-M(4)）：非量化顶点表（numRgbaPerVertex=5，20B/顶点——位置为
+    // 跨 4 texel .w 通道转置重组的 IEEE f32，VertexTableBuilder.ts Unquantized
+    // 命名空间）。ParseImdlDocument.ts:1031 原样透传。
+    bool usesUnquantizedPositions = false;
 };
 
 // Ported from: ImdlSchema.ts:86-97 SurfaceMaterialParams（内联形态——
@@ -352,6 +356,12 @@ struct ImdlSurfaceProps {
     // 指向 renderMaterials 表，或内联 SurfaceMaterialParams；atlas 形态当前
     // 采面未命中，登记）。原始字段提取，换算归消费点（ImdlGraphics.cpp）。
     std::optional<ImdlSurfaceMaterialProps> material;
+    // M-M(3)：textured surface 的 UV 量化参数（ImdlSchema.ts SurfaceParams
+    // .uvParams——QParams2dProps {decodedMin/Max[2]}；surface.type 2/3
+    // Textured/TexturedLit 携带）。
+    bool hasUvParams = false;
+    double uvDecodedMin[2] = {0.0, 0.0};
+    double uvDecodedMax[2] = {0.0, 0.0};
 };
 
 // ---------------------------------------------------------------------------
@@ -426,12 +436,33 @@ struct ImdlInstancesProps {
     std::optional<std::string> symbologyOverridesView;
 };
 
+// M-M(3)：namedTextures 表（ImdlSchema.ts:56-80 ImdlNamedTexture——名字 →
+// 图像载荷/元数据）。bufferView 存在 = 图像字节嵌入瓦内（loadNamedTexture
+// :70-80 直读 tile 内容）；缺席 = 外部请求（本采面未命中——housemodel 36
+// 纹理瓦全为嵌入 glyph atlas gta0）。
+struct ImdlNamedTextureProps {
+    bool valid = false;
+    std::string bufferView;
+    uint32_t format = 0;       // ImageSourceFormat（Jpeg=0/Png=2/Svg=3）
+    uint32_t transparency = 0; // ImdlTextureTransparency
+    uint32_t width = 0;
+    uint32_t height = 0;
+    bool isGlyph = false;
+    bool isTileSection = false;
+};
+
 struct ImdlPrimitiveProps {
     ImdlVertexTableProps vertices;
     ImdlSurfaceProps surface;
     bool isPlanar = false;  // ImdlSchema.ts:177 mesh primitive isPlanar → 参考侧
                             // 决定 OpaquePlanar pass 归属（Task 5 LUT 路径）
     std::string material;   // ImdlSchema.ts:173 material——关联 ImdlDisplayParams 的 Id
+    // M-M(3)：DisplayParams.materials[material].texture.name（housemodel 实测
+    // 形态——纹理引用在 DisplayParams 级的 texture 字段：{name, params}，非
+    // surface.textureMapping；ParseImdlDocument.ts:1218-1231 parseDisplayParams
+    // 的 texture 分支）。textureWeight = params.weight（0 = 纯纹理采样）。
+    std::string textureName;
+    double textureWeight = 0.0;
     std::optional<ImdlMeshEdgesProps> edges;  // ImdlSchema.ts:277-286（mesh primitive）
     std::optional<ImdlInstancesProps> instances;  // ImdlSchema.ts:181 instances?
 
@@ -514,12 +545,27 @@ inline std::vector<ImdlPrimitiveProps> parseImdlMeshPrimitives(JsonValue const& 
                     props.vertices.uniformColor = static_cast<uint32_t>(uc->number);
                     props.vertices.hasUniformColor = true;
                 }
+                if (JsonValue const* uq = verts->find("usesUnquantizedPositions")) {
+                    if (uq->type == JsonValue::Type::Bool)
+                        props.vertices.usesUnquantizedPositions = uq->boolean;
+                }
             }
             if (JsonValue const* surf = prim.find("surface")) {
                 if (JsonValue const* ind = surf->find("indices"))
                     props.surface.indicesView = ind->str;
                 if (JsonValue const* t = surf->find("type"))
                     props.surface.type = static_cast<uint32_t>(t->number);
+                // M-M(3)：uvParams（QParams2d——textured surface）。
+                if (JsonValue const* uvp = surf->find("uvParams")) {
+                    if (JsonValue const* mn = uvp->find("decodedMin"))
+                        for (int i = 0; i < 2 && i < static_cast<int>(mn->arr.size()); ++i)
+                            props.surface.uvDecodedMin[i] = mn->arr[i].number;
+                    if (JsonValue const* mx = uvp->find("decodedMax"))
+                        for (int i = 0; i < 2 && i < static_cast<int>(mx->arr.size()); ++i)
+                            props.surface.uvDecodedMax[i] = mx->arr[i].number;
+                    props.surface.hasUvParams =
+                        uvp->find("decodedMin") != nullptr && uvp->find("decodedMax") != nullptr;
+                }
                 // M-M(1)：surface.material（ImdlSchema.ts:104 SurfaceMaterial =
                 // string 键 | 内联 SurfaceMaterialParams；ParseImdlDocument.ts
                 // :467-475 convertMaterial 的两形态）。
@@ -571,6 +617,14 @@ inline std::vector<ImdlPrimitiveProps> parseImdlMeshPrimitives(JsonValue const& 
                     if (JsonValue const* lp = dp->find("linePixels"))
                         props.linePixels =
                             static_cast<dqCommon::LinePixels>(static_cast<uint32_t>(lp->number));
+                    // M-M(3)：DisplayParams 级纹理引用（{name, params{weight}}）。
+                    if (JsonValue const* tex = dp->find("texture")) {
+                        if (JsonValue const* nm = tex->find("name"))
+                            props.textureName = nm->str;
+                        if (JsonValue const* ps = tex->find("params"))
+                            if (JsonValue const* wt = ps->find("weight"))
+                                props.textureWeight = wt->number;
+                    }
                 }
             }
             // ImdlSchema.ts:277-286 edges 四形态（字段逐一）。
@@ -655,8 +709,40 @@ inline std::vector<ImdlPrimitiveProps> parseImdlMeshPrimitives(JsonValue const& 
     return out;
 }
 
-// parseImdlRenderMaterials — renderMaterials 表（M-M(1)）。
-// Ported from: ImdlGraphicsCreator.ts:192-227 getMaterial 的 string 键分支
+// parseImdlNamedTextures — namedTextures 表（M-M(3)）。ImdlSchema.ts:56-80
+// （名字 → bufferView/format/transparency/dims/isGlyph——bufferView 存在即
+// 嵌入载荷）。
+inline std::map<std::string, ImdlNamedTextureProps> parseImdlNamedTextures(JsonValue const& doc)
+{
+    std::map<std::string, ImdlNamedTextureProps> out;
+    JsonValue const* table = doc.find("namedTextures");
+    if (!table || table->type != JsonValue::Type::Object)
+        return out;
+    for (auto const& entry : table->obj) {
+        ImdlNamedTextureProps nt;
+        nt.valid = true;
+        if (JsonValue const* v = entry.second.find("bufferView"))
+            nt.bufferView = v->str;
+        if (JsonValue const* v = entry.second.find("format"))
+            nt.format = static_cast<uint32_t>(v->number);
+        if (JsonValue const* v = entry.second.find("transparency"))
+            nt.transparency = static_cast<uint32_t>(v->number);
+        if (JsonValue const* v = entry.second.find("width"))
+            nt.width = static_cast<uint32_t>(v->number);
+        if (JsonValue const* v = entry.second.find("height"))
+            nt.height = static_cast<uint32_t>(v->number);
+        if (JsonValue const* v = entry.second.find("isGlyph"))
+            if (v->type == JsonValue::Type::Bool)
+                nt.isGlyph = v->boolean;
+        if (JsonValue const* v = entry.second.find("isTileSection"))
+            if (v->type == JsonValue::Type::Bool)
+                nt.isTileSection = v->boolean;
+        out[entry.first] = nt;
+    }
+    return out;
+}
+
+// parseImdlRenderMaterials — renderMaterials 表（M-M(1)）。// Ported from: ImdlGraphicsCreator.ts:192-227 getMaterial 的 string 键分支
 //（`document.json.renderMaterials[mat]` → RenderMaterialParams 全字段；本层
 // 只提取 shader 消费面字段，flat 键名 1:1 ImdlSchema.ts RenderMaterialJson）。
 // 表缺失/键缺席 → 空 map（消费方落 Material.default，参考
