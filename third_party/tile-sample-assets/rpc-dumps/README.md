@@ -72,6 +72,60 @@
 |---|---|
 | 统计 | 1 树 / 1 瓦（活性证据）/ imodel.json 主产物（4 视图/默认 0x25/1 model——instances60 的 iModelRpc 面自包含） |
 
+## M-K 目录（2026-09-30——三模型数据面采集，新检出 `D:\Github\itwinjs-core` @ `7e57d018…`）
+
+| 项 | 值 |
+|---|---|
+| 源模型 | `D:\test\` 用户指定三件：House_Model.bim（24,535,040 B）/ Baytown.bim（22,745,088 B）/ 编辑大桥测试.bim（954,888,192 B，**中文名**——目录名 ASCII，映射在各 README） |
+| 采集面 | 每模型：imodel.json（iModelRpc 面，全 dump 各一份同源同值）+ sweep 全树（预算 cap 内）+ drill 视口请求面（编辑大桥无 sweep——预算实证裁决） |
+| 预算裁决 | House_Model sweep=瓦数 cap 触顶（120k 请求→106,658 瓦/490MB）；Baytown sweep=字节 cap 触顶（1000MB→81,268 瓦/768MB）；编辑大桥 **sweep 跳过**（d2 瓦 34/141MB 实证——全树超 2GB 硬门不可行），imodel+drill 为主。cap 值随 `provenance.sweep.caps` 落盘 |
+| 校验 | 入库前**全量** sha256+byteLength 复算（188,055 条目 + bridge drill 31 条目，0 mismatch）；瓦头 "iMdl" magic + major≤37 全量自检 |
+
+### housemodel-v1 — House_Model.bim（sweep 全树，M-K）
+
+| 项 | 值 |
+|---|---|
+| 统计 | 1 树（0x26 "House_Model"）/ 106,658 瓦 / 489.91 MB（depth≤10；**d10 层瓦数 cap 截断不完整**——d9 峰层 59,296 瓦完整） |
+| 价值 | **首个 textured 命中模型**（36 瓦 materialsWithTexture/namedTextures/uvParams——TD-20 遗留 textured 变体的直接输入）+ polylines 1,514 图元（探针修正后首现）+ instances 214 瓦/3,984 实例；默认视图**开透视相机**（cameraOn=true，M-H 链首个 cameraOn 用例） |
+| imodel.json | 42 视图（34 非私有）/默认 0xdb/1 model/25 categories |
+
+### housemodel-drill-v1 — 同上（视口请求面 drill，M-K）
+
+| 项 | 值 |
+|---|---|
+| 统计 | 1 树 / 61 瓦 / 23.56 MB（d1-d6——视口浏览最深层 6；放大链顶 ×4） |
+| 交叉验证 | 61/61 键全在 housemodel-v1 域内且逐键同字节——**无**坑 18 族域外键（与 joeshouse 相反形态） |
+
+### baytown-v1 — Baytown.bim（sweep 全树，M-K）
+
+| 项 | 值 |
+|---|---|
+| 统计 | 1 树（0x20000000002 "ProcessPhysicalModel"，OpenPlant 工艺厂）/ 81,268 瓦 / 768.32 MB（depth≤10；**d10 层字节 cap 截断不完整**——d9 峰层 45,534 瓦完整） |
+| 价值 | **polylines 21,323 图元/19,507 瓦 + pointString 6,136 图元**（未消费形态大头命中）；曲线瓦 96.5%；源 changeset 非空（096f5152…） |
+| imodel.json | 5 视图（OpenPlant 3D 正交默认 + OPPID×4）/1 model/36 categories |
+
+### baytown-drill-v1 — 同上（视口请求面 drill——三目标，M-K）
+
+| 项 | 值 |
+|---|---|
+| 统计 | 1 树 / 61 瓦 / 8.03 MB（d1-d7；projectExtents 质心 ±1/4 域三目标取景——坑 16 不复现） |
+| 交叉验证 | 61/61 键全在 baytown-v1 域内且逐键同字节 |
+
+### bridge-edit-v1 — 编辑大桥测试.bim（iModelRpc 面主产物 + 取景粗瓦，M-K）
+
+| 项 | 值 |
+|---|---|
+| 统计 | 1 树（0x48 "大体量模型测试"，1.5km 桥）/ 2 瓦 / 166.55 MB（d2 粗瓦 34/141MB——大瓦形态实证） |
+| 关键事实 | **默认视图空域（坑 24）**——bim 保存默认视图不含几何（合法零请求）；本 dump 2 瓦为 zoomToVolume 世界域取景后粗瓦；**DanQing 打开链须备取景路径**否则白屏 |
+| imodel.json | 4 视图/默认 0x99（空域）/1 model/16 categories；中文文件名四层编码链全验证（provenance.seed 原样） |
+
+### bridge-edit-drill-v1 — 同上（取景到几何域的细节面 drill，M-K）
+
+| 项 | 值 |
+|---|---|
+| 统计 | 1 树 / 30 瓦 / 722.02 MB（d2-d6——桥跨两点 x=500/1400，radius=200 显式；**浏览深度界如实登记**：其他桥跨位置与 d≥7 无瓦，回放走父瓦 LOD 兜底） |
+| 特征 | edges compact 27/30 瓦（joeshouse 后首个 compact 命中）+ polylines 27/30 瓦 + 曲线 30/30；跨会话 2 键与 bridge-edit-v1 同 sha256（确定性实证） |
+
 ## manifest 契约（Task 2 DumpTileFetcher/DumpTileTreeProps 消费）
 
 ```jsonc
