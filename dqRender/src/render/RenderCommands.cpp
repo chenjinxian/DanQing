@@ -288,6 +288,15 @@ void RenderCommands::addBatch(Batch& batch)
 
     // Get overrides from target and check visibility.
     // Ported from: itwinjs-core addBatch (line 647-651)
+    // M-N(1)：subCategory 可见性惰性重算前置到此（allHidden 跳过门之前）——
+    // 否则死锁：全隐 batch 不入命令表 → PushBatch 永不执行 → un-hide 的
+    // apply 永不运行（隐藏态永久卡死）。addBatch 在场景重建时逐 batch 跑
+    // （SetInvisibleSubCategories → InvalidateScene 保证），版本门保证幂等。
+    if (m_target
+        && batch.getLastSubCategoryVisibilityVersion() != m_target->getSubCategoryVisibilityVersion()) {
+        batch.applySubCategoryVisibility(m_target->getInvisibleSubCategories());
+        batch.setLastSubCategoryVisibilityVersion(m_target->getSubCategoryVisibilityVersion());
+    }
     if (batch.hasFeatureOverrides()) {
         auto const* lut = batch.getFeatureOverrideLUT();
         if (lut && lut->allHidden())

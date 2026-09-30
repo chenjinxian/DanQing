@@ -48,6 +48,8 @@
 #include <dqCommon/Frustum.h>
 #include <dqCommon/PerModelCategoryVisibility.h>
 
+#include <set>  // M-N(1)：SetInvisibleSubCategories
+
 #include <QWidget>
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -441,6 +443,22 @@ public:
     // Mark selection set as dirty (triggers hilite set update on next frame)
     void SetSelectionSetDirty() { m_selectionSetDirty = true; }
 
+    // Set the invisible subCategory-id set (M-N(1)——category visibility).
+    // Pushes to RenderTarget::setInvisibleSubCategories + invalidates the
+    // scene（参考链：view.categorySelector change → onViewedCategoriesChanged
+    // → changeFlags.setViewedCategories + maybeInvalidateScene——Viewport.ts:
+    // 1239-1243；引擎侧的消费在 PushBatch 的惰性重算）。空集合 = 全可见。
+    // 参考 _visibleSubCategories 由 categorySelector + iModel.subcategories
+    // 扩展（FeatureSymbology.ts:134-143）；dump 回放面无该 RPC 表，集合以
+    // subCategoryId 预扩展形态抵达（特征表自带 subCategoryId）。
+    void SetInvisibleSubCategories(std::set<uint64_t> const& invisibleSubCategories);
+
+    // The current invisible subCategory ids（UI 回读面）。
+    std::set<uint64_t> const& GetInvisibleSubCategories() const noexcept
+    {
+        return m_invisibleSubCategories;
+    }
+
     // Set the hilited feature ID (0 = none) — DanQing-side state mirror for the
     // GetHilitedFeature accessor. The DRAW path follows the reference: the
     // iModel's HiliteSet drives RenderTarget::setHiliteSet from renderFrame
@@ -716,6 +734,7 @@ private:
     bool m_decorationsValid = false;
     bool m_redrawPending = true;
     bool m_selectionSetDirty = false;
+    std::set<uint64_t> m_invisibleSubCategories;  // M-N(1)（UI 回读镜像）
     bool m_freezeScene = false;
     bool m_analysisFractionValid = true;   // Step 7
     bool m_timePointValid = true;          // Step 8

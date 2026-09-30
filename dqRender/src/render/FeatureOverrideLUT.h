@@ -158,17 +158,22 @@ public:
     /// update path recounts the same full word, so a Hilited-only row counts).
     /// EQUIVALENCE (§11.10): DanQing's flags16.Visibility is the always-on
     /// "row is visible" marker (inverted from the reference's invisible-only
-    /// Visibility bit — OvrFlags16.h:48 and FeatureOverrideLUT.cpp:52), so it
-    /// is excluded here; the reference's Visibility bit is set only on hidden
-    /// rows and counts as overridden there. Divergence = marker bit polarity;
+    /// Visibility bit — OvrFlags16.h:48 and FeatureOverrideLUT.cpp:52), so
+    /// the marker itself is excluded; a CLEARED marker (row hidden — e.g.
+    /// category visibility, M-N(1)) counts as overridden, matching the
+    /// reference where a hidden row sets its Visibility bit and fires
+    /// nOverridden (without this leg the whole batch renders un-overridden
+    /// and hidden features never discard).
     /// verification = FeatureOverrideLutWebGlTest.anyOverriddenCoversHighByte
-    /// + anyOverriddenNotFiredByVisibilityMarker.
+    /// + anyOverriddenNotFiredByVisibilityMarker
+    /// + anyOverriddenFiredByHiddenRow (M-N(1)).
     bool anyOverridden() const noexcept
     {
         uint8_t const kVisibilityMarker = static_cast<uint8_t>(dqCommon::OvrFlags16::Visibility);
         for (FeatureOverrideData const& o : m_overrides) {
             if (o.flags != dqCommon::OvrFlag::None) return true;
             if ((static_cast<uint8_t>(o.flags16) & ~kVisibilityMarker) != 0) return true;
+            if ((static_cast<uint8_t>(o.flags16) & kVisibilityMarker) == 0) return true;  // hidden row
         }
         return false;
     }

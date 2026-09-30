@@ -1160,6 +1160,63 @@ TEST(DumpOpenChain, OpensHouseModelWithPerspectiveSavedView)
     EXPECT_LT(std::abs(cx - w / 2.0), w * 0.2) << "content centroid x off-center";
     EXPECT_LT(std::abs(cy - h / 2.0), h * 0.2) << "content centroid y off-center";
 
+    // ⑤ category 可见性像素锁（M-N(1)）：隐藏特征表全部 24 个 subCategory
+    //    （[CAT] 探针实测 = 0x72..0xa4 偶数序列——materials 表 7 对只是 prim
+    //    材质面子集，特征面更宽）→ 内容塌缩至近背景；清空集合 → 精确恢复
+    //    基线。机制：Viewport::SetInvisibleSubCategories → TargetImpl 版本链
+    //    → PushBatch 惰性重算 Batch::applySubCategoryVisibility → LUT
+    //    Visibility 标记清除 → 分片 override 路径 discard（!nthBitSet(
+    //    ovrFlags16, kOvrBit_Visibility)）。单类隐藏（materials 子集 7 值）
+    //    首实测无可见塌缩（特征面 24 值只覆盖小半）；全隐藏为通道的决定性
+    //    判据（塌缩 ≥ 90%）。restore 首实测精确回基线（445224）。
+    //    Authored: no reference test（category 过滤在参考走 FeatureOverrides
+    //    集成测试，无离线像素对应物；§5(g) 授权）。
+    {
+        std::set<uint64_t> hideAll;
+        for (uint64_t id = 0x72u; id <= 0xa4u; id += 2u)
+            hideAll.insert(id);
+        view.getUeViewport()->SetInvisibleSubCategories(hideAll);
+        view.getUeViewport()->InvalidateController();
+        spin(600);
+        view.getUeViewport()->RenderFrame();
+        std::vector<uint8_t> frameHidden;
+        uint32_t hw = 0, hh = 0;
+        ASSERT_TRUE(view.getUeViewport()->ReadFrameForTest(frameHidden, hw, hh));
+        long hiddenCount = 0;
+        double hcx = 0, hcy = 0;
+        uint32_t hminX = 0, hmaxX = 0, hminY = 0, hmaxY = 0;
+        // 全隐藏的期望即塌缩——contentStats 在 count==0 时返回 false（首实测
+        // 即零内容：全特征 discard）；false 不判败，量值由下方阈值断言。
+        contentStats(frameHidden, hw, hh, hiddenCount, hcx, hcy, hminX, hmaxX, hminY, hmaxY);
+        dumpBmp(frameHidden, hw, hh,
+                DANQING_TILE_ASSETS_DIR "/../../build/open-chain-housemodel-nocat.bmp");
+        printf("[OPEN-CHAIN] housemodel all-hidden: content=%ld px (baseline %ld, "
+               "delta %ld)\n", hiddenCount, count, count - hiddenCount);
+        // 全类隐藏 → 塌缩 ≥ 90%（残留 ≤ 背景 AA 噪声 + 无 feature 的装饰）。
+        EXPECT_LE(hiddenCount, static_cast<long>(count * 0.10))
+            << "hiding every subCategory did not collapse content — the "
+               "category-visibility engine channel broke (LUT Visibility / "
+               "anyOverridden activation gate)";
+
+        // 清空 → 恢复基线（±1% 容差吃 AA 抖动；首实测精确回 445224）。
+        std::set<uint64_t> empty;
+        view.getUeViewport()->SetInvisibleSubCategories(empty);
+        view.getUeViewport()->InvalidateController();
+        spin(600);
+        view.getUeViewport()->RenderFrame();
+        std::vector<uint8_t> frameRestored;
+        uint32_t rw = 0, rh = 0;
+        ASSERT_TRUE(view.getUeViewport()->ReadFrameForTest(frameRestored, rw, rh));
+        long restoredCount = 0;
+        double rcx = 0, rcy = 0;
+        uint32_t rminX = 0, rmaxX = 0, rminY = 0, rmaxY = 0;
+        ASSERT_TRUE(contentStats(frameRestored, rw, rh, restoredCount, rcx, rcy, rminX, rmaxX, rminY, rmaxY));
+        printf("[OPEN-CHAIN] housemodel restored: content=%ld px (baseline %ld)\n",
+               restoredCount, count);
+        EXPECT_GE(restoredCount, static_cast<long>(count * 0.99))
+            << "clearing the invisible set did not restore content";
+    }
+
     view.getUeViewport()->DropTiledGraphicsProvider(opened->provider.get());
     view.close();
     spin(200);

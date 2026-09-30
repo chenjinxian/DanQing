@@ -10,6 +10,7 @@
 #include "render/ViewportShaders.h"     // addModelToWindowCoordinates, addViewport
 #include "render/VertexShaderModules.h" // addLineWeight, addSamplePositionUnquantizedFunction
 #include "render/VertexTable.h"         // addVertexTable (LUT pre-read keyed by a_pos)
+#include "render/FeatureSymbologyShaders.h"  // getOvrFlagConstants/getExtractNthBit（M-N(1））
 #include "shader/DecodeShaders.h"       // kDecodeUint24
 
 BEGIN_DQ_RENDER_NAMESPACE
@@ -366,14 +367,26 @@ ProgramBuilder createPolylineProgramBuilder(FeatureMode featureMode, PositionTyp
             frag.addVariable({"u_featureOverrides", VariableType::Sampler2D, VariableScope::Uniform, 0});
             frag.addVariable({"u_featureOverrideWidth", VariableType::Float, VariableScope::Uniform, 0});
             frag.addVariable({"u_hiliteColor", VariableType::Vec4, VariableScope::Uniform, 0});
+            // OvrFlag 位常量 + nthBitSet（surface 变体同源——槽体消费）。
+            frag.addFunction(getOvrFlagConstants());
+            frag.addFunction(getExtractNthBit());
 
+            // OverrideFeatureId（function-call fragment main 约定 = vec4 返回）：
+            // 1:1 surface 槽体（texel0 布局 R=OvrFlags/G=OvrFlags16/B=lineCode/
+            // A=lineWeight——FeatureOverrideLUT.writeFeatureTexels；visibility
+            // discard 为 M-N(1) category 可见性路径首次激活本变体时的必要段——
+            // 旧体读 texel.a 当 alpha 门且无 return，Polyline-Overrides 变体
+            // 编译失败"function does not return a value"）。
             frag.setFragmentComponent(FragmentShaderComponent::OverrideFeatureId,
-                "    float featureU = (float(v_featureId) + 0.5) * u_featureOverrideWidth;\n"
+                "    float featureU = (float(v_featureId) * 3.0 + 0.5) * u_featureOverrideWidth;\n"
                 "    vec4 overrideTexel = texture(u_featureOverrides, vec2(featureU, 0.5));\n"
-                "    if (overrideTexel.a > 0.0) {\n"
-                "        baseColor.rgb = overrideTexel.rgb;\n"
-                "        baseColor.a *= overrideTexel.a;\n"
-                "    }\n");
+                "    float ovrFlags = overrideTexel.r * 255.0;\n"
+                "    float ovrFlags16 = overrideTexel.g * 255.0;\n"
+                "    if (!nthBitSet(ovrFlags16, kOvrBit_Visibility)) discard;\n"
+                "    if (nthBitSet(ovrFlags, kOvrBit_Rgb)) baseColor.rgb = overrideTexel.rgb;\n"
+                "    if (nthBitSet(ovrFlags, kOvrBit_Alpha)) baseColor.a = overrideTexel.a;\n"
+                "    if (nthBitSet(ovrFlags16, kOvrBit_Hilited)) baseColor.rgb = mix(baseColor.rgb, u_hiliteColor.rgb, 0.25);\n"
+                "    return baseColor;\n");
         }
     }
 

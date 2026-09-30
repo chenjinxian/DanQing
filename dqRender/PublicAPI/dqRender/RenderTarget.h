@@ -22,6 +22,7 @@
 #include <dqGeom/Range3d.h>
 
 #include <cstdint>
+#include <set>
 #include <vector>
 
 BEGIN_DQ_RENDER_NAMESPACE
@@ -192,6 +193,15 @@ public:
     // Set the flashed element and intensity.
     // Ported from: itwinjs-core Target.setFlashed()
     virtual void setFlashed(uint32_t /*elementId*/, float /*intensity*/) {}
+
+    // Set the invisible subCategory-id set (M-N(1)——category visibility). The
+    // per-batch feature-override LUTs re-apply visibility lazily at draw time
+    // (setHiliteSet 同构). The reference's inverse set (_visibleSubCategories,
+    // FeatureSymbology.ts:134-143) is built from the categorySelector +
+    // iModel.subcategories RPC table; the dump-replay plane has no such table,
+    // so the set arrives pre-expanded by subCategoryId (each feature's
+    // subCategoryId is in the packed feature table).
+    virtual void setInvisibleSubCategories(std::set<uint64_t> const& /*invisibleSubCategories*/) {}
 };
 
 END_DQ_RENDER_NAMESPACE

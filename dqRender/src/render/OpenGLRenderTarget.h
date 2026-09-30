@@ -54,6 +54,7 @@ public:
     bool readPickDepth(int32_t x, int32_t y, uint32_t width, uint32_t height,
                        float* outFractions, uint32_t outCount) override;
     void setHiliteSet(uint32_t const* elementIds, size_t count) override;
+    void setInvisibleSubCategories(std::set<uint64_t> const& invisibleSubCategories) override;
     void setFlashed(uint32_t elementId, float intensity) override;
     void setHiliteColor(float r, float g, float b) override;
     void setViewportTransform(float const* mv16, float const* mvp16) override;

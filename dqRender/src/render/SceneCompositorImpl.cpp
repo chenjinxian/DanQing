@@ -2353,6 +2353,14 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                                        : -1);
                         }
                     }
+                    // M-N(1)：subCategory 可见性惰性重算（setHiliteSet 同构——
+                    // 批次侧观测版本过期才重算；与 hilite/flash 位正交）。
+                    if (batch->getLastSubCategoryVisibilityVersion()
+                            != m_target.getSubCategoryVisibilityVersion()) {
+                        batch->applySubCategoryVisibility(m_target.getInvisibleSubCategories());
+                        batch->setLastSubCategoryVisibilityVersion(
+                            m_target.getSubCategoryVisibilityVersion());
+                    }
                     // Create the LUT when the batch has a feature table: the
                     // Overrides variant (gated on an ACTIVE override set —
                     // BatchUniforms._setCurrentBatch :74) samples it. A

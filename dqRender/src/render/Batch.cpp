@@ -74,6 +74,43 @@ void Batch::updateFeatureStates(std::vector<uint32_t> const& hiliteElementIds,
 }
 
 // ---------------------------------------------------------------------------
+// Batch — applySubCategoryVisibility
+// M-N(1)：subCategory 可见性全量重算（参考 FeatureOverrides._visibleSubCategories
+// 语义——特征 subCategoryId 落在不可见集合 → LUT Visibility 标记清除 → 分片
+// override 路径 discard）。与 updateFeatureStates 独立正交：hilite/flash 只动
+// 各自的位，Visibility 标记在此路径独占（两路径可任意序重算不互踩）。
+// ---------------------------------------------------------------------------
+void Batch::applySubCategoryVisibility(std::set<uint64_t> const& invisibleSubCategories)
+{
+    if (!m_featureTable)
+        return;
+
+    FeatureOverrideLUT* lut = getOrCreateFeatureOverrideLUT();
+    if (!lut)
+        return;
+    int const n = m_featureTable->getSize();
+    // TEMP-DIAG（M-N(1)）：特征表 subCategoryId 实态探针。
+    static bool const s_catTrace = std::getenv("DANQING_CAT_TRACE") != nullptr;
+    std::set<uint64_t> traceIds;
+    for (int i = 0; i < n; ++i) {
+        auto const feature = m_featureTable->findFeature(i);
+        uint64_t subCatId = feature ? feature->subCategoryId.GetValue() : 0u;
+        if (s_catTrace)
+            traceIds.insert(subCatId);
+        bool const visible = invisibleSubCategories.find(subCatId) == invisibleSubCategories.end();
+        lut->setFeatureVisibility(static_cast<uint32_t>(i), visible);
+    }
+    if (s_catTrace) {
+        std::fprintf(stderr, "[CAT] batch=%u features=%d invisibleSet=%zu subCats:",
+                     m_batchId, n, invisibleSubCategories.size());
+        for (uint64_t id : traceIds)
+            std::fprintf(stderr, " 0x%llx", static_cast<unsigned long long>(id));
+        std::fprintf(stderr, "\n");
+        std::fflush(stderr);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Batch — addCommands
 // Ported from: itwinjs-core Batch.addCommands() (line 288-293)
 //

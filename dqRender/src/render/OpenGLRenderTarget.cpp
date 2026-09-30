@@ -323,6 +323,13 @@ void OpenGLRenderTarget::setHiliteSet(uint32_t const* elementIds, size_t count)
         m_impl->setHiliteSet(elementIds, count);
 }
 
+// M-N(1)：subCategory 可见性（TargetImpl 惰性版本链）。
+void OpenGLRenderTarget::setInvisibleSubCategories(std::set<uint64_t> const& invisibleSubCategories)
+{
+    if (m_impl)
+        m_impl->setInvisibleSubCategories(invisibleSubCategories);
+}
+
 void OpenGLRenderTarget::setFlashed(uint32_t elementId, float intensity)
 {
     // Ported from: itwinjs-core Target.setFlashed() (Target.ts:482-489)

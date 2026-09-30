@@ -28,6 +28,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <set>
 #include <vector>
 
 #ifndef BEGIN_DQ_RENDER_NAMESPACE
@@ -156,6 +157,22 @@ public:
 
     /// The current flash intensity (0..maxIntensity).
     float getFlashIntensity() const noexcept { return m_flashIntensity; }
+
+    /// Set the invisible subCategory-id set (M-N(1)). Marks the version
+    /// changed; each Batch re-applies subCategory visibility lazily at draw
+    /// time when its observed version is stale — the same lazy-recompute
+    /// pattern as setHiliteSet. The reference holds the inverse
+    /// (_visibleSubCategories, FeatureSymbology.ts:134-143) built from the
+    /// categorySelector + iModel.subcategories; the dump-replay plane has no
+    /// subCategory RPC table, so the set arrives pre-expanded by subCategoryId.
+    void setInvisibleSubCategories(std::set<uint64_t> const& invisibleSubCategories);
+
+    /// The current subCategory-visibility version (incremented on every
+    /// setInvisibleSubCategories).
+    uint32_t getSubCategoryVisibilityVersion() const noexcept { return m_subCategoryVisibilityVersion; }
+
+    /// The current invisible subCategory ids.
+    std::set<uint64_t> const& getInvisibleSubCategories() const noexcept { return m_invisibleSubCategories; }
 
     /// Set the hilite color (RGB).
     void setHiliteColor(float r, float g, float b);
@@ -422,6 +439,9 @@ private:
     //               (Target.ts:482-489, FeatureOverrides.ts:338-375/420)
     uint32_t m_flashedId = 0;
     float m_flashIntensity = 0.0f;
+    // M-N(1)：subCategory 可见性（不可见集合 + 惰性重算版本）。
+    std::set<uint64_t> m_invisibleSubCategories;
+    uint32_t m_subCategoryVisibilityVersion = 1;
 
     // Overlay render state (Ported from: itwinjs-core Target._overlayRenderState)
     // depthMask=false, blend=true, blendFunc=(ONE, ONE_MINUS_SRC_ALPHA)

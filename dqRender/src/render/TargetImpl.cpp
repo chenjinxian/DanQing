@@ -720,6 +720,16 @@ void TargetImpl::setFlashed(uint32_t elementId, float intensity)
     m_flashIntensity = intensity;
 }
 
+// M-N(1)：不可见 subCategory 集合（setHiliteSet 同构的惰性重算模式——版本
+// 递增，Batch 在 PushBatch 时按批次侧观测版本重算 applySubCategoryVisibility）。
+void TargetImpl::setInvisibleSubCategories(std::set<uint64_t> const& invisibleSubCategories)
+{
+    if (invisibleSubCategories != m_invisibleSubCategories) {
+        m_invisibleSubCategories = invisibleSubCategories;
+        ++m_subCategoryVisibilityVersion;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // setHiliteColor — set hilite color
 // Ported from: itwinjs-core Target.setHiliteColor()

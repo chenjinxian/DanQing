@@ -1057,6 +1057,21 @@ void Viewport::SetHilitedFeature(uint32_t featureId)
     InvalidateDecorations();
 }
 
+// M-N(1)：subCategory 可见性（category toggle 的引擎通道）。参考链：
+// view.categorySelector change → onViewedCategoriesChanged → changeFlags
+// .setViewedCategories + maybeInvalidateScene（Viewport.ts:1239-1243——
+// areFeatureOverridesDirty 族）；DanQing 的 override 消费在 PushBatch 的
+// 惰性重算（TargetImpl 版本链），此处推集 + 场景失效。
+void Viewport::SetInvisibleSubCategories(std::set<uint64_t> const& invisibleSubCategories)
+{
+    if (invisibleSubCategories == m_invisibleSubCategories)
+        return;
+    m_invisibleSubCategories = invisibleSubCategories;
+    if (m_renderTarget)
+        m_renderTarget->setInvisibleSubCategories(invisibleSubCategories);
+    InvalidateScene();
+}
+
 void Viewport::setHiliteColor(float r, float g, float b)
 {
     m_hiliteColor[0] = r;

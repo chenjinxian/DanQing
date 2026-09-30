@@ -15,6 +15,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <set>
 #include <vector>
 
 #ifndef BEGIN_DQ_RENDER_NAMESPACE
@@ -117,6 +118,24 @@ public:
     void updateFeatureStates(std::vector<uint32_t> const& hiliteElementIds,
                              uint32_t flashedElementId);
 
+    /// Apply subCategory-based visibility: every feature whose subCategoryId is
+    /// in `invisibleSubCategories` gets its LUT Visibility marker cleared
+    /// (fragment override path discards it), all others restored. Full
+    /// recompute like updateFeatureStates — covers both directions per pass.
+    /// The reference builds FeatureOverrides._visibleSubCategories from the
+    /// view's categorySelector + iModel.subcategories table
+    /// (FeatureSymbology.ts:134-143) and marks features outside it invisible
+    /// at appearance lookup; DanQing's dump-replay data plane has no
+    /// subCategory RPC table, so the invisible SET arrives pre-expanded by
+    /// subCategoryId (the key the reference's set itself holds). PushBatch
+    /// drives this on subCategory-visibility version change (M-N(1)).
+    void applySubCategoryVisibility(std::set<uint64_t> const& invisibleSubCategories);
+
+    /// The subCategory-visibility version this batch's LUT was last updated
+    /// from (M-N(1)——与 m_lastHiliteVersion 同构的批次侧版本比对位)。
+    uint32_t getLastSubCategoryVisibilityVersion() const noexcept { return m_lastSubCategoryVisibilityVersion; }
+    void setLastSubCategoryVisibilityVersion(uint32_t v) noexcept { m_lastSubCategoryVisibilityVersion = v; }
+
     /// The hilite-set version this batch's LUT was last updated from.
     uint32_t getLastHiliteVersion() const noexcept { return m_lastHiliteVersion; }
     void setLastHiliteVersion(uint32_t v) noexcept { m_lastHiliteVersion = v; }
@@ -171,6 +190,7 @@ private:
     uint32_t m_featureCount = 0;
     uint32_t m_batchId = 0;
     uint32_t m_lastHiliteVersion = 0;
+    uint32_t m_lastSubCategoryVisibilityVersion = 0;  // M-N(1)
     bool m_locateOnly = false;
 };
 
