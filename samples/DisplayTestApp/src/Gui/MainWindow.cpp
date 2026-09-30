@@ -28,7 +28,6 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QDockWidget>
-#include <QGridLayout>
 #include <QHash>
 #include <QKeySequence>
 #include <QLabel>
@@ -44,7 +43,6 @@
 #include <QTimer>
 #include <QToolBar>
 #include <QToolButton>
-#include <QTreeView>
 
 #include <algorithm>
 #include <sstream>
@@ -55,7 +53,6 @@
 
 #include "MainWindow.h"
 #include "MainWindow_p.h"
-#include "Tree.h"
 #include "Window.h"
 #include "MDIView.h"
 #include "DockWindowManager.h"
@@ -65,7 +62,6 @@
 #include "Command.h"
 #include "MenuManager.h"
 #include "ToolBarManager.h"
-#include "PropertyView.h"
 
 using namespace Gui;
 
@@ -162,12 +158,7 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags f)
     d->sizeLabel->setWindowTitle(tr("Unit System"));
     addStatusBarItem(d->sizeLabel, StatusBarItemSpec("UnitSystem", QString(), StatusBarSlot::Right, 1000, true, 0));
 
-    // rightSideLabel — Right, order 400 (Quick Measure)
-    d->rightSideLabel = new StatusBarLabel(statusBar());
-    d->rightSideLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    d->rightSideLabel->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
-    d->rightSideLabel->setWindowTitle(tr("Quick Measure"));
-    addStatusBarItem(d->rightSideLabel, StatusBarItemSpec("QuickMeasure", QString(), StatusBarSlot::Right, 400, true, 0));
+    // M-L(2)：Quick Measure rightSideLabel 已删（无调用方的死 chrome——分析报告 §3.1）。
 
     // Ported from: FreeCAD src/Gui/MainWindow.cpp:493-501 — SequencerBar (progress bar)
     auto* progressBar = new QProgressBar(statusBar());
@@ -176,18 +167,8 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags f)
     progressBar->setVisible(false);  // hidden until backend activates it
     addStatusBarItem(progressBar, StatusBarItemSpec("progressBar", QString(), StatusBarSlot::Left, 50, true, 0));
 
-    // Ported from: FreeCAD src/Gui/MainWindow.cpp:528-551 — toggleBottomPanelsButton
-    auto* toggleBtn = new QToolButton(statusBar());
-    toggleBtn->setIcon(QIcon(QStringLiteral(":/icons/Std_ToggleBottomPanels")));
-    toggleBtn->setIconSize(QSize(16, 16));
-    toggleBtn->setToolTip(tr("Toggles the bottom dock panels"));
-    toggleBtn->setStatusTip(tr("Toggles the bottom dock panels"));
-    toggleBtn->setCheckable(true);
-    toggleBtn->setChecked(true);
-    toggleBtn->setAutoRaise(true);
-    toggleBtn->setWindowTitle(tr("Bottom Panel Toggle"));
-    addStatusBarItem(toggleBtn, StatusBarItemSpec("toggleBottomPanelsButton", QString(), StatusBarSlot::Right, 700, true, 0));
-    // TODO: wire to Std_ToggleBottomPanels command when bottom docks exist (region 3)
+    // M-L(2)：toggleBottomPanelsButton 已删（TODO 死 chrome——无底部停靠面板；
+    // 分析报告 §3.1）。
 
     // Ported from: FreeCAD src/Gui/MainWindow.cpp:553-571 — NotificationArea
     // Since no ParameterGrp Observer/GetGroup is available in the stub, default to enabled.
@@ -441,42 +422,13 @@ void MainWindow::removeWindow(Gui::MDIView* view, bool close)
 }
 
 // Ported from: FreeCAD src/Gui/MainWindow.cpp MainWindow::setupDockWindows()
+// M-L(2)（协调者裁决档）：Model 停靠面板（FreeCAD ComboView 移植——TreePanel+
+// PropertyView 无文档后端恒空）已改造为 Gui::setupModelsPanel 的 "Models/瓦树"
+// 面板（TileTreePanel——数据源 = 打开产物注册表），装配点在 main.cpp（与
+// DtaToolBarSet 同位；需先于 loadWindowSettings 的 restoreWindowState）。
+// 本函数只保留 dock 标签位设置（FreeCAD MainWindow.cpp:703-708）。
 void MainWindow::setupDockWindows()
 {
-    // Use DockWindowManager to register and manage dock widgets (FreeCAD pattern)
-    auto* pDockMgr = DockWindowManager::instance();
-
-    // Model panel — 1:1 port of FreeCAD src/Gui/ComboView.cpp ComboView::ComboView()
-    auto* modelWidget = new QWidget();
-    modelWidget->setObjectName(QStringLiteral("Model"));
-    modelWidget->setWindowTitle(tr("Model"));
-    modelWidget->setMinimumWidth(150);
-
-    auto* pLayout = new QGridLayout(modelWidget);
-    pLayout->setSpacing(0);
-    pLayout->setContentsMargins(0, 0, 0, 0);
-
-    // tabs to switch between Tree/Properties and TaskPanel
-    auto* splitter = new QSplitter();
-    pLayout->addWidget(splitter, 0, 0);
-
-    // splitter between tree and property view
-    splitter->setOrientation(Qt::Vertical);
-
-    // tree panel — 1:1 port of FreeCAD src/Gui/Tree.h TreePanel
-    auto* treePanel = new Gui::TreePanel(modelWidget);
-    splitter->addWidget(treePanel);
-
-    // property view — 1:1 port of FreeCAD src/Gui/PropertyView.cpp lines 71-102
-    auto* propertyView = new PropertyView(modelWidget);
-    splitter->addWidget(propertyView);
-
-    pDockMgr->registerDockWindow("Std_ComboView", modelWidget);
-    auto* modelDock = pDockMgr->addDockWindow("Model", modelWidget, Qt::LeftDockWidgetArea);
-    if (modelDock) {
-        modelDock->show();
-    }
-
     // Set tab position for dock widgets (ported from: FreeCAD src/Gui/MainWindow.cpp line 703-708)
     std::vector<QTabWidget::TabPosition> tabPos
         = {QTabWidget::North, QTabWidget::South, QTabWidget::West, QTabWidget::East};
@@ -599,11 +551,6 @@ void MainWindow::setStatusBarItemEnabled(const QByteArray& id, bool enabled)
 
 void MainWindow::showHints(const std::list<InputHint>& hints) { d->hintLabel->showHints(hints); }
 void MainWindow::hideHints() { d->hintLabel->clearHints(); }
-
-// ─── Right-side label ──────────────────────────────────────────────────
-
-void MainWindow::setRightSideMessage(const QString& message) { d->rightSideLabel->setText(message.simplified()); }
-bool MainWindow::isRightSideMessageVisible() const { return d->rightSideLabel->isVisible(); }
 
 // ─── Thread-safe message posting ───────────────────────────────────────
 

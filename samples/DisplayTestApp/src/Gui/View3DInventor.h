@@ -161,9 +161,6 @@ protected:
     void contextMenuEvent(QContextMenuEvent* e) override;
 
 private:
-    void setupToolBar();
-
-private:
     dqApp::Viewport* m_viewport;        // ← replaces View3DInventorViewer
     // Owns the IModelConnection for this view's lifetime. The connection is
     // RefCounted; BlankConnection::create() returns a RefPtr whose only holder

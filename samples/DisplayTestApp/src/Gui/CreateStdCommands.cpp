@@ -2,12 +2,9 @@
 //              Master registry that ties all domain command files together.
 //              Each domain helper registers its own commands; this file calls them all.
 #include "Command.h"
-#include "CommandDoc.h"        // createFileEditCommands
-#include "CommandView.h"       // createViewCommands
-#include "CommandStructure.h"  // createStructureCommands
-#include "CommandStd.h"        // createStdDomainCommands (Tools/View/Macro items)
-#include "CommandTools.h"      // createToolsCommands (module-level stubs + dependency graph)
-#include "CommandMacro.h"      // createMacroCommands (DlgMacroRecord/Execute/etc.)
+#include "CommandDoc.h"        // createFileEditCommands (File: New/Import/Quit)
+#include "CommandView.h"       // createViewCommands (View: cameras/standard views/panels/status bar)
+#include "CommandStd.h"        // createStdDomainCommands (Tools: AboutQt)
 #include "CommandWindow.h"     // createWindowCommands (Window domain: Tile/Cascade/Activate/WindowsMenu)
 namespace Gui {
 
@@ -19,12 +16,11 @@ namespace Gui {
 // by createStdDomainCommands(); no separate createHelpCommands forwarder needed.
 void createStdCommands(CommandManager& mgr)
 {
-    createFileEditCommands(mgr);    // from CommandDoc  — File + Edit domains
-    createViewCommands(mgr);        // from CommandView — View domain (cameras, draw style, etc.)
-    createStructureCommands(mgr);   // from CommandStructure — Part, Group, VarSet, LinkActions
-    createStdDomainCommands(mgr);   // from CommandStd — Tools/View/Macro/Help items from CommandStd.cpp
-    createToolsCommands(mgr);       // from CommandTools — module-level stubs + dependency graph
-    createMacroCommands(mgr);       // from CommandMacro — DlgMacroRecord/Execute/etc.
+    createFileEditCommands(mgr);    // from CommandDoc  — File domain (New/Import/Quit)
+    createViewCommands(mgr);        // from CommandView — View domain (cameras, standard views, etc.)
+    // M-L(2)：Structure/Tools/Macro 三域全删（注册 15、真功能 0——分析报告 §3.5
+    // 按域量化表）；Std 域仅存 Std_AboutQt（真功能，归 Tools）。
+    createStdDomainCommands(mgr);   // from CommandStd — Tools: AboutQt
     createWindowCommands(mgr);      // from CommandWindow — Window domain (region 4 task 1)
 }
 

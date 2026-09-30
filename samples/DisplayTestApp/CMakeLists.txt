@@ -36,24 +36,21 @@ add_executable(DisplayTestApp WIN32
     src/Gui/OverlayWidgets.h    # MOC needs this for Q_OBJECT
     src/Gui/OverlayManager.h    # MOC needs this for Q_OBJECT
     src/Gui/Command.cpp         # Command + CommandManager
-    src/Gui/CommandDoc.cpp      # File + Edit domain commands (metadata + stubs)
-    src/Gui/CommandView.cpp     # View domain commands (cameras, draw style, std views, visibility)
-    src/Gui/CommandStructure.cpp # Structure domain: Part, Group, VarSet, LinkActions
-    src/Gui/CommandStd.cpp      # Std domain Tools/View/Macro items (DlgParameter, DlgCustomize, etc.)
-    src/Gui/CommandTools.cpp    # Tools domain: AddonMgr, Measure, MassProperties, DependencyGraph, etc.
-    src/Gui/CommandMacro.cpp    # Macro domain: DlgMacroRecord, DlgMacroExecute, etc.
+    src/Gui/CommandDoc.cpp      # File domain: New/Import/Quit (M-L(2) 清理后余量)
+    src/Gui/CommandView.cpp     # View domain: cameras/standard views/panels/status bar
+    src/Gui/CommandStd.cpp      # Std domain: AboutQt（原 Help 域唯一真功能项）
     src/Gui/CommandWindow.cpp   # Window domain: Tile/Cascade/Activate/WindowsMenu (region 4 task 1)
+    # M-L(2)：CommandStructure/CommandTools/CommandMacro 三域全删（真功能 0——
+    # 分析报告 §3.5 按域量化表）。
     src/Gui/CreateStdCommands.cpp # Master registry: createStdCommands() ties all domains together
     src/Gui/Action.cpp          # Action + ActionGroup + subclasses (Q_OBJECT)
     src/Gui/Action.h            # MOC needs this for Q_OBJECT
-    src/Gui/Tree.cpp            # TreeWidget + TreePanel + delegate (Q_OBJECT)
-    src/Gui/WorkbenchSelector.cpp  # WorkbenchComboBox (Q_OBJECT)
-    src/Gui/WorkbenchSelector.h    # MOC needs this for Q_OBJECT
+    src/Gui/TileTreePanel.cpp   # Models/瓦树停靠面板（M-L(2) 裁决档——原 ComboView 改造）
+    src/Gui/TileTreePanel.h     # MOC needs this for Q_OBJECT
     src/Gui/MenuManager.cpp     # MenuItem tree → QMenuBar recursive builder
     src/Gui/MenuManager.h       # MenuItem + MenuManager (no Q_OBJECT)
     src/Gui/ToolBarManager.cpp  # ToolBarItem tree → QToolBar builder
-    src/Gui/Workbench.cpp       # Workbench base + StdWorkbench menu/toolbar trees
-    src/Gui/PropertyView.cpp    # PropertyEditor placeholder + PropertyView container
+    src/Gui/Workbench.cpp       # Workbench base + StdWorkbench menu trees
 
     # === src/Mod/Start/Gui/ — 1:1 port of FreeCAD src/Mod/Start/Gui/ ===
     # M-H(4)（2026-09-28 用户指令"去 FreeCAD 无关功能"）：FileCardView/
@@ -165,16 +162,11 @@ if(TARGET gtest_main)
         src/Gui/Command.cpp
         src/Gui/CommandDoc.cpp
         src/Gui/CommandView.cpp
-        src/Gui/CommandStructure.cpp
         src/Gui/CommandStd.cpp
-        src/Gui/CommandTools.cpp
-        src/Gui/CommandMacro.cpp
         src/Gui/CommandWindow.cpp
         src/Gui/CreateStdCommands.cpp
         src/Gui/Action.cpp
         src/Gui/Action.h        # MOC needs this for Q_OBJECT
-        src/Gui/WorkbenchSelector.cpp
-        src/Gui/WorkbenchSelector.h  # MOC needs this for Q_OBJECT
         src/Gui/MenuManager.cpp
         src/Gui/ToolBarManager.cpp
         src/Gui/Workbench.cpp
@@ -184,13 +176,11 @@ if(TARGET gtest_main)
         src/Gui/StatusBarLabel.cpp
         src/Gui/InputHintWidget.cpp
         src/Gui/DockWindowManager.cpp
-        src/Gui/Tree.cpp            # TreeWidget + TreePanel + delegate (Q_OBJECT)
         src/Gui/OverlayWidgets.h    # MOC needs this for Q_OBJECT
         src/Gui/OverlayManager.h    # MOC needs this for Q_OBJECT
         src/Gui/View.cpp
         src/Gui/MDIView.cpp
         src/Gui/Window.cpp
-        src/Gui/PropertyView.cpp    # PropertyEditor placeholder + PropertyView container
         # M-H(4)：Start 页 FreeCAD-only widget 全清——GeneralSettingsWidget/
         # ThemeSelectorWidget/FirstStartWidget 源文件与 MDIChromeTest 对应
         # 4 测试同步移除（被测对象删除，裁决表见 commit message）。
@@ -261,19 +251,15 @@ if(TARGET gtest_main AND TARGET dqApp)
         src/Gui/Window.cpp            # WindowParameter（MainWindow DimensionWidget）
         src/Gui/StatusBarLabel.cpp
         src/Gui/InputHintWidget.cpp
-        src/Gui/Tree.cpp              # TreePanel（setupDockWindows）
         src/Gui/MDIView.cpp
         src/Gui/DockWindowManager.cpp
         src/Gui/ToolBarManager.cpp
-        src/Gui/PropertyView.cpp
         src/Gui/Action.cpp
         src/Gui/Action.h              # MOC needs this for Q_OBJECT
         src/Gui/Workbench.cpp         # Workbench::activeWorkbench
         src/Gui/OverlayManager.h      # MOC needs this for Q_OBJECT
         src/Gui/OverlayWidgets.h      # MOC: OverlayToolButton/OverlayTitleBar（DockWindowManager）
         src/Gui/View.cpp              # BaseView（MDIView 基类）
-        src/Gui/WorkbenchSelector.cpp # WorkbenchComboBox（Action.cpp WorkbenchGroup）
-        src/Gui/WorkbenchSelector.h   # MOC needs this for Q_OBJECT
         src/Gui/MenuManager.cpp       # MenuItem + MenuManager::setup（Workbench::activate）
         resources.qrc                 # DTA 图标资源（字体 + SVG——图标断言测试需要）
     )

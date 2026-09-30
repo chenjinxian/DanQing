@@ -51,19 +51,13 @@ TEST(StatusBarTest, WidgetsRegisteredInRegistry)
     auto* sizeLabel = sb->findChild<QWidget*>(QStringLiteral("UnitSystem"));
     ASSERT_NE(sizeLabel, nullptr);
 
-    auto* rightLabel = sb->findChild<QLabel*>(QStringLiteral("QuickMeasure"));
-    ASSERT_NE(rightLabel, nullptr);
-    EXPECT_EQ(rightLabel->windowTitle().toStdString(), std::string("Quick Measure"));
-
     // New widgets from Task 4
     auto* progressBar = sb->findChild<QProgressBar*>(QStringLiteral("progressBar"));
     ASSERT_NE(progressBar, nullptr);
     EXPECT_EQ(progressBar->maximumWidth(), 200);
 
-    auto* toggleBtn = sb->findChild<QToolButton*>(QStringLiteral("toggleBottomPanelsButton"));
-    ASSERT_NE(toggleBtn, nullptr);
-    EXPECT_TRUE(toggleBtn->isCheckable());
-    EXPECT_TRUE(toggleBtn->isChecked());
+    // M-L(2)：QuickMeasure rightSideLabel 与 toggleBottomPanelsButton 死 chrome
+    // 已删（无调用方/TODO——分析报告 §3.1），相应断言随删。
 
     auto* notifyWidget = sb->findChild<QWidget*>(QStringLiteral("Notifications"));
     ASSERT_NE(notifyWidget, nullptr);
@@ -84,10 +78,11 @@ TEST(StatusBarTest, ContextMenuHasToggleActions)
     QMenu menu(&mw);
     mw.buildStatusBarContextMenu(menu);
 
-    // 7 registered widgets, but progressBar has no title → 6 toggle actions
-    // (progress bars don't appear in the context menu, matching FreeCAD behavior)
+    // 5 registered widgets, but progressBar has no title → 4 toggle actions
+    // (progress bars don't appear in the context menu, matching FreeCAD behavior;
+    // M-L(2) 删除 QuickMeasure/toggleBottomPanels 后余量)
     auto actions = menu.actions();
-    EXPECT_EQ(actions.size(), 6u);
+    EXPECT_EQ(actions.size(), 4u);
 
     // Each action should be checkable and checked by default
     for (auto* action : actions) {
@@ -103,8 +98,6 @@ TEST(StatusBarTest, ContextMenuHasToggleActions)
     EXPECT_TRUE(titles.contains(QStringLiteral("Preselection")));
     EXPECT_TRUE(titles.contains(QStringLiteral("Input Hints")));
     EXPECT_TRUE(titles.contains(QStringLiteral("Unit System")));
-    EXPECT_TRUE(titles.contains(QStringLiteral("Quick Measure")));
-    EXPECT_TRUE(titles.contains(QStringLiteral("Bottom Panel Toggle")));
     EXPECT_TRUE(titles.contains(QStringLiteral("Notifications")));
 }
 
@@ -239,10 +232,10 @@ TEST(StatusBarTest, AddStatusBarItemRegistersWidget)
     auto* found = sb->findChild<QLabel*>(QStringLiteral("CustomId"));
     ASSERT_NE(found, nullptr);
 
-    // Context menu should include the new item (6 original + 1 custom = 7)
+    // Context menu should include the new item (4 original + 1 custom = 5)
     QMenu menu(&mw);
     mw.buildStatusBarContextMenu(menu);
-    EXPECT_EQ(menu.actions().size(), 7u);  // 6 original (progressBar hidden) + 1 custom
+    EXPECT_EQ(menu.actions().size(), 5u);  // 4 original (progressBar hidden) + 1 custom
     bool foundAction = false;
     for (auto* action : menu.actions()) {
         if (action->text() == QStringLiteral("Custom Widget")) {
@@ -269,10 +262,10 @@ TEST(StatusBarTest, RemoveStatusBarItemUnregistersWidget)
     mw.addStatusBarItem(label, StatusBarItemSpec("TempId", "Temp", StatusBarSlot::Left, 999, false, 0));
     qApp->processEvents();
 
-    // Verify it's there (6 original in menu + 1 new = 7)
+    // Verify it's there (4 original in menu + 1 new = 5)
     QMenu menu1(&mw);
     mw.buildStatusBarContextMenu(menu1);
-    EXPECT_EQ(menu1.actions().size(), 7u);  // 6 original (progressBar hidden) + 1 new
+    EXPECT_EQ(menu1.actions().size(), 5u);  // 4 original (progressBar hidden) + 1 new
 
     // Remove it
     mw.removeStatusBarItem("TempId");
@@ -280,7 +273,7 @@ TEST(StatusBarTest, RemoveStatusBarItemUnregistersWidget)
 
     QMenu menu2(&mw);
     mw.buildStatusBarContextMenu(menu2);
-    EXPECT_EQ(menu2.actions().size(), 6u);  // back to 6 original
+    EXPECT_EQ(menu2.actions().size(), 4u);  // back to 4 original
 }
 
 // =====================================================================

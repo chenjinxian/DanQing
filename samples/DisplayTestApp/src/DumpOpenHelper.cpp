@@ -6,6 +6,8 @@
 #include "Gui/View3DInventor.h"
 
 #include <dqApp/tile/SpatialTileTreeReferences.h>  // setCreateOverride（frontend-tiles 缝）
+
+#include <map>
 #include <dqRender/tile/ImdlTileTree.h>
 #include <dqRender/tile/TileAdmin.h>
 
@@ -144,6 +146,31 @@ std::optional<DumpOpenResult> openDumpIModel(Gui::View3DInventor& view,
     out.fetcher = static_cast<dqApp::DumpTileFetcher*>(
         &dqRender::TileAdmin::instance().getFetcher());
     return out;
+}
+
+// ─── 打开产物生命周期注册表（M-L(2)：main.cpp 迁入——Models/瓦树面板同源消费）───
+
+std::map<Gui::View3DInventor*, std::unique_ptr<DumpOpenResult>>& openedDumps()
+{
+    static auto* s_registry =
+        new std::map<Gui::View3DInventor*, std::unique_ptr<DumpOpenResult>>();
+    return *s_registry;
+}
+
+void registerOpenedDump(Gui::View3DInventor* view, std::unique_ptr<DumpOpenResult> result)
+{
+    openedDumps().emplace(view, std::move(result));
+}
+
+void forgetOpenedDump(Gui::View3DInventor* view)
+{
+    openedDumps().erase(view);
+}
+
+DumpOpenResult* findOpenedDump(Gui::View3DInventor* view)
+{
+    auto it = openedDumps().find(view);
+    return it == openedDumps().end() ? nullptr : it->second.get();
 }
 
 }  // namespace dta

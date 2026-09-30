@@ -11,17 +11,18 @@ using namespace Gui;
 // StdWorkbench menu tree tests
 // =====================================================================
 
-// Ported from: Authored — StdWorkbench menu bar has 7 top-level menus
-// (File, Edit, View, Tools, Macro, Windows, Help)
-TEST(StdWorkbenchTest, MenuBarHasSevenTopMenus)
+// Ported from: Authored — StdWorkbench menu bar has 4 top-level menus
+// (File, View, Tools, Windows) after the M-L(2) trim (Edit/Macro/Help menus
+// were all-stub/FreeCAD-ecosystem and are gone with their commands).
+TEST(StdWorkbenchTest, MenuBarHasFourTopMenus)
 {
     qtApp();
     StdWorkbench wb;
     auto* mb = wb.setupMenuBar();
     ASSERT_NE(mb, nullptr);
 
-    // 7 top-level items: File, Edit, View, Tools, Macro, Windows, Help
-    EXPECT_EQ(mb->getItems().size(), 7);
+    // 4 top-level items: File, View, Tools, Windows
+    EXPECT_EQ(mb->getItems().size(), 4);
 
     delete mb;
 }
@@ -50,7 +51,7 @@ TEST(StdWorkbenchTest, ViewMenuContainsStandardViewsSubmenu)
     auto* mb = wb.setupMenuBar();
     ASSERT_NE(mb, nullptr);
 
-    MenuItem* view = mb->getItems().at(2);  // third top-level is View
+    MenuItem* view = mb->getItems().at(1);  // second top-level is View (M-L(2)：4 菜单)
     EXPECT_EQ(view->command(), std::string("&View"));
 
     // Find the "Standard Views" submenu
@@ -58,15 +59,12 @@ TEST(StdWorkbenchTest, ViewMenuContainsStandardViewsSubmenu)
     for (MenuItem* child : view->getItems()) {
         if (child->command() == std::string("Standard &Views")) {
             foundStdViews = true;
-            // Standard Views submenu should have Axonometric submenu
-            bool foundAxonometric = false;
-            for (MenuItem* sv : child->getItems()) {
-                if (sv->command() == std::string("A&xonometric")) {
-                    foundAxonometric = true;
-                    EXPECT_EQ(sv->getItems().size(), 3);  // Isometric, Dimetric, Trimetric
-                }
-            }
-            EXPECT_TRUE(foundAxonometric);
+            // M-L(2)：Axonometric 子菜单随 Dimetric/Trimetric 存根删除——
+            // FitAll + Separator + 8 向平铺（Iso/Front/Top/Right/Rear/Bottom/Left）。
+            EXPECT_EQ(child->getItems().size(), 9);
+            EXPECT_EQ(child->getItems().at(0)->command(), std::string("Std_ViewFitAll"));
+            EXPECT_EQ(child->getItems().at(2)->command(), std::string("Std_ViewIsometric"));
+            EXPECT_EQ(child->getItems().at(8)->command(), std::string("Std_ViewLeft"));
             break;
         }
     }
@@ -75,56 +73,10 @@ TEST(StdWorkbenchTest, ViewMenuContainsStandardViewsSubmenu)
     delete mb;
 }
 
-// =====================================================================
-// StdWorkbench toolbar tree tests
-// =====================================================================
-
-// Ported from: Authored — StdWorkbench has 9 toolbars
-// (File, Edit, Clipboard, Workbench, Macro, View, Individual Views, Structure, Help)
-TEST(StdWorkbenchTest, ToolBarsCountIsNine)
-{
-    qtApp();
-    StdWorkbench wb;
-    auto* tb = wb.setupToolBars();
-    ASSERT_NE(tb, nullptr);
-
-    EXPECT_EQ(tb->getItems().size(), 9);
-
-    delete tb;
-}
-
-// Ported from: Authored — First toolbar command is "File"
-TEST(StdWorkbenchTest, FirstToolBarCommandIsFile)
-{
-    qtApp();
-    StdWorkbench wb;
-    auto* tb = wb.setupToolBars();
-    ASSERT_NE(tb, nullptr);
-
-    ToolBarItem* file = tb->getItems().at(0);
-    EXPECT_EQ(file->command(), std::string("File"));
-
-    delete tb;
-}
-
-// Ported from: Authored — Clipboard and Macro toolbars are Hidden by default
-TEST(StdWorkbenchTest, ClipboardAndMacroToolbarsAreHidden)
-{
-    qtApp();
-    StdWorkbench wb;
-    auto* tb = wb.setupToolBars();
-    ASSERT_NE(tb, nullptr);
-
-    // Clipboard is index 2, Macro is index 4
-    EXPECT_EQ(tb->getItems().at(2)->visibility(), ToolBarItem::DefaultVisibility::Hidden);
-    EXPECT_EQ(tb->getItems().at(4)->visibility(), ToolBarItem::DefaultVisibility::Hidden);
-
-    // Other toolbars are Visible
-    EXPECT_EQ(tb->getItems().at(0)->visibility(), ToolBarItem::DefaultVisibility::Visible);
-    EXPECT_EQ(tb->getItems().at(1)->visibility(), ToolBarItem::DefaultVisibility::Visible);
-
-    delete tb;
-}
+// M-L(2)：StdWorkbenchTest 的 3 个 toolbar 树测试（ToolBarsCountIsNine/
+// FirstToolBarCommandIsFile/ClipboardAndMacroToolbarsAreHidden）随被测对象
+// StdWorkbench::setupToolBars 一并移除（死树——main.cpp 传 nullptr 永不构建；
+// §5(f) Authored 测试随被测件生命周期）。
 
 // =====================================================================
 // Workbench::activate tests

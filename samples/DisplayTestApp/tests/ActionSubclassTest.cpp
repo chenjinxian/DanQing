@@ -14,7 +14,7 @@ static int   g_argc2 = 1;
 static char  g_arg02[] = "test";
 static char* g_argv2[] = { g_arg02, nullptr };
 
-// Application singleton — needed by RecentFilesAction/RecentMacrosAction
+// Application singleton — MainWindow/Action fixture
 #include <App/Application.h>
 App::Application* App::Application::_pcSingleton = nullptr;
 std::map<std::string, std::string> App::Application::m_config;
@@ -43,7 +43,6 @@ static QtAppWithFullInit& qtApp2() { static QtAppWithFullInit i; return i; }
 
 #include "Gui/Command.h"
 #include "Gui/Action.h"
-#include "Gui/WorkbenchSelector.h"
 #include "StubCmd.h"
 
 using namespace Gui;
@@ -109,95 +108,9 @@ TEST(ActionGroupTest, ExclusiveMode)
     delete cmd;
 }
 
-// =====================================================================
-// RecentFilesAction tests
-// =====================================================================
-
-// Ported from: Authored — RecentFilesAction creates submenu with Clear action
-TEST(RecentFilesActionTest, CreatesSubmenuWithClearAction)
-{
-    qtApp2();
-    auto* cmd = new StubCmd();
-    RecentFilesAction* rfa = new RecentFilesAction(cmd);
-
-    // The action group should have actions (placeholders + separator + clear)
-    QList<QAction*> actions = rfa->actions();
-    EXPECT_GT(actions.count(), 0);
-
-    // Last action should be "Clear Recent Files"
-    QAction* lastAction = actions.last();
-    EXPECT_EQ(lastAction->text(), QStringLiteral("Clear Recent Files"));
-
-    delete rfa;
-    delete cmd;
-}
-
-// Ported from: Authored — RecentFilesAction empty state has no visible file entries
-TEST(RecentFilesActionTest, EmptyStateNoVisibleFiles)
-{
-    qtApp2();
-    auto* cmd = new StubCmd();
-    RecentFilesAction* rfa = new RecentFilesAction(cmd);
-
-    // files() returns empty list when no MRU entries exist
-    QStringList fileList;
-    // files() is private, but we can check visible actions
-    QList<QAction*> actions = rfa->actions();
-    int visibleCount = 0;
-    for (QAction* a : actions) {
-        if (a->isVisible() && !a->isSeparator() &&
-            a->text() != QStringLiteral("Clear Recent Files")) {
-            visibleCount++;
-        }
-    }
-    EXPECT_EQ(visibleCount, 0);
-
-    delete rfa;
-    delete cmd;
-}
-
-// Ported from: Authored — RecentFilesAction appendFile adds to list
-TEST(RecentFilesActionTest, AppendFileAddsEntry)
-{
-    qtApp2();
-    auto* cmd = new StubCmd();
-    RecentFilesAction* rfa = new RecentFilesAction(cmd);
-
-    rfa->appendFile(QStringLiteral("/tmp/test_file.fcstd"));
-
-    // After append, there should be at least one visible action with the file
-    QList<QAction*> actions = rfa->actions();
-    bool found = false;
-    for (QAction* a : actions) {
-        if (a->isVisible() && a->toolTip() == QStringLiteral("/tmp/test_file.fcstd")) {
-            found = true;
-            break;
-        }
-    }
-    EXPECT_TRUE(found);
-
-    delete rfa;
-    delete cmd;
-}
-
-// =====================================================================
-// RecentMacrosAction tests
-// =====================================================================
-
-// Ported from: Authored — RecentMacrosAction creates with default 12 visible items
-TEST(RecentMacrosActionTest, CreatesWithDefaultVisibleItems)
-{
-    qtApp2();
-    auto* cmd = new StubCmd();
-    RecentMacrosAction* rma = new RecentMacrosAction(cmd);
-
-    // Should have actions (placeholders for macros)
-    QList<QAction*> actions = rma->actions();
-    EXPECT_GT(actions.count(), 0);
-
-    delete rma;
-    delete cmd;
-}
+// M-L(2)：RecentFilesActionTest ×3 / RecentMacrosActionTest ×1 随被测对象
+// RecentFilesAction/RecentMacrosAction 一并移除——RecentFiles/RecentMacros
+// 永久空子菜单（无 appendFile 调用方；宏无 Python 宿主，分析报告 §3.1）。
 
 // =====================================================================
 // WindowAction tests
@@ -247,69 +160,7 @@ TEST(WindowActionTest, AddToMenuAddsChildActions)
     delete cmd;
 }
 
-// =====================================================================
-// WorkbenchGroup tests
-// =====================================================================
-
-// Ported from: Authored — WorkbenchGroup creates with StdWorkbench action
-TEST(WorkbenchGroupTest, CreatesWithStdWorkbenchAction)
-{
-    qtApp2();
-    auto* cmd = new StubCmd();
-    WorkbenchGroup* wbg = new WorkbenchGroup(cmd);
-
-    QList<QAction*> actions = wbg->actions();
-    EXPECT_EQ(actions.count(), 1);
-    EXPECT_EQ(actions[0]->text(), QStringLiteral("StdWorkbench"));
-    EXPECT_TRUE(actions[0]->isChecked());
-
-    delete wbg;
-    delete cmd;
-}
-
-// =====================================================================
-// WorkbenchComboBox tests
-// =====================================================================
-
-// Ported from: Authored — WorkbenchComboBox can be created and populated
-TEST(WorkbenchComboBoxTest, CanBeCreatedAndPopulated)
-{
-    qtApp2();
-    auto* cmd = new StubCmd();
-    WorkbenchGroup* wbg = new WorkbenchGroup(cmd);
-
-    QWidget parent;
-    WorkbenchComboBox* combo = new WorkbenchComboBox(wbg, &parent);
-
-    EXPECT_EQ(combo->count(), 1);
-    EXPECT_EQ(combo->itemText(0), QStringLiteral("StdWorkbench"));
-    EXPECT_EQ(combo->iconSize(), QSize(16, 16));
-
-    delete combo;
-    delete wbg;
-    delete cmd;
-}
-
-// Ported from: Authored — WorkbenchComboBox refreshList updates entries
-TEST(WorkbenchComboBoxTest, RefreshListUpdatesEntries)
-{
-    qtApp2();
-    auto* cmd = new StubCmd();
-    WorkbenchGroup* wbg = new WorkbenchGroup(cmd);
-
-    QWidget parent;
-    WorkbenchComboBox* combo = new WorkbenchComboBox(wbg, &parent);
-    EXPECT_EQ(combo->count(), 1);
-
-    // Simulate refresh with empty list
-    combo->refreshList({});
-    EXPECT_EQ(combo->count(), 0);
-
-    // Simulate refresh with original actions
-    combo->refreshList(wbg->actions());
-    EXPECT_EQ(combo->count(), 1);
-
-    delete combo;
-    delete wbg;
-    delete cmd;
-}
+// M-L(2)：WorkbenchGroupTest/WorkbenchComboBoxTest（3 项）随被测对象
+// WorkbenchGroup/WorkbenchComboBox 一并移除——WorkbenchSelector 死路径
+// （无 workbench 注册、承载它的 FreeCAD 工具栏不构建，分析报告 §3.1）。
+// §5(f) Authored 测试随被测件生命周期。

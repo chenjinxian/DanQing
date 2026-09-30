@@ -114,4 +114,16 @@ struct DumpOpenResult {
 std::optional<DumpOpenResult> openDumpIModel(Gui::View3DInventor& view,
                                              DumpOpenPackage const& pkg);
 
+// ─── 打开产物生命周期注册表（M-L(2)：main.cpp 迁入——Models/瓦树面板同源消费）───
+// DumpOpenResult 持有 trees/provider（viewport 注册的是 provider 裸指针——上方
+// DumpOpenResult 注释），必须活得比 viewport 久。按 view 登记；view destroyed
+// （~QObject 在 ~View3DInventor 之后发射——先拆视口后拆树，TD-22 危险序的反向）
+// 时 forgetOpenedDump 擦除。捕获的 view 指针仅作 map 键，从不解引用。注册表本体
+// 堆驻留不析构（有意泄漏）——进程退出时静态析构序会让 ImdlTileTree 撞上已死的
+// RenderSystem/TileAdmin 单例。
+void registerOpenedDump(Gui::View3DInventor* view, std::unique_ptr<DumpOpenResult> result);
+void forgetOpenedDump(Gui::View3DInventor* view);
+// 未登记 → nullptr（非拥有观察指针；所有权在注册表）。
+DumpOpenResult* findOpenedDump(Gui::View3DInventor* view);
+
 }  // namespace dta

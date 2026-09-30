@@ -8,8 +8,6 @@
 #include <QKeySequence>
 #include <QObject>
 
-#include <Base/Parameter.h>
-
 class QMenu;
 class QWidget;
 
@@ -117,72 +115,9 @@ private:
     bool m_rememberLast;
 };
 
-// --------------------------------------------------------------------
-// Ported from: FreeCAD src/Gui/Action.h:241 (RecentFilesAction)
-// RecentFilesAction = ActionGroup that manages a submenu of recent files.
-// --------------------------------------------------------------------
-class RecentFilesAction : public ActionGroup {
-    Q_OBJECT
-public:
-    // Ported from: FreeCAD src/Gui/Action.h:246
-    explicit RecentFilesAction(Command* pcCmd, QObject* parent = nullptr);
-    ~RecentFilesAction() override;
-
-    // Ported from: FreeCAD src/Gui/Action.h:249-251
-    void appendFile(const QString&);
-    void activateFile(int);
-    void resizeList(int);
-
-Q_SIGNALS:
-    // Ported from: FreeCAD src/Gui/Action.h:254
-    void recentFilesListModified();
-
-private:
-    // Ported from: FreeCAD src/Gui/Action.h:257-259
-    void setFiles(const QStringList&);
-    QStringList files() const;
-    void restore();
-    void save();
-
-private:
-    int m_visibleItems;   // Number of visible items
-    int m_maximumItems;   // Number of maximum items
-
-    QAction m_sep;
-    QAction m_clearRecentFilesListAction;
-
-    // TODO: wire ParameterGrp Observer for auto-rebuild when stub supports it
-    Base::ParameterGrp::handle m_paramHandle;
-};
-
-// --------------------------------------------------------------------
-// Ported from: FreeCAD src/Gui/Action.h:281 (RecentMacrosAction)
-// RecentMacrosAction = ActionGroup that manages a submenu of recent macros.
-// --------------------------------------------------------------------
-class RecentMacrosAction : public ActionGroup {
-    Q_OBJECT
-public:
-    // Ported from: FreeCAD src/Gui/Action.h:286
-    explicit RecentMacrosAction(Command* pcCmd, QObject* parent = nullptr);
-
-    // Ported from: FreeCAD src/Gui/Action.h:288-290
-    void appendFile(const QString&);
-    void activateFile(int);
-    void resizeList(int);
-
-private:
-    // Ported from: FreeCAD src/Gui/Action.h:293-296
-    void setFiles(const QStringList&);
-    QStringList files() const;
-    void restore();
-    void save();
-
-private:
-    int m_visibleItems;               // Number of visible items
-    int m_maximumItems;               // Number of maximum items
-    std::string m_shortcutModifiers;  // default = "Ctrl+Shift+"
-    int m_shortcutCount;              // Number of dynamic shortcuts to create -- default = 3
-};
+// M-L(2)：RecentFilesAction/RecentMacrosAction 已删——RecentFiles/RecentMacros
+// 是永久空子菜单（Action 有完整实现但无 appendFile 调用方——无文件系统入口；
+// 宏无 Python 宿主），分析报告 §3.1。
 
 // --------------------------------------------------------------------
 // Ported from: FreeCAD src/Gui/Action.h:409 (WindowAction)
@@ -212,28 +147,7 @@ private:
     QMenu* m_menu;
 };
 
-// --------------------------------------------------------------------
-// Ported from: FreeCAD src/Gui/Action.h:199 (WorkbenchGroup)
-// WorkbenchGroup = ActionGroup that creates a WorkbenchComboBox when added to QToolBar.
-// --------------------------------------------------------------------
-class WorkbenchGroup : public ActionGroup {
-    Q_OBJECT
-public:
-    // Ported from: FreeCAD src/Gui/Action.h:210
-    explicit WorkbenchGroup(Command* pcCmd, QObject* parent = nullptr);
-
-    // Ported from: FreeCAD src/Gui/Action.h:212
-    void addTo(QWidget* widget) override;
-
-    // Ported from: FreeCAD src/Gui/Action.h:213
-    void refreshWorkbenchList();
-
-Q_SIGNALS:
-    // Ported from: FreeCAD src/Gui/Action.h:221
-    void workbenchListRefreshed(QList<QAction*>);
-
-private:
-    QList<QAction*> m_enabledWbsActions;
-};
+// M-L(2)：WorkbenchGroup 已删——WorkbenchSelector 死路径（无 workbench 注册、
+// 承载它的 FreeCAD 工具栏不构建——分析报告 §3.1）。
 
 } // namespace Gui
