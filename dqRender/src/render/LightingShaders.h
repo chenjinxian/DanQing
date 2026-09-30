@@ -134,7 +134,7 @@ inline std::string applyLightingBody()
     char const* lightDebug = getenv("DANQING_LIGHT_DEBUG");
     if (lightDebug)
         return std::string(
-            "  return vec4(g_vertLutData3.xyz / 255.0);\n");
+            "  return vec4(g_normal * 0.5 + 0.5, 1.0);\n");
     return std::string(kApplyLighting);
 }
 
