@@ -21,6 +21,7 @@
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace dqApp {
 
@@ -445,6 +446,43 @@ public:
     // override with their own specific argument lists).
     virtual bool run() { return true; }
 
+    // The minimum number of arguments allowed by parseAndRun. If subclasses override
+    // parseAndRun, they should also override this method to indicate the minimum number
+    // of arguments their implementation expects.
+    // Ported from: itwinjs-core Tool.get minArgs (Tool.ts:375-382) — TS static getter;
+    // C++ virtual (the registry holds factory function pointers, so class statics are
+    // unreachable — §3.4 adaptation; read off the created instance).
+    virtual int minArgs() const { return 0; }
+
+    // The maximum number of arguments allowed by parseAndRun. Returns -1 for the TS
+    // `undefined` case (no maximum).
+    // Ported from: itwinjs-core Tool.get maxArgs (Tool.ts:377-385; default 0) — TS
+    // static getter → C++ virtual (same §3.4 adaptation as minArgs).
+    virtual int maxArgs() const { return 0; }
+
+    // The English key-in string for this Tool (the string a KeyinField matches).
+    // Ported from: itwinjs-core Tool.get englishKeyin (Tool.ts:411-418) — reads
+    // "tools.<toolId>.keyin" from the registered localization namespace. DanQing has
+    // no localization layer, so subclasses override with the reference's en-locale
+    // value verbatim (e.g. CoreTools.json "tools.Select.keyin" = "select elements",
+    // SVTTools.json "tools.SaveImage.keyin" = "dta save image"). The base default is
+    // the reference's "no translation for key" case: empty string (the tool is not
+    // key-in reachable — e.g. all View.* view tools, CoreTools.json has no
+    // tools.View.Fit.keyin).
+    virtual std::string englishKeyin() const { return {}; }
+
+    // Given a list of arguments, parse them and run the tool. Generally implementers
+    // override this instead of run when the tool consumes key-in arguments; the base
+    // forwards to run(). DanQing adaptation (§3.4): the TS variadic `...args` becomes
+    // a vector<string>; the base drop of the variadic in run() means the default
+    // ignores the arguments (documented above).
+    // Ported from: itwinjs-core Tool.parseAndRun (Tool.ts:475-481).
+    virtual bool parseAndRun(std::vector<std::string> const& args)
+    {
+        (void)args;
+        return run();
+    }
+
 private:
     bool m_isActive = false;
 };
@@ -652,17 +690,55 @@ using ToolType = InteractiveTool* (*)();
 // Ported from: itwinjs-core Tool.ts ToolType + Tool.ts:1020 create() variadic shape.
 using ViewToolFactory = InteractiveTool* (*)(Viewport*, bool, bool);
 
+// The result type of ToolRegistry::parseAndRun.
+// Ported from: itwinjs-core ParseAndRunResult (Tool.ts:902-915)
+enum class ParseAndRunResult : uint8_t {
+    // The tool's parseAndRun method was invoked and returned true.
+    Success = 0,
+    // No tool matching the toolId in the keyin is registered.
+    ToolNotFound,
+    // The number of arguments supplied does not meet the constraints of the Tool.
+    BadArgumentCount,
+    // The tool's parseAndRun method returned false.
+    FailedToRun,
+    // An opening double-quote character was not paired with a closing double-quote character.
+    MismatchedQuotes,
+};
+
 // The ToolRegistry holds a mapping between toolIds and their corresponding Tool class.
 // Ported from: itwinjs-core ToolRegistry (Tool.ts:960-1034)
 class DQ_APP_EXPORT ToolRegistry {
 public:
+    // A registered tool's key-in surface as exposed by getToolList. The reference
+    // getToolList returns the registered Tool classes (Tool.ts:1087-1097) and callers
+    // read `keyin`/`englishKeyin` off the class; C++ stores factory pointers, so the
+    // strings are carried here (§3.4 adaptation).
+    struct RegisteredTool {
+        std::string toolId;
+        std::string keyin;   // englishKeyin equivalent; empty = not key-in reachable
+    };
+
+    // A parsed key-in: either a resolved tool + its arguments, or an error status.
+    // Ported from: itwinjs-core ParsedKeyin / ParseKeyinError (Tool.ts:940-953, :919-937).
+    struct ParsedKeyin {
+        bool ok = false;
+        std::string toolId;                    // resolved when ok
+        std::vector<std::string> args;         // tokens following the tool keyin
+        ParseAndRunResult error = ParseAndRunResult::Success;  // set when !ok
+    };
+
     // Register a Tool class. Establishes connection between toolId and the class.
+    // `englishKeyin` carries the tool's key-in string (the reference reads it off the
+    // registered class via localization — Tool.ts:982-994 register + Tool.ts:411-418
+    // englishKeyin; DanQing has no localization layer, so the registration site
+    // supplies the reference's en-locale value. Empty = not key-in reachable).
     // Ported from: itwinjs-core ToolRegistry.register() (Tool.ts:982-994)
-    void Register(const char* toolId, ToolType toolClass)
+    void Register(const char* toolId, ToolType toolClass, const char* englishKeyin = "")
     {
         if (!toolId || toolId[0] == '\0')
             return;  // must be an abstract class, ignore it
-        m_tools[toolId] = toolClass;
+        m_tools[toolId] = Registered{toolClass,
+                                     englishKeyin ? std::string(englishKeyin) : std::string()};
     }
 
     // Register a view-tool factory (viewport-arg variant). View.* tools are
@@ -689,7 +765,7 @@ public:
     ToolType Find(const char* toolId) const
     {
         auto it = m_tools.find(toolId);
-        return (it != m_tools.end()) ? it->second : nullptr;
+        return (it != m_tools.end()) ? it->second.create : nullptr;
     }
 
     // Look up a view-tool factory by toolId (viewport-arg factory).
@@ -719,6 +795,33 @@ public:
         return factory ? factory(vp, oneShot, isDraggingRequired) : nullptr;
     }
 
+    // Get a list of Tools currently registered, excluding hidden tools (DanQing has
+    // no hidden flag — the full set; the reference excludes `hidden` tools,
+    // Tool.ts:1088-1096 — no hidden member is ported).
+    // Ported from: itwinjs-core ToolRegistry.getToolList() (Tool.ts:1087-1097).
+    std::vector<RegisteredTool> getToolList() const
+    {
+        std::vector<RegisteredTool> list;
+        list.reserve(m_tools.size());
+        for (auto const& entry : m_tools)
+            list.push_back(RegisteredTool{entry.first, entry.second.keyin});
+        return list;
+    }
+
+    // Given a string consisting of a toolId followed by any number of arguments,
+    // locate the corresponding Tool and parse the arguments. Tokens are delimited by
+    // whitespace (embedded quoted strings handled). The Tool is determined by finding
+    // the longest string of unquoted tokens starting at the beginning of the key-in
+    // string that matches a registered Tool's key-in (case-insensitively).
+    // Ported from: itwinjs-core ToolRegistry.parseKeyin() (Tool.ts:1113-1167)
+    //              + tokenize() (Tool.ts:1046-1103).
+    ParsedKeyin parseKeyin(std::string const& keyin) const;
+
+    // Given a string consisting of a toolId followed by any number of arguments,
+    // parse the key-in string and invoke the corresponding tool's parseAndRun method.
+    // Ported from: itwinjs-core ToolRegistry.parseAndRun() (Tool.ts:1183-1203).
+    ParseAndRunResult parseAndRun(std::string const& keyin) const;
+
     // Shut down the registry.
     // Ported from: itwinjs-core ToolRegistry.shutdown() (Tool.ts:964-967)
     void shutdown()
@@ -728,9 +831,26 @@ public:
     }
 
 private:
+    // Split key-in into an array of string arguments, handling embedded quoted
+    // strings (a literal " is embedded as ""). Returns mismatchedQuotes=true when an
+    // opening quote is not paired with a closing quote.
+    // Ported from: itwinjs-core ToolRegistry.tokenize() (Tool.ts:1046-1103).
+    struct TokenizedKeyin {
+        std::vector<std::string> tokens;
+        std::optional<std::size_t> firstQuotedIndex;
+        bool mismatchedQuotes = false;
+    };
+    static TokenizedKeyin tokenize(std::string const& keyin);
+
+    // Registered entry: the no-arg factory plus the key-in string the reference
+    // reads off the class (englishKeyin — see Register above).
+    struct Registered {
+        ToolType create = nullptr;
+        std::string keyin;
+    };
     // No-arg factories (Select, Idle, ...).
     // Ported from: itwinjs-core ToolRegistry.tools (Tool.ts:962).
-    std::unordered_map<std::string, ToolType> m_tools;
+    std::unordered_map<std::string, Registered> m_tools;
     // Viewport-arg factories (View.Pan, View.Rotate, View.Scroll, View.Fit, ...).
     // DanQing adaptation (see ViewToolFactory typedef above).
     std::unordered_map<std::string, ViewToolFactory> m_viewTools;

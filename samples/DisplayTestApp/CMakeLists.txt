@@ -32,6 +32,18 @@ add_executable(DisplayTestApp WIN32
     src/Gui/DevToolsWidgets.h       # MOC needs this for Q_OBJECT
     src/Gui/DebugWindow.cpp            # Viewer.ts:238-242 Debug info 面板（2026-09-17；2026-09-21 全量 7 widget）
     src/Gui/DtaToolBars.cpp         # DTA 功能分类工具栏区（Views/Selection/View Settings/View Tools/Analysis；Surface 入口在 Start 页）
+    src/Gui/DtaTools.cpp            # M-L(3)：工具注册（App.ts SVTTools）+ 状态栏装配（keyin/FPS/瓦装载指示）+ ToolAssistance 接线
+    src/Gui/DtaTools.h              # MOC needs this (no Q_OBJECT; include-path parity)
+    src/Gui/KeyinField.cpp          # frontend-devtools KeyinField（M-L(3) 接线级 #1）
+    src/Gui/KeyinField.h            # MOC needs this for Q_OBJECT
+    src/Gui/FpsMonitor.cpp          # FpsMonitor + RecordFpsTool（M-L(3) 诊断三小件）
+    src/Gui/FpsMonitor.h            # MOC needs this for Q_OBJECT
+    src/Gui/TileLoadIndicator.cpp   # 瓦装载进度指示器（M-L(3) 诊断三小件）
+    src/Gui/TileLoadIndicator.h     # MOC needs this for Q_OBJECT
+    src/Gui/SaveImageTool.cpp       # SaveImage（M-L(3) 诊断三小件——readImageBuffer 生产包装）
+    src/Gui/SaveImageTool.h
+    src/Gui/SyncViewportsTool.cpp   # SyncViewports/SyncFrusta（M-L(3)——ViewportSync 接线清偿）
+    src/Gui/SyncViewportsTool.h
     src/Gui/ViewSettingsPanel.cpp   # DTA View Settings 弹出面板（Task 4）
     src/Gui/OverlayWidgets.h    # MOC needs this for Q_OBJECT
     src/Gui/OverlayManager.h    # MOC needs this for Q_OBJECT
@@ -58,6 +70,8 @@ add_executable(DisplayTestApp WIN32
     # + App/RecentFilesModel/App/DisplayedFilesModel 全清（裁决表见 commit
     # message）；保留 = StartView + NewFileButton（卡片控件）+ FlowLayout。
     src/Mod/Start/Gui/StartView.cpp
+    src/Mod/Start/Gui/ReadMeView.cpp     # M-L(3)：ReadMe 展示页（Start 第三分组卡片 → 滚动只读页）
+    src/Mod/Start/Gui/ReadMeView.h       # MOC needs this for Q_OBJECT
     src/Mod/Start/Gui/FlowLayout.cpp
     src/Mod/Start/Gui/NewFileButton.cpp
 )
@@ -233,6 +247,8 @@ if(TARGET gtest_main AND TARGET dqApp)
         tests/JoesHouseColorTest.cpp    # JoesHouse 管线蓝/红回归像素锁（M-I Task 3 色表顶点色——注册在 PickDumpSceneTest 之后：同因 fetcher 替换不回溢）
         tests/JoesHouseEdgeTest.cpp     # JoesHouse 面板黑边线回归像素锁（M-I Task 4 边线两段——注册在 JoesHouseColorTest 之后：同因 fetcher 替换不回溢）
         tests/JoesHouseHoverTest.cpp    # JoesHouse hover 高亮像素锁（M-J Task 2——注册在 JoesHouseEdgeTest 之后：同因 fetcher 替换不回溢）
+        tests/DtaToolsWiringTest.cpp    # M-L(3) 接线级回归：Keyin 字段/诊断三小件/视口同步/ToolAssistance 提示表
+        tests/ModelsPanelWiringTest.cpp # M-L(3) Models 演示版机制锁：provider 逐模型可见性 → 场景 → 像素（注册在 JoesHouseHoverTest 之后：同因 fetcher 替换不回溢）
         src/Gui/View3DInventor.cpp       # 测试构造真实 View3DInventor（真视口）
         src/DumpOpenHelper.cpp           # 打开链装配（M-H Task 3——DumpOpenChain 锁的被测面）
         src/Gui/DecorationGeometryExample.cpp   # DtaToolBars 引用（Deco 按钮）
@@ -241,6 +257,20 @@ if(TARGET gtest_main AND TARGET dqApp)
         src/Gui/DevToolsWidgets.h              # MOC needs this for Q_OBJECT
         src/Gui/View3DInventor.h         # MOC needs this for Q_OBJECT
         src/Gui/DtaToolBars.cpp
+        src/Gui/DtaTools.cpp             # M-L(3)：工具注册 + 状态栏装配 + ToolAssistance 提示表
+        src/Gui/DtaTools.h               # MOC needs this (no Q_OBJECT)
+        src/Gui/KeyinField.cpp           # M-L(3)：Keyin 字段（被测面）
+        src/Gui/KeyinField.h             # MOC needs this for Q_OBJECT
+        src/Gui/FpsMonitor.cpp           # M-L(3)：FPS 监视 + RecordFpsTool（被测面）
+        src/Gui/FpsMonitor.h             # MOC needs this for Q_OBJECT
+        src/Gui/TileLoadIndicator.cpp    # M-L(3)：瓦装载指示器（被测面）
+        src/Gui/TileLoadIndicator.h      # MOC needs this for Q_OBJECT
+        src/Gui/SaveImageTool.cpp        # M-L(3)：SaveImage（被测面）
+        src/Gui/SaveImageTool.h
+        src/Gui/SyncViewportsTool.cpp    # M-L(3)：视口同步工具（被测面）
+        src/Gui/SyncViewportsTool.h
+        src/Gui/TileTreePanel.cpp        # M-L(3)：Models 面板（provider 消费方——机制锁在 ModelsPanelWiringTest）
+        src/Gui/TileTreePanel.h          # MOC needs this for Q_OBJECT
         src/Gui/ViewSettingsPanel.cpp    # Task 4: View Settings 弹出面板
         src/Gui/Application.cpp   # Gui::Application 门面（newDocument 工厂）
         # LNK2019 最小增量：Application.cpp 引用 MainWindow::addWindow/activeWindow +

@@ -39,6 +39,8 @@
 #include <dqApp/tile/SpatialTileTreeReferences.h>  // DumpOpenEmptyTileTreeReferences 基类
 #include <dqApp/tile/TiledGraphicsProvider.h>
 
+#include <dqGeom/Range3d.h>  // TreeEntry.worldRange（隔离 step-fit 取景域）
+
 #include <memory>
 #include <optional>
 #include <string>
@@ -53,23 +55,69 @@ namespace dta {
 // TiledGraphicsProvider 装树——与 DumpMount.h 的 DumpTreeProvider 同构（独立
 // 类名避免 ODR 冲突；注释见 DumpMount.h:47-49——应用通道
 // Viewport.ts:1729-1732 addTiledGraphicsProvider）。
+//
+// M-L(3) Models/瓦树面板演示版：per-model 可见性位（DTA ModelPicker 的
+// changeDisplay → vp.addViewedModels/changeModelDisplay 的 provider 通道等价物
+// ——模型选择器在引擎内占位 refs 面为空（打开链注释④b），树全部经本 provider
+// 进场，故逐模型显示开关在 provider 过滤 + InvalidateScene 与参考
+// changeModelDisplay（Viewport.ts addViewedModels/changeModelDisplay →
+// invalidateScene）同机制收敛）。
 class DumpOpenTreeProvider final : public dqApp::TiledGraphicsProvider {
 public:
-    void addTree(dqRender::TileTree* tree)
+    // 逐树条目（面板的复选/隔离数据面）。
+    struct TreeEntry {
+        dqApp::SimpleTileTreeReference* ref = nullptr;  // m_refs 持有——非拥有
+        std::string modelId;      // Id64 字符串（iModelTileTreeIdToString 输入）
+        std::string treeId;       // 派生树 id（iModelTileTreeIdToString 输出）
+        dqGeom::Range3d worldRange;  // rootTile.range × location（隔离 step-fit 取景域）
+        bool visible = true;
+    };
+
+    void addTree(dqRender::TileTree* tree, std::string modelId, std::string treeId,
+                 dqGeom::Range3d worldRange)
     {
-        m_refs.push_back(std::make_unique<dqApp::SimpleTileTreeReference>(tree));
+        auto ref = std::make_unique<dqApp::SimpleTileTreeReference>(tree);
+        m_entries.push_back(TreeEntry{ref.get(), std::move(modelId), std::move(treeId),
+                                      std::move(worldRange)});
+        m_refs.push_back(std::move(ref));
     }
 
     void forEachTileTreeRef(
         dqApp::Viewport& /*viewport*/,
         std::function<void(dqApp::TileTreeReference&)> const& func) const override
     {
-        for (auto& ref : m_refs)
-            func(*ref);
+        for (auto const& entry : m_entries)
+            if (entry.visible && entry.ref)
+                func(*entry.ref);
+    }
+
+    std::vector<TreeEntry>& entries() { return m_entries; }
+    std::vector<TreeEntry> const& entries() const { return m_entries; }
+
+    // 逐模型显示开关（changeDisplay(ids, enabled) 等价物——调用方负责
+    // viewport->InvalidateScene()）。
+    void setModelVisible(std::size_t index, bool visible)
+    {
+        if (index < m_entries.size())
+            m_entries[index].visible = visible;
+    }
+    void setAllVisible(bool visible)
+    {
+        for (auto& entry : m_entries)
+            entry.visible = visible;
+    }
+    std::size_t visibleCount() const
+    {
+        std::size_t n = 0;
+        for (auto const& entry : m_entries)
+            if (entry.visible)
+                ++n;
+        return n;
     }
 
 private:
     std::vector<std::unique_ptr<dqApp::SimpleTileTreeReference>> m_refs;
+    std::vector<TreeEntry> m_entries;
 };
 
 // EMPTY refs 工厂产物（frontend-tiles 替换缝——openDumpIModel 注释④b 同款；

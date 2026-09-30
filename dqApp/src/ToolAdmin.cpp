@@ -11,6 +11,7 @@
 #include "IdleTool.h"
 
 #include <chrono>
+#include <cctype>
 #include <utility>
 
 namespace dqApp {
@@ -681,7 +682,11 @@ void ToolAdmin::OnInitialized()
     // Register core tools.
     // Ported from: itwinjs-core IModelApp.startup() tool registration
     //              (IModelApp.ts:400-407)
-    m_registry.Register("Select", CreateSelectionTool);
+    // keyin strings = the reference en-locale values (CoreTools.json):
+    //   "tools.Select.keyin" = "select elements"; Idle has no keyin entry in the
+    //   locale → not key-in reachable (englishKeyin returns "" — Tool.ts:411-418
+    //   "no translation" case).
+    m_registry.Register("Select", CreateSelectionTool, "select elements");
     m_registry.Register("Idle", CreateIdleTool);
 
     // Register view tools (viewport-arg factories).
@@ -1851,6 +1856,200 @@ EventHandled WheelEventProcessor::doZoom(BeWheelEvent const& ev)
     // TS L2123-2124: await IModelApp.accuSnap.reEvaluate(); return status;
     // Step 3 stub: accuSnap.reEvaluate is not yet ported.
     return EventHandled::Yes;
+}
+
+// ---------------------------------------------------------------------------
+// Key-in parsing (M-L(3) 接线级：Keyin 输入框的引擎半边)
+// Ported from: itwinjs-core ToolRegistry.tokenize / parseKeyin / parseAndRun
+//              (Tool.ts:1046-1103 / :1113-1167 / :1183-1203).
+// ---------------------------------------------------------------------------
+
+namespace {
+// TS `x.keyin.toLowerCase()` / `keyin.toLowerCase()` equivalents (ASCII — key-ins
+// are registered ASCII strings; no locale folding is specified by the reference).
+std::string toLowerCase(std::string const& s)
+{
+    std::string out(s);
+    for (char& c : out)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return out;
+}
+}  // namespace
+
+// Ported from: itwinjs-core ToolRegistry.tokenize (Tool.ts:1046-1103).
+ToolRegistry::TokenizedKeyin ToolRegistry::tokenize(std::string const& keyin)
+{
+    auto const isWhitespace = [](char ch) {
+        return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' || ch == '\v' || ch == '\f';
+    };
+    TokenizedKeyin split;
+    std::size_t index = 0;
+    while (index < keyin.length()) {
+        // Looking for beginning of next token.
+        char const ch = keyin[index];
+        if (isWhitespace(ch)) {
+            ++index;
+            continue;
+        }
+
+        if ('"' != ch) {
+            // Unquoted token.
+            std::size_t endIndex = keyin.length();
+            for (std::size_t i = index + 1; i < keyin.length(); i++) {
+                if (isWhitespace(keyin[i])) {
+                    endIndex = i;
+                    break;
+                }
+            }
+
+            split.tokens.push_back(keyin.substr(index, endIndex - index));
+            index = endIndex;
+            continue;
+        }
+
+        // Quoted argument.
+        if (!split.firstQuotedIndex.has_value())
+            split.firstQuotedIndex = split.tokens.size();
+
+        std::optional<std::size_t> endQuoteIndex;
+        std::size_t searchIndex = index + 1;
+        bool anyEmbeddedQuotes = false;
+        while (searchIndex < keyin.length()) {
+            searchIndex = keyin.find('"', searchIndex);
+            if (std::string::npos == searchIndex)
+                break;
+
+            // A literal " is embedded as ""
+            if (searchIndex + 1 > keyin.length() || keyin[searchIndex + 1] != '"') {
+                endQuoteIndex = searchIndex;
+                break;
+            }
+
+            anyEmbeddedQuotes = true;
+            searchIndex = searchIndex + 2;
+        }
+
+        if (!endQuoteIndex.has_value()) {
+            split.mismatchedQuotes = true;
+            return split;
+        }
+
+        std::string token = keyin.substr(index + 1, *endQuoteIndex - (index + 1));
+        if (anyEmbeddedQuotes) {
+            // TS: token.replace(/""/g, '"') — collapse embedded quote pairs.
+            std::string collapsed;
+            for (std::size_t i = 0; i < token.length(); ++i) {
+                collapsed.push_back(token[i]);
+                if ('"' == token[i] && i + 1 < token.length() && '"' == token[i + 1])
+                    ++i;  // skip the second quote of an embedded pair
+            }
+            token = std::move(collapsed);
+        }
+
+        split.tokens.push_back(std::move(token));
+        index = *endQuoteIndex + 1;
+    }
+
+    return split;
+}
+
+// Ported from: itwinjs-core ToolRegistry.parseKeyin (Tool.ts:1113-1167).
+ToolRegistry::ParsedKeyin ToolRegistry::parseKeyin(std::string const& keyin) const
+{
+    auto const tools = getToolList();
+    auto const matchesTool = [](RegisteredTool const& tool, std::string const& candidate) {
+        // TS findTool (:1125): x.keyin.toLowerCase() === lowerKeyin — tools whose
+        // englishKeyin is the empty "no translation" case are never reachable.
+        return !tool.keyin.empty() && toLowerCase(tool.keyin) == candidate;
+    };
+
+    // try the trivial, common case first — match the whole input against each
+    // registered tool's key-in, case-insensitively (TS findTool closure :1125).
+    std::string const lowerKeyin = toLowerCase(keyin);
+    for (auto const& tool : tools) {
+        if (matchesTool(tool, lowerKeyin)) {
+            ParsedKeyin parsed;
+            parsed.ok = true;
+            parsed.toolId = tool.toolId;
+            return parsed;
+        }
+    }
+
+    // Tokenize to separate keyin from arguments.
+    TokenizedKeyin const split = tokenize(keyin);
+    if (split.mismatchedQuotes) {
+        ParsedKeyin err;
+        err.error = ParseAndRunResult::MismatchedQuotes;
+        return err;
+    }
+    if (split.tokens.size() <= 1) {
+        ParsedKeyin err;
+        err.error = ParseAndRunResult::ToolNotFound;
+        return err;
+    }
+
+    // Find the longest starting substring that matches a tool's keyin.
+    // TS: maxIndex = firstQuotedIndex !== undefined ? firstQuotedIndex - 1
+    //     : tokens.length - 2 — a quoted first token (index 0) leaves no
+    //     unquoted leading substring, so the search is skipped entirely.
+    if (split.firstQuotedIndex.has_value() && 0 == *split.firstQuotedIndex) {
+        ParsedKeyin err;
+        err.error = ParseAndRunResult::ToolNotFound;
+        return err;
+    }
+    std::size_t const maxIndex = split.firstQuotedIndex.has_value()
+        ? *split.firstQuotedIndex - 1
+        : split.tokens.size() - 2;
+    // TS: for (let i = maxIndex; i >= 0; i--) — size_t-safe countdown to 0.
+    for (std::size_t ii = maxIndex + 1; ii-- > 0;) {
+        std::size_t const i = ii;
+        std::string substr = split.tokens[0];
+        for (std::size_t j = 1; j <= i; j++) {
+            substr += " ";
+            substr += split.tokens[j];
+        }
+
+        for (auto const& tool : tools) {
+            if (matchesTool(tool, toLowerCase(substr))) {
+                ParsedKeyin parsed;
+                parsed.ok = true;
+                parsed.toolId = tool.toolId;
+                // Any subsequent tokens are arguments.
+                for (std::size_t k = i + 1; k < split.tokens.size(); k++)
+                    parsed.args.push_back(split.tokens[k]);
+                return parsed;
+            }
+        }
+    }
+
+    ParsedKeyin err;
+    err.error = ParseAndRunResult::ToolNotFound;
+    return err;
+}
+
+// Ported from: itwinjs-core ToolRegistry.parseAndRun (Tool.ts:1183-1203).
+ParseAndRunResult ToolRegistry::parseAndRun(std::string const& keyin) const
+{
+    ParsedKeyin const parsed = parseKeyin(keyin);
+    if (!parsed.ok)
+        return parsed.error;
+
+    InteractiveTool* const tool = Create(parsed.toolId.c_str());
+    if (nullptr == tool)
+        return ParseAndRunResult::ToolNotFound;  // unregistered between parse and create
+
+    int const maxArgs = tool->maxArgs();
+    if (static_cast<int>(parsed.args.size()) < tool->minArgs()
+        || (maxArgs >= 0 && static_cast<int>(parsed.args.size()) > maxArgs)) {
+        delete tool;
+        return ParseAndRunResult::BadArgumentCount;
+    }
+
+    // TS: await tool.parseAndRun(...parsed.args) ? Success : FailedToRun. The
+    // created instance is owned by this call (the reference relies on GC).
+    bool const ok = tool->parseAndRun(parsed.args);
+    delete tool;
+    return ok ? ParseAndRunResult::Success : ParseAndRunResult::FailedToRun;
 }
 
 }  // namespace dqApp

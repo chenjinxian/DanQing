@@ -142,3 +142,46 @@ TEST(ViewSettingsPanel, CameraToggleSavesUndoEntry)
 }
 
 
+
+// M-L(3) 接线级 #4：Edge Display 开关（渲染侧 M-I(4) 已通，只差面板开关）。
+// Authored: no reference test exists in display-test-app for the ViewAttributes
+//           panel (test app ships no tests); scenario transcribes
+//           ViewAttributes.addEdgeDisplay (:835-1008)——"Visible Edges" →
+//           viewFlags.visibleEdges (:863-869)、"Hidden Edges" →
+//           viewFlags.hiddenEdges (:878-884)；回读半边对应参考 addEdgeDisplay
+//           的 _updates sync (:972-983)。
+TEST(ViewSettingsPanel, EdgeDisplaySwitchesWriteViewFlags)
+{
+    VpGuard g;
+    Gui::ViewSettingsPanel panel;
+    panel.syncFromViewport();
+
+    auto* visEdges = findBox(panel, "Visible Edges");
+    auto* hidEdges = findBox(panel, "Hidden Edges");
+    ASSERT_NE(visEdges, nullptr);
+    ASSERT_NE(hidEdges, nullptr);
+
+    // blank 默认双关（ViewFlagsProperties 缺省 visibleEdges=false/hiddenEdges=false）。
+    EXPECT_FALSE(visEdges->isChecked());
+    EXPECT_FALSE(hidEdges->isChecked());
+
+    visEdges->setChecked(true);
+    hidEdges->setChecked(true);
+    auto const& vf = g.vp->GetView()->GetDisplayStyle().getViewFlags();
+    EXPECT_TRUE(vf.visibleEdges());
+    EXPECT_TRUE(vf.hiddenEdges());
+
+    // 回读（syncFromViewport——弹出时回读当前视口状态，参考 _updates sync）。
+    visEdges->setChecked(false);
+    hidEdges->setChecked(false);
+    Gui::ViewSettingsPanel panel2;
+    panel2.syncFromViewport();
+    EXPECT_FALSE(findBox(panel2, "Visible Edges")->isChecked());
+    EXPECT_FALSE(findBox(panel2, "Hidden Edges")->isChecked());
+
+    visEdges->setChecked(true);
+    Gui::ViewSettingsPanel panel3;
+    panel3.syncFromViewport();
+    EXPECT_TRUE(findBox(panel3, "Visible Edges")->isChecked());
+    EXPECT_FALSE(findBox(panel3, "Hidden Edges")->isChecked());
+}

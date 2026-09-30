@@ -122,8 +122,16 @@ public:
     virtual void OutputPrompt(const std::string& prompt) { (void)prompt; }
 
     // Output a message/alert to the user.
-    // Ported from: itwinjs-core NotificationManager.outputMessage()
-    virtual void OutputMessage(const NotifyMessageDetails& message) { (void)message; }
+    // Ported from: itwinjs-core NotificationManager.outputMessage() — the
+    // reference is abstract (the application provides the implementation); the
+    // DanQing base implementation fans the message out through OnMessageOutput
+    // (the application subscribes — main.cpp wires it to the status bar). The
+    // base was a silent no-op before M-L(3): the event had no raise site
+    // (ported-but-uncalled), so notifications never reached the app surface.
+    virtual void OutputMessage(const NotifyMessageDetails& message)
+    {
+        OnMessageOutput.Raise(message);
+    }
 
     // Output a MessageBox and return the user's response.
     // Ported from: itwinjs-core NotificationManager.openMessageBox()

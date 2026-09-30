@@ -1,26 +1,155 @@
 // SPDX-License-Identifier: Apache-2.0
-// DanQing DisplayTestApp — Models/瓦树停靠面板实现（M-L(2) 裁决档改造，
-// 数据面与设计说明见 TileTreePanel.h）。
+// DanQing DisplayTestApp — Models/瓦树停靠面板实现（M-L(2) 裁决档改造 + M-L(3)
+// Models 选择器演示版），设计说明见 TileTreePanel.h。
 #include "TileTreePanel.h"
+
+#include <QCoreApplication>
+#include <QDockWidget>
+#include <QComboBox>
+#include <QHBoxLayout>
+#include <QToolButton>
+#include <QTreeWidget>
+#include <QVBoxLayout>
 
 #include "../DumpOpenHelper.h"  // 打开产物注册表（src/ 根——app 目标含 src/Gui 与仓库根两条 include 路径）
 #include "MainWindow.h"
 #include "View3DInventor.h"
 #include "DockWindowManager.h"
 
-#include <QCoreApplication>
-#include <QDockWidget>
-#include <QMainWindow>
+#include <dqApp/Application.h>
+#include <dqApp/ViewState.h>
+#include <dqApp/Viewport.h>
 
 namespace Gui {
 
-TileTreePanel::TileTreePanel(QWidget* parent)
-    : QTreeWidget(parent)
+namespace {
+// 活动视口的打开产物（可空）。
+dta::DumpOpenResult* openedDump()
 {
-    setColumnCount(1);
-    setHeaderHidden(true);
-    setRootIsDecorated(true);
-    setAlternatingRowColors(false);
+    auto* mw = MainWindow::getInstance();
+    auto* view3d = mw ? qobject_cast<View3DInventor*>(mw->activeWindow()) : nullptr;
+    return view3d ? dta::findOpenedDump(view3d) : nullptr;
+}
+
+// 活动视口（隔离开关后的场景失效 + step-fit 的取景主体）。
+dqApp::Viewport* activeViewport()
+{
+    auto* mw = MainWindow::getInstance();
+    auto* view3d = mw ? qobject_cast<View3DInventor*>(mw->activeWindow()) : nullptr;
+    return view3d ? view3d->getUeViewport() : nullptr;
+}
+
+// QTreeWidget UserRole 数据约定：组行 = -1；Models 分组的 model 条目 = provider
+// 条目索引。
+constexpr int kGroupRole = -1;
+}  // namespace
+
+TileTreePanel::TileTreePanel(QWidget* parent)
+    : QWidget(parent)
+{
+    setObjectName(QStringLiteral("ModelsTileTreePanel"));
+    setWindowTitle(QCoreApplication::translate("MainWindow", "Models"));
+
+    auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(2, 2, 2, 2);
+    layout->setSpacing(2);
+
+    // IdPicker 共享动作下拉（IdPicker.ts:40-53）——接线子集：Show All / Hide All
+    // / Invert（"Isolate/Hide Selected" 的选择集→model 查询与 "Hilite Enabled"
+    // 依赖本仓没有的数据面/高亮通道——头注登记）。
+    m_actions = new QComboBox(this);
+    m_actions->setObjectName(QStringLiteral("DTA.Models.Actions"));
+    m_actions->addItem(QString());
+    m_actions->addItem(QStringLiteral("Show All"));
+    m_actions->addItem(QStringLiteral("Hide All"));
+    m_actions->addItem(QStringLiteral("Invert"));
+    connect(m_actions, &QComboBox::activated, this, [this](int index) {
+        switch (index) {
+            case 1: showAll(); break;
+            case 2: hideAll(); break;
+            case 3: invert(); break;
+            default: break;
+        }
+        m_actions->setCurrentIndex(0);  // 动作语义，非状态选择（参考 combo 同款）
+        refresh();
+    });
+    layout->addWidget(m_actions);
+
+    // ModelPicker 单步隔离 6 键（IdPicker.ts:354-397——⏪◀️➕⛶▶️⏩）。
+    auto* steps = new QHBoxLayout;
+    steps->setSpacing(2);
+    struct Step { const char* label; const char* tip; };
+    static const Step kSteps[] = {
+        { "⏪", "Isolate first" },
+        { "◀️", "Isolate previous" },
+        { "➕", "Set first enabled as step index" },
+        { "⛶", "Fit after isolate" },
+        { "▶️", "Isolate next" },
+        { "⏩", "Isolate last" },
+    };
+    for (int i = 0; i < 6; ++i) {
+        auto* b = new QToolButton(this);
+        b->setObjectName(QStringLiteral("DTA.Models.Step%1").arg(i));
+        b->setText(QString::fromUtf8(kSteps[i].label));
+        b->setToolTip(QString::fromUtf8(kSteps[i].tip));
+        b->setCheckable(3 == i);  // ⛶ 是 fit-on-step 开关（参考 inset/outset 表态）
+        b->setChecked(3 == i);    // 参考 fit 初始态 inset = true
+        connect(b, &QToolButton::clicked, this, [this, i](bool checked) {
+            switch (i) {
+                case 0: stepToIndex(0); break;
+                case 1: stepToIndex(m_stepIndex - 1); break;
+                case 2: {
+                    // "Set first enabled as step index"（IdPicker.ts:368-379）。
+                    if (auto* opened = openedDump()) {
+                        auto const& entries = opened->provider->entries();
+                        for (std::size_t k = 0; k < entries.size(); ++k)
+                            if (entries[k].visible) {
+                                m_stepIndex = static_cast<int>(k);
+                                break;
+                            }
+                    }
+                    break;
+                }
+                case 3: setFitOnStep(checked); break;
+                case 4: stepToIndex(m_stepIndex + 1); break;
+                case 5:
+                    if (auto* opened = openedDump())
+                        stepToIndex(static_cast<int>(opened->provider->entries().size()) - 1);
+                    break;
+                default: break;
+            }
+            refresh();
+        });
+        steps->addWidget(b);
+    }
+    layout->addLayout(steps);
+
+    // Models + Tile Trees 两分组。
+    m_tree = new QTreeWidget(this);
+    m_tree->setObjectName(QStringLiteral("DTA.Models.Tree"));
+    m_tree->setColumnCount(1);
+    m_tree->setHeaderHidden(true);
+    m_tree->setRootIsDecorated(true);
+    layout->addWidget(m_tree);
+
+    // 复选 → provider 开关 + 场景失效（changeDisplay 语义——见 DumpOpenHelper.h）。
+    // 重建期（setCheckState）触发的 itemChanged 由 m_updating 守卫吞掉。
+    connect(m_tree, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem* item, int) {
+        if (m_updating || item == nullptr)
+            return;
+        bool const isModelEntry = item->parent() != nullptr
+            && item->data(0, Qt::UserRole).isValid()
+            && item->data(0, Qt::UserRole).toInt() >= 0;
+        if (!isModelEntry)
+            return;
+        if (auto* opened = openedDump()) {
+            opened->provider->setModelVisible(
+                static_cast<std::size_t>(item->data(0, Qt::UserRole).toInt()),
+                item->checkState(0) == Qt::Checked);
+            if (auto* vp = activeViewport())
+                vp->InvalidateScene();
+        }
+    });
 
     connect(&m_refreshTimer, &QTimer::timeout, this, &TileTreePanel::refresh);
     m_refreshTimer.start(1000);
@@ -29,49 +158,143 @@ TileTreePanel::TileTreePanel(QWidget* parent)
 
 void TileTreePanel::refresh()
 {
-    // 活动视口 → 打开产物注册表（main.cpp 打开链登记；未打开 → 占位项）。
-    QStringList lines;
-    auto* mw = MainWindow::getInstance();
-    auto* view3d = mw ? qobject_cast<View3DInventor*>(mw->activeWindow()) : nullptr;
-    dta::DumpOpenResult* opened = view3d ? dta::findOpenedDump(view3d) : nullptr;
-
-    if (opened == nullptr) {
-        lines << QStringLiteral("(no iModel open — use the Start page)");
-    }
-    else {
-        // Models（连接数据面——imodel.json models[]）
-        if (auto* connection = opened->connection.Get()) {
-            lines << QStringLiteral("Models (%1)").arg(quint64(connection->getModels().size()));
-            for (auto const& model : connection->getModels()) {
-                lines << QStringLiteral("  %1 [%2]")
-                             .arg(QString::fromStdString(model.name),
-                                  QString::fromStdString(model.classFullName));
-            }
-        }
-        // Tile Trees（modelSelector 逐 model 装载序——treeLoadLog）
-        lines << QStringLiteral("Tile Trees (%1)").arg(quint64(opened->treeLoadLog.size()));
+    // 内容指纹不变 → 跳过重建（保住选中/展开/勾选交互；M-L(2) 同款）。
+    QString next = QStringLiteral("(none)");
+    if (auto* opened = openedDump()) {
+        QStringList lines;
+        for (auto const& entry : opened->provider->entries())
+            lines << QStringLiteral("%1=%2").arg(QString::fromStdString(entry.modelId),
+                                                 entry.visible ? QStringLiteral("1")
+                                                               : QStringLiteral("0"));
         for (auto const& treeId : opened->treeLoadLog)
-            lines << QStringLiteral("  %1").arg(QString::fromStdString(treeId));
+            lines << QString::fromStdString(treeId);
+        next = lines.join(QLatin1Char(';'));
     }
-
-    // 内容指纹不变 → 跳过重建（保住选中/展开状态）。
-    QString next = lines.join(QLatin1Char('\n'));
     if (next == m_content)
         return;
     m_content = next;
 
-    clear();
-    for (QString const& line : lines) {
-        auto* item = new QTreeWidgetItem(static_cast<QTreeWidget*>(nullptr), QStringList(line));
-        bool const isGroup = !line.startsWith(QLatin1Char(' '));
-        item->setDisabled(!isGroup || line.startsWith(QStringLiteral("(")));
-        // 组行加粗（区分 models/trees 分组与其条目）。
-        if (isGroup && !line.startsWith(QStringLiteral("("))) {
-            QFont bold = item->font(0);
-            bold.setBold(true);
-            item->setFont(0, bold);
+    m_updating = true;
+    m_tree->clear();
+
+    auto* opened = openedDump();
+    if (opened == nullptr || opened->provider == nullptr) {
+        auto* item = new QTreeWidgetItem(
+            m_tree, QStringList(QStringLiteral("(no iModel open — use the Start page)")));
+        item->setDisabled(true);
+        item->setData(0, Qt::UserRole, kGroupRole);
+        m_updating = false;
+        return;
+    }
+
+    auto* connection = opened->connection.Get();
+
+    // Models 分组（ModelPicker._populate 的复选形态——IdPicker.ts:398-405；
+    // 参考按 model 名排序——imodel.json models[] 的 provider 条目序即装载序，
+    // 名字顺序登记为 provider 条目序）。
+    auto const& entries = opened->provider->entries();
+    auto* modelsItem = new QTreeWidgetItem(
+        m_tree, QStringList(QStringLiteral("Models (%1)").arg(quint64(entries.size()))));
+    QFont bold = modelsItem->font(0);
+    bold.setBold(true);
+    modelsItem->setFont(0, bold);
+    modelsItem->setData(0, Qt::UserRole, kGroupRole);
+    for (std::size_t i = 0; i < entries.size(); ++i) {
+        QString name = QString::fromStdString(entries[i].modelId);
+        if (connection) {
+            for (auto const& model : connection->getModels()) {
+                if (model.id.ToString() == entries[i].modelId) {
+                    name = QString::fromStdString(model.name);
+                    break;
+                }
+            }
         }
-        addTopLevelItem(item);
+        auto* item = new QTreeWidgetItem(modelsItem, QStringList(name));
+        item->setData(0, Qt::UserRole, static_cast<int>(i));
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(0, entries[i].visible ? Qt::Checked : Qt::Unchecked);
+    }
+    modelsItem->setExpanded(true);
+
+    // Tile Trees 分组（modelSelector 逐 model 装载序——treeLoadLog）。
+    auto* treesItem = new QTreeWidgetItem(
+        m_tree, QStringList(QStringLiteral("Tile Trees (%1)").arg(
+                    quint64(opened->treeLoadLog.size()))));
+    treesItem->setFont(0, bold);
+    treesItem->setData(0, Qt::UserRole, kGroupRole);
+    for (auto const& treeId : opened->treeLoadLog)
+        new QTreeWidgetItem(treesItem, QStringList(QString::fromStdString(treeId)));
+    treesItem->setExpanded(true);
+
+    m_updating = false;
+}
+
+void TileTreePanel::setFitOnStep(bool on)
+{
+    // Ported from: IdPicker.ts:383-392 — ⛶ toggles _fitOnStep.
+    m_fitOnStep = on;
+}
+
+void TileTreePanel::stepToIndex(int index)
+{
+    // Ported from: ModelPicker.stepToIndex (IdPicker.ts:420-428) — hide all,
+    // enable the indexed model, fit when _fitOnStep.
+    auto* opened = openedDump();
+    if (opened == nullptr || opened->provider == nullptr)
+        return;
+    auto const& entries = opened->provider->entries();
+    if (index < 0 || index >= static_cast<int>(entries.size()))
+        return;
+
+    m_stepIndex = index;
+    opened->provider->setAllVisible(false);
+    opened->provider->setModelVisible(static_cast<std::size_t>(index), true);
+
+    // Ported from: IdPicker.ts:426 — ViewManip.fitView(vp, true)（隔离后场景仅剩
+    // 该 model → fit 的场景域 = 该 model 的域）。DanQing：LookAtVolume 到该树的
+    // 世界域（FitViewTool.doFit 的取景形态——LookAtVolume + synchWithView +
+    // RequestRedraw，ViewTool.cpp:2158-2166；aspect 必传——doFit 注释）。
+    if (auto* vp = activeViewport()) {
+        vp->InvalidateScene();
+        auto const& range = entries[static_cast<std::size_t>(index)].worldRange;
+        auto* view3d = vp->GetView() ? vp->GetView()->AsViewState3d() : nullptr;
+        if (view3d && !range.isNull()) {
+            double const aspect = vp->viewRect().aspect();
+            view3d->LookAtVolume(range, &aspect, nullptr);
+        }
+        vp->synchWithView();
+        vp->RequestRedraw();
+    }
+}
+
+void TileTreePanel::showAll()
+{
+    // Ported from: IdPicker.show "All" → toggleIds(all, true)。
+    if (auto* opened = openedDump()) {
+        opened->provider->setAllVisible(true);
+        if (auto* vp = activeViewport())
+            vp->InvalidateScene();
+    }
+}
+
+void TileTreePanel::hideAll()
+{
+    // Ported from: IdPicker.show "None" → toggleAll(false)。
+    if (auto* opened = openedDump()) {
+        opened->provider->setAllVisible(false);
+        if (auto* vp = activeViewport())
+            vp->InvalidateScene();
+    }
+}
+
+void TileTreePanel::invert()
+{
+    // Ported from: IdPicker.invertAll (IdPicker.ts:27-36)。
+    if (auto* opened = openedDump()) {
+        for (auto& entry : opened->provider->entries())
+            entry.visible = !entry.visible;
+        if (auto* vp = activeViewport())
+            vp->InvalidateScene();
     }
 }
 
@@ -79,9 +302,6 @@ void TileTreePanel::refresh()
 void setupModelsPanel()
 {
     auto* panel = new TileTreePanel;
-    panel->setObjectName(QStringLiteral("ModelsTileTreePanel"));
-    panel->setWindowTitle(QCoreApplication::translate("MainWindow", "Models"));
-
     auto* dockMgr = DockWindowManager::instance();
     dockMgr->registerDockWindow("Std_ComboView", panel);
     if (auto* dock = dockMgr->addDockWindow("Models", panel, Qt::LeftDockWidgetArea))
