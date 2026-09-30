@@ -44,6 +44,8 @@ add_executable(DisplayTestApp WIN32
     src/Gui/SaveImageTool.h
     src/Gui/SnapModeTool.cpp        # SetActiveSnapMode（M-M(6)——AccuSnap 活跃模式 keyin 接线）
     src/Gui/SnapModeTool.h
+    src/Gui/CategoriesPanel.cpp     # Categories 面板（M-N(1)——category 可见性引擎通道的 UI）
+    src/Gui/CategoriesPanel.h
     src/Gui/SyncViewportsTool.cpp   # SyncViewports/SyncFrusta（M-L(3)——ViewportSync 接线清偿）
     src/Gui/SyncViewportsTool.h
     src/Gui/ViewSettingsPanel.cpp   # DTA View Settings 弹出面板（Task 4）

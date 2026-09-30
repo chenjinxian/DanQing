@@ -1172,9 +1172,17 @@ TEST(DumpOpenChain, OpensHouseModelWithPerspectiveSavedView)
     //    Authored: no reference test（category 过滤在参考走 FeatureOverrides
     //    集成测试，无离线像素对应物；§5(g) 授权）。
     {
+        // 隐藏集 = CategoriesPanel 同款派生（view.categorySelector 逐
+        // category + 1——imodel-native 默认子类规则 DgnCategory.cpp:171-175；
+        // housemodel 实证 categories 0x71..0xa5 奇 ↔ 特征表 subCats
+        // 0x72..0xa4 偶全覆盖）。这同时验证面板映射：按此法派生的集合与
+        // 特征表实态一致 → 全隐藏塌缩成立。
+        auto const& viewCategories =
+            opened->viewState->GetCategorySelector().getCategories();
+        ASSERT_FALSE(viewCategories.empty()) << "saved view carries no categories";
         std::set<uint64_t> hideAll;
-        for (uint64_t id = 0x72u; id <= 0xa4u; id += 2u)
-            hideAll.insert(id);
+        for (auto const& cat : viewCategories)
+            hideAll.insert(cat.GetValue() + 1u);
         view.getUeViewport()->SetInvisibleSubCategories(hideAll);
         view.getUeViewport()->InvalidateController();
         spin(600);

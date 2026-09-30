@@ -65,6 +65,7 @@ static LONG WINAPI dtaCrashPrinter(EXCEPTION_POINTERS* ep)
 #include "src/Gui/DtaToolBars.h"
 #include "src/Gui/DtaTools.h"
 #include "src/Gui/TileTreePanel.h"
+#include "src/Gui/CategoriesPanel.h"
 #include "src/Gui/View3DInventor.h"
 #include "src/Gui/DecorationGeometryExample.h"
 #include "src/Gui/Command.h"
@@ -376,6 +377,10 @@ int main(int argc, char** argv)
     // models/tile trees 陈列——数据源 = 打开产物注册表）。
     // 必须先于 loadWindowSettings（restoreWindowState 的 dock 布局要能命中它）。
     Gui::setupModelsPanel();
+
+    // Categories 停靠面板（M-N(1)：per-category 可见性——ViewState
+    // categorySelector 陈列 + 引擎 subCategory 可见性通道）。
+    Gui::setupCategoriesPanel();
 
     // The ONE show: geometry + dock state, then (deferred) maximize — see
     // MainWindow::loadWindowSettings for the Windows DPI presentation note.
