@@ -40,27 +40,49 @@ BEGIN_DQ_RENDER_NAMESPACE
 //               getComputeNormal(true) :396-406) and NO a_normal attribute is
 //               declared. false keeps the a_normal attribute path (§3.4
 //               deviation from the itwinjs unquantized LUT reads).
+//   instanced — true for instanced geometry: the normal matrix is computed
+//               IN-SHADER from g_mv (= u_instanced_modelView *
+//               g_modelMatrixRTC — includes the per-instance rotation),
+//               Ported from Vertex.ts:162-166 (`g_nmx = transpose(inverse(
+//               mat3(MAT_MV)))` with MAT_MV = g_mv for instanced). A CPU
+//               branch-only u_normalMatrix cannot see the per-instance matrix
+//               (it exists only as instance attributes on the GPU) — leaving
+//               rotated instances' normals wrong (M-M(1) instance-spheres-dark
+//               saga: instances60 tile rotates local +Z → world -Y).
 //
 // Adds:
-//   Vertex:  u_normalMatrix uniform + MAT_NORM macro +
+//   Vertex:  u_normalMatrix uniform + MAT_NORM macro (non-instanced) /
+//            in-shader transpose(inverse(mat3(g_mv))) (instanced) +
 //            (non-quantized: a_normal attribute) + octDecodeNormal function +
 //            computeSurfaceNormal function + v_n computed varying
 //   Fragment: g_normal global + FinalizeNormal component (flip + return)
 // ---------------------------------------------------------------------------
-inline void addNormal(ProgramBuilder& builder, bool quantized = false)
+inline void addNormal(ProgramBuilder& builder, bool quantized = false, bool instanced = false)
 {
     auto& vert = builder.getVertexBuilder();
     auto& frag = builder.getFragmentBuilder();
 
-    // u_normalMatrix uniform + GraphicUniform binding (transpose(inverse(mat3(mv)))
-    // computed by the live draw loop, stored on DrawParams).  wireNormalMatrix
-    // declares the uniform AND registers the binding — previously declared with
-    // a nullptr registration and fed by the legacy name-value upload (TD-15).
-    // Ported from: itwinjs-core Vertex.ts addNormalMatrix() (line 169-179) —
-    // the reference computes g_nmx in-shader from u_frustumScale; DanQing's
-    // §3.4 deviation uploads the CPU value via the GraphicUniform binding.
-    wireNormalMatrix(vert);
-    vert.addMacro("MAT_NORM", "u_normalMatrix");
+    // Normal matrix source. Non-instanced: u_normalMatrix uniform +
+    // GraphicUniform binding (transpose(inverse(mat3(mv))) computed by the live
+    // draw loop, stored on DrawParams) — wireNormalMatrix declares the uniform
+    // AND registers the binding (previously a nullptr registration fed by the
+    // legacy name-value upload — TD-15). §3.4 deviation from itwinjs which
+    // computes g_nmx in-shader from u_frustumScale (Vertex.ts:169-179).
+    // Instanced: in-shader from g_mv (the reference's MAT_MV for instanced
+    // geometry). The frustumScale diagonal adjustment (Vertex.ts:164-165) is
+    // omitted — (1,1) for 3D world branches (EQUIVALENCE with the CPU path,
+    // which likewise omits it).
+    std::string normalXform;
+    if (instanced) {
+        normalXform =
+            "  mat3 nmx = transpose(inverse(mat3(g_mv)));\n"
+            "  return normalize(nmx * octDecodeNormal(normal));\n";
+    } else {
+        wireNormalMatrix(vert);
+        vert.addMacro("MAT_NORM", "u_normalMatrix");
+        normalXform =
+            "  return normalize(MAT_NORM * octDecodeNormal(normal));\n";
+    }
 
     // octDecodeNormal function — octahedral normal decoding from 2 bytes.
     // Added in BOTH paths (matching the reference addNormal :533, which adds
@@ -79,22 +101,27 @@ inline void addNormal(ProgramBuilder& builder, bool quantized = false)
         // No a_normal attribute is declared (Task 4's VAO binds only
         // a_qPosition at location 0).
         vert.addFunction(std::string("vec3 computeSurfaceNormal() {") +
-                         std::string(kComputeSurfaceNormalQuantized) + "\n}\n");
+                         std::string(kComputeSurfaceNormalQuantizedPrelude) +
+                         normalXform + "}\n");
     } else {
         // a_normal attribute (dedup — caller may have declared it).
         vert.addVariable({"a_normal", VariableType::Vec3, VariableScope::Attribute, 0});
 
-        // computeSurfaceNormal — attribute path (§3.4 deviation from itwinjs LUT).
+        // computeSurfaceNormal — attribute path (§3.4 deviation from itwinjs LUT:
+        // NO LUT globals exist on this path — the pre-decoded vec3 arrives via
+        // the a_normal attribute; the LUT-read prelude does not apply).
         // Ported from: itwinjs-core Surface.ts getComputeNormal() (line 396-406)
         // itwinjs reads oct-encoded normal from g_vertLutData + octDecodeNormal;
         // DanQing reads pre-decoded vec3 from a_normal directly. TODO Step 3 VertexLUT.
-        vert.addFunction(R"(
-vec3 computeSurfaceNormal() {
-  if (!u_surfaceFlags[kSurfaceBitIndex_HasNormals])
-    return vec3(0.0);
-  return normalize(MAT_NORM * a_normal);
-}
-)");
+        vert.addFunction(std::string("vec3 computeSurfaceNormal() {\n") +
+                         "  if (!u_surfaceFlags[kSurfaceBitIndex_HasNormals])\n"
+                         "    return vec3(0.0);\n" +
+                         (instanced ? std::string(
+                                           "  mat3 nmx = transpose(inverse(mat3(g_mv)));\n"
+                                           "  return normalize(nmx * a_normal);\n")
+                                    : std::string(
+                                           "  return normalize(MAT_NORM * a_normal);\n")) +
+                         "}\n");
     }
 
     // v_n computed varying — eye-space normal passed to fragment.

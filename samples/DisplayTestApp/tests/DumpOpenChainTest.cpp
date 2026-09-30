@@ -912,6 +912,43 @@ TEST(DumpOpenChain, Instances60SavedViewSpheresRenderSolid)
         EXPECT_GE(maxYS - minYS, 300u) << "sphere content not spread in y";
     }
 
+    // ③ 实例球方向光点亮（M-M(1) 实例法线矩阵 saga 的 RED 锁）：紫色行为
+    //    实例 symbologyOverrides 独有色（基色 (135,0,135)——圆柱/圆锥/栅格
+    //    皆绿，无交叉污染）。缺陷机制：实例变换旋转（本 tile 实测 = 绕 X
+    //    90°：local +Z → world -Y）未进法线矩阵——DanQing 的 CPU
+    //    u_normalMatrix 只含 branch mv；参考 Vertex.ts:162-166 在 shader 内
+    //    从含实例矩阵的 MAT_MV 算 transpose(inverse(mat3(MAT_MV)))。A/B 实测
+    //    （2026-09-30）：DTA 紫 行 meanR=103.7/maxR=209 vs 缺陷态 62.5/118
+    //    ——均值/峰值双判据，分离带取中（80/150）。
+    {
+        long purpleN = 0;
+        long long purpleSum = 0;
+        int purpleMax = 0;
+        for (uint32_t y = 0; y < h; y += 2) {
+            for (uint32_t x = 0; x < w; x += 2) {
+                uint8_t const* p = &frame[(static_cast<size_t>(y) * w + x) * 4];
+                int const r = p[0], g = p[1], b = p[2];
+                if (r >= 30 && std::abs(r - b) <= 40 && g + 45 <= r) {
+                    ++purpleN;
+                    purpleSum += r;
+                    purpleMax = std::max(purpleMax, r);
+                }
+            }
+        }
+        double const purpleMean =
+            purpleN > 0 ? static_cast<double>(purpleSum) / purpleN : 0.0;
+        printf("[OPEN-CHAIN] instances60 purple-row spheres: n=%ld meanR=%.1f maxR=%d\n",
+               purpleN, purpleMean, purpleMax);
+        EXPECT_GE(purpleN, 1000l) << "purple-row sphere pixels not found";
+        EXPECT_GE(purpleMean, 80.0)
+            << "instance spheres too dark on average — instance transform "
+               "missing from the normal matrix (Vertex.ts:162-166 computes "
+               "g_nmx in-shader from the instanced MAT_MV; a branch-only CPU "
+               "u_normalMatrix leaves rotated-instance normals wrong)";
+        EXPECT_GE(purpleMax, 150)
+            << "instance sphere highlights too weak — same normal-matrix defect";
+    }
+
     view.getUeViewport()->DropTiledGraphicsProvider(opened->provider.get());
     view.close();
     spin(200);

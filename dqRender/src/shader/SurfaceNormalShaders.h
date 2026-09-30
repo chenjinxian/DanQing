@@ -32,27 +32,33 @@ vec3 octDecodeNormal(vec2 e) {
 )";
 
 // ---------------------------------------------------------------------------
-// GLSL — computeSurfaceNormal (quantized variant)
+// GLSL — computeSurfaceNormal prelude (quantized variant)
 // Ported from: itwinjs-core Surface.ts getComputeNormal(true) (line 396-406)
-// Reads normal from LUT data g_vertLutData3.xy or g_vertLutData1.zw
+// Reads normal from LUT data g_vertLutData3.xy or g_vertLutData1.zw.
+// The TRANSFORM line (MAT_NORM vs in-shader transpose(inverse(mat3(g_mv)))
+// for instanced geometry) is appended by addNormal (SurfaceNormal.h) —
+// M-M(1) instance-spheres-dark saga: the normal matrix must include the
+// per-instance rotation (Vertex.ts:162-166).
 // ---------------------------------------------------------------------------
-inline constexpr std::string_view kComputeSurfaceNormalQuantized = R"(
+inline constexpr std::string_view kComputeSurfaceNormalQuantizedPrelude = R"(
   if (!u_surfaceFlags[kSurfaceBitIndex_HasNormals])
     return vec3(0.0);
   vec2 normal = (u_surfaceFlags[kSurfaceBitIndex_HasColorAndNormal]) ? g_vertLutData3.xy : g_vertLutData1.zw;
-  return normalize(MAT_NORM * octDecodeNormal(normal));
 )";
 
 // ---------------------------------------------------------------------------
-// GLSL — computeSurfaceNormal (non-quantized variant)
+// GLSL — computeSurfaceNormal prelude (unquantized-LUT variant)
 // Ported from: itwinjs-core Surface.ts getComputeNormal(false) (line 396-406)
-// Reads normal from LUT data g_vertLutData4.zw or g_vertLutData5.xy
+// Reads normal from LUT data g_vertLutData4.zw or g_vertLutData5.xy.
+// Transform line appended by addNormal (see the quantized prelude note).
+// NOTE: DanQing's non-quantized geometry uses the §3.4 a_normal attribute path
+// (no LUT globals) — this prelude is reserved for the future unquantized-LUT
+// port (TD-27).
 // ---------------------------------------------------------------------------
-inline constexpr std::string_view kComputeSurfaceNormalNonQuantized = R"(
+inline constexpr std::string_view kComputeSurfaceNormalNonQuantizedPrelude = R"(
   if (!u_surfaceFlags[kSurfaceBitIndex_HasNormals])
     return vec3(0.0);
   vec2 normal = (u_surfaceFlags[kSurfaceBitIndex_HasColorAndNormal]) ? g_vertLutData4.zw : g_vertLutData5.xy;
-  return normalize(MAT_NORM * octDecodeNormal(normal));
 )";
 
 // ---------------------------------------------------------------------------

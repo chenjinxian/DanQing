@@ -91,8 +91,10 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
     // the reference derives `quantized` from builder.vert.positionType
     // (:532); DanQing passes the flag explicitly. Quantized: oct normal
     // from the LUT (g_vertLutData3.xy / g_vertLutData1.zw, getComputeNormal
-    // (true) :396-406), no a_normal attribute.
-    addNormal(builder, quantized);
+    // (true) :396-406), no a_normal attribute. Instanced: the normal matrix
+    // is computed in-shader from g_mv (Vertex.ts:162-166 — includes the
+    // per-instance rotation; M-M(1)).
+    addNormal(builder, quantized, instanced);
 
     // --- Surface texture ---
     // Ported from: itwinjs-core Surface.ts addTexture() (line 571-687)
