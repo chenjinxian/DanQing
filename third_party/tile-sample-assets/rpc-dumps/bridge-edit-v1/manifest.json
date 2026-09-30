@@ -1,0 +1,90 @@
+{
+  "provenance": {
+    "pageHref": "http://localhost:3000/",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7977.54 Electron/44.0.0 Safari/537.36",
+    "defaultView": {
+      "origin": [
+        13.296892508078272,
+        14.685322437430425,
+        -14.28079509623912
+      ],
+      "extents": [
+        23.41312214421268,
+        15.404833334790764,
+        40.000400000000255
+      ],
+      "rotation": [
+        [
+          0.7071067811865479,
+          -0.7071067811865472,
+          3.885780586188048e-16
+        ],
+        [
+          0.4082482904638619,
+          0.4082482904638627,
+          0.8164965809277267
+        ],
+        [
+          -0.5773502691896262,
+          -0.5773502691896265,
+          0.5773502691896247
+        ]
+      ],
+      "is3d": true,
+      "cameraOn": false,
+      "lens": 0,
+      "viewRect": {
+        "w": 1263,
+        "h": 831
+      },
+      "capturedAt": "2026-09-30T02:54:41.274Z"
+    },
+    "formatVersion": 2424832,
+    "seed": "编辑大桥测试.bim",
+    "seedPath": "D:\\Github\\itwinjs-core\\test-apps\\display-test-app\\assets\\编辑大桥测试.bim",
+    "collected": "2026-09-30T03:08:06.412Z",
+    "itwinjsCommit": "7e57d0182ee375e34f3f1be840bbc623c6776e04",
+    "iModelId": "dbd4826b-4f72-423c-b4fa-ff8205f2bae7",
+    "changesetId": "",
+    "tool": "danqing-rpc-tools capture.mjs"
+  },
+  "stats": {
+    "trees": 1,
+    "tiles": 2,
+    "dupTiles": 0,
+    "dupTrees": 0,
+    "bytes": 174636796
+  },
+  "trees": [
+    {
+      "treeId": "25_1d-E:6_0x48",
+      "iModelId": "dbd4826b-4f72-423c-b4fa-ff8205f2bae7",
+      "formatVersion": 2424832,
+      "byteLength": 745,
+      "file": "files/5.json",
+      "propsFile": "files/5.json"
+    }
+  ],
+  "tiles": [
+    {
+      "treeId": "25_1d-E:6_0x48",
+      "contentId": "-b-2-0-1-0-1",
+      "guid": "444edabe-2025-4935-8a4e-9c5dc8ea8699_5eec7109363bfe85",
+      "iModelId": "dbd4826b-4f72-423c-b4fa-ff8205f2bae7",
+      "changesetId": "",
+      "byteLength": 33961636,
+      "sha256": "51a7098757f69444894f33a3f8a76ee1552b9cbc2481321dfaed7d78f96fbffb",
+      "file": "files/7.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x48",
+      "contentId": "-b-2-0-0-0-1",
+      "guid": "444edabe-2025-4935-8a4e-9c5dc8ea8699_5eec7109363bfe85",
+      "iModelId": "dbd4826b-4f72-423c-b4fa-ff8205f2bae7",
+      "changesetId": "",
+      "byteLength": 140675160,
+      "sha256": "afe95030a655daa46848122fc3e1a61b8d3d22fff98063ef8f23ad895bb3d0b4",
+      "file": "files/8.imdl"
+    }
+  ]
+}
