@@ -375,6 +375,8 @@ int main(int argc, char** argv)
     // HTML div 的 QToolTip 等价物——引擎半边 = Viewport hover locate →
     // NotificationManager.OpenToolTip）。
     Gui::setupDecorationToolTip();
+    // M-O(1) I7：DTA 快捷键族 MDI 子集（Surface.ts:229-291）。
+    Gui::setupDtaShortcuts(mainWindow);
 
     // Models/瓦树停靠面板（M-L(2) 裁决档：原 FreeCAD ComboView 的
     // TreePanel+PropertyView 无文档后端恒空，改造为已打开 iModel 的

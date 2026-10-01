@@ -42,4 +42,9 @@ void setupToolAssistanceHints();
 // _showToolTip 的 HTML-div 等价物；offset (+15,-20) 对齐参考 div 定位)。
 void setupDecorationToolTip();
 
+// Wire the MDI-applicable subset of the DTA keyboard shortcuts
+// (Surface.ts:229-291 — Ctrl+[ / Ctrl+] focus cycling, Ctrl+\ clone,
+// Ctrl+| close; the pin/dock single-keys are floating-window-only, ➖).
+void setupDtaShortcuts(MainWindow* mainWindow);
+
 }  // namespace Gui

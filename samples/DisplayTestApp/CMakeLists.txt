@@ -43,6 +43,7 @@ add_executable(DisplayTestApp WIN32
     src/Gui/SaveImageTool.cpp       # SaveImage（M-L(3) 诊断三小件——readImageBuffer 生产包装）
     src/Gui/SaveImageTool.h
     src/Gui/SnapModeTool.cpp        # SetActiveSnapMode（M-M(6)——AccuSnap 活跃模式 keyin 接线）
+    src/Gui/GridSettingsTool.cpp    # ChangeGridSettings（M-O(1) I5——grid 设置 keyin 接线）
     src/Gui/SnapModeTool.h
     src/Gui/CategoriesPanel.cpp     # Categories 面板（M-N(1)——category 可见性引擎通道的 UI）
     src/Gui/CategoriesPanel.h
@@ -256,6 +257,8 @@ if(TARGET gtest_main AND TARGET dqApp)
         tests/DtaToolsWiringTest.cpp    # M-L(3) 接线级回归：Keyin 字段/诊断三小件/视口同步/ToolAssistance 提示表
         src/Gui/SnapModeTool.cpp        # M-M(6)：SetActiveSnapMode（snap 锁被测面）
         src/Gui/ZoomToSelectedTool.cpp  # M-N(2)：ZoomToSelectedElements（zoom 锁被测面）
+        src/Gui/GridSettingsTool.cpp  # M-O(1) I5：ChangeGridSettings（grid 设置锁被测面）
+        src/Gui/CategoriesPanel.cpp   # M-O(1) R2：面板开关锁（dock 装配被测面）
         tests/ModelsPanelWiringTest.cpp # M-L(3) Models 演示版机制锁：provider 逐模型可见性 → 场景 → 像素（注册在 JoesHouseHoverTest 之后：同因 fetcher 替换不回溢）
         src/Gui/View3DInventor.cpp       # 测试构造真实 View3DInventor（真视口）
         src/DumpOpenHelper.cpp           # 打开链装配（M-H Task 3——DumpOpenChain 锁的被测面）

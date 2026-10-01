@@ -906,6 +906,13 @@ public:
     // Tool input state shared by tools. ← ToolAdmin.toolState (:92 public).
     ToolState toolState;
 
+    // Grid lock — snap input to the grid reference (ToolAdmin.gridLock,
+    // tools/ToolAdmin.ts 的 public 字段；参考消费者 = AccuDraw 锁定坐标。
+    // M-O(1) I5 随 ChangeGridSettingsTool 的 l= 参数移植；AccuDraw 消费面
+    // 未移植，字段先立）。
+    bool isGridLocked() const noexcept { return m_gridLock; }
+    void setGridLock(bool lock) noexcept { m_gridLock = lock; }
+
     // Set whether the locate aperture circle follows the cursor
     // (ToolAdmin.setLocateCircleOn, :1188-1192 — invalidates all views when the
     // state actually changes).
@@ -1282,6 +1289,8 @@ private:
     // Saved cursor while an incompatible-viewport suspension is active
     // (ToolAdmin._saveCursor, ToolAdmin.ts:111). Empty = no suspension.
     std::optional<std::string> m_saveCursor;
+    // ToolAdmin.gridLock（tools/ToolAdmin.ts public 字段的 C++ 适配）。
+    bool m_gridLock = false;
     // Saved toolState.locateCircleOn for the same suspension
     // (ToolAdmin._saveLocateCircle, ToolAdmin.ts:110).
     bool m_saveLocateCircle = false;

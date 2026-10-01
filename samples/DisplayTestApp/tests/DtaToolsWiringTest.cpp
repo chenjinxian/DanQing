@@ -14,12 +14,15 @@
 //             - SyncViewportsTool（SyncViewportsTool.ts run/parseAndRun 语义）；
 //             - ToolAssistance 提示表（ViewTool.ts:628-655 + CoreTools.json 字符串）。
 #include <gtest/gtest.h>
+#include <QAction>
 #include <QApplication>
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QDockWidget>
 #include <QImage>
 #include <QLineEdit>
+#include <QShortcut>
 #include <QStatusBar>
 #include <QCompleter>
 #include <QStringListModel>
@@ -28,6 +31,7 @@
 #include <App/Application.h>
 
 #include "Gui/DtaTools.h"
+#include "Gui/DtaToolBars.h"
 #include "Gui/FpsMonitor.h"
 #include "Gui/KeyinField.h"
 #include "Gui/MainWindow.h"
@@ -36,6 +40,8 @@
 #include "Gui/ZoomToSelectedTool.h"
 #include "Gui/SyncViewportsTool.h"
 #include "Gui/TileLoadIndicator.h"
+#include "Gui/TileTreePanel.h"
+#include "Gui/CategoriesPanel.h"
 #include "Gui/View3DInventor.h"
 #include "DumpOpenHelper.h"
 #include "InputHint.h"
@@ -44,6 +50,8 @@
 #include <dqApp/NotificationManager.h>
 #include <dqApp/ViewManager.h>
 #include <dqApp/Viewport.h>
+#include <dqApp/ViewState.h>
+#include <dqCommon/GridOrientationType.h>
 
 #include <cstdio>
 #include <string>
@@ -547,4 +555,104 @@ TEST(DtaToolsWiring, ToolAssistanceHintsMatchReferencePrompts)
     // 无提示表条目的工具（Select/一次性工具）→ 空表（装上即隐藏提示）。
     EXPECT_TRUE(Gui::toolAssistanceHintsFor("Select").empty());
     EXPECT_TRUE(Gui::toolAssistanceHintsFor("View.Undo").empty());
+}
+
+// M-O(1) I5：grid 设置 keyin（Grid.ts:11-94 ChangeGridSettingsTool——
+// s/r/g/o/l 参数面 + 逐参写 + invalidateScene）。
+// Authored: no reference test exists in display-test-app for the grid tool
+//           (test app ships no tests); scenario transcribes Grid.ts:21-34/:46-93
+//           verbatim（s=2.5 → spacing x=y；r=2 → y=x*2；g=12；o=2=WorldYZ；
+//           l=true → ToolAdmin.gridLock）。
+TEST(DtaToolsWiring, GridSettingsKeyinChangesViewDetails)
+{
+    ensureAppStubReady();
+    ensureEngineReady();
+    ViewGuardDtw guard;
+    auto* vp = guard.vp();
+    ASSERT_NE(vp, nullptr);
+    auto* v3 = vp->GetView()->AsViewState3d();
+    ASSERT_NE(v3, nullptr);
+
+    Gui::MainWindow mw;
+    Gui::setupDtaStatusBar(&mw);
+    auto* keyin = mw.statusBar()->findChild<Gui::KeyinField*>();
+    ASSERT_NE(keyin, nullptr);
+
+    // 基线（ViewDetails.ts:24-31 默认：WorldXY/10/{1,1}）。
+    EXPECT_EQ(v3->getGridOrientation(), dqCommon::GridOrientationType::WorldXY);
+    EXPECT_EQ(v3->getGridsPerRef(), 10);
+
+    // 参考声明 maxArgs=4（Grid.ts:14）——l 与 s/r/g/o 分两段键入（5 参超限
+    // 会被 ToolRegistry 的 maxArgs 门拒绝——契约同 ToolRegistryKeyin 锁）。
+    keyin->setText(QStringLiteral("dta grid settings s=2.5 r=2 g=12 o=2"));
+    QKeyEvent submit(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+    QApplication::sendEvent(keyin, &submit);
+
+    auto const spacing = v3->getGridSpacing();
+    EXPECT_NEAR(spacing.x, 2.5, 1e-12) << "s= 未生效";
+    EXPECT_NEAR(spacing.y, 5.0, 1e-12) << "r= 未生效（y 应为 x*ratio）";
+    EXPECT_EQ(v3->getGridsPerRef(), 12) << "g= 未生效";
+    EXPECT_EQ(v3->getGridOrientation(), dqCommon::GridOrientationType::WorldYZ) << "o=2 未映射 WorldYZ";
+
+    keyin->setText(QStringLiteral("dta grid settings l=1"));
+    QApplication::sendEvent(keyin, &submit);
+    EXPECT_TRUE(dqApp::Application::Get().GetToolAdmin().isGridLocked()) << "l= 未生效";
+}
+
+// M-O(1) R2：Models/Categories 工具栏按钮 toggle dock 面板（Viewer.ts:274-293
+// picker 位——面板宿主为 dock 的 EQUIVALENCE 见 DtaToolBars.cpp 注）。
+TEST(DtaToolsWiring, PanelToggleButtonsSwitchDockPanels)
+{
+    ensureAppStubReady();
+    ensureEngineReady();
+
+    Gui::MainWindow mw;
+    mw.show();
+    qApp->processEvents();
+    Gui::setupModelsPanel();
+    Gui::setupCategoriesPanel();
+
+    Gui::DtaToolBarSet toolbars(&mw);
+    qApp->processEvents();
+
+    auto* modelsAction = mw.findChild<QAction*>(QStringLiteral("DTA.PanelToggle.Models"));
+    ASSERT_NE(modelsAction, nullptr) << "Models 面板开关按钮未注册";
+    auto* categoriesAction = mw.findChild<QAction*>(QStringLiteral("DTA.PanelToggle.Categories"));
+    ASSERT_NE(categoriesAction, nullptr);
+
+    auto findDock = [&mw](QString const& name) -> QDockWidget* {
+        for (auto* d : mw.findChildren<QDockWidget*>())
+            if (d->windowTitle() == name)
+                return d;
+        return nullptr;
+    };
+    QDockWidget* modelsDock = findDock(QStringLiteral("Models"));
+    ASSERT_NE(modelsDock, nullptr) << "Models dock 面板未装配";
+    ASSERT_NE(findDock(QStringLiteral("Categories")), nullptr);
+
+    // toggle 双向语义（确定性前置：面板隐藏 + action 未勾选 → 触发=勾选=显示；
+    // 再触发=取消勾选=隐藏）。
+    modelsDock->setVisible(false);
+    modelsAction->setChecked(false);
+    modelsAction->trigger();
+    qApp->processEvents();
+    EXPECT_TRUE(modelsDock->isVisibleTo(&mw)) << "勾选触发未显示面板";
+    modelsAction->trigger();
+    qApp->processEvents();
+    EXPECT_FALSE(modelsDock->isVisibleTo(&mw)) << "取消勾选未隐藏面板";
+}
+
+// M-O(1) I7：DTA 快捷键族 MDI 子集注册（Surface.ts:240-258——Ctrl+[ ]/\|；
+// 行为半边由 MainWindow::activate*Window 与 MDIChromeTest/CommandWindowTest 锁）。
+TEST(DtaToolsWiring, DtaShortcutsRegistered)
+{
+    ensureAppStubReady();
+    Gui::MainWindow mw;
+    Gui::setupDtaShortcuts(&mw);
+
+    for (char const* name : {"FocusPrev", "FocusNext", "CloneView", "CloseView"}) {
+        auto* sc = mw.findChild<QShortcut*>(QStringLiteral("DTA.Shortcut.") + name);
+        ASSERT_NE(sc, nullptr) << name << " 快捷键未注册";
+        EXPECT_EQ(sc->parent(), &mw);
+    }
 }

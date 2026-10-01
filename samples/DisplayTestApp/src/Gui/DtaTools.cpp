@@ -10,6 +10,7 @@
 #include <QHBoxLayout>
 #include <QKeySequence>
 #include <QLabel>
+#include <QMdiSubWindow>
 #include <QObject>
 #include <QPoint>
 #include <QShortcut>
@@ -20,6 +21,7 @@
 
 #include <cstring>
 
+#include <functional>
 #include <vector>
 
 #include <dqApp/Application.h>
@@ -27,6 +29,8 @@
 #include <dqApp/ViewTool.h>
 
 #include "FpsMonitor.h"
+#include "Application.h"
+#include "GridSettingsTool.h"
 #include "KeyinField.h"
 #include "MainWindow.h"
 #include "SaveImageTool.h"
@@ -63,6 +67,10 @@ void registerDtaTools()
     registry.Register("ZoomToSelectedElements",
                       []() -> dqApp::InteractiveTool* { return new ZoomToSelectedElementsTool(); },
                       "dta zoom selected");
+    // M-O(1) I5：ChangeGridSettingsTool（Grid.ts:11-94——keyin "dta grid settings"）。
+    registry.Register("GridSettings",
+                      []() -> dqApp::InteractiveTool* { return new ChangeGridSettingsTool(); },
+                      "dta grid settings");
 }
 
 void setupDtaStatusBar(MainWindow* mainWindow)
@@ -219,6 +227,52 @@ void setupDecorationToolTip()
         QToolTip::showText(QCursor::pos() + QPoint(15, -20), QString::fromStdString(message));
     });
     notifications.OnToolTipCleared.AddListener([]() { QToolTip::hideText(); });
+}
+
+void setupDtaShortcuts(MainWindow* mainWindow)
+{
+    // M-O(1) I7：DTA 快捷键族的 MDI 可用子集（Surface.ts:229-291
+    // getKeyboardShortcutHandler——"`" 聚焦 keyin 已在 setupDtaStatusBar）。
+    // EQUIVALENCE: 参考源=Surface.ts:240-258（浮窗模型的 focusNextOrPrevious/
+    // addViewer[clone]/close）；发散=DanQing 为 MDI 模型（视图=MDI 子窗）——
+    // 焦点轮换→MainWindow::activate*Window、克隆→ViewCreate 消息、关闭→活动
+    // 子窗 close；Ctrl+n[聚焦通知浮窗]与 Ctrl+p/i/m/h/l/k/j[图钉/停靠 8 键]
+    // 为浮窗专属（MDI 无对应——模型差异登记➖）；验证法=DtaToolsWiring
+    // 快捷键注册锁 + 既有 MDIChrome/CommandWindow 行为锁。
+    if (!mainWindow)
+        return;
+    struct Shortcut {
+        char const* key;
+        char const* name;
+    };
+    auto addShortcut = [mainWindow](char const* key, char const* name,
+                                    std::function<void()> handler) {
+        auto* sc = new QShortcut(QKeySequence(QString::fromLatin1(key)), mainWindow);
+        sc->setObjectName(QStringLiteral("DTA.Shortcut.") + QString::fromLatin1(name));
+        sc->setContext(Qt::ApplicationShortcut);
+        QObject::connect(sc, &QShortcut::activated, mainWindow, std::move(handler));
+    };
+    // Surface.ts:241-243——Ctrl+[ 前一个 / Ctrl+] 后一个。
+    addShortcut("Ctrl+[", "FocusPrev", [] {
+        if (auto* mw = MainWindow::getInstance())
+            mw->activatePreviousWindow();
+    });
+    addShortcut("Ctrl+]", "FocusNext", [] {
+        if (auto* mw = MainWindow::getInstance())
+            mw->activateNextWindow();
+    });
+    // Surface.ts:252-256——Ctrl+\ 克隆当前 Viewer（MDI：ViewCreate 新视图窗）。
+    addShortcut("Ctrl+\\", "CloneView", [] {
+        Application::Instance()->sendMsgToActiveView("ViewCreate");
+    });
+    // Surface.ts:257-258——Ctrl+| 关闭聚焦窗。
+    addShortcut("Ctrl+|", "CloseView", [] {
+        auto* mw = MainWindow::getInstance();
+        if (mw && mw->mdiArea()) {
+            if (auto* sub = mw->mdiArea()->activeSubWindow())
+                sub->close();
+        }
+    });
 }
 
 }  // namespace Gui

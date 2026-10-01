@@ -5,6 +5,7 @@
 #include <QAction>
 #include <QComboBox>
 #include <QCursor>
+#include <QDockWidget>
 #include <QFontDatabase>
 #include <QIcon>
 #include <QMainWindow>
@@ -30,6 +31,7 @@
 #include "Application.h"   // Gui::Application::Instance()->newDocument()
 #include "DebugWindow.h"              // Viewer.ts:238-242 Debug info panel
 #include "DecorationGeometryExample.h"   // Surface.ts:155-165 entry
+#include "MainWindow.h"               // M-O(1) R2 addPanelToggle（dock 面板开关）
 #include "View3DInventor.h"
 #include "ViewSettingsPanel.h"   // Task 4: View Settings 弹出面板
 
@@ -135,6 +137,32 @@ QAction* addEmptyDropDown(QToolBar* tb, const QString& text, ushort dtaGlyph = 0
     empty->setEnabled(false);
     QObject::connect(a, &QAction::triggered, tb, [m] {
         m->popup(QCursor::pos());
+    });
+    return a;
+}
+
+// M-O(1) R2：面板开关按钮（Models/Categories 工具栏位）——点击 toggle 对应
+// dock 面板（addDockWindow(name) 的 QDockWidget 标题 = name）。
+QAction* addPanelToggle(QToolBar* tb, const QString& text, ushort dtaGlyph,
+                        const QString& dockName)
+{
+    QAction* a = tb->addAction(text);
+    if (dtaGlyph)
+        setGlyphIcon(a, dtaGlyph);
+    a->setObjectName(QStringLiteral("DTA.PanelToggle.") + text);
+    a->setCheckable(true);
+    QObject::connect(a, &QAction::triggered, tb, [a, dockName](bool on) {
+        auto* mw = MainWindow::getInstance();
+        if (!mw)
+            return;
+        // 按标题找 dock（addDockWindow 以 name 为标题创建）。
+        for (auto* dock : mw->findChildren<QDockWidget*>()) {
+            if (dock->windowTitle() == dockName) {
+                dock->setVisible(on);
+                return;
+            }
+        }
+        (void)a;
     });
     return a;
 }
@@ -299,8 +327,15 @@ void DtaToolBarSet::buildViewsToolBar(QMainWindow* mw)
     QAction* pickerAction = m_viewsToolBar->addWidget(picker);
     pickerAction->setObjectName(QStringLiteral("DTA.Views.ViewPicker"));
 
-    addEmptyDropDown(m_viewsToolBar, QStringLiteral("Models"), 0xe90b);
-    addEmptyDropDown(m_viewsToolBar, QStringLiteral("Categories"), 0xe901);
+    // M-O(1) R2（Viewer.ts:274-293 Models/Categories 按钮）：参考是下拉 picker
+    //（IdPicker.ts 的复选面板）；DanQing 的选择面在 dock 面板（TileTreePanel/
+    // CategoriesPanel——M-L(3)/M-N(1)），按钮语义 = 打开/收起对应面板。
+    // EQUIVALENCE: 参考源=Viewer.ts:274-283（ModelPicker 下拉）；发散=面板宿主
+    // 为 dock 而非下拉（承载同一数据面）；验证法=DtaToolsWiring 面板开关锁。
+    addPanelToggle(m_viewsToolBar, QStringLiteral("Models"), 0xe90b,
+                   QStringLiteral("Models"));
+    addPanelToggle(m_viewsToolBar, QStringLiteral("Categories"), 0xe901,
+                   QStringLiteral("Categories"));
     addEmptyDropDown(m_viewsToolBar, QStringLiteral("Saved Views"), 0xe90d);
     addEmptyDropDown(m_viewsToolBar, QStringLiteral("Camera Paths"), 0xe932);
 }
