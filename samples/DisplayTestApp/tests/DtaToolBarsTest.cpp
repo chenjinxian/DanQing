@@ -94,10 +94,17 @@ TEST(DtaToolBarsViews, ContentsMatchDtaOrderAndBlankSemantics)
     EXPECT_TRUE(acts[0]->isEnabled()) << "Debug info panel implemented";
     EXPECT_FALSE(acts[1]->isEnabled());
     EXPECT_FALSE(acts[2]->isEnabled());
-    // 下拉按钮类（Models/Categories/SavedViews/CameraPaths）：DTA DropDown 无
-    // 箭头（ToolBar.ts:99-121）——action 不带 menu，点击经 triggered 手动 popup；
-    // 菜单以命名子对象挂在工具栏下。
-    for (int i = 4; i < 8; ++i) {
+    // 下拉按钮类：M-O(1) R2 后 Models/Categories = dock 面板开关（checkable
+    // action，objectName DTA.PanelToggle.*，无菜单——选择面在 dock 面板的
+    // EQUIVALENCE 见 DtaToolBars.cpp 注）；SavedViews/CameraPaths 仍为空下拉
+    //（DTA DropDown 无箭头 ToolBar.ts:99-121——菜单以命名子对象挂工具栏下）。
+    for (int i = 4; i <= 5; ++i) {
+        EXPECT_EQ(acts[i]->menu(), nullptr) << i;
+        EXPECT_TRUE(acts[i]->isCheckable()) << i;
+        EXPECT_EQ(acts[i]->objectName(),
+                  QStringLiteral("DTA.PanelToggle.") + acts[i]->text()) << i;
+    }
+    for (int i = 6; i < 8; ++i) {
         EXPECT_EQ(acts[i]->menu(), nullptr) << i;   // 无箭头
         EXPECT_NE(tb->findChild<QMenu*>(
                       QStringLiteral("DTA.DropDown.") + acts[i]->text()),
