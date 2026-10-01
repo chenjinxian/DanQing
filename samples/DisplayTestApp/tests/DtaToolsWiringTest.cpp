@@ -51,6 +51,9 @@
 #include <dqApp/ViewManager.h>
 #include <dqApp/Viewport.h>
 #include <dqApp/ViewState.h>
+#include <dqApp/ViewTool.h>  // M-O(2) 3i——PanViewTool/RotateViewTool 事件源
+
+#include <optional>
 #include <dqCommon/GridOrientationType.h>
 
 #include <cstdio>
@@ -526,20 +529,38 @@ TEST(DtaToolsWiring, SyncFrustaAppliesPoseAcrossViews)
 }
 
 // ---------------------------------------------------------------------------
-// ToolAssistance 提示表（ViewTool.ts:628-655 的 host 半边）
+// ToolAssistance 提示链（ViewTool.ts:628-655 的 host 半边——M-O(2) 3i 事件驱动）
 // ---------------------------------------------------------------------------
 
 // Authored: no reference test (DTA ships none) — pins the prompt strings from
 // core/frontend/src/public/locales/en/CoreTools.json（tools.View.*.Prompts.
 // FirstPoint + tools.ElementSet.Inputs.{AcceptPoint,Exit}）与 ViewTool.ts:630-641
-// 的鼠标签节结构。
+// 的鼠标签节结构。M-O(2) 3i：payload 来自引擎 provideToolAssistance 实装
+//（OnToolAssistance 事件）——不再用 install-time toolId 表。
 TEST(DtaToolsWiring, ToolAssistanceHintsMatchReferencePrompts)
 {
-    auto pan = Gui::toolAssistanceHintsFor("View.Pan");
-    ASSERT_EQ(pan.size(), 3u);
-    EXPECT_EQ(pan.front().message, QStringLiteral("Define point to pan from"));
+    ensureEngineReady();
+    ViewGuardDtw guard;
+    auto* vp = guard.vp();
+    ASSERT_NE(vp, nullptr);
+
+    // 引擎事件 payload（PanViewTool.provideToolAssistance 实装面）。
+    std::optional<dqApp::ToolAssistanceInstructions> payload;
+    auto disconnect = dqApp::Application::Get().GetNotificationManager()
+                          .OnToolAssistance.AddListener(
+                              [&payload](dqApp::ToolAssistanceInstructions const& i) {
+                                  payload = i;
+                              });
+    dqApp::PanViewTool pan(vp);
+    pan.provideToolAssistance("Pan.Prompts.FirstPoint");
+    disconnect();
+    ASSERT_TRUE(payload.has_value());
+
+    auto panHints = Gui::toolAssistanceHintsFor(*payload);
+    ASSERT_EQ(panHints.size(), 3u);
+    EXPECT_EQ(panHints.front().message, QStringLiteral("Define point to pan from"));
     // 第二/三条 = 鼠标 Accept/Exit（ViewTool.ts:636-641）。
-    auto it = std::next(pan.begin());
+    auto it = std::next(panHints.begin());
     EXPECT_EQ(it->message, QStringLiteral("%1 Accept point"));
     EXPECT_EQ(it->sequences.size(), 1u);
     EXPECT_EQ(it->sequences.front().keys.front(), Gui::InputHint::UserInput::MouseLeft);
@@ -547,14 +568,21 @@ TEST(DtaToolsWiring, ToolAssistanceHintsMatchReferencePrompts)
     EXPECT_EQ(it->message, QStringLiteral("%1 Exit"));
     EXPECT_EQ(it->sequences.front().keys.front(), Gui::InputHint::UserInput::MouseRight);
 
-    auto rotate = Gui::toolAssistanceHintsFor("View.Rotate");
-    ASSERT_EQ(rotate.size(), 3u);
-    EXPECT_EQ(rotate.front().message,
+    // Rotate 主指令（同引擎面）。
+    payload.reset();
+    disconnect = dqApp::Application::Get().GetNotificationManager()
+                     .OnToolAssistance.AddListener(
+                         [&payload](dqApp::ToolAssistanceInstructions const& i) {
+                             payload = i;
+                         });
+    dqApp::RotateViewTool rotate(vp);
+    rotate.provideToolAssistance("Rotate.Prompts.FirstPoint");
+    disconnect();
+    ASSERT_TRUE(payload.has_value());
+    auto rotateHints = Gui::toolAssistanceHintsFor(*payload);
+    ASSERT_EQ(rotateHints.size(), 3u);
+    EXPECT_EQ(rotateHints.front().message,
               QStringLiteral("Identify point on element to rotate about"));
-
-    // 无提示表条目的工具（Select/一次性工具）→ 空表（装上即隐藏提示）。
-    EXPECT_TRUE(Gui::toolAssistanceHintsFor("Select").empty());
-    EXPECT_TRUE(Gui::toolAssistanceHintsFor("View.Undo").empty());
 }
 
 // M-O(1) I5：grid 设置 keyin（Grid.ts:11-94 ChangeGridSettingsTool——

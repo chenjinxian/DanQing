@@ -8,6 +8,8 @@
 
 #include <InputHint.h>
 
+#include <dqApp/ToolAssistance.h>  // M-O(2) 3i——payload→InputHints 转换签名面
+
 #include <list>
 #include <string>
 
@@ -25,16 +27,20 @@ void registerDtaTools();
 // as a remaining gap).
 void setupDtaStatusBar(MainWindow* mainWindow);
 
-// The tool-assistance hints for a tool id (empty when the tool has no prompt
-// table entry). Ported from: ViewTool.provideToolAssistance (ViewTool.ts:628-655)
-// — main instruction + mouse Accept/Exit sections. Factored out as the testable
-// half of setupToolAssistanceHints (the reference's engine-side call sites update
-// prompts mid-tool; that chain is the registered gap).
-std::list<InputHint> toolAssistanceHintsFor(std::string const& toolId);
+// The status-bar InputHints form of a ToolAssistance payload. Ported from:
+// ViewTool.provideToolAssistance 的宿主呈现半边（ViewTool.ts:630-655——
+// 主指令 + mouse 段键帽；touch 段不呈现[InputHints 是桌面键帽面]）。
+// M-O(2) 3i：入参从 install-time toolId 表（M-O(1) 过渡态）改为引擎事件
+// payload（mid-tool 跃迁随引擎调用点直达）。Factored out as the testable
+// half of setupToolAssistanceHints.
+std::list<InputHint> toolAssistanceHintsFor(
+    dqApp::ToolAssistanceInstructions const& instructions);
 
-// Wire the active view tool's tool-assistance prompts to the status-bar input
-// hints widget via ToolAdmin.OnActiveToolChanged (display half on
-// MainWindow::showHints — the InputHintWidget chain).
+// Wire the engine tool-assistance channel to the status-bar input hints widget:
+// NotificationManager.OnToolAssistance → showHints（engine provideToolAssistance
+// 实装后的动态面——install 与 mid-tool 跃迁统一）；工具切换（无 prompt 的
+// 工具不发事件）经 ToolAdmin.OnActiveToolChanged 清面。Display half on
+// MainWindow::showHints — the InputHintWidget chain.
 void setupToolAssistanceHints();
 
 // Wire the hover decoration tooltip to QToolTip (the host render half of the

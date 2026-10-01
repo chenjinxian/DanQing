@@ -22,6 +22,7 @@
 #include <cstring>
 
 #include <functional>
+#include <optional>
 #include <vector>
 
 #include <dqApp/Application.h>
@@ -148,67 +149,72 @@ void setupDtaStatusBar(MainWindow* mainWindow)
     QObject::connect(shortcut, &QShortcut::activated, keyin, &KeyinField::focusField);
 }
 
-std::list<InputHint> toolAssistanceHintsFor(std::string const& toolId)
+std::list<InputHint> toolAssistanceHintsFor(
+    dqApp::ToolAssistanceInstructions const& instructions)
 {
-    // Prompt strings = the reference en-locale values (core/frontend/src/public/
-    // locales/en/CoreTools.json — tools.View.<Tool>.Prompts.FirstPoint and
-    // tools.ElementSet.Inputs.{AcceptPoint,Exit}).
-    struct ToolHints {
-        const char* toolId;
-        const char* mainPrompt;
-    };
-    static const ToolHints kHints[] = {
-        { "View.Pan", "Define point to pan from" },
-        { "View.Rotate", "Identify point on element to rotate about" },
-        { "View.Look", "Enter point to begin looking around" },
-        { "View.Scroll", "Enter point to start scrolling" },
-        { "View.Fit", "Select view to fit" },
-        { "View.WindowArea", "Define first corner point" },
-    };
-
-    for (auto const& entry : kHints) {
-        if (entry.toolId != toolId)
-            continue;
-        // ViewTool.ts:630-641 — mouse sections: LeftClick = AcceptPoint,
-        // RightClick = Exit (the %1 placeholder renders as the keycap).
-        return {
-            InputHint{ QString::fromUtf8(entry.mainPrompt), {} },
-            InputHint{ QStringLiteral("%1 Accept point"),
-                       { InputHint::InputSequence(InputHint::UserInput::MouseLeft) } },
-            InputHint{ QStringLiteral("%1 Exit"),
-                       { InputHint::InputSequence(InputHint::UserInput::MouseRight) } },
-        };
+    // ViewTool.ts:630-655 的宿主呈现半边（M-O(2) 3i：入参 = 引擎事件
+    // payload）——主指令（无输入序列）+ mouse 段键帽（%1 占位符 = 键帽位，
+    // InputHintWidget 既有约定）；touch 段不呈现（InputHints 是桌面键帽面）。
+    std::list<InputHint> hints;
+    hints.push_back(InputHint{
+        QString::fromStdString(instructions.mainInstruction.text), {} });
+    if (instructions.sections.has_value()) {
+        for (auto const& section : *instructions.sections) {
+            for (auto const& instr : section.instructions) {
+                if (dqApp::ToolAssistanceInputMethod::Touch == instr.inputMethod)
+                    continue;
+                // 键帽面（ToolAssistanceImage → InputHint::UserInput；参考
+                // 的 WebFont 图标族中 InputHints 有对应键帽的子集）。
+                std::optional<InputHint::InputSequence> sequence;
+                switch (instr.image) {
+                    case dqApp::ToolAssistanceImage::LeftClick:
+                        sequence = InputHint::InputSequence(
+                            InputHint::UserInput::MouseLeft);
+                        break;
+                    case dqApp::ToolAssistanceImage::RightClick:
+                        sequence = InputHint::InputSequence(
+                            InputHint::UserInput::MouseRight);
+                        break;
+                    default:
+                        break;  // 无键帽对应的图标（Keyboard/拖拽族/触摸族）➖
+                }
+                if (!sequence.has_value())
+                    continue;
+                hints.push_back(InputHint{
+                    QStringLiteral("%1 ")
+                        + QString::fromStdString(instr.text),
+                    { *sequence } });
+            }
+        }
     }
-    return {};
+    return hints;
 }
 
 void setupToolAssistanceHints()
 {
-    // Ported from: ViewTool.provideToolAssistance (ViewTool.ts:628-655) — the
-    // main instruction (per-tool prompt key) + mouse Accept/Exit sections, shown
-    // through notifications.setToolAssistance. DanQing's display surface is the
-    // status-bar InputHints widget (MainWindow::showHints). The reference
-    // prompts update mid-tool (e.g. WindowArea FirstPoint → NextPoint,
-    // ViewTool.ts:3564) from the engine-side provideToolAssistance call sites;
-    // DanQing's engine stubs are registered as the remaining gap — this wiring
-    // shows the install-time (FirstPoint) prompt.
+    // Ported from: ViewTool.provideToolAssistance (ViewTool.ts:628-655) 的
+    // 消费接线（M-O(2) 3i）——引擎 provideToolAssistance 实装后经
+    // NotificationManager.setToolAssistance → OnToolAssistance 扇出；本函数
+    // 订阅并转 InputHints 显示（MainWindow::showHints）。mid-tool 跃迁
+    //（WindowArea FirstPoint→NextPoint，ViewTool.ts:3564）随引擎调用点直达；
+    // M-O(1) 3c 的 install-time 表驱动 wiring 删除（事件在
+    // onReinitialize→provideInitialToolAssistance 同样覆盖安装态）。
+    // EQUIVALENCE: 参考源=NotificationManager.ts:204（no-op 基类 + appui
+    // 消费；DTA 无 override）；发散=DanQing 以事件为宿主缝、显示面 = 状态栏
+    // InputHints；验证法=ViewToolTest ToolAssistance 引擎锁 +
+    // DtaToolsWiring 显示锁。
+    dqApp::Application::Get().GetNotificationManager().OnToolAssistance.AddListener(
+        [](dqApp::ToolAssistanceInstructions const& instructions) {
+            auto* mw = MainWindow::getInstance();
+            if (!mw)
+                return;
+            mw->showHints(toolAssistanceHintsFor(instructions));
+        });
+    // 工具切换清面：无 prompt 的工具（Select/Idle/one-shot）安装时不发事件
+    // ——切换即隐藏陈旧提示（参考 appui 的 tool-assistance 区随工具重置）。
     dqApp::Application::Get().GetToolAdmin().OnActiveToolChanged.AddListener([]() {
-        auto* mw = MainWindow::getInstance();
-        if (!mw)
-            return;
-
-        dqApp::InteractiveTool* tool
-            = dqApp::Application::Get().GetToolAdmin().activeTool();
-        if (nullptr == tool) {
+        if (auto* mw = MainWindow::getInstance())
             mw->hideHints();
-            return;
-        }
-
-        auto hints = toolAssistanceHintsFor(tool->getToolId());
-        if (!hints.empty())
-            mw->showHints(hints);
-        else
-            mw->hideHints();  // no prompt table entry (one-shot tools, Select/Idle)
     });
 }
 

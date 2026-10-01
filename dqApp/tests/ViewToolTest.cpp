@@ -15,8 +15,10 @@
 
 #include <dqApp/Application.h>
 #include <dqApp/BlankConnection.h>
+#include <dqApp/NotificationManager.h>  // M-O(2) 3i——OnToolAssistance 捕获
 #include <dqApp/StandardView.h>
 #include <dqApp/ToolAdmin.h>
+#include <dqApp/ToolAssistance.h>  // M-O(2) 3i——payload 逐字段断言
 #include <dqApp/ViewTool.h>
 #include <dqApp/Viewport.h>
 #include <dqApp/ViewState.h>
@@ -1303,6 +1305,152 @@ TEST(ConcreteViewTool, FitViewToolOnDataButtonDownFits)
     // onDataButtonDown without viewport → No.
     BeButtonEvent evNoVp;
     EXPECT_EQ(fit.onDataButtonDown(evNoVp), EventHandled::No);
+
+    delete r.vp;
+}
+
+
+// ===========================================================================
+// M-O(2) 3i — ToolAssistance mid-tool（引擎面 RED→GREEN 锁）。
+// Ported from: itwinjs-core ViewManip.provideToolAssistance (ViewTool.ts:630-655)
+//              + WindowAreaTool.provideToolAssistance (:3563-3582——
+//              _haveFirstPoint 条件分支 = mid-tool 跃迁) + FitViewTool.
+//              provideToolAssistance (:3211-3234) + NotificationManager.
+//              setToolAssistance（DanQing 事件扇出——OnToolAssistance）。
+// Authored harness: 订阅 OnToolAssistance 捕获 payload 逐字段（宿主显示面
+//           = DisplayTestApp DtaTools 的 InputHints wiring，另锁）；提示文本
+//           = 参考 en locale 实值（CoreTools.json——DanQing 无 localization
+//           系统，ViewTool::translate en 内嵌表，EQUIVALENCE 登记）。
+// ===========================================================================
+namespace {
+
+// 捕获 OnToolAssistance 的 RAII 订阅器。
+struct ToolAssistanceCapture {
+    std::vector<ToolAssistanceInstructions> captured;
+    dqBase::DqEventDisconnect disconnect;
+
+    explicit ToolAssistanceCapture(NotificationManager& nm)
+        : disconnect(nm.OnToolAssistance.AddListener(
+              [this](ToolAssistanceInstructions const& instr) {
+                  captured.push_back(instr);
+              }))
+    {
+    }
+    ~ToolAssistanceCapture() { disconnect(); }
+};
+
+// sections[i] 的第 j 条 mouse 段指令（参考 mouseInstructions push 序）。
+ToolAssistanceInstruction const* sectionInstruction(
+    ToolAssistanceInstructions const& instr, size_t sectionIdx, size_t entryIdx)
+{
+    if (!instr.sections.has_value() || instr.sections->size() <= sectionIdx)
+        return nullptr;
+    auto const& entries = (*instr.sections)[sectionIdx].instructions;
+    return entries.size() > entryIdx ? &entries[entryIdx] : nullptr;
+}
+
+}  // namespace
+
+// ViewManip 键控版（ViewTool.ts:630-655）：主指令 = translate(key)；mouse 段
+// LeftClick=Accept point / RightClick=Exit；touch 段 OneTouchDrag/TwoTouchTap
+//（inputMethod Touch）；两段 label = "Inputs"。
+TEST(ToolAssistance, ViewManipKeyedPromptBuildsMouseAndTouchSections)
+{
+    auto r = buildViewWithValidViewingSpace(Point3d::From(0, 0, 0));
+    PanViewTool pan(r.vp);
+    auto& nm = Application::Get().GetNotificationManager();
+    ToolAssistanceCapture cap(nm);
+
+    pan.provideToolAssistance("Pan.Prompts.FirstPoint");
+
+    ASSERT_EQ(1u, cap.captured.size());
+    EXPECT_EQ("Define point to pan from",
+              cap.captured[0].mainInstruction.text);
+    // 段 0 = mouse（:652 sections.push(mouse)）；:638/:640 的 Accept/Exit。
+    auto const* m0 = sectionInstruction(cap.captured[0], 0, 0);
+    ASSERT_NE(m0, nullptr);
+    EXPECT_EQ(ToolAssistanceImage::LeftClick, m0->image);
+    EXPECT_EQ("Accept point", m0->text);
+    EXPECT_EQ(ToolAssistanceInputMethod::Mouse, m0->inputMethod);
+    auto const* m1 = sectionInstruction(cap.captured[0], 0, 1);
+    ASSERT_NE(m1, nullptr);
+    EXPECT_EQ(ToolAssistanceImage::RightClick, m1->image);
+    EXPECT_EQ("Exit", m1->text);
+    // 段 label = ToolAssistance.inputsLabel（:652）。
+    EXPECT_TRUE((*cap.captured[0].sections)[0].label.has_value());
+    EXPECT_EQ("Inputs", *(*cap.captured[0].sections)[0].label);
+    // 段 1 = touch（:653）；:637/:639 的 OneTouchDrag/TwoTouchTap。
+    auto const* t0 = sectionInstruction(cap.captured[0], 1, 0);
+    ASSERT_NE(t0, nullptr);
+    EXPECT_EQ(ToolAssistanceImage::OneTouchDrag, t0->image);
+    EXPECT_EQ(ToolAssistanceInputMethod::Touch, t0->inputMethod);
+    auto const* t1 = sectionInstruction(cap.captured[0], 1, 1);
+    ASSERT_NE(t1, nullptr);
+    EXPECT_EQ(ToolAssistanceImage::TwoTouchTap, t1->image);
+    EXPECT_EQ("Exit", t1->text);
+
+    delete r.vp;
+}
+
+// WindowArea mid-tool 跃迁（:3563-3582 + :3609）：install = FirstPoint +
+// RightClick=Exit；首数据键后 = NextPoint + RightClick=Restart。
+TEST(ToolAssistance, WindowAreaPromptTransitionsMidTool)
+{
+    auto r = buildViewWithValidViewingSpace(Point3d::From(0, 0, 0));
+    WindowAreaTool tool(r.vp);
+    auto& nm = Application::Get().GetNotificationManager();
+    ToolAssistanceCapture cap(nm);
+
+    // :3544 onPostInstall → FirstPoint（_haveFirstPoint=false 分支 :3564/:3574）。
+    tool.onPostInstall();
+    ASSERT_EQ(1u, cap.captured.size());
+    EXPECT_EQ("Define first corner point",
+              cap.captured[0].mainInstruction.text);
+    auto const* exit0 = sectionInstruction(cap.captured[0], 0, 1);
+    ASSERT_NE(exit0, nullptr);
+    EXPECT_EQ("Exit", exit0->text);
+
+    // :3584-3613 首数据键：_haveFirstPoint=true → :3609 再发 → NextPoint +
+    // RightClick=Restart（:3574 条件翻转）。
+    BeButtonEvent ev;
+    ev.viewport = r.vp;
+    ev.point = Point3d::From(10.0, 10.0, 0.0);
+    ev.viewPoint = Point3d::From(50.0, 50.0, 0.0);
+    ev.button = BeButton::Data;
+    EXPECT_EQ(EventHandled::Yes, tool.onDataButtonDown(ev));
+    ASSERT_EQ(2u, cap.captured.size());
+    EXPECT_EQ("Define opposite corner point",
+              cap.captured[1].mainInstruction.text);
+    auto const* restart1 = sectionInstruction(cap.captured[1], 0, 1);
+    ASSERT_NE(restart1, nullptr);
+    EXPECT_EQ("Restart", restart1->text);
+    auto const* accept1 = sectionInstruction(cap.captured[1], 0, 0);
+    ASSERT_NE(accept1, nullptr);
+    EXPECT_EQ("Accept point", accept1->text);
+
+    delete r.vp;
+}
+
+// FitViewTool 无键版（ViewTool.ts:3211-3234）：主指令 "Select view to fit"；
+// mouse 段 LeftClick=Accept（:3223 ElementSet.Inputs.Accept 非 AcceptPoint）。
+TEST(ToolAssistance, FitViewToolPromptUsesAcceptNotAcceptPoint)
+{
+    auto r = buildViewWithValidViewingSpace(Point3d::From(0, 0, 0));
+    FitViewTool fit(r.vp, /*oneShot=*/true);
+    auto& nm = Application::Get().GetNotificationManager();
+    ToolAssistanceCapture cap(nm);
+
+    fit.provideToolAssistance();
+
+    ASSERT_EQ(1u, cap.captured.size());
+    EXPECT_EQ("Select view to fit", cap.captured[0].mainInstruction.text);
+    auto const* a0 = sectionInstruction(cap.captured[0], 0, 0);
+    ASSERT_NE(a0, nullptr);
+    EXPECT_EQ(ToolAssistanceImage::LeftClick, a0->image);
+    EXPECT_EQ("Accept", a0->text);
+    auto const* a1 = sectionInstruction(cap.captured[0], 0, 1);
+    ASSERT_NE(a1, nullptr);
+    EXPECT_EQ("Exit", a1->text);
 
     delete r.vp;
 }

@@ -55,6 +55,7 @@
 
 #include "Export.h"
 #include "Animator.h"  // Animator interface (HandleWithInertia, AnimatedHandle).
+#include "ToolAssistance.h"  // M-O(2) 3i——provideToolAssistance 签名面
 #include "ToolSettings.h"  // ToolSettings::*（原 k* 常量的全量可变移植）
 #include "Viewport.h"  // DepthPointSource（参考属 Viewport.ts 所有）
 
@@ -530,9 +531,14 @@ public:
     // 经 Viewport::pickDepthPoint 真深度回读（featureId + depthAndOrder 附件）。
     std::optional<dqGeom::Point3d> pickDepthPoint(BeButtonEvent const& ev, bool isPreview = false);
 
-    // Ported from: itwinjs-core ViewManip.provideToolAssistance (ViewTool.ts:628-655).
-    // Stub body — ToolAssistance UI is not yet ported.
-    void provideToolAssistance(std::string const& /*mainInstrKey*/) const {}
+    // Ported from: itwinjs-core ViewManip.provideToolAssistance (ViewTool.ts:630-657).
+    // M-O(2) 3i 实装（ViewTool.cpp）——主指令 + mouse/touch 双段经
+    // NotificationManager.setToolAssistance 扇出（additionalInstr 按
+    // inputMethod 分段，:642-649）。
+    void provideToolAssistance(
+        std::string const& mainInstrKey,
+        std::vector<ToolAssistanceInstruction> const& additionalInstr
+        = {}) const;
 
     // --- Static view helpers (1:1 with reference, ViewTool.ts:762-807) ---
 
@@ -1050,11 +1056,8 @@ public:
 
     // Ported from: itwinjs-core FitViewTool.provideToolAssistance (ViewTool.ts:3211-3229).
     // No-arg variant (FitViewTool does not take a prompt key — it builds its own
-    // instruction set). Step 3 stub body: ToolAssistance UI is not yet ported.
-    void provideToolAssistance() const
-    {
-        // TODO: ToolAssistance.createInstruction + setToolAssistance — Step 3 stub.
-    }
+    // instruction set). M-O(2) 3i 实装（ViewTool.cpp——Accept/Exit 面）。
+    void provideToolAssistance() const;
 };
 
 // ---------------------------------------------------------------------------
@@ -1128,9 +1131,9 @@ public:
     std::vector<dqGeom::Point3d>* computeWindowCorners() noexcept;
 
     // Ported from: itwinjs-core WindowAreaTool.provideToolAssistance (ViewTool.ts:3563-3582)。
-    // ToolAssistance UI（IModelApp.notifications.setToolAssistance）未移植 → 空 stub
-    // （同 ViewManip::provideToolAssistance / FitViewTool::provideToolAssistance 既有模式）。
-    void provideToolAssistance() const {}
+    // M-O(2) 3i 实装（ViewTool.cpp）——_haveFirstPoint 条件分支 = mid-tool
+    // 跃迁（FirstPoint→NextPoint + RightClick Exit→Restart，:3564/:3574）。
+    void provideToolAssistance() const;
 
 private:
     // Ported from: itwinjs-core WindowAreaTool.doManipulation (ViewTool.ts:3733-3815)。

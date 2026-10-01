@@ -26,6 +26,7 @@
 
 #include "dqApp/Application.h"
 #include "dqApp/DecorateContext.h"
+#include "dqApp/NotificationManager.h"  // M-O(2) 3i——setToolAssistance
 #include "dqApp/StandardView.h"
 #include "dqApp/ToolAdmin.h"
 #include "dqApp/ViewManager.h"
@@ -43,6 +44,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string_view>  // M-O(2) 3i——coreToolsTranslate 键比较
 #include <utility>
 
 namespace dqApp {
@@ -355,8 +357,108 @@ bool ViewHandleArray::hasHandle(ViewHandleType handleType) const
 // prompt key.
 std::string ViewTool::translate(std::string const& val)
 {
-    // TODO: CoreTools.translate ("View." + val) — needs the localization port.
+    // M-O(2) 3i：en 内嵌表（参考 ViewTool.ts:95 = CoreTools.translate(
+    // `View.${val}`)——CoreTools.json en locale 实值，键域 = 已移植 View 工具
+    // 的 Prompts 面；Zoom/Walk/Fly 等未移植工具的键随其落地时扩表）。
+    // EQUIVALENCE: 参考源=ViewTool.ts:95 经 IModelApp.localization（运行时
+    // locale 查找，未命中抛错）；发散=DanQing 无 localization 系统——恒 en、
+    // 未命中原样返回（保守回退）；验证法=ViewToolTest ToolAssistance 族
+    // （prompt 文本逐字段断言）。
+    struct Entry {
+        char const* key;
+        char const* text;
+    };
+    static Entry const kViewPrompts[] = {
+        {"Pan.Prompts.FirstPoint", "Define point to pan from"},
+        {"Pan.Prompts.NextPoint", "Define point to pan to"},
+        {"Rotate.Prompts.FirstPoint", "Identify point on element to rotate about"},
+        {"Rotate.Prompts.NextPoint", "Define amount of rotation"},
+        {"Look.Prompts.FirstPoint", "Enter point to begin looking around"},
+        {"Look.Prompts.NextPoint", "Define new view direction"},
+        {"Scroll.Prompts.FirstPoint", "Enter point to start scrolling"},
+        {"Scroll.Prompts.NextPoint", "Enter point to stop scrolling"},
+        {"Fit.Prompts.FirstPoint", "Select view to fit"},
+        {"WindowArea.Prompts.FirstPoint", "Define first corner point"},
+        {"WindowArea.Prompts.NextPoint", "Define opposite corner point"},
+    };
+    for (auto const& entry : kViewPrompts)
+        if (val == entry.key)
+            return entry.text;
     return val;
+}
+
+namespace {
+
+// CoreTools.translate 的消费面等价（ViewTool.ts:635-636/:3223-3224/:3568-3570
+// 的 ElementSet.Inputs.* 键——CoreTools.json en 实值）。DanQing 无 CoreTools
+// 类/localization 系统——文件内 en 表（EQUIVALENCE 同 ViewTool::translate）。
+char const* coreToolsTranslate(char const* qualifiedKey)
+{
+    struct Entry {
+        char const* key;
+        char const* text;
+    };
+    static Entry const kCoreTools[] = {
+        {"ElementSet.Inputs.AcceptPoint", "Accept point"},
+        {"ElementSet.Inputs.Accept", "Accept"},
+        {"ElementSet.Inputs.Exit", "Exit"},
+        {"ElementSet.Inputs.Restart", "Restart"},
+    };
+    for (auto const& entry : kCoreTools)
+        if (std::string_view(qualifiedKey) == entry.key)
+            return entry.text;
+    return qualifiedKey;
+}
+
+}  // namespace
+
+// Ported from: itwinjs-core ViewManip.provideToolAssistance (ViewTool.ts:630-657).
+void ViewManip::provideToolAssistance(
+    std::string const& mainInstrKey,
+    std::vector<ToolAssistanceInstruction> const& additionalInstr) const
+{
+    // :631 —— 主指令 = createInstruction(this.iconSpec, translate(key))。
+    // iconSpec 面 DanQing 未移植（InteractiveTool 无该成员）——主指令图标空
+    // （宿主 InputHints 键帽呈现不依赖它，登记）。
+    auto const mainInstruction = ToolAssistance::createInstruction(
+        std::string(), ViewTool::translate(mainInstrKey));
+
+    std::vector<ToolAssistanceInstruction> mouseInstructions;
+    std::vector<ToolAssistanceInstruction> touchInstructions;
+
+    // :635-640 —— Accept/Exit 双输入法段。
+    auto const acceptMsg = coreToolsTranslate("ElementSet.Inputs.AcceptPoint");
+    auto const rejectMsg = coreToolsTranslate("ElementSet.Inputs.Exit");
+    touchInstructions.push_back(ToolAssistance::createInstruction(
+        ToolAssistanceImage::OneTouchDrag, acceptMsg, false,
+        ToolAssistanceInputMethod::Touch));
+    mouseInstructions.push_back(ToolAssistance::createInstruction(
+        ToolAssistanceImage::LeftClick, acceptMsg, false,
+        ToolAssistanceInputMethod::Mouse));
+    touchInstructions.push_back(ToolAssistance::createInstruction(
+        ToolAssistanceImage::TwoTouchTap, rejectMsg, false,
+        ToolAssistanceInputMethod::Touch));
+    mouseInstructions.push_back(ToolAssistance::createInstruction(
+        ToolAssistanceImage::RightClick, rejectMsg, false,
+        ToolAssistanceInputMethod::Mouse));
+
+    // :642-649 —— additionalInstr 按 inputMethod 分段。
+    for (auto const& instr : additionalInstr) {
+        if (ToolAssistanceInputMethod::Touch == instr.inputMethod)
+            touchInstructions.push_back(instr);
+        else
+            mouseInstructions.push_back(instr);
+    }
+
+    // :651-655 —— mouse/touch 两 Inputs 段 + setToolAssistance。
+    std::vector<ToolAssistanceSection> sections;
+    sections.push_back(ToolAssistance::createSection(
+        std::move(mouseInstructions), ToolAssistance::inputsLabel()));
+    sections.push_back(ToolAssistance::createSection(
+        std::move(touchInstructions), ToolAssistance::inputsLabel()));
+
+    Application::Get().GetNotificationManager().setToolAssistance(
+        ToolAssistance::createInstructions(mainInstruction, std::move(sections)));
 }
 
 // Ported from: itwinjs-core ViewTool.run (ViewTool.ts:98-111).
@@ -2106,6 +2208,45 @@ void FitViewTool::onPostInstall()
         doFit(viewport, oneShot, doAnimate, isolatedOnly);
 }
 
+// Ported from: itwinjs-core FitViewTool.provideToolAssistance (ViewTool.ts:3218-3234).
+// M-O(2) 3i 实装——Accept/Exit 面（:3223 的 ElementSet.Inputs.Accept 非
+// AcceptPoint——Fit 单步确认语义）。
+void FitViewTool::provideToolAssistance() const
+{
+    // :3219 —— 主指令 = Fit.Prompts.FirstPoint（iconSpec 登记同 ViewManip 版）。
+    auto const mainInstruction = ToolAssistance::createInstruction(
+        std::string(), ViewTool::translate("Fit.Prompts.FirstPoint"));
+
+    std::vector<ToolAssistanceInstruction> mouseInstructions;
+    std::vector<ToolAssistanceInstruction> touchInstructions;
+
+    // :3223-3228。
+    auto const acceptMsg = coreToolsTranslate("ElementSet.Inputs.Accept");
+    auto const rejectMsg = coreToolsTranslate("ElementSet.Inputs.Exit");
+    touchInstructions.push_back(ToolAssistance::createInstruction(
+        ToolAssistanceImage::OneTouchTap, acceptMsg, false,
+        ToolAssistanceInputMethod::Touch));
+    mouseInstructions.push_back(ToolAssistance::createInstruction(
+        ToolAssistanceImage::LeftClick, acceptMsg, false,
+        ToolAssistanceInputMethod::Mouse));
+    touchInstructions.push_back(ToolAssistance::createInstruction(
+        ToolAssistanceImage::TwoTouchTap, rejectMsg, false,
+        ToolAssistanceInputMethod::Touch));
+    mouseInstructions.push_back(ToolAssistance::createInstruction(
+        ToolAssistanceImage::RightClick, rejectMsg, false,
+        ToolAssistanceInputMethod::Mouse));
+
+    // :3230-3234。
+    std::vector<ToolAssistanceSection> sections;
+    sections.push_back(ToolAssistance::createSection(
+        std::move(mouseInstructions), ToolAssistance::inputsLabel()));
+    sections.push_back(ToolAssistance::createSection(
+        std::move(touchInstructions), ToolAssistance::inputsLabel()));
+
+    Application::Get().GetNotificationManager().setToolAssistance(
+        ToolAssistance::createInstructions(mainInstruction, std::move(sections)));
+}
+
 // Ported from: itwinjs-core FitViewTool.doFit (ViewTool.ts:3247-3253).
 // （doFit 的 doAnimate 参数与同名类成员遮蔽——沿用本函数既有 oneShot→oneShotArg
 // 的后缀避让先例，参数实为参考同名实参。）
@@ -2335,6 +2476,50 @@ EventHandled WindowAreaTool::onDataButtonDown(BeButtonEvent const& ev)
 void WindowAreaTool::onMouseMotion(BeButtonEvent const& ev)
 {
     doManipulation(ev, true);
+}
+
+// Ported from: itwinjs-core WindowAreaTool.provideToolAssistance (ViewTool.ts:3563-3582).
+// M-O(2) 3i 实装——_haveFirstPoint 条件分支 = mid-tool 跃迁面（:3564 主指令
+// FirstPoint→NextPoint + :3574 RightClick Exit→Restart；触发点 = onPostInstall
+// :3544 / onReinitialize :3551 / onDataButtonDown 首点 :3609）。
+void WindowAreaTool::provideToolAssistance() const
+{
+    // :3564 —— _haveFirstPoint ? NextPoint : FirstPoint。
+    auto const mainInstruction = ToolAssistance::createInstruction(
+        std::string(),
+        ViewTool::translate(m_haveFirstPoint ? "WindowArea.Prompts.NextPoint"
+                                             : "WindowArea.Prompts.FirstPoint"));
+
+    std::vector<ToolAssistanceInstruction> mouseInstructions;
+    std::vector<ToolAssistanceInstruction> touchInstructions;
+
+    // :3568-3574 —— Accept + 条件 Exit/Restart。
+    auto const acceptMsg = coreToolsTranslate("ElementSet.Inputs.AcceptPoint");
+    auto const restartMsg = coreToolsTranslate("ElementSet.Inputs.Restart");
+    auto const exitMsg = coreToolsTranslate("ElementSet.Inputs.Exit");
+    touchInstructions.push_back(ToolAssistance::createInstruction(
+        ToolAssistanceImage::OneTouchTap, acceptMsg, false,
+        ToolAssistanceInputMethod::Touch));
+    mouseInstructions.push_back(ToolAssistance::createInstruction(
+        ToolAssistanceImage::LeftClick, acceptMsg, false,
+        ToolAssistanceInputMethod::Mouse));
+    touchInstructions.push_back(ToolAssistance::createInstruction(
+        ToolAssistanceImage::TwoTouchTap, exitMsg, false,
+        ToolAssistanceInputMethod::Touch));
+    mouseInstructions.push_back(ToolAssistance::createInstruction(
+        ToolAssistanceImage::RightClick,
+        m_haveFirstPoint ? restartMsg : exitMsg, false,
+        ToolAssistanceInputMethod::Mouse));
+
+    // :3576-3581。
+    std::vector<ToolAssistanceSection> sections;
+    sections.push_back(ToolAssistance::createSection(
+        std::move(mouseInstructions), ToolAssistance::inputsLabel()));
+    sections.push_back(ToolAssistance::createSection(
+        std::move(touchInstructions), ToolAssistance::inputsLabel()));
+
+    Application::Get().GetNotificationManager().setToolAssistance(
+        ToolAssistance::createInstructions(mainInstruction, std::move(sections)));
 }
 
 // Ported from: itwinjs-core WindowAreaTool.computeWindowCorners (ViewTool.ts:3639-3677)。
