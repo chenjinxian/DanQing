@@ -58,6 +58,39 @@ C++ 规范：`docs/DanQing-C++代码规范.md`（从属格式参考）
 
 ---
 
+## 15. 阶段 4 M-O 指令（2026-10-01 用户指令，新会话首个里程碑）
+
+**双向任务**：①补充实现 DTA 中**全部**功能；②删除 DTA 中没有的功能。权威工作面 =
+`docs/DTA功能对照与专业化分析-2026-09-30.md`（85 行矩阵 §2 + 清理面三档 §3——逐项带
+参考源锚与裁决）。
+
+**实现侧现状基线**（矩阵 §2 + §2.5-2.8 大件表，开工前先重读对照表核销账）：
+- 接线级 12 项 **已全清**（M-L(3) 8 + M-M(6) 两 + M-N(1) Categories + M-N(2)
+  ZoomToSelected——见 §1 各里程碑段）；剩 **移植级 9**（如 External saved views
+  序列化面/Saved camera paths/Right-dock 形态面）+ **大件 16**（§2.5-2.8：Measure
+  距离/Walk&Fly/Sectioning 剖切/Spatial Classification/Feature symbology overrides/
+  Point cloud settings/Contour display/Analysis Style/Cesium 装饰图元陈列馆/
+  Editing Tools 族/制作格式集等——逐项带引擎缺口锚）+ 🔶13 部分/存根收尾。
+- **➖9 项为架构外**（Hub 打开/OIDC 登录/Google Maps/Bing terrain/后端写入类）——
+  网络服务或后端写入依赖（§8.2 零网络：请求归宿主层），**不以引擎功能实现**；按
+  宿主缝（DI 接口/采集面）登记，与用户逐项确认处置。
+- 执行纪律不变：§0 来源铁律 + §11.8（每项先完整读参考源码再动手）+ §5 RED 锁先行 +
+  §6 五维一致性对照；大件按用户价值排序立项、逐里程碑提交。
+
+**删除侧现状基线**（对照表 §3 清理面三档）：
+- M-L(2) 已清三档 ~-7703 行（死文件/死树/死命令域/死 chrome/Model 面板→TileTreePanel
+  改造）；**§3.4 执行摘要的余量重盘点**：零风险段（Translator/NavigationStyle 死文件
+  需复核是否已清）、低风险段（Macro 域+RecentFiles+Help 菜单余量）、中风险段
+  （菜单树 FreeCAD-only 项裁剪 + "可点但无效果"命令改造或删——FitSelection→
+  ZoomToSelected 等价物、ZoomIn/Out→viewport zoom、Undo/Redo→视图 undo/redo 别名）、
+  qrc 图标裁剪。B 档（FreeCAD 壳骨架/标准视图/窗口域）与 C 档（测试基建/qss）**不动**
+  （§3.2/§3.3 裁决在案——"去 FreeCAD 功能"非"去壳"，用户 2026-09-28 指令）。
+- 删除执行纪律：每删一项同步改/删对应测试断言（WorkbenchTest/MDIChromeTest/
+  CreateStdCommandsTest/CommandTest/DockTest 依赖面在 §3.1 逐行附）；全量门禁零失败
+  为收口门；"删后仍可点但无效果"比"置灰"更糟（§3.1 裁决原则）。
+
+---
+
 ## 2. 参考实现定位
 
 DanQing 是参考实现（reference implementation），不是原创设计。所有代码、测试、接口必须严格对齐参考项目，确保行为兼容性。
