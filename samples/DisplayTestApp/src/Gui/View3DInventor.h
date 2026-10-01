@@ -132,6 +132,16 @@ public:
     // Get the IModelConnection.
     dqApp::IModelConnection* getConnection() const { return m_connection.Get(); }
 
+    // M-O(2) 3h：视口标题——参考 Viewer.title 的宿主呈现面（MDI 子窗标题）。
+    // Ported from: itwinjs-core Viewer.updateTitle (Viewer.ts:453-461)。ctor 订阅
+    // viewport OnChangeView 一处接线覆盖全部 changeView 路径（open 链/ViewPicker/
+    // clone/blank reset——参考 changeView :492-497 的 updateTitle 调用面对应物）。
+    void updateTitle();
+
+    // ← Viewer._isSavedView（Viewer.updateTitle :458 的 "Saved View" 分支；
+    // SavedView recall 时置位——I9 消费面）。
+    void setSavedView(bool saved) { m_isSavedView = saved; }
+
     // Ported from: itwinjs-core Surface.ts openBlankConnection(:183-192)——示例以
     // 自带 extents 的**新** blank connection 运行（IModelConnection.projectExtents
     // 创建后不可变；Fit/取景都读它）。换绑连接 + 重建默认视图（ctor 的
@@ -179,6 +189,8 @@ private:
     // m_gltfDecoration (the reference's iModel.onClose → dispose, :49).
     std::unique_ptr<Gui::GeometryDecorator> m_geoDecorator;
     QStackedWidget* m_stack;
+    // ← Viewer._isSavedView（M-O(2) 3h——见 setSavedView 注）。
+    bool m_isSavedView = false;
 };
 
 }  // namespace Gui

@@ -337,7 +337,16 @@ int main(int argc, char** argv)
                                      static_cast<long long>(ms), opened->treeLoadLog.size());
                              fflush(stderr);
                          }
-                         view3d->setWindowTitle(windowTitleForModel(modelId));
+                         // M-O(2) 3h：app 标题（Title.ts:9-15 setTitle——
+                         // `${prefix}${imodel.key} - Display Test App`；R/W
+                         // prefix 为编辑态面，DanQing 只读回放不适用）。
+                         // 中文名映射（M-K(2)）从 MDI 子窗标题迁主窗——子窗
+                         // 标题让位给视口标题格式（Viewer.updateTitle）。
+                         // EQUIVALENCE: 参考源=Title.ts:14（imodel.key=文件
+                         // 路径）；发散=DanQing 以 modelId 的中文显示名为 key
+                         // 形；验证法=DumpOpenChain 视口标题格式锁。
+                         mainWindow->setWindowTitle(QStringLiteral("%1 - Display Test App")
+                                                        .arg(windowTitleForModel(modelId)));
                          QString const treeSummary = QString::fromStdString(
                              std::to_string(opened->treeLoadLog.size()));
                          dta::registerOpenedDump(view3d,

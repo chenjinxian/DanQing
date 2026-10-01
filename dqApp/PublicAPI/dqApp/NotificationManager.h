@@ -6,6 +6,7 @@
 #pragma once
 
 #include "Export.h"
+#include "ToolAssistance.h"
 
 #include <dqBase/DqEvent.h>
 
@@ -197,8 +198,25 @@ public:
         }
     }
 
+    // Set the tool assistance instructions to be displayed.
+    // Ported from: itwinjs-core NotificationManager.setToolAssistance
+    //（NotificationManager.ts:204-207——参考基类是 no-op 具体方法，应用子类/
+    // appui 消费）。DanQing 事件扇出等价（M-O(2) 3i）：OnToolAssistance 的
+    // 宿主订阅（DisplayTestApp DtaTools → 状态栏 InputHints）即消费面——与
+    // OutputMessage 的 OnMessageOutput 先例同构。
+    // EQUIVALENCE: 参考源=NotificationManager.ts:204（no-op + 子类覆写）；
+    // 发散=DanQing 无应用子类分层，以事件为宿主缝；验证法=ViewToolTest
+    // ToolAssistance 族（payload 逐字段）+ DtaToolsWiring 显示面锁。
+    virtual void setToolAssistance(ToolAssistanceInstructions const& instructions)
+    {
+        OnToolAssistance.Raise(instructions);
+    }
+
     // Events
     dqBase::DqEvent<const NotifyMessageDetails&> OnMessageOutput;
+    // tool assistance 面（M-O(2) 3i——provideToolAssistance 调用点经
+    // setToolAssistance 扇出；mid-tool 跃迁如 WindowArea FirstPoint→NextPoint）。
+    dqBase::DqEvent<const ToolAssistanceInstructions&> OnToolAssistance;
     // tooltip 面（M-O(1)——宿主渲染订阅：message + 视口内 hover 点）。
     dqBase::DqEvent<const std::string&, double, double> OnToolTip;
     dqBase::DqEvent<> OnToolTipCleared;

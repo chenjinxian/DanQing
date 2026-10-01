@@ -16,6 +16,7 @@
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QRegularExpression>
 
 #include "View3DInventor.h"
 
@@ -263,6 +264,17 @@ TEST(DumpOpenChain, OpensInstances60WithReferenceIsomorphicSequence)
     pkg.tileRoots = {kDumpRoot + "/instances60-v1", kDumpRoot + "/instances60-drill-v1"};
     auto opened = dta::openDumpIModel(view, pkg);
     ASSERT_TRUE(opened.has_value()) << "open chain failed: " << pkg.imodelRoot;
+
+    // M-O(2) 3h：视口标题格式（Viewer.updateTitle Viewer.ts:453-461——
+    // `[ vpId ] viewName <id> (dim)`；openDumpIModel 尾部调用 updateTitle
+    // 等价[=参考 Viewer 构造尾 :449 的调用点]。viewName/id = saved 实值
+    // （"Default - View 1"/0x25）；vpId 为进程递增 id，格式锚 \d+ 不钉值。
+    {
+        QRegularExpression const kTitlePattern(
+            QStringLiteral(R"(^\[ \d+ \] Default - View 1 <0x25> \(3d\)$)"));
+        EXPECT_TRUE(kTitlePattern.match(view.windowTitle()).hasMatch())
+            << "viewport title: " << view.windowTitle().toStdString();
+    }
 
     // ② 树装载 = modelSelector 驱动（1 model → 1 树；treeLoadLog 实钉）。
     ASSERT_EQ(1u, opened->treeLoadLog.size());

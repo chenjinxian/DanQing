@@ -189,6 +189,24 @@ public:
     std::string const& getDescription() const { return m_description; }
     void SetDescription(std::string const& desc) { m_description = desc; }
 
+    // The Id of the view definition this state represents.
+    // ← EntityState.id（参考 ViewState extends EntityState——EntityState ctor
+    // 消费 EntityProps.id；DanQing ViewState 为独立基类，id/codeValue 就地
+    // 承载，CreateFromProps 经 props.viewDefinitionProps.id 填充，M-O(2) 3h）。
+    dqBase::DqId GetId() const noexcept { return m_id; }
+    void SetId(dqBase::DqId id) { m_id = id; }
+
+    // ← ViewDefinitionProps.code.value（参考 view.code.value——Viewer.
+    // updateTitle Viewer.ts:454 的读取面；SavedView recall 侧写入
+    // SavedViews.ts:186 `viewState.code.value = name`）。
+    std::string const& getCodeValue() const { return m_codeValue; }
+    void SetCodeValue(std::string const& value) { m_codeValue = value; }
+
+    // Ported from: itwinjs-core ViewState.is2d()（ViewState.ts:789——2D 视图
+    // 子类覆写 true）。DanQing 无 2D 视图子类——基类恒 false（2D 子类落地时
+    // 覆写）。Viewer.updateTitle Viewer.ts:459 的 dim 段读取面。
+    virtual bool is2d() const noexcept { return false; }
+
     // Load (no-op for blank connections)
     virtual void Load() {}
 
@@ -251,6 +269,10 @@ protected:
     dqCommon::CategorySelectorState m_categorySelector;
     DisplayStyle m_displayStyle;
     std::string m_description;
+    // ← EntityProps.id / ViewDefinitionProps.code.value（就地承载，见 GetId/
+    // getCodeValue 注——M-O(2) 3h）。
+    dqBase::DqId m_id;
+    std::string m_codeValue;
     std::vector<Viewport*> m_attachedViewports;  // not owned
     // ← ViewState.ts:247 — private readonly _gridDecorator（每视图一个，参考
     // 构造于 ViewState ctor :307）。

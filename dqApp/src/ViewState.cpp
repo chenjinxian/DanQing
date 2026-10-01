@@ -220,6 +220,10 @@ dqBase::RefPtr<ViewState> ViewState::Clone() const
         raw->m_categorySelector.addCategory(catId);
     }
     raw->m_description = m_description;
+    // EntityProps 面（id/code.value——M-O(2) 3h；参考 clone 经 ctor/createInstance
+    // 携带实例字段）。
+    raw->m_id = m_id;
+    raw->m_codeValue = m_codeValue;
     // m_attachedViewports intentionally empty — clone is not attached
     return dqBase::RefPtr<ViewState>(raw);
 }
@@ -267,6 +271,9 @@ dqBase::RefPtr<ViewState> ViewState3d::Clone() const
         raw->m_categorySelector.addCategory(catId);
     }
     raw->m_description = m_description;
+    // EntityProps 面（id/code.value——M-O(2) 3h）。
+    raw->m_id = m_id;
+    raw->m_codeValue = m_codeValue;
     raw->m_rotation = m_rotation;
     raw->m_camera = m_camera;
     raw->m_cameraOn = m_cameraOn;
@@ -1576,6 +1583,9 @@ void SpatialViewState::cloneSpatialInto(SpatialViewState* raw) const
         raw->m_categorySelector.addCategory(catId);
     }
     raw->m_description = m_description;
+    // EntityProps 面（id/code.value——M-O(2) 3h）。
+    raw->m_id = m_id;
+    raw->m_codeValue = m_codeValue;
     raw->m_rotation = m_rotation;
     raw->m_camera = m_camera;
     raw->m_cameraOn = m_cameraOn;
@@ -1646,6 +1656,10 @@ ViewStateProps SpatialViewState::ToProps() const
     vd.camera.focusDist = getFocusDistance();
     vd.camera.lensDegrees = GetLensAngle() * dqGeom::Angle::kRadiansToDegrees;
     vd.description = getDescription();
+    // --- EntityProps 面（id/code.value 的 round-trip 对偶——applyViewStateProps
+    //     的 EntityProps 消费段；M-O(2) 3h）---
+    vd.id = GetId();
+    vd.codeValue = getCodeValue();
 
     // --- CategorySelectorProps（toProps :329）---
     for (auto const& id : GetCategorySelector().getCategories())
@@ -1678,6 +1692,11 @@ static void applyViewStateProps(SpatialViewState& view,                         
 
     // --- ViewState ctor (:303-304) ---
     view.SetDescription(vd.description);
+    // --- EntityProps 面（参考 ViewState extends EntityState——EntityState ctor
+    //     消费 EntityProps.id/classFullName；ViewDefinitionProps.code.value 经
+    //     code 载体。DanQing 就地承载：M-O(2) 3h，Viewer.updateTitle 读取面）---
+    view.SetId(vd.id);
+    view.SetCodeValue(vd.codeValue);
     // isPrivate 无载体（ViewState 无该成员——登记，参考 :304）。
 
     // --- ViewState3d ctor (:1497-1515) ---

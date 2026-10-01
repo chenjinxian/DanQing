@@ -115,11 +115,52 @@ View3DInventor::View3DInventor(Gui::Document* pcDocument, QWidget* parent,
     //              IModelApp.viewManager.addViewport(viewer.viewport)
     dqApp::Application::Get().GetViewManager().AddViewport(m_viewport);
 
+    // M-O(2) 3h：changeView 全路径的标题刷新（参考 Viewer.changeView
+    // :492-497 调 updateTitle；DanQing 以 viewport OnChangeView 事件一处
+    // 接线覆盖 open 链/ViewPicker/clone/resetBlankConnection 全部路径）。
+    m_viewport->OnChangeView.AddListener(
+        [this](dqApp::ViewState*) { updateTitle(); });
+    updateTitle();
+
     // M-L(2)：setupToolBar 空 TODO 死桩已删（分析报告 §3.1——工具栏区由
     // DtaToolBarSet 统一重建）。
 
     // Notify that viewport is ready.
     Q_EMIT viewportCreated();
+}
+
+// ---------------------------------------------------------------------------
+// updateTitle — viewport window title.
+// Ported from: itwinjs-core Viewer.updateTitle (Viewer.ts:453-461)
+// ---------------------------------------------------------------------------
+void View3DInventor::updateTitle()
+{
+    if (!m_viewport)
+        return;
+    dqApp::ViewState* view = m_viewport->GetView();
+    if (!view)
+        return;
+
+    // :454-456 viewName = view.code.value（undefined/空 → "UNNAMED"）。
+    QString viewName = QString::fromStdString(view->getCodeValue());
+    if (viewName.isEmpty())
+        viewName = QStringLiteral("UNNAMED");
+
+    // :458 id = isSavedView ? "Saved View" : view.id（DqId::ToString =
+    // Id64String 的 "0x.." hex 形）。
+    QString const id = m_isSavedView
+        ? QStringLiteral("Saved View")
+        : QString::fromStdString(view->GetId().ToString());
+
+    // :459 dim = view.is2d() ? "2d" : "3d"（DanQing 无 2D 视图子类——恒 3d，
+    // 表达式按参考形保留）。
+    QString const dim =
+        view->is2d() ? QStringLiteral("2d") : QStringLiteral("3d");
+
+    // :460 `[ vpId ] viewName <id> (dim)`。
+    setWindowTitle(QStringLiteral("[ %1 ] %2 <%3> (%4)")
+                       .arg(m_viewport->GetViewportId())
+                       .arg(viewName, id, dim));
 }
 
 // ---------------------------------------------------------------------------

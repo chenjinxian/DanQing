@@ -322,6 +322,16 @@ TEST(DumpIModelConnectionTest, ViewsHooksLoadSavedViewWithAllFieldsApplied)
             -0.32578483505464967, 0.90208691291288379, 0.28302551616368093,
         };
         expectMatrix(r3d->getRotation(), kRevivedRot);
+        // M-O(2) 3h：viewDefinitionProps id/code.value round-trip（参考
+        // ViewState extends EntityState——id 与 code.value 由 EntityProps 面
+        // 进 ViewState ctor；DanQing ViewState 独立基类，就地承载）。saved
+        // 值实钉自 imodel.json defaultViewState（id "0x25" / code.value
+        // "Default - View 1"）。
+        EXPECT_EQ(dqBase::DqId::FromString("0x25"), revived->GetId());
+        EXPECT_EQ("Default - View 1", revived->getCodeValue());
+        // is2d 基类面（Viewer.ts:459 标题 dim 段的读取面；DanQing 无 2D
+        // 视图子类——基类恒 false，2D 子类落地时覆写）。
+        EXPECT_FALSE(revived->is2d());
         // 三 selector round-trip。
         EXPECT_EQ(1u, revived->GetModelSelector().getCount());
         EXPECT_TRUE(revived->GetModelSelector().containsModel(
