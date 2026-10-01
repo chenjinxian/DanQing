@@ -1,7 +1,7 @@
 // Ported from: Authored — no reference integration test exists in FreeCAD
 // for Command system wiring to MainWindow startup.
 // Verifies that createStdCommands + StdWorkbench::activate builds
-// the full menu bar (7 top-level menus) and toolbars from command trees.
+// the menu bar (4 top-level menus — M-L(2) 后) and toolbars from command trees.
 #include <gtest/gtest.h>
 
 #include <QMainWindow>

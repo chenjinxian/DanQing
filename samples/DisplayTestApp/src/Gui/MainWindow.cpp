@@ -34,7 +34,6 @@
 #include <QMdiSubWindow>
 #include <QMenu>
 #include <QMenuBar>
-#include <QProgressBar>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QTabBar>
@@ -159,29 +158,13 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags f)
     addStatusBarItem(d->sizeLabel, StatusBarItemSpec("UnitSystem", QString(), StatusBarSlot::Right, 1000, true, 0));
 
     // M-L(2)：Quick Measure rightSideLabel 已删（无调用方的死 chrome——分析报告 §3.1）。
-
-    // Ported from: FreeCAD src/Gui/MainWindow.cpp:493-501 — SequencerBar (progress bar)
-    auto* progressBar = new QProgressBar(statusBar());
-    progressBar->setObjectName(QStringLiteral("sequencerBar"));
-    progressBar->setMaximumWidth(200);
-    progressBar->setVisible(false);  // hidden until backend activates it
-    addStatusBarItem(progressBar, StatusBarItemSpec("progressBar", QString(), StatusBarSlot::Left, 50, true, 0));
+    // M-O(1) D3/D4（2026-10-01）：SequencerBar（sequencerBar 进度条——FreeCAD
+    // Sequencer 后端面，本仓零激活方；瓦装载进度走 DtaTools 的 TileLoadIndicator）
+    // 与 NotificationArea（空 QWidget 占位——通知走 showStatus 状态栏消息，
+    // M-L(3) ⑦ NotificationManager→showStatus）两块死 chrome 已删。
 
     // M-L(2)：toggleBottomPanelsButton 已删（TODO 死 chrome——无底部停靠面板；
     // 分析报告 §3.1）。
-
-    // Ported from: FreeCAD src/Gui/MainWindow.cpp:553-571 — NotificationArea
-    // Since no ParameterGrp Observer/GetGroup is available in the stub, default to enabled.
-    {
-        bool notifyEnabled = d->hGrp->GetBool("NotificationAreaEnabled", true);
-        if (notifyEnabled) {
-            auto* notifyWidget = new QWidget(statusBar());
-            notifyWidget->setObjectName(QStringLiteral("notificationArea"));
-            notifyWidget->setStyleSheet(QStringLiteral("text-align: center"));
-            notifyWidget->setWindowTitle(tr("Notifications"));
-            addStatusBarItem(notifyWidget, StatusBarItemSpec("Notifications", QString(), StatusBarSlot::Right, 800, true, 0));
-        }
-    }
 
     // Ported from: FreeCAD src/Gui/MainWindow.cpp:576-584 — context menu for status bar
     statusBar()->setContextMenuPolicy(Qt::CustomContextMenu);
