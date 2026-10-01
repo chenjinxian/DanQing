@@ -61,6 +61,18 @@ public:
         bool isPrivate = false;
     };
 
+    // placements.json 条目（M-N(2)——getPlacements 的 ECSQL 行原样：
+    // IModelConnection.ts:1293-1300 的 SELECT 列）。世界域 = origin +
+    // YPR×[bboxLow, bboxHigh]（Placement3d 语义——ZoomToSelectedElements
+    // 消费面 Viewport.ts:2301-2310）。
+    struct PlacementInfo {
+        dqBase::DqId elementId;      // ← ECInstanceId（与特征表 elementId 同键）
+        double origin[3] = {0, 0, 0};
+        double bboxLow[3] = {0, 0, 0};
+        double bboxHigh[3] = {0, 0, 0};
+        double angles[3] = {0, 0, 0};  // Yaw/Pitch/Roll（度）
+    };
+
     ~DumpIModelConnection() override = default;
 
     // 打开 <imodelJsonPath>（imodel.json 全路径）。缺失/坏 JSON/必需段缺失
@@ -83,6 +95,17 @@ public:
         return m_defaultViewState;
     }
 
+    // 元素 placement 表（M-N(2）——imodel.json 同目录 placements.json 存在时
+    // 随 open 装载；缺席 = 空表（该数据面未采集——zoom-to-selected 无源，
+    // 工具报"placement 面未采集"）。参考 IModelConnection.Elements
+    // .getPlacements 的离线回放。
+    std::vector<PlacementInfo> const& getPlacements() const noexcept
+    {
+        return m_placements;
+    }
+    // elementId → placement 查找（zoomToElements 的 ids→placements 步）。
+    PlacementInfo const* findPlacement(dqBase::DqId elementId) const noexcept;
+
 private:
     DumpIModelConnection() = default;
 
@@ -91,6 +114,7 @@ private:
     dqBase::DqId m_defaultViewId;
     std::optional<ViewStateProps> m_defaultViewState;
     std::vector<ModelInfo> m_models;
+    std::vector<PlacementInfo> m_placements;  // M-N(2)：placements.json（可缺席）
 };
 
 END_DQ_APP_NAMESPACE

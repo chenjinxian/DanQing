@@ -524,9 +524,60 @@ dqBase::RefPtr<DumpIModelConnection> DumpIModelConnection::open(
         out->GetViews().SetRpcHooks(std::move(hooks));
     }
 
+    // --- M-N(2)：placements.json（imodel.json 同目录，可缺席）---
+    // getPlacements 的 ECSQL 行回放（ZoomToSelectedElements 数据源）。
+    {
+        std::string placementsPath = imodelJsonPath;
+        auto const slash = placementsPath.find_last_of("/\\");
+        std::string const base =
+            slash == std::string::npos ? std::string() : placementsPath.substr(0, slash + 1);
+        bool plOk = false;
+        auto const plBytes = readFileBytesLocal(base + "placements.json", &plOk);
+        if (plOk) {
+            auto plDoc = dumpjson::parseJsonDocument(
+                std::string(plBytes.begin(), plBytes.end()));
+            if (plDoc) {
+                auto const* arr = plDoc->find("placements");
+                if (arr && arr->type == dumpjson::JsonValue::Type::Array) {
+                    for (auto const& row : arr->arr) {
+                        PlacementInfo info;
+                        auto const* id = row.find("id");
+                        auto const* org = row.find("origin");
+                        auto const* low = row.find("bboxLow");
+                        auto const* high = row.find("bboxHigh");
+                        auto const* ang = row.find("angles");
+                        if (!id || !org || !low || !high || !ang)
+                            continue;
+                        info.elementId = dqBase::DqId::FromString(id->str);
+                        for (int i = 0; i < 3 && i < static_cast<int>(org->arr.size()); ++i)
+                            info.origin[i] = org->arr[i].number;
+                        for (int i = 0; i < 3 && i < static_cast<int>(low->arr.size()); ++i)
+                            info.bboxLow[i] = low->arr[i].number;
+                        for (int i = 0; i < 3 && i < static_cast<int>(high->arr.size()); ++i)
+                            info.bboxHigh[i] = high->arr[i].number;
+                        for (int i = 0; i < 3 && i < static_cast<int>(ang->arr.size()); ++i)
+                            info.angles[i] = ang->arr[i].number;
+                        out->m_placements.push_back(std::move(info));
+                    }
+                }
+            }
+        }
+    }
+
     // ← IModelConnection.onOpen.raiseEvent(connection)（:796/:845/:863 同款）。
     OnOpen.Raise(out.Get());
     return out;
+}
+
+// elementId → placement 查找（zoomToElements 的 ids→placements 步——
+// 线性扫描即可：表量级 = 元素数，zoomToElements 每次 O(n·m) 参考同量级）。
+DumpIModelConnection::PlacementInfo const* DumpIModelConnection::findPlacement(
+    dqBase::DqId elementId) const noexcept
+{
+    for (auto const& p : m_placements)
+        if (p.elementId == elementId)
+            return &p;
+    return nullptr;
 }
 
 END_DQ_APP_NAMESPACE

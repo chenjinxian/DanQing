@@ -46,6 +46,8 @@ add_executable(DisplayTestApp WIN32
     src/Gui/SnapModeTool.h
     src/Gui/CategoriesPanel.cpp     # Categories 面板（M-N(1)——category 可见性引擎通道的 UI）
     src/Gui/CategoriesPanel.h
+    src/Gui/ZoomToSelectedTool.cpp  # ZoomToSelectedElements（M-N(2)——placement 回放取景）
+    src/Gui/ZoomToSelectedTool.h
     src/Gui/SyncViewportsTool.cpp   # SyncViewports/SyncFrusta（M-L(3)——ViewportSync 接线清偿）
     src/Gui/SyncViewportsTool.h
     src/Gui/ViewSettingsPanel.cpp   # DTA View Settings 弹出面板（Task 4）
@@ -253,6 +255,7 @@ if(TARGET gtest_main AND TARGET dqApp)
         tests/JoesHouseHoverTest.cpp    # JoesHouse hover 高亮像素锁（M-J Task 2——注册在 JoesHouseEdgeTest 之后：同因 fetcher 替换不回溢）
         tests/DtaToolsWiringTest.cpp    # M-L(3) 接线级回归：Keyin 字段/诊断三小件/视口同步/ToolAssistance 提示表
         src/Gui/SnapModeTool.cpp        # M-M(6)：SetActiveSnapMode（snap 锁被测面）
+        src/Gui/ZoomToSelectedTool.cpp  # M-N(2)：ZoomToSelectedElements（zoom 锁被测面）
         tests/ModelsPanelWiringTest.cpp # M-L(3) Models 演示版机制锁：provider 逐模型可见性 → 场景 → 像素（注册在 JoesHouseHoverTest 之后：同因 fetcher 替换不回溢）
         src/Gui/View3DInventor.cpp       # 测试构造真实 View3DInventor（真视口）
         src/DumpOpenHelper.cpp           # 打开链装配（M-H Task 3——DumpOpenChain 锁的被测面）

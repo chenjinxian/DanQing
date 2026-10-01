@@ -23,6 +23,7 @@
 #include "SaveImageTool.h"
 #include "SnapModeTool.h"
 #include "SyncViewportsTool.h"
+#include "ZoomToSelectedTool.h"
 #include "TileLoadIndicator.h"
 
 namespace Gui {
@@ -49,6 +50,10 @@ void registerDtaTools()
     registry.Register("SetActiveSnapMode",
                       []() -> dqApp::InteractiveTool* { return new SetActiveSnapModeTool(); },
                       "dta snapmode");
+    // M-N(2)：ZoomToSelectedElements（Viewer.ts:49-89——keyin "dta zoom selected"）。
+    registry.Register("ZoomToSelectedElements",
+                      []() -> dqApp::InteractiveTool* { return new ZoomToSelectedElementsTool(); },
+                      "dta zoom selected");
 }
 
 void setupDtaStatusBar(MainWindow* mainWindow)

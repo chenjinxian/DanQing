@@ -32,9 +32,11 @@
 #include "Gui/MainWindow.h"
 #include "Gui/SaveImageTool.h"
 #include "Gui/SnapModeTool.h"
+#include "Gui/ZoomToSelectedTool.h"
 #include "Gui/SyncViewportsTool.h"
 #include "Gui/TileLoadIndicator.h"
 #include "Gui/View3DInventor.h"
+#include "DumpOpenHelper.h"
 #include "InputHint.h"
 
 #include <dqApp/Application.h>
@@ -369,6 +371,65 @@ TEST(DtaToolsWiring, SyncViewportsAllConnectsAndFollows)
     // B 保持断开前的姿态（不随 A 的 1³ 盒 fit 变化）。
     EXPECT_DOUBLE_EQ(viewB->GetOrigin().x, bOriginXBefore);
     EXPECT_DOUBLE_EQ(viewB->GetExtents().x, bExtentsXBefore);
+}
+
+// Authored: no reference test (DTA ships none — 参考的 zoomToElements 依赖
+// RPC getPlacements；M-N(2) 的离线对应物 = placements.json 回放表)——锁
+// ZoomToSelectedElements 的三段：①placement 装载（instances60-placements-v1
+// 62 行）②世界域计算（选中元素 → Placement 语义八角展开）③取景
+// （LookAtVolume 后视域塌缩到元素盒量级）。资产钉值：0x38 球
+// origin(-2.270,1.915,0) bbox ±0.531 angles(0,0,90)——世界域 ≈
+// origin ± 0.531（Y90 旋转下 xy 对调不变并集）。
+TEST(DtaToolsWiring, ZoomToSelectedFramesSelectedElement)
+{
+    ensureAppStubReady();
+    ensureEngineReady();
+    ViewGuardDtw guard(900, 640);
+
+    dta::DumpOpenPackage pkg;
+    std::string const dumpRoot = std::string(DANQING_TILE_ASSETS_DIR) + "/rpc-dumps";
+    pkg.imodelRoot = dumpRoot + "/instances60-placements-v1";
+    pkg.tileRoots = {dumpRoot + "/instances60-placements-v1"};
+    auto opened = dta::openDumpIModel(*guard.view, pkg);
+    ASSERT_TRUE(opened.has_value()) << "open failed: " << pkg.imodelRoot;
+
+    // ① placement 装载（placements.json 随 open——62 行）。
+    auto* conn = opened->connection.Get();
+    ASSERT_NE(conn, nullptr);
+    ASSERT_EQ(conn->getPlacements().size(), 62u)
+        << "placements.json not loaded alongside imodel.json";
+    auto const* p38 = conn->findPlacement(dqBase::DqId::FromString("0x38"));
+    ASSERT_NE(p38, nullptr);
+    EXPECT_NEAR(p38->origin[0], -2.270142702156284, 1e-9);
+    EXPECT_NEAR(p38->bboxHigh[0], 0.5309601873536304, 1e-9);
+    EXPECT_NEAR(p38->angles[2], 90.0, 1e-9);
+
+    // ② 世界域计算（zoomToPlacements 的 placements→volume 步——静态直驱）。
+    auto volume = Gui::ZoomToSelectedElementsTool::computeSelectedVolume(
+        *conn, {0x38u});
+    ASSERT_TRUE(volume.has_value());
+    // Y90 旋转下球盒对称——世界域 = origin ± 0.531（八角并集对对称盒
+    // 旋转不变）。LookAtVolume 的 x1.04 膨胀不在此步（volume 是纯盒）。
+    EXPECT_NEAR(volume->low.x, -2.270142702156284 - 0.5309601873536304, 1e-6);
+    EXPECT_NEAR(volume->high.x, -2.270142702156284 + 0.5309601873536304, 1e-6);
+    EXPECT_NEAR(volume->low.y, 1.9146355987602088 - 0.5309601873536304, 1e-6);
+    EXPECT_NEAR(volume->high.y, 1.9146355987602088 + 0.5309601873536304, 1e-6);
+    // z：origin.z=0，盒 ±0.531（Y90 不触 z）。
+    EXPECT_NEAR(volume->high.z, 0.5309601873536304, 1e-6);
+
+    // 多元素并集（两个球——域为两盒并集，跨度 > 单盒）。
+    auto volume2 = Gui::ZoomToSelectedElementsTool::computeSelectedVolume(
+        *conn, {0x38u, 0x39u});
+    ASSERT_TRUE(volume2.has_value());
+    double const span1 = volume->high.x - volume->low.x;
+    double const span2 = volume2->high.x - volume2->low.x;
+    EXPECT_GT(span2, span1);
+
+    // 空选集 → 空域（Viewer.ts:43-45 的 0 < elems.size 门）。
+    auto empty = Gui::ZoomToSelectedElementsTool::computeSelectedVolume(*conn, {});
+    EXPECT_FALSE(empty.has_value());
+
+    guard.view->close();
 }
 
 // Authored: no reference test (DTA ships none) — pins SyncViewportFrustaTool 的
