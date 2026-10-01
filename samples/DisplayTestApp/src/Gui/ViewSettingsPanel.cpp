@@ -3,15 +3,22 @@
 #include "ViewSettingsPanel.h"
 
 #include <QCheckBox>
+#include <QColor>
+#include <QColorDialog>
 #include <QComboBox>
+#include <QHBoxLayout>
 #include <QLabel>
+#include <QPushButton>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
+#include <QWidget>
 
 #include <dqApp/Application.h>
+#include <dqApp/DisplayStyle.h>
 #include <dqApp/ViewManager.h>
 #include <dqApp/Viewport.h>
 #include <dqApp/ViewState.h>
+#include <dqCommon/DisplayStyleSettings.h>
 #include <dqCommon/ViewFlags.h>
 
 namespace Gui {
@@ -20,6 +27,24 @@ namespace {
 dqApp::Viewport* activeViewport()
 {
     return dqApp::Application::Get().GetViewManager().GetActiveViewport();
+}
+
+// tbgr(0xTTBBGGRR) ↔ QColor 互转（DisplayStyle 的 monochromeColor 载体是
+// ColorDef.tbgr——DisplayStyle.h:87）。
+uint32_t QColorToTbgr(QColor const& c)
+{
+    return (static_cast<uint32_t>(c.alpha()) << 24)
+         | (static_cast<uint32_t>(c.blue()) << 16)
+         | (static_cast<uint32_t>(c.green()) << 8)
+         | static_cast<uint32_t>(c.red());
+}
+
+QColor TbgrToQColor(uint32_t tbgr)
+{
+    return QColor(static_cast<int>(tbgr & 0xFF),
+                  static_cast<int>((tbgr >> 8) & 0xFF),
+                  static_cast<int>((tbgr >> 16) & 0xFF),
+                  static_cast<int>((tbgr >> 24) & 0xFF));
 }
 
 // DTA renderMode 下拉（ViewAttributes.ts addRenderMode :425-428）。dqCommon::RenderMode
@@ -129,12 +154,50 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
     });
     layout->addWidget(cam);
 
-    // Monochrome（ViewAttributes.ts addMonochrome:386-419——monochrome viewFlag 位）。
-    // TODO: Monochrome color input + "Scaled" checkbox not ported — see ViewAttributes.ts:386-419 (addMonochrome).
+    // Monochrome（ViewAttributes.ts addMonochrome:386-419——monochrome viewFlag 位
+    // + Color 输入 + "Scaled" 复选；M-O(1) I1 补齐后两个子项，行可见性随
+    // viewFlags.monochrome——参考 _updates push :410-418）。
+    m_monochromeRow = new QWidget(this);
+    m_monochromeRow->setObjectName(QStringLiteral("MonochromeRow"));
+    auto* monoLayout = new QHBoxLayout(m_monochromeRow);
+    monoLayout->setContentsMargins(0, 0, 0, 0);
+    auto* colorLabel = new QLabel(QStringLiteral("Color"), m_monochromeRow);
+    m_monochromeColorButton = new QPushButton(m_monochromeRow);
+    m_monochromeColorButton->setObjectName(QStringLiteral("MonochromeColor"));
+    m_monochromeColorButton->setFixedWidth(40);
+    connect(m_monochromeColorButton, &QPushButton::clicked, this, [this]() {
+        // createColorInput 的取色对话框等价物（frontend-devtools 组件——
+        // 浏览器 <input type=color>；Qt 对应物 QColorDialog::getColor）。
+        auto* vp = activeViewport();
+        uint32_t const initialTbgr
+            = (vp && vp->GetView()) ? vp->GetView()->GetDisplayStyle().getMonochromeColor() : 0xFF000000;
+        QColor const picked = QColorDialog::getColor(TbgrToQColor(initialTbgr), this, tr("Monochrome Color"));
+        if (picked.isValid())
+            applyMonochromeColor(picked);
+    });
+    m_scaledCheckbox = new QCheckBox(QStringLiteral("Scaled"), m_monochromeRow);
+    m_scaledCheckbox->setObjectName(QStringLiteral("MonochromeScaled"));
+    connect(m_scaledCheckbox, &QCheckBox::toggled, this, [](bool on) {
+        // ViewAttributes.ts:400-402 — monochromeMode = Scaled : Flat。
+        auto* vp = activeViewport();
+        if (!vp || !vp->GetView()) return;
+        vp->GetView()->GetDisplayStyle().setMonochromeMode(
+            on ? dqCommon::MonochromeMode::Scaled : dqCommon::MonochromeMode::Flat);
+        vp->SetupFromView();
+    });
+    monoLayout->addWidget(colorLabel);
+    monoLayout->addWidget(m_monochromeColorButton);
+    monoLayout->addWidget(m_scaledCheckbox);
+    monoLayout->addStretch(1);
+    layout->addWidget(m_monochromeRow);
+    m_monochromeRow->setVisible(false);   // 默认关（syncFromViewport 按位回显）
+
     auto* mono = new QCheckBox(QStringLiteral("Monochrome"), this);
     mono->setObjectName(QStringLiteral("Monochrome"));
     connect(mono, &QCheckBox::toggled, this, [this](bool on) {
         applyFlags([on](dqCommon::ViewFlagsProperties& p) { p.monochrome = on; });
+        // 子行可见性随位（ViewAttributes.ts:410-418 updates push）。
+        m_monochromeRow->setVisible(on);
     });
     layout->addWidget(mono);
 
@@ -180,6 +243,18 @@ void ViewSettingsPanel::applyFlags(std::function<void(dqCommon::ViewFlagsPropert
     vp->SetupFromView();
 }
 
+void ViewSettingsPanel::applyMonochromeColor(QColor const& color)
+{
+    // ViewAttributes.ts:393-396 — `settings.monochromeColor = ColorDef.create(
+    // color); this.sync()`（sync → 视口失效重绘；DanQing 对应 SetupFromView）。
+    auto* vp = activeViewport();
+    if (!vp || !vp->GetView()) return;
+    vp->GetView()->GetDisplayStyle().setMonochromeColor(QColorToTbgr(color));
+    m_monochromeColorButton->setStyleSheet(QStringLiteral("background-color: %1; border: 1px solid #808080;")
+                                              .arg(color.name()));
+    vp->SetupFromView();
+}
+
 void ViewSettingsPanel::syncFromViewport()
 {
     auto* vp = activeViewport();
@@ -211,7 +286,20 @@ void ViewSettingsPanel::syncFromViewport()
         else if (name == "Clip Volume") cb->setChecked(props.clipVolume);
         else if (name == "Force Surface Discard") cb->setChecked(props.forceSurfaceDiscard);
         else if (name == "White-on-white Reversal") cb->setChecked(props.whiteOnWhiteReversal);
-        else if (name == "Monochrome") cb->setChecked(props.monochrome);
+        else if (name == "Monochrome") {
+            cb->setChecked(props.monochrome);
+            // 子行可见性/色样/Scaled 回显（ViewAttributes.ts:410-418 updates push）。
+            m_monochromeRow->setVisible(props.monochrome);
+            QColor const mono = TbgrToQColor(vp->GetView()->GetDisplayStyle().getMonochromeColor());
+            m_monochromeColorButton->setStyleSheet(
+                QStringLiteral("background-color: %1; border: 1px solid #808080;").arg(mono.name()));
+            // Scaled 回显须自带 blocker（循环只挡当前迭代 cb——写 m_scaledCheckbox
+            // 时它在后续迭代才被挡，此处直写会触发其 toggled 写回 displayStyle）。
+            QSignalBlocker const scaledBlocker(m_scaledCheckbox);
+            m_scaledCheckbox->setChecked(
+                dqCommon::MonochromeMode::Scaled == vp->GetView()->GetDisplayStyle().getMonochromeMode());
+            continue;
+        }
         else if (name == "Visible Edges") cb->setChecked(props.visibleEdges);
         else if (name == "Hidden Edges") cb->setChecked(props.hiddenEdges);
     }

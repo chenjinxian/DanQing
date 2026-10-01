@@ -11,12 +11,14 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QLabel>
+#include <QWidget>
 #include "ViewSettingsPanel.h"
 #include <dqApp/Application.h>
 #include <dqApp/BlankConnection.h>
 #include <dqApp/ViewManager.h>
 #include <dqApp/ViewPicker.h>
 #include <dqApp/Viewport.h>
+#include <dqCommon/DisplayStyleSettings.h>
 
 namespace { struct QtEnv { QtEnv() { if (!qApp) { static int argc=1; static char n[]="t"; static char* av[]={n,nullptr}; new QApplication(argc,av);} } }; }
 static QtEnv s_qt;
@@ -184,4 +186,54 @@ TEST(ViewSettingsPanel, EdgeDisplaySwitchesWriteViewFlags)
     panel3.syncFromViewport();
     EXPECT_TRUE(findBox(panel3, "Visible Edges")->isChecked());
     EXPECT_FALSE(findBox(panel3, "Hidden Edges")->isChecked());
+}
+
+// M-O(1) I1：Monochrome Color/Scaled 子项（ViewAttributes.ts:386-419 addMonochrome
+// ——Color 输入写 settings.monochromeColor、"Scaled" 复选写 settings.monochromeMode
+// [Scaled:Flat]、子行可见性随 viewFlags.monochrome 的 _updates push :410-418）。
+// Authored: no reference test exists in display-test-app for the ViewAttributes
+//           panel (test app ships no tests); scenario transcribes the reference
+//           handlers verbatim（色对话框本身模态，写通道经 applyMonochromeColor
+//           可测槽直锁）。
+TEST(ViewSettingsPanel, MonochromeColorAndScaledWriteDisplayStyle)
+{
+    VpGuard g;
+    Gui::ViewSettingsPanel panel;
+    panel.syncFromViewport();
+
+    auto* mono = findBox(panel, "Monochrome");
+    auto* row = panel.findChild<QWidget*>(QStringLiteral("MonochromeRow"));
+    auto* scaled = panel.findChild<QCheckBox*>(QStringLiteral("MonochromeScaled"));
+    ASSERT_NE(mono, nullptr);
+    ASSERT_NE(row, nullptr);
+    ASSERT_NE(scaled, nullptr);
+
+    // blank 默认位关 → 子行隐藏（:415-416 else 分支 display:none）。
+    EXPECT_FALSE(g.vp->GetView()->GetDisplayStyle().getViewFlags().monochrome());
+    EXPECT_FALSE(row->isVisibleTo(&panel));
+
+    // 位开 → flag 写 + 子行显示。
+    mono->setChecked(true);
+    EXPECT_TRUE(g.vp->GetView()->GetDisplayStyle().getViewFlags().monochrome());
+    EXPECT_TRUE(row->isVisibleTo(&panel));
+
+    // Scaled 复选（:400-402——monochromeMode = enabled ? Scaled : Flat）。
+    EXPECT_FALSE(scaled->isChecked());   // DisplayStyleSettings 默认 Flat（:154）
+    scaled->setChecked(true);
+    EXPECT_EQ(g.vp->GetView()->GetDisplayStyle().getMonochromeMode(),
+              dqCommon::MonochromeMode::Scaled);
+    scaled->setChecked(false);
+    EXPECT_EQ(g.vp->GetView()->GetDisplayStyle().getMonochromeMode(),
+              dqCommon::MonochromeMode::Flat);
+
+    // Color 写通道（:393-396——settings.monochromeColor = ColorDef.create(color)）。
+    panel.applyMonochromeColor(QColor(255, 0, 0));
+    EXPECT_EQ(g.vp->GetView()->GetDisplayStyle().getMonochromeColor(), 0xFF0000FFu);
+
+    // 回读：新面板从视口恢复（swatch/位/Scaled——:410-418 updates push）。
+    Gui::ViewSettingsPanel panel2;
+    panel2.syncFromViewport();
+    EXPECT_TRUE(findBox(panel2, "Monochrome")->isChecked());
+    EXPECT_TRUE(panel2.findChild<QCheckBox*>(QStringLiteral("MonochromeScaled"))
+                    ->isVisibleTo(&panel2));
 }

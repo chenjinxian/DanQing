@@ -371,6 +371,10 @@ int main(int argc, char** argv)
     Gui::registerDtaTools();
     Gui::setupDtaStatusBar(mainWindow);
     Gui::setupToolAssistanceHints();
+    // M-O(1) I3：hover 装饰 tooltip 的宿主渲染半边（DTA Notifications.ts:106-125
+    // HTML div 的 QToolTip 等价物——引擎半边 = Viewport hover locate →
+    // NotificationManager.OpenToolTip）。
+    Gui::setupDecorationToolTip();
 
     // Models/瓦树停靠面板（M-L(2) 裁决档：原 FreeCAD ComboView 的
     // TreePanel+PropertyView 无文档后端恒空，改造为已打开 iModel 的

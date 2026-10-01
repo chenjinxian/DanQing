@@ -160,6 +160,11 @@ void OpenGLRenderTarget::changeRenderPlan(RenderPlan const& plan)
     // (This was the "cube-not-lit" lighting gap of the 2026-07-25 blank-connection
     //  parity work; fixed here by forwarding the full render plan.)
     m_impl->getUniforms().updateRenderPlan(plan);
+
+    // Monochrome mode (M-O(1))：参考 Target 持整个 plan（Monochrome.ts:48 的
+    // u_mixMonoColor graphic uniform 读 target.plan.monochromeMode）；DanQing
+    // 的 changeRenderPlan 是分解式签名——monochromeMode 单独随 plan 转发。
+    m_impl->setMonochromeMode(plan.monochromeMode);
 }
 
 void OpenGLRenderTarget::setLightSettings(float const* sunDir, float sunIntensity,

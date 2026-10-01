@@ -1681,6 +1681,23 @@ void Viewport::RenderFrame()
             accuSnap.activateCrossAt(*this, m_hoverCssX, m_hoverCssY);
         else
             accuSnap.clearCross();
+        // hover tooltip（M-O(1) I3——参考链 AccuSnap.displayToolTip →
+        // showLocateMessage → vp.openToolTip(msg, viewPt)（AccuSnap.ts:407-409）；
+        // 装饰 tooltip 面 = hit 的 GetDecorationToolTip（ViewManager），未命中/
+        // 无 tooltip 即清除（AccuSnap.erase → clearToolTip :385）。isToolTip
+        // Supported 门 = AccuSnap.ts:415（宿主装配时置 true）。
+        auto& notifications = Application::Get().GetNotificationManager();
+        if (hit != 0 && notifications.IsToolTipSupported()) {
+            QString const tip = Application::Get().GetViewManager().GetDecorationToolTip(hit);
+            if (!tip.isEmpty())
+                notifications.OpenToolTip(tip.toStdString(),
+                                          static_cast<double>(m_hoverCssX),
+                                          static_cast<double>(m_hoverCssY));
+            else
+                notifications.ClearToolTip();
+        } else {
+            notifications.ClearToolTip();
+        }
     }
     if (processFlash()) {
         isRedrawNeeded = true;
@@ -2008,7 +2025,7 @@ void Viewport::ValidateRenderPlan()
 
         newPlan.analysisFraction = style.getAnalysisFraction();
         newPlan.timePoint = style.getTimePoint();
-        newPlan.monochromeMode = style.getViewFlags().monochrome();
+        newPlan.monochromeMode = style.getMonochromeMode();
         newPlan.monochromeColor = style.getMonochromeColor();
         newPlan.whiteOnWhiteReversal = style.getWhiteOnWhiteReversal();
 

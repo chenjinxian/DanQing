@@ -136,6 +136,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/ViewManagerTest.cpp
         tests/StandardViewTest.cpp
         tests/GridSettingsTest.cpp
+        tests/MonochromeSettingsTest.cpp
         tests/LookAtTest.cpp
         tests/WheelZoomCoalesceTest.cpp
         tests/PerfDegradationTest.cpp  # 缩放后 resize 累积劣化插桩（TEMP-DIAG）

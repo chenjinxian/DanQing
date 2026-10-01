@@ -55,9 +55,13 @@ inline constexpr char const* kApplySurfaceMonochromeColor = R"(
 // ---------------------------------------------------------------------------
 
 /// add the u_monoRgb uniform. Ported from: itwinjs-core Monochrome.ts addMonoRgb()
+/// (:39-44 — program uniform: `params.target.uniforms.style.bindMonochromeRgb`).
+/// M-O(1)：nullptr 占位归位为真实绑定（binder 实现在 ShaderBindings.cpp 的
+/// wireMonoRgb——StyleUniforms 随 TargetUniforms.updateRenderPlan 承载
+/// plan.monochromeColor；此前 u_monoRgb 无喂数方，位即使置起 monoColor 也恒 0）。
 inline void addMonoRgb(ProgramBuilder& builder)
 {
-    builder.getFragmentBuilder().addUniform("u_monoRgb", VariableType::Vec3, nullptr);
+    wireMonoRgb(builder.getFragmentBuilder());
 }
 
 /// Wire unlit monochrome (ApplyMonochrome component).

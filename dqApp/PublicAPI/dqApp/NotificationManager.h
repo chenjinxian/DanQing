@@ -161,19 +161,51 @@ public:
     virtual bool EndActivityMessage(ActivityMessageEndReason reason) { (void)reason; return true; }
 
     // Whether tooltips are supported.
-    virtual bool IsToolTipSupported() const noexcept { return false; }
+    // Ported from: itwinjs-core NotificationManager.isToolTipSupported
+    //（:246-248——base false，应用子类覆写 true[DTA Notifications.ts:94]）。
+    // DanQing 无应用子类分层——宿主装配时 SetToolTipSupported(true)（M-O(1)：
+    // DtaTools 的 QToolTip 订阅即覆写等价物）。
+    virtual bool IsToolTipSupported() const noexcept { return m_toolTipSupported; }
+    void SetToolTipSupported(bool supported) noexcept { m_toolTipSupported = supported; }
 
     // Whether tooltip is currently open.
-    virtual bool IsToolTipOpen() const noexcept { return false; }
+    // Ported from: itwinjs-core NotificationManager.isToolTipOpen
+    //（DTA Notifications.ts:95-97——`undefined !== this._tooltipDiv`）。
+    virtual bool IsToolTipOpen() const noexcept { return m_toolTipOpen; }
 
-    // Show a tooltip.
-    virtual void OpenToolTip(const std::string& message) { (void)message; }
+    // Show a tooltip at a view point.
+    // Ported from: itwinjs-core NotificationManager.showToolTip (NotificationManager
+    // .ts:249-256——`_showToolTip(htmlElement, message, location)`；location 是
+    // 视口内 hover 点，DTA 子类按 (x+15, y-20) 偏移定位 div :116-117)。
+    // M-O(1) 前为 ported-but-uncalled 空面（§11.10）——现由 Viewport 的 hover
+    // locate 链驱动（AccuSnap.displayToolTip → vp.openToolTip 的等价点），
+    // base 记录开态并扇出 OnToolTip（宿主订阅渲染——参考 div 创建语义）。
+    virtual void OpenToolTip(const std::string& message, double viewX = 0.0, double viewY = 0.0)
+    {
+        m_toolTipOpen = true;
+        OnToolTip.Raise(message, viewX, viewY);
+    }
 
     // Clear the tooltip.
-    virtual void ClearToolTip() {}
+    // Ported from: itwinjs-core NotificationManager.clearToolTip（DTA :99-104
+    // ——div remove）。
+    virtual void ClearToolTip()
+    {
+        if (m_toolTipOpen) {
+            m_toolTipOpen = false;
+            OnToolTipCleared.Raise();
+        }
+    }
 
     // Events
     dqBase::DqEvent<const NotifyMessageDetails&> OnMessageOutput;
+    // tooltip 面（M-O(1)——宿主渲染订阅：message + 视口内 hover 点）。
+    dqBase::DqEvent<const std::string&, double, double> OnToolTip;
+    dqBase::DqEvent<> OnToolTipCleared;
+
+private:
+    bool m_toolTipSupported = false;
+    bool m_toolTipOpen = false;
 };
 
 }  // namespace dqApp

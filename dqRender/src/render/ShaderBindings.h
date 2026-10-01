@@ -45,6 +45,10 @@ void wireViewport(ShaderBuilder& shader);
 /// Ported from: itwinjs-core Viewport.ts addViewportTransformation() line 15-19
 void wireViewportTransformation(ShaderBuilder& shader);
 
+/// Wire u_monoRgb (monochrome color — program uniform fed by StyleUniforms).
+/// Ported from: itwinjs-core Monochrome.ts addMonoRgb() (:39-44)
+void wireMonoRgb(ShaderBuilder& frag);
+
 /// Wire u_mixMonoColor (monochrome mix factor).
 /// Ported from: itwinjs-core Monochrome.ts addSurfaceMonochromeColor()
 void wireMonochromeMix(ShaderBuilder& frag);

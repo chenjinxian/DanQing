@@ -9,6 +9,7 @@
 
 #include "Export.h"
 
+#include <dqCommon/DisplayStyleSettings.h>
 #include <dqCommon/FeatureOverrides.h>
 #include <dqCommon/Frustum.h>
 #include <dqCommon/HiddenLine.h>
@@ -55,7 +56,11 @@ struct DQ_RENDER_EXPORT RenderPlan {
     double timePoint = 0.0;
 
     // Monochrome
-    bool monochromeMode = false;
+    // Ported from: itwinjs-core RenderPlan.ts:52 (`monochromeMode: MonochromeMode`)
+    // — default Scaled (:83), sourced from the display style settings (:114).
+    // M-O(1)：bool（=viewFlags.monochrome 的误置）归位为参考枚举——
+    // u_mixMonoColor 的 graphic uniform 语义（Monochrome.ts:48）据此判 Scaled。
+    dqCommon::MonochromeMode monochromeMode = dqCommon::MonochromeMode::Scaled;
     uint32_t monochromeColor = 0xFF000000;
 
     // White-on-white reversal

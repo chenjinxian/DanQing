@@ -93,26 +93,31 @@ void wireViewportTransformation(ShaderBuilder& shader)
     });
 }
 
-// u_mixMonoColor — monochrome mix factor (1.0 = desaturate, 0.0 = passthrough).
-// Ported from: itwinjs-core Monochrome.ts addSurfaceMonochromeColor()
-// Reference: params.target.uniforms.style... (no direct bind method in reference;
-// the value is computed from the style's monochrome settings).
-// DanQing: the style's monochrome color is already bound via bindMonochromeRgb;
-// u_mixMonoColor is a float flag. For now, bind it to the style's monochrome
-// state (1.0 when monochrome is active, 0.0 otherwise).
-void wireMonochromeMix(ShaderBuilder& frag)
+// u_monoRgb — the monochrome color (program uniform).
+// Ported from: itwinjs-core Monochrome.ts addMonoRgb() (:39-44 —
+// `params.target.uniforms.style.bindMonochromeRgb(uniform)`). M-O(1)：此前
+// addMonoRgb 以 nullptr 注册且无人喂数（位置起后 monoColor 也恒 0）——归位
+// 为参考绑定（StyleUniforms.m_monoColor 随 TargetUniforms.updateRenderPlan
+// 从 plan.monochromeColor 更新）。
+void wireMonoRgb(ShaderBuilder& frag)
 {
-    frag.addUniform("u_mixMonoColor", VariableType::Float, [](ShaderProgram& prog) {
-        prog.addProgramUniform("u_mixMonoColor", [](UniformHandle& u, ShaderProgramParams const& p) {
-            if (auto* t = p.getTarget()) {
-                // The reference reads this from the style's monochrome state.
-                // For now, upload 1.0 (the legacy upload path handles the actual value).
-                // TODO: wire to StyleUniforms when the monochrome state is tracked.
-                (void)t;
-            }
-            u.setUniform1f(0.0f);  // default: no monochrome mix
+    frag.addUniform("u_monoRgb", VariableType::Vec3, [](ShaderProgram& prog) {
+        prog.addProgramUniform("u_monoRgb", [](UniformHandle& u, ShaderProgramParams const& p) {
+            if (auto* t = p.getTarget())
+                t->getUniforms().style.bindMonochromeRgb(u);
         });
     });
+}
+
+// u_mixMonoColor — monochrome mix factor (1.0 = desaturate, 0.0 = passthrough).
+// Ported from: itwinjs-core Monochrome.ts addSurfaceMonochrome (:46-50 — a
+// GRAPHIC uniform: `Scaled === target.plan.monochromeMode && geometry.
+// wantMixMonochromeColor(target) ? 1.0 : 0.0`). M-O(1)：自造常量 0.0 上传
+// 归位为参考逐 draw 语义——值由 surface 分派点经 params.setFloat 上传
+// （u_shaderFlags 同款 params 通道），此处只注册 uniform。
+void wireMonochromeMix(ShaderBuilder& frag)
+{
+    frag.addUniform("u_mixMonoColor", VariableType::Float, nullptr);
 }
 
 // ==========================================================================

@@ -131,6 +131,20 @@ public:
     /// Check if this surface is lit.
     bool isLit() const noexcept { return getSurfaceType() != SurfaceType::Unknown; }
 
+    // Ported from: itwinjs-core SurfaceGeometry.wantMixMonochromeColor
+    // (SurfaceGeometry.ts:169-172 — `!this.isGlyph && (this.isLitSurface ||
+    // this.wantTextures(target, this.hasTexture))`). u_mixMonoColor 的
+    // per-draw 判定（Monochrome.ts:48——Scaled 模式下 lit/纹理面按亮度混
+    // 单色，unlit 纯色面整体替换）。EQUIVALENCE: DanQing 无 glyph 表面
+    // 几何（文本字形未移植），isGlyph 恒 false；wantTextures(target, has)
+    // 的 target 纹理能力门以句柄存在性表达（与 :2212 分派点同判据）。
+    // 发散=未发现（当前资产面无 glyph 面）；验证法=TileTreeRender 单色
+    // 像素锁（MonochromeFlatReplacesContentColor）。
+    bool wantMixMonochromeColor(TargetImpl const& /*target*/) const override
+    {
+        return isLit() || getTexture() != rhi::TextureHandle{};
+    }
+
     // --- Surface material（M-M(1)）---
     // Ported from: itwinjs-core SurfaceGeometry.ts:312
     // (`get materialInfo() { return this.mesh.materialInfo }` ← MeshData.ts:86

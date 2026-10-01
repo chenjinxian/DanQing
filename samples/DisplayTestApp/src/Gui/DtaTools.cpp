@@ -6,12 +6,21 @@
 // ViewTool.ts:628-655 (see setupToolAssistanceHints).
 #include "DtaTools.h"
 
+#include <QComboBox>
+#include <QHBoxLayout>
 #include <QKeySequence>
 #include <QLabel>
 #include <QObject>
+#include <QPoint>
 #include <QShortcut>
+#include <QToolTip>
+#include <QWidget>
+
+#include <QCursor>
 
 #include <cstring>
+
+#include <vector>
 
 #include <dqApp/Application.h>
 #include <dqApp/ToolAdmin.h>
@@ -78,6 +87,50 @@ void setupDtaStatusBar(MainWindow* mainWindow)
     auto* tiles = new TileLoadIndicator;
     mainWindow->addStatusBarItem(
         tiles, StatusBarItemSpec("TileLoadIndicator", QString(), StatusBarSlot::Left, -3, true, 0));
+
+    // Ported from: Surface.ts:53 addSnapModes(document.getElementById(
+    // "snapModesContainer")) + SnapModes.ts:30-50 — the snap-mode combo box
+    // ("Snap Mode: " label + 8 entries; Multi-snap = the 7-mode array of
+    // SnapModes.ts:10-18).
+    {
+        auto* snapBox = new QWidget(mainWindow);
+        auto* snapLayout = new QHBoxLayout(snapBox);
+        snapLayout->setContentsMargins(0, 0, 0, 0);
+        snapLayout->addWidget(new QLabel(QObject::tr("Snap Mode: "), snapBox));
+        auto* combo = new QComboBox(snapBox);
+        combo->setObjectName(QStringLiteral("snapModes"));
+        // SnapModes.ts:38-46 entries（userData = SnapMode 位值；Multi-snap = -1）。
+        combo->addItem(QStringLiteral("Keypoint"), static_cast<int>(dqApp::SnapMode::NearestKeypoint));
+        combo->addItem(QStringLiteral("Nearest"), static_cast<int>(dqApp::SnapMode::Nearest));
+        combo->addItem(QStringLiteral("Center"), static_cast<int>(dqApp::SnapMode::Center));
+        combo->addItem(QStringLiteral("Origin"), static_cast<int>(dqApp::SnapMode::Origin));
+        combo->addItem(QStringLiteral("Intersection"), static_cast<int>(dqApp::SnapMode::Intersection));
+        combo->addItem(QStringLiteral("Perpendicular Point"), static_cast<int>(dqApp::SnapMode::PerpendicularPoint));
+        combo->addItem(QStringLiteral("Tangent Point"), static_cast<int>(dqApp::SnapMode::TangentPoint));
+        constexpr int kMultiSnapMode = -1;  // SnapModes.ts:20
+        combo->addItem(QStringLiteral("Multi-snap"), kMultiSnapMode);
+        snapLayout->addWidget(combo);
+        // SnapModes.ts:10-18 multiSnapModes（逐项序）。
+        std::vector<dqApp::SnapMode> const kMultiSnapModes{
+            dqApp::SnapMode::NearestKeypoint, dqApp::SnapMode::Nearest,
+            dqApp::SnapMode::Intersection,    dqApp::SnapMode::MidPoint,
+            dqApp::SnapMode::Origin,          dqApp::SnapMode::Center,
+            dqApp::SnapMode::Bisector,
+        };
+        // SnapModes.ts:22-28 changeSnapModes.
+        QObject::connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), mainWindow,
+                         [combo, kMultiSnapModes](int index) {
+                             int const value = combo->itemData(index).toInt();
+                             if (kMultiSnapMode != value)
+                                 dqApp::Application::Get().GetAccuSnap().setActiveSnapMode(
+                                     static_cast<dqApp::SnapMode>(value));
+                             else
+                                 dqApp::Application::Get().GetAccuSnap().setActiveSnapModes(kMultiSnapModes);
+                         });
+        snapBox->setWindowTitle(QObject::tr("Snap Mode"));
+        mainWindow->addStatusBarItem(
+            snapBox, StatusBarItemSpec("SnapModes", QString(), StatusBarSlot::Left, -2, true, 0));
+    }
 
     // Ported from: Surface.ts:229-291 keyboard shortcuts — "`" focuses the key-in
     // field (the field itself handles Escape/` as lose-focus).
@@ -149,6 +202,23 @@ void setupToolAssistanceHints()
         else
             mw->hideHints();  // no prompt table entry (one-shot tools, Select/Idle)
     });
+}
+
+void setupDecorationToolTip()
+{
+    // M-O(1) I3：hover 装饰 tooltip 宿主半边。参考链 = AccuSnap.displayToolTip
+    // → vp.openToolTip → IModelApp.notifications.showToolTip → DTA
+    // Notifications.ts:106-125 _showToolTip（div 定位于 hover 点 (x+15, y-20)）。
+    // 引擎半边在 Viewport hover locate（renderFrame Step 13）；本函数订阅
+    // OnToolTip → QToolTip（+15/-20 偏移对齐参考）。EQUIVALENCE: 参考锚定
+    // 视口内坐标（div absolute 于 canvas），Qt 宿主以光标全局位定位——hover
+    // 点即光标位，视觉等价；验证法=DtaToolsWiring 引擎事件锁（消息+坐标）。
+    auto& notifications = dqApp::Application::Get().GetNotificationManager();
+    notifications.SetToolTipSupported(true);   // DTA isToolTipSupported 覆写等价物
+    notifications.OnToolTip.AddListener([](std::string const& message, double, double) {
+        QToolTip::showText(QCursor::pos() + QPoint(15, -20), QString::fromStdString(message));
+    });
+    notifications.OnToolTipCleared.AddListener([]() { QToolTip::hideText(); });
 }
 
 }  // namespace Gui

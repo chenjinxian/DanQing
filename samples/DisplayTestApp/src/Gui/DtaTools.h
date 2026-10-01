@@ -37,4 +37,9 @@ std::list<InputHint> toolAssistanceHintsFor(std::string const& toolId);
 // MainWindow::showHints — the InputHintWidget chain).
 void setupToolAssistanceHints();
 
+// Wire the hover decoration tooltip to QToolTip (the host render half of the
+// engine's NotificationManager tooltip face — DTA Notifications.ts:106-125
+// _showToolTip 的 HTML-div 等价物；offset (+15,-20) 对齐参考 div 定位)。
+void setupDecorationToolTip();
+
 }  // namespace Gui

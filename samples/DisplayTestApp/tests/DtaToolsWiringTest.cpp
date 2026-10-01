@@ -15,6 +15,7 @@
 //             - ToolAssistance 提示表（ViewTool.ts:628-655 + CoreTools.json 字符串）。
 #include <gtest/gtest.h>
 #include <QApplication>
+#include <QComboBox>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QImage>
@@ -236,6 +237,64 @@ TEST(DtaToolsWiring, SnapModeKeyinSetsAccuSnapActiveMode)
     EXPECT_TRUE(capture.hasPrefix("[SNAP] unknown snap mode 'Bogus'"));
 
     (void)before;
+}
+
+// Authored: no reference test (DTA ships none — UI 下拉在浏览器侧无离线断言) —
+// M-O(1) I2 接线锁：状态栏 Snap Mode 下拉（SnapModes.ts:30-50 addSnapModes 的
+// 宿主对应物）——8 项参考名序 + 默认 Keypoint + 单模式选择经 setActiveSnapMode、
+// Multi-snap 经 setActiveSnapModes(7 模式数组)（SnapModes.ts:10-28）。
+TEST(DtaToolsWiring, SnapModesComboBoxSwitchesAccuSnapActiveModes)
+{
+    ensureAppStubReady();
+    ensureEngineReady();
+    ViewGuardDtw guard;
+
+    Gui::MainWindow mw;
+    Gui::setupDtaStatusBar(&mw);
+    mw.show();
+    qApp->processEvents();
+
+    auto* combo = mw.statusBar()->findChild<QComboBox*>(QStringLiteral("snapModes"));
+    ASSERT_NE(combo, nullptr) << "snapModes combo not mounted in status bar";
+
+    // 8 项参考名序（SnapModes.ts:38-46 entries 逐项）。
+    ASSERT_EQ(combo->count(), 8);
+    EXPECT_EQ(combo->itemText(0).toStdString(), "Keypoint");
+    EXPECT_EQ(combo->itemText(1).toStdString(), "Nearest");
+    EXPECT_EQ(combo->itemText(2).toStdString(), "Center");
+    EXPECT_EQ(combo->itemText(3).toStdString(), "Origin");
+    EXPECT_EQ(combo->itemText(4).toStdString(), "Intersection");
+    EXPECT_EQ(combo->itemText(5).toStdString(), "Perpendicular Point");
+    EXPECT_EQ(combo->itemText(6).toStdString(), "Tangent Point");
+    EXPECT_EQ(combo->itemText(7).toStdString(), "Multi-snap");
+
+    auto activeModes = []() -> std::vector<int> {
+        int n = 0;
+        auto const* p = dqApp::Application::Get().GetAccuSnap().getActiveSnapModes(n);
+        std::vector<int> out;
+        for (int i = 0; i < n; ++i)
+            out.push_back(static_cast<int>(p[i]));
+        return out;
+    };
+
+    // 默认值 = NearestKeypoint（SnapModes.ts:35 value）。
+    EXPECT_EQ(combo->currentIndex(), 0);
+    EXPECT_EQ(activeModes(), std::vector<int>({2}));
+
+    // 单模式：Center（位 8）→ 活跃数组恰 [Center]。
+    combo->setCurrentIndex(2);
+    qApp->processEvents();
+    EXPECT_EQ(activeModes(), std::vector<int>({8}));
+
+    // Multi-snap（值 -1）→ 7 模式数组（SnapModes.ts:10-18 逐项序）。
+    combo->setCurrentIndex(7);
+    qApp->processEvents();
+    EXPECT_EQ(activeModes(), std::vector<int>({2, 1, 64, 4, 16, 8, 32}));
+
+    // 回 Keypoint → 恢复单模式。
+    combo->setCurrentIndex(0);
+    qApp->processEvents();
+    EXPECT_EQ(activeModes(), std::vector<int>({2}));
 }
 
 // Authored: no reference test (DTA ships none) — pins KeyinField 的 ToolNotFound

@@ -26,6 +26,7 @@
 #include <dqApp/StandardView.h>
 #include <dqApp/ViewTool.h>
 #include <dqApp/ViewState.h>
+#include <dqCommon/DisplayStyleSettings.h>
 #include <dqRender/tile/RealityTileTree.h>
 #include <dqApp/tile/SimpleTileTreeReference.h>
 #include <dqApp/tile/TiledGraphicsProvider.h>
@@ -915,6 +916,94 @@ TEST(TileTreeRender, ImdlTilesetRendersRecordedFixture)
     printf("[TILE-IMDL] bbox=(%u,%u)-(%u,%u) green=%ld@%.0f\n",
            minX, minY, maxX, maxY, gn, gCx);
     ASSERT_GT(gn, 30) << "green rectangle (imdl fixture fillColor 65280) not rendered";
+
+    view.close();
+    spin3(200);
+}
+
+// ---------------------------------------------------------------------------
+// M-O(1) I1：monochrome 渲染像素锁（ViewAttributes.ts addMonochrome 的渲染面）。
+// 通道链：viewFlags.monochrome 位 + settings.monochromeColor/monochromeMode →
+// RenderPlan（RenderPlan.ts:114 monochromeMode 从 settings）→ StyleUniforms
+// (u_monoRgb) + Common.ts:57 位 0（currentViewFlags.monochrome &&
+// geometry.wantMonochrome）→ Monochrome.ts applySurfaceMonochromeColor 的
+// u_mixMonoColor=0（Flat）分支 = vec4(u_monoRgb, a)——内容色整体替换。
+// 修复前状态：kShaderBit_Monochrome 恒 0（u_shaderFlags 位 0 从不置位）+
+// u_monoRgb 无喂数方——monochrome 位打开内容仍全绿（red 计数 0）。
+//
+// Authored: no reference test exists in display-test-app for monochrome
+//           rendering (§5(g) 像素级回归；§11.11 位置断言用既有录制件
+//           minimal-imdl 的绿色矩形——Flat+红 后绿系清零/红系占满内容)。
+// ---------------------------------------------------------------------------
+TEST(TileTreeRender, MonochromeFlatReplacesContentColor)
+{
+    std::string const tilesetPath = DANQING_TILE_ASSETS_DIR "/minimal-imdl/tileset.json";
+
+    auto& app = dqApp::Application::Get();
+    if (!app.isInitialized()) {
+        dqApp::Application::Options opts;
+        opts.applicationId = "TileTreeRender";
+        opts.applicationVersion = "1.0";
+        ASSERT_TRUE(app.Startup(opts));
+    }
+
+    std::unique_ptr<dqRender::RealityTileTree> tree;
+
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    view.resize(1000, 700);
+    view.show();
+    spin3(400);
+
+    {
+        std::ifstream in(tilesetPath, std::ios::binary);
+        ASSERT_TRUE(in.good()) << "cannot open " << tilesetPath;
+        std::vector<uint8_t> jsonBytes((std::istreambuf_iterator<char>(in)),
+                                        std::istreambuf_iterator<char>());
+        tree = dqRender::RealityTileTree::loadTileset(tilesetPath, jsonBytes.data(), jsonBytes.size());
+    }
+    ASSERT_NE(tree, nullptr);
+    view.getUeViewport()->AddTileTree(tree.get());
+
+    {
+        auto* view3d = view.getUeViewport()->GetView()->AsViewState3d();
+        ASSERT_NE(view3d, nullptr);
+        view3d->LookAtVolume(dqGeom::Range3d::CreateXYZXYZ(-3, -5.5, -1.2, 3, 5.5, 1.2));
+        view.getUeViewport()->InvalidateController();
+    }
+    {
+        auto& style = view.getUeViewport()->GetView()->GetDisplayStyle();
+        auto p = style.getViewFlags().Properties();
+        p.grid = false;
+        p.acsTriad = false;
+        p.monochrome = true;   // addMonochrome 的 viewFlag 位
+        style.setViewFlags(dqCommon::ViewFlags(p));
+        // ViewAttributes.ts:393-396（Color=红）+ :400-402（Scaled 不勾=Flat）。
+        style.setMonochromeColor(0xFF0000FFu);   // tbgr 红
+        style.setMonochromeMode(dqCommon::MonochromeMode::Flat);
+    }
+    view.getUeViewport()->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+    {
+        auto* tool = new dqApp::StandardViewTool(view.getUeViewport(), dqApp::StandardViewId::Iso);
+        if (!tool->run())
+            delete tool;
+    }
+    spin3(1500);
+    view.getUeViewport()->RenderFrame();
+
+    std::vector<uint8_t> frame;
+    uint32_t w = 0, h = 0;
+    ASSERT_TRUE(view.getUeViewport()->ReadFrameForTest(frame, w, h));
+    uint32_t minX, maxX, minY, maxY;
+    ASSERT_TRUE(contentBBox(frame, w, h, minX, maxX, minY, maxY))
+        << "monochrome frame rendered nothing";
+    double rCx = 0, gCx2 = 0;
+    long const rn = colorCentroid(frame, w, minX, maxX, minY, maxY, 0, rCx);
+    long const gn2 = colorCentroid(frame, w, minX, maxX, minY, maxY, 1, gCx2);
+    printf("[TILE-MONO] bbox=(%u,%u)-(%u,%u) red=%ld@%.0f green=%ld@%.0f\n",
+           minX, minY, maxX, maxY, rn, rCx, gn2, gCx2);
+    // Flat+红：内容整体替换为红——红系大量存在、绿系清零（imdl fixture 原色绿）。
+    ASSERT_GT(rn, 30) << "monochrome Flat did not replace content color with red";
+    ASSERT_EQ(gn2, 0) << "green content survived monochrome Flat replacement";
 
     view.close();
     spin3(200);

@@ -44,6 +44,7 @@ public:
     dqBase::DqEvent<> OnEnvironmentChanged;
     dqBase::DqEvent<> OnLightSettingsChanged;
     dqBase::DqEvent<> OnMonochromeColorChanged;
+    dqBase::DqEvent<> OnMonochromeModeChanged;
     dqBase::DqEvent<> OnWhiteOnWhiteReversalChanged;
     dqBase::DqEvent<> OnAnalysisFractionChanged;
     dqBase::DqEvent<> OnTimePointChanged;
@@ -88,6 +89,17 @@ public:
     void setMonochromeColor(uint32_t tbgr) {
         m_settings.setMonochromeColor(dqCommon::ColorDef::fromTbgr(tbgr));
         OnMonochromeColorChanged.Raise();
+    }
+
+    // ── Monochrome mode (Flat / Scaled) ────────────────────────
+    // ← itwinjs-core DisplayStyleSettings.monochromeMode（DisplayStyleSettings.ts
+    //   的 MonochromeMode 枚举——Flat=色替换、Scaled=按亮度缩放到单色系）。
+    //   RenderPlan.ts:114 从 settings 读入 plan；M-O(1) I1 随 Color/Scaled
+    //   UI 子项接通（ViewAttributes.ts:400-402）。
+    dqCommon::MonochromeMode getMonochromeMode() const noexcept { return m_settings.getMonochromeMode(); }
+    void setMonochromeMode(dqCommon::MonochromeMode mode) {
+        m_settings.setMonochromeMode(mode);
+        OnMonochromeModeChanged.Raise();
     }
 
     // ── Environment (sky / ground plane) ────────────────────────

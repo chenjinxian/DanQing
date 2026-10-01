@@ -1606,18 +1606,32 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                             dqCommon::ColorDef const surfColor = surfGeom->getColor();
                             // u_shaderFlags 每 draw 全数组上传（setShaderFlags——
                             // glsl/Common.ts:53-73：先清零再按几何置位）。
-                            // kShaderBit_NonUniformColor=1 ⇔ 几何色非均匀
-                            //（色表形态，ColorInfo.createNonUniform）。uniform
-                            // 是 per-program 状态：同一量化 Surface 变体被均匀/
-                            // 非均匀几何共享，漏传清零数组会把上一 draw 的位
-                            // 泄漏给后续均匀色几何（参考每 draw 重传全数组的
-                            // 语义即为此）。
-                            // Ported from: itwinjs-core glsl/Common.ts:59-73
+                            // kShaderBit_Monochrome=0 ⇔ currentViewFlags.monochrome
+                            // 且几何 wantMonochrome（Common.ts:57）；bit1 = 非均匀
+                            // 色表（Common.ts:66-70）。uniform 是 per-program 状态：
+                            // 同一量化 Surface 变体被均匀/非均匀几何共享，漏传清零
+                            // 数组会把上一 draw 的位泄漏给后续几何（参考每 draw
+                            // 重传全数组的语义即为此）。
+                            // Ported from: itwinjs-core glsl/Common.ts:56-73
                             //              + ShaderProgram.ts:27 ShaderFlags.NonUniformColor = 1<<1。
                             int surfShaderFlags[5] = {0, 0, 0, 0, 0};
+                            if (m_target.getCurrentViewFlags().monochrome
+                                && surfGeom->wantMonochrome(m_target))
+                                surfShaderFlags[0] = 1;
                             if (surfGeom->isNonUniformColor())
                                 surfShaderFlags[1] = 1;
                             params.setIntArray("u_shaderFlags", surfShaderFlags, 5);
+                            // u_mixMonoColor（Monochrome.ts:46-50 graphic uniform）：
+                            // Scaled 模式且几何按亮度混色时置 1.0——per-draw 经
+                            // params 上传（与 u_shaderFlags 同通道；M-O(1) 前为
+                            // 自造常量 0.0，Scaled 永不生效）。
+                            params.setFloat(
+                                "u_mixMonoColor",
+                                (dqCommon::MonochromeMode::Scaled
+                                     == m_target.getMonochromeMode()
+                                 && surfGeom->wantMixMonochromeColor(m_target))
+                                    ? 1.0f
+                                    : 0.0f);
                             // u_color 仅均匀色时绑定（glsl/Color.ts:56——
                             // `if (color.isUniform) color.uniform.bind(uniform)`
                             // ；非均匀时位选 lutColor，u_color 值不消费）。

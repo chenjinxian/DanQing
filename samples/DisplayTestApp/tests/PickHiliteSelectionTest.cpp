@@ -30,6 +30,7 @@
 #include <dqApp/Application.h>
 #include <dqApp/GltfDecoration.h>
 #include <dqApp/IModelConnection.h>
+#include <dqApp/NotificationManager.h>
 #include <dqApp/ToolAdmin.h>
 #include <dqApp/Viewport.h>
 #include <dqApp/ViewManager.h>
@@ -468,4 +469,65 @@ TEST(PickHiliteSelection, HoverMotionFlashesDecoration)
            faceAfter.r, faceAfter.g, faceAfter.b, restoreDelta, s.vp->GetFlashedId());
     EXPECT_EQ(s.vp->GetFlashedId(), 0u) << "移开后 flash 未清除";
     EXPECT_LE(restoreDelta, 10) << "移开后面心未还原";
+}
+
+// M-O(1) I3：hover 装饰 tooltip 引擎链锁（参考链 AccuSnap.displayToolTip →
+// vp.openToolTip → notifications.showToolTip[DTA Notifications.ts:106-125]；
+// DanQing 等价 = mouseMoveEvent 记录 hover 点 → renderFrame Step 13 locate →
+// NotificationManager.OpenToolTip（消息 + 视口内坐标），未命中 → ClearToolTip）。
+// 修复前 OpenToolTip 为 ported-but-uncalled 空面（无调用方、无事件）——
+// hover 装饰后无 OnToolTip 事件（RED）。
+//
+// Authored: no reference test exists in display-test-app for the hover tooltip
+//           (test app ships no tests); scenario transcribes AccuSnap.ts:407-409
+//           showLocateMessage + DTA div 定位语义（坐标传至宿主渲染半边）。
+TEST(PickHiliteSelection, HoverMotionRaisesDecorationToolTip)
+{
+    PickScene s;
+    ASSERT_TRUE(s.setup());
+
+    auto& notifications = dqApp::Application::Get().GetNotificationManager();
+    struct Capture {
+        std::string message;
+        double x = -1, y = -1;
+        int shown = 0, cleared = 0;
+    } cap;
+    dqBase::DqEventScope scope;
+    scope.add(notifications.OnToolTip.AddListener(
+        [&cap](std::string const& message, double x, double y) {
+            cap.message = message; cap.x = x; cap.y = y; ++cap.shown;
+        }));
+    scope.add(notifications.OnToolTipCleared.AddListener([&cap]() { ++cap.cleared; }));
+
+    // 门 = 宿主装配面（setupDecorationToolTip 的 SetToolTipSupported(true)）。
+    notifications.SetToolTipSupported(true);
+    notifications.ClearToolTip();   // 基线：无开态
+
+    // hover 装饰面心 → tooltip 事件（消息 = GltfDecoration 名 = 文件名）。
+    QPoint const center(s.cssX(s.cx), s.cssY(s.cy));
+    QMouseEvent move(QEvent::MouseMove, center, s.vp->mapToGlobal(center),
+                     Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(s.vp, &move);
+    spinPHS(120);
+    s.vp->RenderFrame();
+
+    EXPECT_EQ(cap.shown, 1) << "hover 装饰未触发 OnToolTip（tooltip 链断）";
+    EXPECT_EQ(cap.message, "BoxTextured.gltf");
+    EXPECT_NEAR(cap.x, s.cssX(s.cx), 1.0);
+    EXPECT_NEAR(cap.y, s.cssY(s.cy), 1.0);
+    EXPECT_TRUE(notifications.IsToolTipOpen());
+
+    // 移到背景 → 清除。
+    QPoint const corner(s.cssX(s.bgx), s.cssY(s.bgy));
+    QMouseEvent moveAway(QEvent::MouseMove, corner, s.vp->mapToGlobal(corner),
+                         Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(s.vp, &moveAway);
+    spinPHS(120);
+    s.vp->RenderFrame();
+
+    EXPECT_GE(cap.cleared, 1) << "移开背景未清除 tooltip";
+    EXPECT_FALSE(notifications.IsToolTipOpen());
+
+    // 复原全局门（其余测试默认无 tooltip 宿主）。
+    notifications.SetToolTipSupported(false);
 }

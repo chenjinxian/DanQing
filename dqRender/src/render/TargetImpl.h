@@ -23,6 +23,7 @@
 #include "dqRender/rhi/Handle.h"
 
 #include <dqCommon/ContourDisplay.h>
+#include <dqCommon/DisplayStyleSettings.h>
 
 #include <dqRender/CanvasDecoration.h>
 
@@ -194,6 +195,15 @@ public:
     {
         return m_branchStack.getTop().getEdgeSettings();
     }
+
+    /// The render plan's monochrome mode (Flat / Scaled).
+    /// Ported from: itwinjs-core Target.plan.monochromeMode（RenderPlan.ts:114
+    /// 从 displayStyle settings 载入；Monochrome.ts:48 的 u_mixMonoColor
+    /// graphic uniform 按 `Scaled === target.plan.monochromeMode` 判定）。
+    /// DanQing 的 changeRenderPlan 是分解式签名（vf/is3d/...），M-O(1) 起
+    /// monochromeMode 经 setMonochromeMode 单独随 plan 转发。
+    dqCommon::MonochromeMode getMonochromeMode() const noexcept { return m_monochromeMode; }
+    void setMonochromeMode(dqCommon::MonochromeMode mode) noexcept { m_monochromeMode = mode; }
 
     /// Get the batch state (feature batch stack).
     /// Ported from: itwinjs-core Target.batchState
@@ -455,6 +465,9 @@ private:
     float m_sunDir[3] = {0.3f, 0.5f, 0.8f};
     float m_sunIntensity = 0.7f;
     float m_ambientColor[3] = {0.3f, 0.3f, 0.35f};
+
+    // Monochrome mode (from RenderPlan — Target.plan.monochromeMode)
+    dqCommon::MonochromeMode m_monochromeMode = dqCommon::MonochromeMode::Scaled;
 
     // Background color (passed from ViewState via RenderTarget)
     float m_backgroundColor[4] = {0.2f, 0.2f, 0.2f, 1.0f};

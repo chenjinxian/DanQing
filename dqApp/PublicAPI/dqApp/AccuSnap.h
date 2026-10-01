@@ -9,6 +9,8 @@
 #include "ToolAdmin.h"    // BeButtonEvent, EventHandled (faithful AccuSnap.onPreButtonEvent/onMotion/onTouchTap take BeButtonEvent)
 #include <dqBase/DqEvent.h>
 
+#include <vector>
+
 namespace dqApp {
 
 class Viewport;
@@ -81,18 +83,28 @@ public:
     }
 
     // Get the active snap modes.
-    // Ported from: itwinjs-core AccuSnap.getActiveSnapModes()
+    // Ported from: itwinjs-core AccuSnap.getActiveSnapModes() (AccuSnap.ts:280
+    // — returns the list; consumers at :308/:929/:960 read every entry).
     virtual SnapMode const* getActiveSnapModes(int& count) const {
-        count = 1;
-        return &m_activeSnapMode;
+        count = static_cast<int>(m_activeSnaps.size());
+        return m_activeSnaps.data();
+    }
+
+    // Set the active snap modes (the array write channel).
+    // Ported from: display-test-app App.ts:95-99 DisplayTestAppAccuSnap.
+    // setActiveSnapModes (snaps → _activeSnaps in place — the C++ port stores
+    // by value; DanQing has no DisplayTestAppAccuSnap split, the app-level
+    // write channel lives on this class). clear() 联动（App.ts:107——挂起
+    // snap 状态失效）。
+    void setActiveSnapModes(std::vector<SnapMode> const& snaps) {
+        m_activeSnaps = snaps;
+        clear();
     }
 
     // Set the active snap mode (App.ts:486-489 setActiveSnapMode 的 [snap]
-    // 单元素数组形态——M-M(6) 接线；参考子类 DisplayTestAppAccuSnap 的
-    // _activeSnaps 写通道）。clear() 联动（App.ts:107——挂起 snap 状态失效）。
+    // 单元素数组形态——M-M(6) 接线）。
     void setActiveSnapMode(SnapMode mode) {
-        m_activeSnapMode = mode;
-        clear();
+        setActiveSnapModes(std::vector<SnapMode>{mode});
     }
 
     // Clear the current snap.
@@ -141,7 +153,9 @@ public:
     QString GetDecorationToolTip(uint32_t) const override { return {}; }
 
 private:
-    SnapMode m_activeSnapMode = SnapMode::NearestKeypoint;
+    // _activeSnaps — 初值 [NearestKeypoint]。
+    // Ported from: display-test-app App.ts:76 DisplayTestAppAccuSnap。
+    std::vector<SnapMode> m_activeSnaps{SnapMode::NearestKeypoint};
     Sprite m_snapCrossHot;      // sprites/SnapCross.png (AccuSnap.ts:484)
     Sprite m_snapCrossUnfocused; // sprites/SnapUnfocused.png (:484 — !isHot)
 };
