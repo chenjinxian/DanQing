@@ -618,6 +618,13 @@ public:
     // Called to allow Tool to display dynamic elements.
     // Ported from: itwinjs-core InteractiveTool.onDynamicFrame (Tool.ts:676)
     virtual void onDynamicFrame(BeButtonEvent const&, DynamicsContext& /*context*/) {}
+
+    // Called to allow the active Tool to display decorations.
+    // Ported from: itwinjs-core InteractiveTool.decorate (Tool.ts:537-539 —
+    // `public decorate(_context: DecorateContext) {}`；M-O(3) P3 前此虚面在
+    // ViewTool 上[历史误置]——归位 InteractiveTool 使 PrimitiveTool
+    // [SelectionTool 框选装饰等]可覆写)。
+    virtual void decorate(class DecorateContext& /*context*/) {}
 };
 
 // The PrimitiveTool class can be used to implement tools to create or modify geometric elements.

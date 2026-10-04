@@ -413,8 +413,9 @@ public:
     static void showPrompt(std::string const& prompt);
 
     // Ported from: itwinjs-core InteractiveTool.decorate (called by DecorateContext).
-    // ViewTool itself does not decorate; the virtual is here so ViewManip can override.
-    virtual void decorate(DecorateContext& /*context*/) {}
+    // ViewTool itself does not decorate; the virtual lives on InteractiveTool
+    // (Tool.ts:537-539——M-O(3) P3 归位)——此处保留 override 供 ViewManip 覆写。
+    void decorate(DecorateContext& /*context*/) override {}
 
     // Ported from: itwinjs-core ViewTool.changeViewport (referenced via
     //              ViewManip.changeViewport override at ViewTool.ts:895-934).

@@ -162,6 +162,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/LookToolTest.cpp
         tests/NavigateTest.cpp      # M-O(3) P1：NavigateMotion/ViewWalk/Fly/LookAndMove
         tests/MeasureToolTest.cpp   # M-O(3) P2：MeasureDistanceTool 收点/接受/撤销/提示
+        tests/SelectBoxTest.cpp     # M-O(3) P3：框选族 + ctrl Invert + PickAtRect
         tests/TileTreeRegistryTest.cpp  # 忠实路径 F3：Tiles 注册表（Ported from Tiles.test.ts）
         tests/DumpTileFetcherTest.cpp  # RPC-dump 本地回放契约（零网络 §8.2/TD-24）
         tests/DumpIModelConnectionTest.cpp  # imodel.json 解析 + Views 回放缝 + saved 视图应用锁（M-H Task 3）
@@ -172,6 +173,9 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
             GTest::gtest_main
             danqing_compile_options
      dbghelp)
+    # M-O(3) P3：SelectBoxTest 直驱具体 SelectionTool（selectByPoints 族断言面
+    # ——内部头 src/SelectionTool.h；§8.4 测试专用面）。
+    target_include_directories(dqAppTest PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     # Texture tests read the shared PNG asset — compile-time absolute path
     # (no working-directory dependency). dqApp/.. = repo root.
     target_compile_definitions(dqAppTest PRIVATE

@@ -48,10 +48,11 @@ InteractiveTool& ToolAdmin::currentTool()
 void ToolAdmin::Decorate(DecorateContext& context)
 {
     // TS L2051-2053：const tool = this.activeTool; if (undefined !== tool) tool.decorate(context);
-    // DanQing：decorate 虚函数在 ViewTool（参考在 InteractiveTool）——inputCollector/
-    // primitiveTool 无 decorate 内容，故等价于"活动工具即 viewTool 时转发"。
-    if (m_viewTool && activeTool() == static_cast<InteractiveTool*>(m_viewTool))
-        m_viewTool->decorate(context);
+    // M-O(3) P3：decorate 虚面归位 InteractiveTool（Tool.ts:537-539）——
+    // activeTool 全类（viewTool/primitiveTool/inputCollector）统一转发
+    // （PrimitiveTool 覆写面 = SelectionTool 框选装饰等）。
+    if (InteractiveTool* tool = activeTool())
+        tool->decorate(context);
     // TS L2054-2058：inputCollector/primitiveTool 的 decorateSuspended 未移植——不 forward。
 
     // TS L2061-2069：locate 光圈（Viewport.drawLocateCursor 的 isLocateCircleOn 分支，

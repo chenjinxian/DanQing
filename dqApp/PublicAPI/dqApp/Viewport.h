@@ -33,6 +33,7 @@
 #include <dqCommon/SkyBox.h>   // m_skyGradientCache（SkyGradient）
 
 #include <optional>            // std::optional（m_skyGradientCache 等）
+#include <functional>          // std::function（PickAtRect 测试缝——DANQING_TESTING）
 
 #include <dqRender/CreateTextureArgs.h>
 #include <dqRender/RenderMemory.h>
@@ -262,6 +263,14 @@ public:
     //               built during the most recent render pass).
     uint32_t PickAtPoint(int32_t x, int32_t y);
 
+    // Pick query: read the set of distinct feature IDs within a rectangle.
+    // Ported from: itwinjs-core ElementSetTool.getAreaSelectionCandidates
+    //               (:637-721 —— readPixels[Feature] 矩形遍历去重；M-O(3) P3
+    //               框选原语——SelectTool.selectByPointsProcess 的候选源)。
+    // CSS 像素角点（任意对角序，内部归一）；ids 去重追加（无序）。
+    void PickAtRect(int32_t x0, int32_t y0, int32_t x1, int32_t y1,
+                    std::vector<uint32_t>& ids);
+
     // Ported from: itwinjs-core Viewport.pickDepthPoint (Viewport.ts:3435-3503)。
     // 在 pickPoint（世界坐标，光标视线与场景的候选深度点）周围按像素半径读
     // pick 缓冲（featureId + depthAndOrder 附件），返回命中平面原点/法线/来源。
@@ -329,6 +338,17 @@ public:
     //           PickAtPoint via a live WebGL render target.
     void SetPickResultForTest(uint32_t featureId) { m_pickResultOverride = featureId; }
     uint32_t GetPickResultOverrideForTest() const noexcept { return m_pickResultOverride; }
+
+    // Test-only rect-pick handler（M-O(3) P3——PickAtRect 的 headless 驱动面：
+    // 每次矩形读回调 (x0,y0,x1,y1) → 该矩形内的 id 集——selectByPoints 的
+    // 收缩带五读[全域+四边缘带]可逐读注入不同集合，inside/outline 差集逻辑
+    // 直接可测。同 §8.4 guard。
+    void SetPickRectHandlerForTest(
+        std::function<std::vector<uint32_t>(int32_t, int32_t, int32_t, int32_t)>
+            handler)
+    {
+        m_pickRectHandler = std::move(handler);
+    }
 
     // Test-only access to the decorations-validity flag (← itwinjs-core
     // Viewport._decorationsValid: set true after changeDecorations
@@ -812,6 +832,9 @@ private:
     // seam vanishes from the SDK surface in production builds.
 #ifdef DANQING_TESTING
     uint32_t m_pickResultOverride = 0;
+    // M-O(3) P3：PickAtRect headless 回调（SetPickRectHandlerForTest）。
+    std::function<std::vector<uint32_t>(int32_t, int32_t, int32_t, int32_t)>
+        m_pickRectHandler;
 #endif
 
     // Tile trees (Phase 2b)

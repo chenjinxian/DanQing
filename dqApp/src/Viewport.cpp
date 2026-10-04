@@ -66,6 +66,8 @@
 #include <cmath>
 #include <chrono>
 #include <cstring>
+#include <set>
+#include <utility>
 #include <vector>
 #ifdef _WIN32
 #include <windows.h>
@@ -2421,6 +2423,64 @@ uint32_t Viewport::PickAtPoint(int32_t x, int32_t y)
     // Legacy path: use RenderPipeline::pickQuery()
     if (!m_pipeline || !m_pipeline->isInitialized()) return 0;
     return m_pipeline->pickQuery(x, y);
+}
+
+// PickAtRect — read the set of distinct feature IDs within a CSS-pixel
+// rectangle. Ported from: itwinjs-core ElementSetTool.getAreaSelectionCandidates
+//               (:637-721 —— readPixels[Feature] 矩形遍历；M-O(3) P3 框选原语)。
+void Viewport::PickAtRect(int32_t x0, int32_t y0, int32_t x1, int32_t y1,
+                          std::vector<uint32_t>& ids)
+{
+    if (x1 < x0) std::swap(x0, x1);
+    if (y1 < y0) std::swap(y0, y1);
+    if (!m_renderTarget) {
+        // Test-only handler（PickAtPoint 同款面）：每矩形读回调注入 id 集
+        // （框选收缩带五读可逐读差异注入——inside/outline 差集直接可测）。
+#ifdef DANQING_TESTING
+        if (m_pickRectHandler) {
+            std::vector<uint32_t> injected = m_pickRectHandler(x0, y0, x1, y1);
+            for (uint32_t id : injected)
+                ids.push_back(id);
+            return;
+        }
+        if (m_pickResultOverride != 0u) {
+            ids.push_back(m_pickResultOverride);
+            return;
+        }
+#endif
+        return;
+    }
+
+    auto const rect = m_renderTarget->viewRect();
+    double const cssW = width() > 0 ? static_cast<double>(width()) : 1.0;
+    double const dpr = rect.width() / cssW;
+    // CSS → device px（角点含 0.5 舍入——参考 :641-642 floor(+0.5)）。
+    int32_t const devX0 = static_cast<int32_t>(std::floor(x0 * dpr + 0.5));
+    int32_t const devY0 = static_cast<int32_t>(std::floor(y0 * dpr + 0.5));
+    int32_t const devX1 = static_cast<int32_t>(std::floor(x1 * dpr + 0.5));
+    int32_t const devY1 = static_cast<int32_t>(std::floor(y1 * dpr + 0.5));
+    int32_t const w = devX1 - devX0 + 1;
+    int32_t const h = devY1 - devY0 + 1;
+    if (w <= 0 || h <= 0)
+        return;
+    // 设备域裁剪。
+    int32_t const cw = static_cast<int32_t>(rect.width());
+    int32_t const ch = static_cast<int32_t>(rect.height());
+    if (devX0 < 0 || devY0 < 0 || devX1 >= cw || devY1 >= ch)
+        return;
+    // GL 行翻转（PickAtPoint 同款）。
+    int32_t const topGL = ch - 1 - devY1;
+    std::vector<uint32_t> pixels(static_cast<size_t>(w) * h, 0);
+    m_renderTarget->readPickData(devX0, topGL, static_cast<uint32_t>(w),
+                                 static_cast<uint32_t>(h), pixels.data(),
+                                 static_cast<uint32_t>(pixels.size()));
+    // 去重追加（Set 语义——参考 contents Set）。
+    std::set<uint32_t> unique;
+    for (uint32_t id : pixels)
+        if (id != 0)
+            unique.insert(id);
+    for (uint32_t id : unique)
+        ids.push_back(id);
 }
 
 // ---------------------------------------------------------------------------
