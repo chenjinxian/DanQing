@@ -105,6 +105,16 @@ public:
     {
         return m_placements;
     }
+
+    // M-O(2) I11：ecefLocation 面（TiledGraphics.ts:85 的
+    // `secondary.ecefLocation?.isValid` 判定输入）。
+    // Ported from: itwinjs-core IModelConnection.ecefLocation（geolocated
+    // iModel 的 ECEF 定位——open 数据面；rpc-dumps 各包 imodel.json 的
+    // connection 段无该字段——数据面缺席恒 false，装载链已立：open 读
+    // "ecefLocation" 段，缺席/非对象 → 保持 false。EcefLocation 类型与
+    // getTransform 的移植随 geolocated 数据面（仓外补采）落地——当前恒等
+    // 回退分支即数据面实态）。
+    bool hasEcefLocation() const noexcept { return m_hasEcefLocation; }
     // elementId → placement 查找（zoomToElements 的 ids→placements 步）。
     PlacementInfo const* findPlacement(dqBase::DqId elementId) const noexcept;
 
@@ -117,6 +127,7 @@ private:
     std::optional<ViewStateProps> m_defaultViewState;
     std::vector<ModelInfo> m_models;
     std::vector<PlacementInfo> m_placements;  // M-N(2)：placements.json（可缺席）
+    bool m_hasEcefLocation = false;  // M-O(2) I11：connection.ecefLocation 段（数据面缺席恒 false）
 };
 
 // --- M-O(2) I9：ViewStateProps ↔ JSON 序列化缝 ---

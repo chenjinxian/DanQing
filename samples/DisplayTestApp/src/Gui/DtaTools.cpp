@@ -33,6 +33,7 @@
 #include "Application.h"
 #include "GltfDecorationTool.h"
 #include "OutputShadersTool.h"        // M-O(2) 3d OutputShaders 工具注册
+#include "TiledGraphics.h"            // M-O(2) I11 第二 iModel 叠加工具注册
 #include "GridSettingsTool.h"
 #include "KeyinField.h"
 #include "MainWindow.h"
@@ -84,6 +85,11 @@ void registerDtaTools()
     registry.Register("OutputShaders",
                       []() -> dqApp::InteractiveTool* { return new OutputShadersTool(); },
                       "dta output shaders");
+    // M-O(2) I11：ToggleSecondaryIModelTool（TiledGraphics.ts:123-135——keyin
+    // "dta tiled graphics"；可选参 = 包根路径）。
+    registry.Register("ToggleSecondaryIModel",
+                      []() -> dqApp::InteractiveTool* { return new ToggleSecondaryIModelTool(); },
+                      "dta tiled graphics");
 }
 
 void setupDtaStatusBar(MainWindow* mainWindow)

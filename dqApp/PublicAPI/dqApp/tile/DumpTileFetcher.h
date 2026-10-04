@@ -97,6 +97,16 @@ public:
         return m_fallbackWarnings;
     }
 
+    // M-O(2) I11：运行期追加 fallback 根（第二 iModel 叠加的取数扩围）。
+    // EQUIVALENCE（§11.10，TiledGraphics.h 文件头同源登记）：参考源 =
+    // BriefcaseConnection.openFile 后两连接各自后端取数；发散 = DanQing §8.2
+    // 单 TileAdmin fetcher——第二包的瓦键经追加根进入同一查找域；验证法 =
+    // TiledGraphicsTest 多根命中锁（两包键各自 hitRoot 命中）。
+    // manifest 已解析形态优先（M-I(1) 单次解析共享——props 侧 takeManifest
+    // 移交，不重读盘）。失败（路径形态装载失败）→ fallbackWarnings 不致命。
+    void addFallbackRoot(DumpManifest&& manifest, std::string const& root);
+    void addFallbackRoot(std::string const& root);
+
     // 全部被请求键的轨迹（fetch 调用即追加——每条一次；TileAdmin 对
     // 非 NotLoaded 态不重建请求（TileAdmin.cpp processRequestsForUser），
     // 故每键至多一条）。供完整加载对账测试只读遍历。

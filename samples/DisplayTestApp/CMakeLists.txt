@@ -48,6 +48,8 @@ add_executable(DisplayTestApp WIN32
     src/Gui/GltfDecorationTool.h
     src/Gui/OutputShadersTool.cpp   # OutputShaders（M-O(2) 3d——shader 落盘 keyin）
     src/Gui/OutputShadersTool.h
+    src/Gui/TiledGraphics.cpp       # 第二 iModel 瓦叠加（M-O(2) I11——TiledGraphics.ts）
+    src/Gui/TiledGraphics.h
     src/Gui/FeatureOverridesPanel.cpp  # Overrides 面板（M-O(2) I10——选择集 appearance 覆盖）
     src/Gui/FeatureOverridesPanel.h    # MOC needs this for Q_OBJECT
     src/Gui/NamedViews.cpp            # NamedVSPS 持久化载体（M-O(2) I9 Saved Views）
@@ -262,6 +264,7 @@ if(TARGET gtest_main AND TARGET dqApp)
         tests/PickDumpSceneTest.cpp     # dump 场景拾取/点选/高亮贯通像素锁（M-I Task 2——注册在 DumpBrowseTest 之后：同因 fetcher 替换不回溢）
         tests/SavedViewsTest.cpp        # M-O(2) I9 Saved Views 全链锁（Create/Recall/Update/Delete + 持久化 round-trip——注册在 PickDumpSceneTest 之后：同因 fetcher 替换不回溢）
         tests/OutputShadersTest.cpp     # M-O(2) 3d OutputShaders 锁（收集门/注册表/compileAllShaders/落盘对账——注册在 SavedViewsTest 之后）
+        tests/TiledGraphicsTest.cpp     # M-O(2) I11 第二 iModel 叠加锁（差集+WHERE+回落+多根命中——注册在 OutputShadersTest 之后）
         tests/JoesHouseColorTest.cpp    # JoesHouse 管线蓝/红回归像素锁（M-I Task 3 色表顶点色——注册在 PickDumpSceneTest 之后：同因 fetcher 替换不回溢）
         tests/JoesHouseEdgeTest.cpp     # JoesHouse 面板黑边线回归像素锁（M-I Task 4 边线两段——注册在 JoesHouseColorTest 之后：同因 fetcher 替换不回溢）
         tests/JoesHouseHoverTest.cpp    # JoesHouse hover 高亮像素锁（M-J Task 2——注册在 JoesHouseEdgeTest 之后：同因 fetcher 替换不回溢）
@@ -273,6 +276,8 @@ if(TARGET gtest_main AND TARGET dqApp)
         src/Gui/GltfDecorationTool.h  # MOC needs this (no Q_OBJECT; include-path parity)
         src/Gui/OutputShadersTool.cpp   # M-O(2) 3d：OutputShaders（落盘锁被测面）
         src/Gui/OutputShadersTool.h
+        src/Gui/TiledGraphics.cpp       # M-O(2) I11：第二 iModel 叠加（像素锁被测面）
+        src/Gui/TiledGraphics.h
         src/Gui/FeatureOverridesPanel.cpp  # M-O(2) I10：Overrides 面板（像素锁被测面）
         src/Gui/FeatureOverridesPanel.h  # MOC needs this for Q_OBJECT
         src/Gui/NamedViews.cpp            # M-O(2) I9：NamedVSPS 载体（SavedViews 链锁被测面）

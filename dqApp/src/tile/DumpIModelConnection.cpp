@@ -782,6 +782,9 @@ dqBase::RefPtr<DumpIModelConnection> DumpIModelConnection::open(
         if (dumpjson::JsonValue const* v = rpc->find("iTwinId"))
             out->m_iTwinId = v->str;
     }
+    // M-O(2) I11：ecefLocation 段（数据面缺席恒 false——见头文件注释）。
+    if (dumpjson::JsonValue const* ecef = conn->find("ecefLocation"))
+        out->m_hasEcefLocation = ecef->type == dumpjson::JsonValue::Type::Object;
 
     // --- views 段 ---
     dumpjson::JsonValue const* list = views->find("list");

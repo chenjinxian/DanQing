@@ -118,6 +118,34 @@ void DumpTileFetcher::buildIndexes()
     }
 }
 
+// M-O(2) I11：运行期追加根——索引只为新根建立（既有根的 tiles 条目地址在
+// m_fallbacks 向量增长（缓冲转移）下稳定——DumpManifest 的 tiles 堆数组
+// 不随对象移动，见 buildIndexes 注释）。
+void DumpTileFetcher::addFallbackRoot(DumpManifest&& manifest,
+                                      std::string const& root)
+{
+    m_fallbackRoots.push_back(root);
+    m_fallbacks.push_back(FallbackRoot{root, std::move(manifest), {}});
+    auto& fallback = m_fallbacks.back();
+    fallback.index.reserve(fallback.manifest.tiles.size());
+    for (auto const& item : fallback.manifest.tiles)
+        fallback.index.emplace(tileKey(item.treeId, item.contentId), &item);
+}
+
+void DumpTileFetcher::addFallbackRoot(std::string const& root)
+{
+    m_fallbackRoots.push_back(root);
+    if (auto manifest = loadDumpManifest(root)) {
+        m_fallbacks.push_back(FallbackRoot{root, std::move(*manifest), {}});
+        auto& fallback = m_fallbacks.back();
+        fallback.index.reserve(fallback.manifest.tiles.size());
+        for (auto const& item : fallback.manifest.tiles)
+            fallback.index.emplace(tileKey(item.treeId, item.contentId), &item);
+    } else {
+        m_fallbackWarnings.push_back(root);
+    }
+}
+
 void DumpTileFetcher::fetch(std::string const& url, dqRender::Tile& tile,
                             std::function<void(dqRender::Tile&, std::vector<uint8_t> const&)> onComplete,
                             std::function<void(dqRender::Tile&, std::string const&)> onError)
