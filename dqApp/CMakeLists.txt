@@ -47,6 +47,7 @@ target_sources(dqApp
         src/ViewTool.cpp
         src/SelectionTool.cpp
         src/IdleTool.cpp
+        src/MeasureTool.cpp  # M-O(3) P2：MeasureDistanceTool
         src/GltfDecoration.cpp
         src/GltfImport.cpp
         src/DecorateContext.cpp
@@ -160,6 +161,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/StandardViewAnimationTest.cpp
         tests/LookToolTest.cpp
         tests/NavigateTest.cpp      # M-O(3) P1：NavigateMotion/ViewWalk/Fly/LookAndMove
+        tests/MeasureToolTest.cpp   # M-O(3) P2：MeasureDistanceTool 收点/接受/撤销/提示
         tests/TileTreeRegistryTest.cpp  # 忠实路径 F3：Tiles 注册表（Ported from Tiles.test.ts）
         tests/DumpTileFetcherTest.cpp  # RPC-dump 本地回放契约（零网络 §8.2/TD-24）
         tests/DumpIModelConnectionTest.cpp  # imodel.json 解析 + Views 回放缝 + saved 视图应用锁（M-H Task 3）

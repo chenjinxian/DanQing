@@ -7,6 +7,7 @@
 #include <cmath>
 #include "dqApp/ViewState.h"
 #include "dqApp/ViewTool.h"  // ViewTool complete type (activeTool/currentTool upcast).
+#include "dqApp/MeasureTool.h"  // M-O(3) P2：MeasureDistanceTool 注册
 #include "SelectionTool.h"
 #include "IdleTool.h"
 
@@ -732,6 +733,12 @@ void ToolAdmin::OnInitialized()
     m_registry.RegisterView("View.LookAndMove", CreateLookAndMoveTool);
     m_registry.RegisterView("View.Walk", CreateWalkViewTool);
     m_registry.RegisterView("View.Fly", CreateFlyViewTool);
+    // M-O(3) P2：Measure.Distance（MeasureTool.ts:185-729——CoreTools
+    // registerModule(netTool) 注册净效果[IModelApp.ts:438-446 同族]。
+    // keyin = CoreTools.json tools.Measure.Distance.keyin）。
+    m_registry.Register("Measure.Distance",
+                        []() -> InteractiveTool* { return new MeasureDistanceTool(); },
+                        "measure distance");
 
     // Ported from: itwinjs-core IModelApp.startup viewTool 模块注册
     //              （IModelApp.ts:438-446 registerModule(viewTool) 含 ViewUndoTool/
