@@ -165,6 +165,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/SelectBoxTest.cpp     # M-O(3) P3：框选族 + ctrl Invert + PickAtRect
         tests/DisplayStyleSwitchTest.cpp  # M-O(4) P5：Display Style 运行时切换
         tests/HiddenLineOverrideTest.cpp  # M-O(4) P6：hline override 聚合 + edgeOptions 载体
+        tests/EnvironmentEditorTest.cpp   # M-O(4) P7：Environment 段合并/Reset/事件
         tests/TileTreeRegistryTest.cpp  # 忠实路径 F3：Tiles 注册表（Ported from Tiles.test.ts）
         tests/DumpTileFetcherTest.cpp  # RPC-dump 本地回放契约（零网络 §8.2/TD-24）
         tests/DumpIModelConnectionTest.cpp  # imodel.json 解析 + Views 回放缝 + saved 视图应用锁（M-H Task 3）

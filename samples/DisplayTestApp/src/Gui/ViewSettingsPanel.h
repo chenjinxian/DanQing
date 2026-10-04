@@ -7,6 +7,7 @@
 #include <functional>
 
 #include <dqCommon/HiddenLine.h>   // HiddenLineSettingsProps（P6 overrideEdgeSettings）
+#include <dqCommon/SkyBox.h>       // SkyBoxProps（P7 updateSkyEnvironment）
 #include <dqCommon/ViewFlags.h>   // ViewFlagsProperties（applyFlags 签名；Step 4 备注批准）
 
 class QCheckBox;
@@ -40,6 +41,17 @@ public:
     // Ported from: ViewAttributes.ts:865-869 Smooth Polyface Edges 复选
     //（tileAdmin.edgeOptions.smooth + invalidateScene + sync）。独立可测槽。
     void setSmoothPolyfaceEdges(bool enabled);
+
+    // Ported from: EnvironmentEditor.ts:258-271 updateEnvironment（M-O(4) P7
+    // ——渐变字段段合并 {...current, ...newEnv} → setEnvironment + sync）。
+    // 独立可测槽（QColorDialog 模态面直驱锁写通道）。
+    void updateSkyEnvironment(dqCommon::SkyBoxProps const& newEnv);
+    // Ported from: EnvironmentEditor.ts:296-304 resetEnvironmentEditor
+    //（Environment.defaults().withDisplay({sky:true}) + sync + UI 刷新）。
+    void resetEnvironment();
+    // Ported from: EnvironmentEditor.ts:306-316 addEnvAttribute 的 withDisplay
+    // 半边（sky/ground 显隐位）。
+    void setEnvironmentDisplay(bool sky, bool enabled);
 
 private:
     // 任务书 Step 4 批准偏差：捕获 lambda 无法转 void(*)(...) 函数指针，
