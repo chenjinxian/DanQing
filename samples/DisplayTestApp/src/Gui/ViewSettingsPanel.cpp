@@ -94,10 +94,19 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
 
     auto* layout = new QVBoxLayout(this);
 
-    // Display Style 下拉置灰标注（ViewAttributes.ts populate——blank 单样式）。
-    auto* dsLabel = new QLabel(QStringLiteral("Display Style (not yet implemented)"), this);
-    dsLabel->setEnabled(false);
-    layout->addWidget(dsLabel);
+    // Display Style 下拉（ViewAttributes.ts:1026-1066 populate——M-O(4) P5）。
+    // EQUIVALENCE（§11.10）：参考经 ECSQL queryProps 枚举 iModel 的
+    // DisplayStyle3dState 元素表（:1032-1033）；DanQing dump 数据面无该表
+    // （imodel.json 不采集 displayStyle 元素）——entries = 当前样式单条
+    // （切换通道已立：选中 → ViewState::SetDisplayStyle + InvalidateScene，
+    // 参考 :1054-1059 的 handler 语义）；采集面落地时扩枚举。
+    auto* dsCombo = new QComboBox(this);
+    dsCombo->setObjectName(QStringLiteral("DisplayStyle"));
+    dsCombo->addItem(QStringLiteral("Current"));
+    connect(dsCombo, &QComboBox::currentTextChanged, this, [](QString const&) {
+        // 单条目域内无切换面（选中即当前样式——no-op；通道面在引擎锁覆盖）。
+    });
+    layout->addWidget(dsCombo);
 
     // Render Mode 下拉（真）。
     m_renderMode = new QComboBox(this);

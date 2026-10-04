@@ -129,6 +129,16 @@ void ViewState::NotifyViewportsNeedRedraw()
     }
 }
 
+// Ported from: itwinjs-core ViewState.displayStyle setter（ViewState.ts:644
+// ——M-O(4) P5；EQUIVALENCE 见 ViewState.h 声明注）。
+void ViewState::SetDisplayStyle(DisplayStyle const& style)
+{
+    // 整设置面替换（DisplayStyle3dSettings 值拷贝——全字段段）。
+    m_displayStyle.getSettings() = style.getSettings();
+    OnDisplayStyleChanged.Raise();
+    NotifyViewportsNeedRedraw();
+}
+
 // ---------------------------------------------------------------------------
 // ViewState::hasSameCoordinates
 // Ported from: itwinjs-core ViewState.hasSameCoordinates (ViewState.ts:1221-1240).

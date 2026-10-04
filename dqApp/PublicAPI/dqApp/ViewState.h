@@ -185,6 +185,16 @@ public:
     // (mutate via DisplayStyle::setViewFlags).
     dqCommon::ViewFlags const& getViewFlags() const noexcept { return m_displayStyle.getViewFlags(); }
 
+    // Display style 运行时整体替换（M-O(4) P5）。
+    // Ported from: itwinjs-core ViewState.displayStyle setter（ViewState.ts:644
+    // `set displayStyle(newStyle: DisplayStyleState)`——整对象赋值 + raise
+    // onDisplayStyleChanged）。EQUIVALENCE（§11.10）：DanQing 的 DisplayStyle
+    // 持不可拷贝成员（BackgroundMapGeometry unique_ptr），以 DisplayStyle3dSettings
+    // 值拷贝承载"整对象替换"语义（设置面全字段段替换；iModel 绑定保持本视图
+    // 的）；验证法 = DisplayStyleSwitchTest（全字段变化 + OnDisplayStyleChanged
+    // Raise + 视口 InvalidateRenderPlan 面）。
+    void SetDisplayStyle(DisplayStyle const& style);
+
     // Description
     std::string const& getDescription() const { return m_description; }
     void SetDescription(std::string const& desc) { m_description = desc; }
