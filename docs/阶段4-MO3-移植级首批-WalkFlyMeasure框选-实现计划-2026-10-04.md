@@ -30,11 +30,11 @@ RED 锁先行；视觉特性 WHERE 断言）。
 - Test: dqAppTest（NavigateMotion 数学锁：mouseLook/rotation/translation 变换逐值[合成视图] + ViewNavigate 输入向量→motion 分流 + 工具注册/toolAssistance）+ DtaTest 可选像素锁（walk 一帧位移断言）
 
 **Steps:**
-- [ ] ①读参考全文：ViewTool.ts:1747-2100（NavigateMotion + ViewNavigate + LookAndMove）+ :2952-3032（Walk/Fly）+ :3107-3199（三工具）+ ToolSettings walk* 三参 + focusHome :82。
-- [ ] ②RED：NavigateMotion 数学锁（构造视图 + 变换逐项）+ 输入向量锁（键集→向量）。
-- [ ] ③GREEN：全链落地（handle animate 逐帧 → frustum 乘 transform → setupViewFromFrustum——AnimatedHandle 先例）。
-- [ ] ④回归：ViewTool/LookTool/EventDispatch 族 + ToolAssistance 面。
-- [ ] ⑤门禁 + Commit。
+- [x] ①读参考全文：ViewTool.ts:1747-2100（NavigateMotion + ViewNavigate + LookAndMove）+ :2952-3032（Walk/Fly）+ :3107-3199（三工具）+ ToolSettings walk* 三参 + focusHome :82。
+- [x] ②RED：NavigateMotion 数学锁（构造视图 + 变换逐项）+ 输入向量锁（键集→向量）。
+- [x] ③GREEN：全链落地（handle animate 逐帧 → frustum 乘 transform → setupViewFromFrustum——AnimatedHandle 先例）。
+- [x] ④回归：ViewTool/LookTool/EventDispatch 族 + ToolAssistance 面。
+- [x] ⑤门禁 + Commit。
 
 ### Task 2: P2 Measure distance
 
@@ -43,10 +43,10 @@ RED 锁先行；视觉特性 WHERE 断言）。
 - Test: 锁 = 距离计算/接受链（合成点列）+ DtaTest 像素锁（动态线段装饰出现/终段标记）+ tooltip 面
 
 **Steps:**
-- [ ] ①读参考全文：MeasureTool.ts:185-733 + CoreTools Translate 串（Measure.*）。
-- [ ] ②RED：接受链锁（点列→segments→distance 数学）。
-- [ ] ③GREEN：工具 + 装饰 + tooltip。
-- [ ] ④门禁 + Commit。
+- [x] ①读参考全文：MeasureTool.ts:185-733 + CoreTools Translate 串（Measure.*）。
+- [x] ②RED：接受链锁（点列→segments→distance 数学）。
+- [x] ③GREEN：工具 + 装饰 + tooltip。
+- [x] ④门禁 + Commit。
 
 ### Task 3: P3 框选/ctrl/hit-cycling
 
@@ -56,14 +56,14 @@ RED 锁先行；视觉特性 WHERE 断言）。
 - Test: DtaTest 像素锁（instances60 框选球行→选集=行内 ids + ctrl 反选 + 跨线模式）+ 引擎锁（rect-pick 原语对账）
 
 **Steps:**
-- [ ] ①读参考全文：SelectTool.ts:281-502 + ElementSetTool.ts:637-744 + SelectionMethod/SelectionProcessing 枚举。
-- [ ] ②RED：rect-pick 原语锁 + 框选像素锁。
-- [ ] ③GREEN：原语 + selectByPoints 链 + 装饰 + ctrl + cycling。
-- [ ] ④门禁 + Commit。
+- [x] ①读参考全文：SelectTool.ts:281-502 + ElementSetTool.ts:637-744 + SelectionMethod/SelectionProcessing 枚举。
+- [x] ②RED：rect-pick 原语锁 + 框选像素锁。
+- [x] ③GREEN：原语 + selectByPoints 链 + 装饰 + ctrl + cycling。
+- [x] ④门禁 + Commit。
 
 ### Task 4: 收口
 
-- [ ] 全量门禁（环境态族按 TD-26/TD-29 规程）+ CLAUDE.md §1 M-O(3) 段 + §15 更新 + 本文档实录脚注。
+- [x] 全量门禁（环境态族按 TD-26/TD-29 规程）+ CLAUDE.md §1 M-O(3) 段 + §15 更新 + 本文档实录脚注。
 
 ## 验证
 
@@ -76,3 +76,26 @@ RED 锁先行；视觉特性 WHERE 断言）。
 2. **P2 文本装饰**：Canvas2d text（QPainter 路径）vs 仅图形 + 状态栏数字——倾向 canvas text（参考距离标签为 UI 主体）。
 3. **P3 hit-cycling 等价面**：参考 LocateManager.currHit + doLocate 轮转；DanQing pick buffer 单深度——候选=pick pass 多深度回读（depthAndOrder 已有）取同像素深度序轮转；执行时按参考 doLocate(hitIndex) 语义定。
 4. **P2 工具归属**：dqApp tools（core/frontend 对应）——与 SelectionTool 同位。
+
+---
+
+## 完成实录（2026-10-04 收口）
+
+三件全清，提交 4 笔（计划入库 + P1/P2/P3 各一）。逐项实录：
+
+| # | 项 | 决策落定 | 超计划面 |
+|---|---|---|---|
+| P1 | Walk/Fly/LookAndMove | 决策 1 落定：**事件直驱 handle.onKeyTransition**（非键集——参考 :615-618 ViewManip 路由 focusHandle 的 1:1；InputState 键集面不需要） | ToolAssistance 键盘指令族（:141-292 createKeyboardInstruction/createModifierKeyInstruction/arrowKeyboardInfo/shift·ctrl·altKey——此前登记未移植随消费面落地）；Viewport::TurnCameraOn（determineVisibleDepthRange 未移植→{0,1} 回退域 EQUIVALENCE）；enforceZUp 的 createRotationVectorToVector 轴角组合（dqGeom 无该工厂——同向恒等/反向 false=参考 undefined 语义） |
+| P2 | Measure distance | 决策 2 落定：**框+白边占位**（CanvasContext 无 text/measureText 面——fillText 缺席登记；恒米制 4 位格式化 EQUIVALENCE）；决策 4 落定：dqApp（SelectionTool 同位） | EQUIVALENCE 七条登记（头文件）；reportMeasurements 的 Distance/Cumulative 分流 + keyin "measure distance" |
+| P3 | 框选/ctrl | 决策 3 落定：**hit-cycling 延后**（pick 缓冲深度决胜单值无命中列表——depthAndOrder 多深度轮转需 pick 多命中面，登记） | **decorate 虚面归位 InteractiveTool**（Tool.ts:537-539——历史误置 ViewTool，ToolAdmin::Decorate 转 activeTool 全类转发，PrimitiveTool 装饰通路开面）；Box 收缩带五读差集（全域+四边缘 2-device-px 带）；Line 跨线沿线采样近似；测试缝 SetPickRectHandlerForTest 逐读回调 |
+
+**收口登记**：
+- TD-26 信号增强实录：AcsDiscSurvivesDeepZoomPixels 开发中连续隔离 ×2 同败 +
+  stash 双态对照（P2 stash 后 P1 净基线同败）——预存真缺陷与 M-O(3) 改动面
+  无关；**全量门禁自然通过**（间歇态与复现轮交替实录，§14 TD-26 行更新）。
+- DtaToolsWiring.GltfDecoration 偶发 flake 一录：3f 随机采样贴界
+  （createGltfInstanceTransform 随机 P+sR 组合贴 4.5×maxExtent 界）——
+  隔离复跑绿；后续如再现可收紧界或固定种子采样集。
+- ViewTool.cpp 曾因 PS 5.1 文本管道改源导致中文注释编码损坏——git checkout
+  还原后经 Edit 工具重做（取证仪器教训同 M-O(2) 收口登记）。
+- 全量门禁（2026-10-04，Debug）：**2618 项 = 2592 通过 + 26 跳过 + 0 失败**。
