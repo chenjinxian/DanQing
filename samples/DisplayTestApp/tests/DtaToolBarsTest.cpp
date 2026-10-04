@@ -104,12 +104,16 @@ TEST(DtaToolBarsViews, ContentsMatchDtaOrderAndBlankSemantics)
         EXPECT_EQ(acts[i]->objectName(),
                   QStringLiteral("DTA.PanelToggle.") + acts[i]->text()) << i;
     }
-    for (int i = 6; i < 8; ++i) {
-        EXPECT_EQ(acts[i]->menu(), nullptr) << i;   // 无箭头
-        EXPECT_NE(tb->findChild<QMenu*>(
-                      QStringLiteral("DTA.DropDown.") + acts[i]->text()),
-                  nullptr) << i;                     // 点击弹出的菜单存在
-    }
+    // Saved Views（i=6，M-O(2) I9）：QToolButton 弹出面板（Overrides 同款——
+    // SavedViewPicker 按需创建，命名按钮为可测 seam）。
+    EXPECT_EQ(acts[6]->menu(), nullptr);
+    EXPECT_NE(tb->findChild<QToolButton*>(QStringLiteral("DTA.SavedViews.Button")),
+              nullptr);
+    // Camera Paths（i=7）仍为空下拉（菜单以命名子对象挂工具栏下）。
+    EXPECT_EQ(acts[7]->menu(), nullptr);
+    EXPECT_NE(tb->findChild<QMenu*>(
+                  QStringLiteral("DTA.DropDown.") + acts[7]->text()),
+              nullptr);
 }
 
 // Authored: no reference test exists in display-test-app for ViewPicker toolbar

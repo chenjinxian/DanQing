@@ -370,6 +370,11 @@ private:
     std::string m_vertSource;
     std::string m_fragSource;
     std::string m_description;
+
+    // M-O(2) 3d：debug-shaders 注册表下标（-1 = 未记录/收集关闭）——
+    // compile 记录、use 标 isUsed（ShaderProgram.ts:337-374）。
+    int m_vertDebugNdx = -1;
+    int m_fragDebugNdx = -1;
     CompileStatus m_status = CompileStatus::Uncompiled;
     bool m_inUse = false;
     bool m_outputsToPick = false;

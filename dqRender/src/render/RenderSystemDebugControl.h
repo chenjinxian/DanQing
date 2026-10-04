@@ -1,13 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
-// DanQing dqRender — Render system debug control interface
+// DanQing dqRender — Render system debug control（shader 调试累积面）
 // Ported from: itwinjs-core core/frontend/src/internal/render/RenderSystemDebugControl.ts
 //
-// Provides an interface for controlling render system diagnostic features:
-// context loss simulation, diagnostic output, GPU timer profiling, and bulk
-// shader compilation.
+// M-O(2) 3d：DebugShaderFile 载体与 compileAllShaders/debugShaderFiles 面升到
+// 公开 RenderSystem.h（宿主 OutputShadersTool 消费面）；本文件持：
+//   - RenderDiagnostics / GLTimerResult（公开 RenderSystem.h 的同源件——
+//     保留内部别名以稳既有 include 面）；
+//   - debug-shaders 收集门与累积注册表（System.ts:317 debugShaderFiles +
+//     options.debugShaders 的 env 等价）。
 #pragma once
 
-#include <cstdint>
+#include "dqRender/RenderSystem.h"  // DebugShaderFile / RenderSystemDebugControl
+
+#include <cstdlib>
+#include <vector>
 
 #ifndef BEGIN_DQ_RENDER_NAMESPACE
 #define BEGIN_DQ_RENDER_NAMESPACE namespace dqRender {
@@ -42,54 +48,14 @@ inline RenderDiagnostics operator&(RenderDiagnostics a, RenderDiagnostics b) noe
 }
 
 // ---------------------------------------------------------------------------
-// GLTimerResult — GPU timer profiling result
-// (Ported from: itwinjs-core RenderSystemDebugControl.ts GLTimerResult)
-//
-// no-op queries seem to have ~32ns of noise on some backends.
+// debug-shaders 收集门（options.debugShaders 的 DanQing 等价——env
+// DANQING_DEBUG_SHADERS，对齐参考 IMJS_DEBUG_SHADERS；进程首用快照）。
 // ---------------------------------------------------------------------------
-struct GLTimerResult {
-    /// Label from GLTimer.beginOperation.
-    char const* label = nullptr;
-    /// Time elapsed in nanoseconds, inclusive of child result times.
-    uint64_t nanoseconds = 0;
-};
+bool isDebugShadersEnabled();
 
-/// Callback type for receiving GPU timer results.
-using GLTimerResultCallback = void (*)(GLTimerResult const&);
-
-// ---------------------------------------------------------------------------
-// DebugShaderFile — metadata for a compiled shader
-// (Ported from: itwinjs-core RenderSystemDebugControl.ts DebugShaderFile)
-// ---------------------------------------------------------------------------
-struct DebugShaderFile {
-    char const* filename = nullptr;
-    char const* src = nullptr;
-    bool isVS = false;
-    bool isGL = false;
-    bool isUsed = false;
-};
-
-// ---------------------------------------------------------------------------
-// IRenderSystemDebugControl — interface for render system debugging
-// (Ported from: itwinjs-core RenderSystemDebugControl.ts RenderSystemDebugControl)
-// ---------------------------------------------------------------------------
-struct IRenderSystemDebugControl {
-    virtual ~IRenderSystemDebugControl() = default;
-
-    /// Destroy the graphics context.  Returns false if unsupported.
-    virtual bool loseContext() = 0;
-
-    /// Enable or disable diagnostic facilities.
-    virtual void enableDiagnostics(RenderDiagnostics enable) = 0;
-
-    /// Attempt to compile all shader programs.  Returns true if all succeed.
-    virtual bool compileAllShaders() = 0;
-
-    /// True if the backend supports GPU timer queries.
-    virtual bool isGLTimerSupported() const = 0;
-
-    /// Set the callback invoked with GPU timer results each frame.
-    virtual void setResultsCallback(GLTimerResultCallback callback) = 0;
-};
+// 累积注册表（System.instance.debugShaderFiles :317 等价——ShaderProgram
+// ::compile 逐条追加、use 标 isUsed；RenderSystemDebugControl.debugShaderFiles
+// 指向此处）。
+std::vector<DebugShaderFile>& debugShaderFilesRegistry();
 
 END_DQ_RENDER_NAMESPACE

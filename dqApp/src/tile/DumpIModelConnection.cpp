@@ -7,6 +7,7 @@
 #include "dqApp/ViewState.h"               // ViewStateProps 完整消费（views.load 链）
 
 #include <cstdint>
+#include <cstdio>
 #include <fstream>
 
 BEGIN_DQ_APP_NAMESPACE
@@ -409,8 +410,340 @@ std::optional<ViewStateProps> parseViewStateProps(dumpjson::JsonValue const& jso
 
     return out;
 }
+}  // namespace
+
+// --- M-O(2) I9：序列化缝的写出半边 ---
+// 字段面与 parseViewStateProps 的消费面互为闭偶；optional 字段缺席不写出
+//（回读 nullopt = fromJSON 缺省语义）。数值 %.17g = double 的 round-trip
+// 精度（parse 侧 strtod 同域）。
+namespace {
+
+void appendJsonEscaped(std::string& out, std::string const& s)
+{
+    out.push_back('"');
+    for (char c : s) {
+        switch (c) {
+            case '"': out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default:
+                if (static_cast<unsigned char>(c) < 0x20) {
+                    char buf[8];
+                    std::snprintf(buf, sizeof(buf), "\\u%04x", c);
+                    out += buf;
+                } else {
+                    out.push_back(c);
+                }
+        }
+    }
+    out.push_back('"');
+}
+
+void appendJsonNumber(std::string& out, double v)
+{
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%.17g", v);
+    out += buf;
+}
+
+// 紧凑 JSON 对象写出器（参考 JSON.stringify(props) 的无缩进形态）。
+struct JsonObjWriter {
+    std::string out = "{";
+    bool first = true;
+
+    void separator(char const* key)
+    {
+        if (!first)
+            out.push_back(',');
+        first = false;
+        appendJsonEscaped(out, key);
+        out.push_back(':');
+    }
+    void str(char const* key, std::string const& v)
+    {
+        separator(key);
+        appendJsonEscaped(out, v);
+    }
+    void num(char const* key, double v)
+    {
+        separator(key);
+        appendJsonNumber(out, v);
+    }
+    void numOpt(char const* key, std::optional<double> const& v)
+    {
+        if (v)
+            num(key, *v);
+    }
+    void intOpt(char const* key, std::optional<int> const& v)
+    {
+        if (v)
+            num(key, static_cast<double>(*v));
+    }
+    void boolean(char const* key, bool v)
+    {
+        separator(key);
+        out += v ? "true" : "false";
+    }
+    void boolOpt(char const* key, std::optional<bool> const& v)
+    {
+        if (v)
+            boolean(key, *v);
+    }
+    void raw(char const* key, std::string const& v)  // 已构造的子对象/数组
+    {
+        separator(key);
+        out += v;
+    }
+};
+
+std::string jsonIdArray(std::vector<dqBase::DqId> const& ids)
+{
+    std::string out = "[";
+    bool first = true;
+    for (auto const& id : ids) {
+        if (!first)
+            out.push_back(',');
+        first = false;
+        appendJsonEscaped(out, id.ToString());
+    }
+    out.push_back(']');
+    return out;
+}
+
+std::string jsonPoint3(dqGeom::Point3d const& p)
+{
+    std::string out = "[";
+    appendJsonNumber(out, p.x);
+    out.push_back(',');
+    appendJsonNumber(out, p.y);
+    out.push_back(',');
+    appendJsonNumber(out, p.z);
+    out.push_back(']');
+    return out;
+}
+
+std::string jsonViewFlagProps(dqCommon::ViewFlagProps const& vf)
+{
+    JsonObjWriter w;
+    w.boolOpt("noConstruct", vf.noConstruct);
+    w.boolOpt("noDim", vf.noDim);
+    w.boolOpt("noPattern", vf.noPattern);
+    w.boolOpt("noWeight", vf.noWeight);
+    w.boolOpt("noStyle", vf.noStyle);
+    w.boolOpt("noTransp", vf.noTransp);
+    w.boolOpt("noFill", vf.noFill);
+    w.boolOpt("grid", vf.grid);
+    w.boolOpt("acs", vf.acs);
+    w.boolOpt("noTexture", vf.noTexture);
+    w.boolOpt("noMaterial", vf.noMaterial);
+    w.boolOpt("noCameraLights", vf.noCameraLights);
+    w.boolOpt("noSourceLights", vf.noSourceLights);
+    w.boolOpt("noSolarLight", vf.noSolarLight);
+    w.boolOpt("visEdges", vf.visEdges);
+    w.boolOpt("hidEdges", vf.hidEdges);
+    w.boolOpt("shadows", vf.shadows);
+    w.boolOpt("clipVol", vf.clipVol);
+    w.boolOpt("monochrome", vf.monochrome);
+    w.boolOpt("backgroundMap", vf.backgroundMap);
+    w.boolOpt("ambientOcclusion", vf.ambientOcclusion);
+    w.boolOpt("thematicDisplay", vf.thematicDisplay);
+    w.boolOpt("wiremesh", vf.wiremesh);
+    w.boolOpt("forceSurfaceDiscard", vf.forceSurfaceDiscard);
+    w.boolOpt("noWhiteOnWhiteReversal", vf.noWhiteOnWhiteReversal);
+    if (vf.renderMode.has_value())
+        w.num("renderMode", static_cast<double>(static_cast<int>(*vf.renderMode)));
+    w.out.push_back('}');
+    return std::move(w.out);
+}
+
+std::string jsonHiddenLineStyleProps(dqCommon::HiddenLineStyleProps const& s)
+{
+    JsonObjWriter w;
+    w.boolOpt("ovrColor", s.ovrColor);
+    if (s.color.has_value())
+        w.num("color", static_cast<double>(*s.color));
+    if (s.pattern.has_value())
+        w.num("pattern", static_cast<double>(static_cast<uint32_t>(*s.pattern)));
+    w.intOpt("width", s.width);
+    w.out.push_back('}');
+    return std::move(w.out);
+}
+
+std::string jsonHiddenLineSettingsProps(dqCommon::HiddenLineSettingsProps const& s)
+{
+    JsonObjWriter w;
+    if (s.visible.has_value())
+        w.raw("visible", jsonHiddenLineStyleProps(*s.visible));
+    if (s.hidden.has_value())
+        w.raw("hidden", jsonHiddenLineStyleProps(*s.hidden));
+    w.numOpt("transThreshold", s.transThreshold);
+    w.out.push_back('}');
+    return std::move(w.out);
+}
+
+std::string jsonRgb(dqCommon::RgbColorProps const& rgb)
+{
+    JsonObjWriter w;
+    w.num("r", static_cast<double>(rgb.r));
+    w.num("g", static_cast<double>(rgb.g));
+    w.num("b", static_cast<double>(rgb.b));
+    w.out.push_back('}');
+    return std::move(w.out);
+}
+
+std::string jsonLightSettingsProps(dqCommon::LightSettingsProps const& ls)
+{
+    JsonObjWriter w;
+    if (ls.solar.has_value()) {
+        JsonObjWriter solar;
+        solar.numOpt("intensity", ls.solar->intensity);
+        solar.boolOpt("alwaysEnabled", ls.solar->alwaysEnabled);
+        solar.numOpt("timePoint", ls.solar->timePoint);
+        if (ls.solar->dirX.has_value() || ls.solar->dirY.has_value()
+            || ls.solar->dirZ.has_value()) {
+            JsonObjWriter dir;
+            dir.numOpt("x", ls.solar->dirX);
+            dir.numOpt("y", ls.solar->dirY);
+            dir.numOpt("z", ls.solar->dirZ);
+            dir.out.push_back('}');
+            solar.raw("direction", std::move(dir.out));
+        }
+        solar.out.push_back('}');
+        w.raw("solar", std::move(solar.out));
+    }
+    if (ls.ambient.has_value()) {
+        JsonObjWriter amb;
+        if (ls.ambient->color.has_value())
+            amb.raw("color", jsonRgb(*ls.ambient->color));
+        amb.numOpt("intensity", ls.ambient->intensity);
+        amb.out.push_back('}');
+        w.raw("ambient", std::move(amb.out));
+    }
+    if (ls.hemisphere.has_value()) {
+        JsonObjWriter hemi;
+        if (ls.hemisphere->upperColor.has_value())
+            hemi.raw("upperColor", jsonRgb(*ls.hemisphere->upperColor));
+        if (ls.hemisphere->lowerColor.has_value())
+            hemi.raw("lowerColor", jsonRgb(*ls.hemisphere->lowerColor));
+        hemi.numOpt("intensity", ls.hemisphere->intensity);
+        hemi.out.push_back('}');
+        w.raw("hemisphere", std::move(hemi.out));
+    }
+    // portrait 段：parse 侧从 {"portrait":{"intensity":..}} 对象读取
+    //（采集面线格式——LightSettingsProps.portraitIntensity 的承载形态）。
+    if (ls.portraitIntensity.has_value()) {
+        JsonObjWriter portrait;
+        portrait.numOpt("intensity", ls.portraitIntensity);
+        portrait.out.push_back('}');
+        w.raw("portrait", std::move(portrait.out));
+    }
+    w.numOpt("specularIntensity", ls.specularIntensity);
+    w.intOpt("numCels", ls.numCels);
+    if (ls.fresnel.has_value()) {
+        JsonObjWriter fresnel;
+        fresnel.numOpt("intensity", ls.fresnel->intensity);
+        fresnel.boolOpt("invert", ls.fresnel->invert);
+        fresnel.out.push_back('}');
+        w.raw("fresnel", std::move(fresnel.out));
+    }
+    w.out.push_back('}');
+    return std::move(w.out);
+}
 
 }  // namespace
+
+// Ported from: itwinjs-core frontend-devtools serializeViewState（SavedViews
+// 保存面——props → JSON 字串；NamedVSPSProps._viewStatePropsString 载体）。
+std::string serializeViewStatePropsJson(ViewStateProps const& props)
+{
+    auto const& vd = props.viewDefinitionProps;
+
+    JsonObjWriter vdp;
+    vdp.str("classFullName", vd.classFullName);
+    vdp.str("id", vd.id.ToString());
+    {
+        JsonObjWriter code;
+        code.str("value", vd.codeValue);
+        code.out.push_back('}');
+        vdp.raw("code", std::move(code.out));
+    }
+    vdp.str("description", vd.description);
+    vdp.boolean("isPrivate", vd.isPrivate);
+    vdp.boolean("cameraOn", vd.cameraOn);
+    vdp.raw("origin", jsonPoint3(vd.origin));
+    {
+        std::string extents = "[";
+        appendJsonNumber(extents, vd.extents.x);
+        extents.push_back(',');
+        appendJsonNumber(extents, vd.extents.y);
+        extents.push_back(',');
+        appendJsonNumber(extents, vd.extents.z);
+        extents.push_back(']');
+        vdp.raw("extents", std::move(extents));
+    }
+    if (vd.hasAngles) {
+        JsonObjWriter angles;
+        angles.num("yaw", vd.yawDegrees);
+        angles.num("pitch", vd.pitchDegrees);
+        angles.num("roll", vd.rollDegrees);
+        angles.out.push_back('}');
+        vdp.raw("angles", std::move(angles.out));
+    }
+    {
+        JsonObjWriter camera;
+        camera.raw("eye", jsonPoint3(vd.camera.eye));
+        camera.num("focusDist", vd.camera.focusDist);
+        camera.num("lens", vd.camera.lensDegrees);
+        camera.out.push_back('}');
+        vdp.raw("camera", std::move(camera.out));
+    }
+    vdp.out.push_back('}');
+
+    JsonObjWriter csp;
+    csp.raw("categories", jsonIdArray(props.categorySelectorProps.categories));
+    csp.out.push_back('}');
+
+    JsonObjWriter styles;
+    auto const& dsp = props.displayStyleProps;
+    if (dsp.viewflags.has_value())
+        styles.raw("viewflags", jsonViewFlagProps(*dsp.viewflags));
+    if (dsp.hline.has_value())
+        styles.raw("hline", jsonHiddenLineSettingsProps(*dsp.hline));
+    if (dsp.lights.has_value())
+        styles.raw("lights", jsonLightSettingsProps(*dsp.lights));
+    styles.out.push_back('}');
+    JsonObjWriter jsonProperties;
+    jsonProperties.raw("styles", std::move(styles.out));
+    jsonProperties.out.push_back('}');
+    JsonObjWriter displayStyle;
+    displayStyle.raw("jsonProperties", std::move(jsonProperties.out));
+    displayStyle.out.push_back('}');
+
+    JsonObjWriter out;
+    out.raw("viewDefinitionProps", std::move(vdp.out));
+    out.raw("categorySelectorProps", std::move(csp.out));
+    out.raw("displayStyleProps", std::move(displayStyle.out));
+    if (props.modelSelectorProps.has_value()) {
+        JsonObjWriter msp;
+        msp.raw("models", jsonIdArray(props.modelSelectorProps->models));
+        msp.out.push_back('}');
+        out.raw("modelSelectorProps", std::move(msp.out));
+    }
+    out.out.push_back('}');
+    return std::move(out.out);
+}
+
+// Ported from: itwinjs-core frontend-devtools deserializeViewState（SavedViews
+// 恢复面——JSON 字串 → props；deserializeViewState(vsp, iModel) 的 props 半边）。
+std::optional<ViewStateProps> deserializeViewStatePropsJson(std::string_view json)
+{
+    auto doc = dumpjson::parseJsonDocument(json);
+    if (!doc)
+        return std::nullopt;
+    return parseViewStateProps(*doc);
+}
 
 dqBase::RefPtr<DumpIModelConnection> DumpIModelConnection::open(
     std::string const& imodelJsonPath)

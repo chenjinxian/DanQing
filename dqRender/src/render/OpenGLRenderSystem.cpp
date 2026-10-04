@@ -11,6 +11,8 @@
 #include "GraphicTemplateImpl.h"
 #include "PlanarGridGraphic.h"
 #include "PolyfaceGraphic.h"
+#include "RenderSystemDebugControl.h"  // debugShaderFilesRegistry（M-O(2) 3d）
+#include "TechniqueImpl.h"             // Techniques::compileAllShaders（M-O(2) 3d）
 #include "TextureHandle.h"
 #include "ViewportQuadGeometry.h"
 #include "PrimitiveBuilder.h"
@@ -23,6 +25,22 @@ OpenGLRenderSystem::OpenGLRenderSystem(std::unique_ptr<rhi::Driver> driver)
     : m_impl(new RenderSystemImpl(std::move(driver)))
     , m_ownsImpl(true)
 {
+}
+
+// M-O(2) 3d：compileAllShaders（System.ts:963 = techniques.compileShaders
+// Technique.ts:1009-1015）与 debugShaderFiles（:317 累积注册表）在 GLTimer
+// 持有的稳定控制面上幂等接线。
+RenderSystemDebugControl* OpenGLRenderSystem::debugControl()
+{
+    auto* c = m_impl ? m_impl->debugControl() : nullptr;
+    if (c != nullptr && !c->compileAllShaders) {
+        c->compileAllShaders = [this] {
+            return m_techniques != nullptr
+                && m_techniques->compileAllShaders(m_impl->getDriver());
+        };
+        c->debugShaderFiles = &debugShaderFilesRegistry();
+    }
+    return c;
 }
 
 std::unique_ptr<RenderTarget> OpenGLRenderSystem::createTarget(void* /*nativeWindow*/, uint32_t width, uint32_t height)

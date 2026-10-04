@@ -75,3 +75,6 @@ third_party/tile-sample-assets/rpc-dumps/bridge-edit-drill-v1/files/8.imdl
 # M-M(5) bridge-edit 全树 sweep：134MB 大瓦本地持有（同一字节 -b-2-0-0-0-1，
 # 跨会话确定性；manifest sha256 不变，回放缺瓦走父瓦兜底）
 third_party/tile-sample-assets/rpc-dumps/bridge-edit-sweep-v1/files/12.imdl
+
+saved-views-test/
+output-shaders-test/

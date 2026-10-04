@@ -306,6 +306,13 @@ public:
 
     /// compile all shaders.  Returns true if all compiled successfully.
     virtual bool compileShaders(rhi::Driver& driver) = 0;
+
+    /// Compile EVERY variant the technique can produce（debug 面——
+    /// RenderSystemDebugControl.compileAllShaders 的被调端，M-O(2) 3d）。
+    /// 参考 compileShaders 遍历 ctor 预建的全变体表；DanQing 预建子类沿用
+    /// compileShaders（缺省转发），懒建子类（MultiVariantTechnique）覆写为
+    /// 变体矩阵枚举。
+    virtual bool compileAllVariants(rhi::Driver& driver) { return compileShaders(driver); }
 };
 
 // ---------------------------------------------------------------------------
@@ -670,6 +677,11 @@ public:
     /// compile the next shader that hasn't been compiled yet (idle compilation).
     /// Returns true if a shader was compiled, false if all are done.
     bool idleCompileNextShader(rhi::Driver& driver);
+
+    /// Compile every registered technique's shaders; true iff all succeeded.
+    /// Ported from: itwinjs-core Techniques.compileShaders (Technique.ts:1009-1015
+    /// — System.compileAllShaders :963 的被调面；M-O(2) 3d).
+    bool compileAllShaders(rhi::Driver& driver);
 
     /// Get the total number of techniques.
     static constexpr size_t kTechniqueCount = static_cast<size_t>(TechniqueId::NumBuiltIn);

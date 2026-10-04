@@ -59,6 +59,16 @@ public:
     /// every variant here, but DanQing defers to first draw.
     bool compileShaders(rhi::Driver& /*driver*/) override { return true; }
 
+    /// Debug 面（M-O(2) 3d）：全变体矩阵枚举 build+compile——参考
+    /// SurfaceTechnique ctor（Technique.ts:318-361）的守卫枚举轴。EQUIVALENCE
+    /// （§11.10）：参考源 = 各技巧 ctor 各自的变体矩阵（Surface :318-361 /
+    /// Edge/PointString 同文件）；发散 = DanQing 以 Surface 矩阵为懒建模型的
+    /// 通用枚举面（轴超集——不消费的旗位只进 desc/缓存键，不产错误组合，
+    /// 守卫[None 模式免 edgeTest、thematic×shadowable 互斥]同参考 :328-330）；
+    /// 验证法 = OutputShadersTest.CompileAllShadersRecordsEveryVariant（注册表
+    /// 严格增长 + 增长段命名形）。
+    bool compileAllVariants(rhi::Driver& driver) override;
+
 private:
     /// Map TechniqueFlags to a variant index (9-bit hash).
     /// Ported from: itwinjs-core computeShaderIndex() per-technique.

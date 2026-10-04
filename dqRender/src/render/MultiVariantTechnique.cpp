@@ -53,4 +53,57 @@ ShaderProgram* MultiVariantTechnique::getShader(TechniqueFlags const& flags)
     return slot.get();
 }
 
+// compileAllVariants — debug 面：全变体矩阵枚举（getShader 命中即建，
+// ensureCompiled 即编译——不动 getShader 的懒建语义/启动路径零成本）。
+// Ported from: itwinjs-core Technique.ts SurfaceTechnique ctor 的守卫枚举
+// （:318-348——posType × instanced × animated × shadowable × wiremesh ×
+// thematic × edgeTestNeeded × featureMode × translucent；:328 None 模式免
+// edgeTest、:329-330 thematic × shadowable 互斥）。
+bool MultiVariantTechnique::compileAllVariants(rhi::Driver& driver)
+{
+    bool all = true;
+    for (int posIdx = 0; posIdx <= 1; ++posIdx) {
+        auto const posType = static_cast<PositionType>(posIdx);
+        for (int instanced = 0; instanced <= 1; ++instanced) {
+            for (int animated = 0; animated <= 1; ++animated) {
+                for (int shadowable = 0; shadowable <= 1; ++shadowable) {
+                    for (int wiremesh = 0; wiremesh <= 1; ++wiremesh) {
+                        for (int thematic = 0; thematic <= 1; ++thematic) {
+                            for (int edgeTest = 0; edgeTest <= 1; ++edgeTest) {
+                                for (auto featureMode :
+                                     {FeatureMode::None, FeatureMode::Pick,
+                                      FeatureMode::Overrides}) {
+                                    for (int translucent = 0; translucent <= 1;
+                                         ++translucent) {
+                                        if (FeatureMode::None == featureMode
+                                            && 0 != edgeTest)
+                                            continue;  // :328
+                                        if (1 == thematic && 1 == shadowable)
+                                            continue;  // :329-330 disallowed
+
+                                        TechniqueFlags flags;
+                                        flags.reset(featureMode, instanced != 0,
+                                                    shadowable != 0, thematic != 0,
+                                                    posType);
+                                        flags.isAnimated = animated != 0;
+                                        flags.isEdgeTestNeeded = edgeTest != 0;
+                                        flags.isTranslucent = translucent != 0;
+                                        flags.isWiremesh = wiremesh != 0;
+                                        ShaderProgram* prog = getShader(flags);
+                                        if (prog == nullptr
+                                            || prog->ensureCompiled(driver)
+                                                   != CompileStatus::Success)
+                                            all = false;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return all;
+}
+
 END_DQ_RENDER_NAMESPACE

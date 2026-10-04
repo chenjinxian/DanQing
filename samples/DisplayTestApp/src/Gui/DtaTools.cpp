@@ -32,6 +32,7 @@
 #include "FpsMonitor.h"
 #include "Application.h"
 #include "GltfDecorationTool.h"
+#include "OutputShadersTool.h"        // M-O(2) 3d OutputShaders 工具注册
 #include "GridSettingsTool.h"
 #include "KeyinField.h"
 #include "MainWindow.h"
@@ -78,6 +79,11 @@ void registerDtaTools()
     registry.Register("AddGltfDecoration",
                       []() -> dqApp::InteractiveTool* { return new GltfDecorationTool(); },
                       "dta gltf");
+    // M-O(2) 3d：OutputShadersTool（OutputShadersTool.ts:322-367——keyin
+    // "dta output shaders"；c 编译 + u/n/v/f/g/h 六向过滤 + d= 目录）。
+    registry.Register("OutputShaders",
+                      []() -> dqApp::InteractiveTool* { return new OutputShadersTool(); },
+                      "dta output shaders");
 }
 
 void setupDtaStatusBar(MainWindow* mainWindow)

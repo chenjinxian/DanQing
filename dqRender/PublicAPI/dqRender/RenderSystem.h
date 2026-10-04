@@ -30,6 +30,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 BEGIN_DQ_RENDER_NAMESPACE
 
@@ -49,6 +50,19 @@ struct GLTimerResult {
 // Ported from: GLTimerResultCallback (RenderSystemDebugControl.ts:32).
 using GLTimerResultCallback = std::function<void(GLTimerResult const&)>;
 
+// Metadata for one compiled shader source accumulated for debugging.
+// Ported from: itwinjs-core DebugShaderFile (RenderSystemDebugControl.ts:36-44).
+// Entries are recorded at compile time when debug-shaders collection is on
+// (env DANQING_DEBUG_SHADERS — DanQing equivalent of RenderSystem.Options
+// .debugShaders = IMJS_DEBUG_SHADERS); isUsed flips at first use.
+struct DebugShaderFile {
+    std::string filename;  // derived from the program description (//!V!///!F! markers)
+    std::string src;       // the GLSL source as compiled
+    bool isVS = false;
+    bool isGL = true;      // DanQing GL-only（参考的 HLSL/Angle 段无域）
+    bool isUsed = false;
+};
+
 // Debug controls optionally exposed by a RenderSystem.
 // Ported from: itwinjs-core RenderSystemDebugControl (RenderSystemDebugControl.ts:48-84).
 // DanQing: RHI timer queries (EXT_disjoint_timer_query) are not implemented —
@@ -64,6 +78,15 @@ struct RenderSystemDebugControl {
     // Record GPU profiling information for each frame drawn. Check
     // isGLTimerSupported before using.
     GLTimerResultCallback resultsCallback;
+
+    // M-O(2) 3d：compileAllShaders（RenderSystemDebugControl.ts:67——
+    // System.compileAllShaders :963 = techniques.compileShaders :1009-1015）。
+    // 由 concrete system 填充（无注册表/driver 的系统保持空 = 调用不可用）。
+    std::function<bool()> compileAllShaders;
+
+    // M-O(2) 3d：debugShaderFiles（:70——System.ts:317 的累积数组指针；
+    // dqRender 侧注册表由 ShaderProgram::compile 逐条追加、use 标 isUsed）。
+    std::vector<DebugShaderFile>* debugShaderFiles = nullptr;
 };
 
 // Abstract rendering system interface.

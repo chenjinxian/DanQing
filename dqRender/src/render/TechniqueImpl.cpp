@@ -344,4 +344,20 @@ bool Techniques::idleCompileNextShader(rhi::Driver& driver)
     return false;
 }
 
+// Ported from: itwinjs-core Techniques.compileShaders (Technique.ts:1009-1015
+// — `for (const tech of this._techniques) if (!tech.compileShaders())
+// allCompiled = false`; M-O(2) 3d——System.compileAllShaders :963 的被调面。
+// 逐技巧走 compileAllVariants[预建子类= compileShaders，懒建子类= 矩阵枚举]）.
+bool Techniques::compileAllShaders(rhi::Driver& driver)
+{
+    bool allCompiled = true;
+    for (auto& tech : m_techniques) {
+        if (!tech)
+            continue;
+        if (!tech->compileAllVariants(driver))
+            allCompiled = false;
+    }
+    return allCompiled;
+}
+
 END_DQ_RENDER_NAMESPACE

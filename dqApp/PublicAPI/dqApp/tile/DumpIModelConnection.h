@@ -24,12 +24,14 @@
 
 #include "../Export.h"
 #include "../IModelConnection.h"
+#include "../ViewStateProps.h"
 
 #include <dqBase/DqId.h>
 #include <dqGeom/Range3d.h>
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #ifndef BEGIN_DQ_APP_NAMESPACE
@@ -116,5 +118,17 @@ private:
     std::vector<ModelInfo> m_models;
     std::vector<PlacementInfo> m_placements;  // M-N(2)：placements.json（可缺席）
 };
+
+// --- M-O(2) I9：ViewStateProps ↔ JSON 序列化缝 ---
+// Ported from: itwinjs-core frontend-devtools serializeViewState/deserialize
+//              ViewState（SavedViews.ts 的保存/恢复消费面——参考侧 props 经
+//              JSON.stringify/parse 进 NamedVSPSProps._viewStatePropsString）。
+// 写出字段面与本文件 cpp 内 parseViewStateProps 的消费面互为闭偶（round-trip：
+// deserializeViewStatePropsJson(serializeViewStatePropsJson(p)) 在 parse 消费的
+// 全字段上逐项相等；StylesProps 的 optional 字段缺席不写出——回读保持 nullopt
+// 的 fromJSON 缺省语义）。
+DQ_APP_EXPORT std::string serializeViewStatePropsJson(ViewStateProps const& props);
+DQ_APP_EXPORT std::optional<ViewStateProps> deserializeViewStatePropsJson(
+    std::string_view json);
 
 END_DQ_APP_NAMESPACE

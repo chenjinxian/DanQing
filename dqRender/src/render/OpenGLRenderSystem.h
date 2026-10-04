@@ -8,6 +8,7 @@
 #include "dqRender/RenderSystem.h"
 #include "dqRender/RenderTarget.h"
 
+#include "RenderSystemDebugControl.h"  // debugShaderFilesRegistry（M-O(2) 3d）
 #include "RenderSystemImpl.h"
 
 #include <memory>
@@ -52,10 +53,10 @@ public:
 
     // Debug controls (GPU profiler) — forwards to RenderSystemImpl's GLTimer
     // (System.ts:967-970 equivalent: isGLTimerSupported + resultsCallback).
-    RenderSystemDebugControl* debugControl() override
-    {
-        return m_impl ? m_impl->debugControl() : nullptr;
-    }
+    // M-O(2) 3d：compileAllShaders（System.ts:963 = techniques.compileShaders
+    // :1009-1015）与 debugShaderFiles（:317 累积注册表）一并接线（实现移
+    // OpenGLRenderSystem.cpp——Techniques 全型在 cpp 侧）。
+    RenderSystemDebugControl* debugControl() override;
 
     // Set the techniques registry (called during RenderPipeline initialization).
     void setTechniques(void* techniques) override

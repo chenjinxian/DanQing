@@ -423,3 +423,145 @@ TEST(DumpIModelConnectionTest, ParsesTreePropsLocation)
     expectPoint(origin, 121.8398798277894, 123.09495545205353,
                 2.077572932359965, 1.0e-8);
 }
+
+// ---------------------------------------------------------------------------
+// M-O(2) I9 — ViewStateProps ↔ JSON 序列化缝 round-trip 锁（SavedViews 保存/
+// 恢复消费面：frontend-devtools serializeViewState/deserializeViewState 的
+// dump 域等价——NamedVSPSProps._viewStatePropsString 载体）。源 = instances60
+// 真实 defaultViewState（透视 saved 视图全字段面）。
+// ---------------------------------------------------------------------------
+// Authored: 见文件头（frontend-devtools 的 serialize/deserialize 无单测——参考
+//           SavedViews.ts 直接 stringify/parse 消费；本锁钉 round-trip 契约）。
+TEST(DumpIModelConnectionTest, ViewPropsJsonRoundTripRestoresAllFields)
+{
+    auto conn = dqApp::DumpIModelConnection::open(
+        kDumpRoot + "/instances60-imodel-v1/imodel.json");
+    ASSERT_TRUE(conn.IsValid());
+    ASSERT_TRUE(conn->getDefaultViewState().has_value());
+    auto const& src = *conn->getDefaultViewState();
+
+    auto const roundTripped = dqApp::deserializeViewStatePropsJson(
+        dqApp::serializeViewStatePropsJson(src));
+    ASSERT_TRUE(roundTripped.has_value());
+    auto const& rt = *roundTripped;
+
+    // --- viewDefinitionProps（parse 消费面逐项） ---
+    auto const& a = src.viewDefinitionProps;
+    auto const& b = rt.viewDefinitionProps;
+    EXPECT_EQ(a.classFullName, b.classFullName);
+    EXPECT_EQ(a.id, b.id);
+    EXPECT_EQ(a.codeValue, b.codeValue);
+    EXPECT_EQ(a.description, b.description);
+    EXPECT_EQ(a.isPrivate, b.isPrivate);
+    EXPECT_EQ(a.cameraOn, b.cameraOn);
+    expectPoint(b.origin, a.origin.x, a.origin.y, a.origin.z);
+    EXPECT_NEAR(a.extents.x, b.extents.x, kTol);
+    EXPECT_NEAR(a.extents.y, b.extents.y, kTol);
+    EXPECT_NEAR(a.extents.z, b.extents.z, kTol);
+    EXPECT_EQ(a.hasAngles, b.hasAngles);
+    if (a.hasAngles) {
+        EXPECT_NEAR(a.yawDegrees, b.yawDegrees, kTol);
+        EXPECT_NEAR(a.pitchDegrees, b.pitchDegrees, kTol);
+        EXPECT_NEAR(a.rollDegrees, b.rollDegrees, kTol);
+    }
+    expectPoint(b.camera.eye, a.camera.eye.x, a.camera.eye.y, a.camera.eye.z);
+    EXPECT_NEAR(a.camera.focusDist, b.camera.focusDist, kTol);
+    EXPECT_NEAR(a.camera.lensDegrees, b.camera.lensDegrees, kTol);
+
+    // --- categorySelectorProps ---
+    ASSERT_EQ(src.categorySelectorProps.categories.size(),
+              rt.categorySelectorProps.categories.size());
+    for (size_t i = 0; i < src.categorySelectorProps.categories.size(); ++i)
+        EXPECT_EQ(src.categorySelectorProps.categories[i],
+                  rt.categorySelectorProps.categories[i]) << i;
+
+    // --- modelSelectorProps（optional 本体 + models 逐项） ---
+    ASSERT_EQ(src.modelSelectorProps.has_value(),
+              rt.modelSelectorProps.has_value());
+    if (src.modelSelectorProps.has_value()) {
+        ASSERT_EQ(src.modelSelectorProps->models.size(),
+                  rt.modelSelectorProps->models.size());
+        for (size_t i = 0; i < src.modelSelectorProps->models.size(); ++i)
+            EXPECT_EQ(src.modelSelectorProps->models[i],
+                      rt.modelSelectorProps->models[i]) << i;
+    }
+
+    // --- displayStyleProps 三段（optional has_value 守恒 + 值域） ---
+    auto const& sds = src.displayStyleProps;
+    auto const& rds = rt.displayStyleProps;
+    ASSERT_EQ(sds.viewflags.has_value(), rds.viewflags.has_value());
+    if (sds.viewflags.has_value()) {
+        auto const& svf = *sds.viewflags;
+        auto const& rvf = *rds.viewflags;
+        auto expectBool = [&](std::optional<bool> x, std::optional<bool> y) {
+            EXPECT_EQ(x.has_value(), y.has_value());
+            if (x.has_value())
+                EXPECT_EQ(*x, *y);
+        };
+        expectBool(svf.grid, rvf.grid);
+        expectBool(svf.acs, rvf.acs);
+        expectBool(svf.visEdges, rvf.visEdges);
+        expectBool(svf.hidEdges, rvf.hidEdges);
+        expectBool(svf.clipVol, rvf.clipVol);
+        expectBool(svf.monochrome, rvf.monochrome);
+        expectBool(svf.noFill, rvf.noFill);
+        expectBool(svf.noTransp, rvf.noTransp);
+        EXPECT_EQ(svf.renderMode.has_value(), rvf.renderMode.has_value());
+        if (svf.renderMode.has_value())
+            EXPECT_EQ(static_cast<int>(*svf.renderMode),
+                      static_cast<int>(*rvf.renderMode));
+    }
+    ASSERT_EQ(sds.hline.has_value(), rds.hline.has_value());
+    if (sds.hline.has_value()) {
+        EXPECT_EQ(sds.hline->transThreshold.has_value(),
+                  rds.hline->transThreshold.has_value());
+        if (sds.hline->transThreshold.has_value())
+            EXPECT_NEAR(*sds.hline->transThreshold, *rds.hline->transThreshold,
+                        kTol);
+        EXPECT_EQ(sds.hline->visible.has_value(), rds.hline->visible.has_value());
+        if (sds.hline->visible.has_value()) {
+            EXPECT_EQ(*sds.hline->visible->color, *rds.hline->visible->color);
+            EXPECT_EQ(*sds.hline->visible->width, *rds.hline->visible->width);
+        }
+    }
+    ASSERT_EQ(sds.lights.has_value(), rds.lights.has_value());
+    if (sds.lights.has_value()) {
+        auto const& sl = *sds.lights;
+        auto const& rl = *rds.lights;
+        ASSERT_EQ(sl.solar.has_value(), rl.solar.has_value());
+        if (sl.solar.has_value()) {
+            // instances60 的 lights 源 = sceneLights 旧格式回退（仅 sunDir——
+            // intensity/alwaysEnabled/timePoint 缺席保持 nullopt）。
+            ASSERT_EQ(sl.solar->intensity.has_value(),
+                      rl.solar->intensity.has_value());
+            if (sl.solar->intensity.has_value())
+                EXPECT_NEAR(*sl.solar->intensity, *rl.solar->intensity, kTol);
+            EXPECT_NEAR(*sl.solar->dirX, *rl.solar->dirX, kTol);
+            EXPECT_NEAR(*sl.solar->dirY, *rl.solar->dirY, kTol);
+            EXPECT_NEAR(*sl.solar->dirZ, *rl.solar->dirZ, kTol);
+        }
+        ASSERT_EQ(sl.ambient.has_value(), rl.ambient.has_value());
+        ASSERT_EQ(sl.hemisphere.has_value(), rl.hemisphere.has_value());
+        ASSERT_EQ(sl.portraitIntensity.has_value(), rl.portraitIntensity.has_value());
+        if (sl.portraitIntensity.has_value())
+            EXPECT_NEAR(*sl.portraitIntensity, *rl.portraitIntensity, kTol);
+    }
+}
+
+// 缺省面：全 optional 段缺席的 props round-trip 后保持缺席（fromJSON 缺省
+// 语义的守恒——序列化不无中生有）。
+// Authored: 见文件头。
+TEST(DumpIModelConnectionTest, ViewPropsJsonRoundTripKeepsAbsentOptionalsAbsent)
+{
+    dqApp::ViewStateProps minimal;
+    auto const roundTripped = dqApp::deserializeViewStatePropsJson(
+        dqApp::serializeViewStatePropsJson(minimal));
+    ASSERT_TRUE(roundTripped.has_value());
+    EXPECT_FALSE(roundTripped->displayStyleProps.viewflags.has_value());
+    EXPECT_FALSE(roundTripped->displayStyleProps.hline.has_value());
+    EXPECT_FALSE(roundTripped->displayStyleProps.lights.has_value());
+    EXPECT_FALSE(roundTripped->modelSelectorProps.has_value());
+    EXPECT_FALSE(roundTripped->viewDefinitionProps.hasAngles);
+    EXPECT_TRUE(roundTripped->categorySelectorProps.categories.empty());
+    EXPECT_EQ(dqBase::DqId(), roundTripped->viewDefinitionProps.id);
+}

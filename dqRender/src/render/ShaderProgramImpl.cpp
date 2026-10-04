@@ -2,10 +2,12 @@
 // DanQing dqRender — Shader program implementation
 // Ported from: itwinjs-core core/frontend/src/internal/render/webgl/ShaderProgram.ts
 #include "ShaderProgramImpl.h"
+#include "RenderSystemDebugControl.h"  // debug-shaders 收集门/注册表（M-O(2) 3d）
 #include "rhi/opengl/OpenGLDriver.h"
 #include "rhi/opengl/OpenGLProgram.h"
 
 #include <cassert>
+#include <string>
 
 BEGIN_DQ_RENDER_NAMESPACE
 
@@ -50,6 +52,43 @@ void GraphicUniform::bind(DrawParams const& params)
 // ===========================================================================
 // ShaderProgram
 // ===========================================================================
+
+// saveShaderCode 的文件名派生（M-O(2) 3d）——desc 剥阶段前缀、分隔符归一、
+// 追加阶段后缀；返回注册表下标。
+// Ported from: itwinjs-core ShaderProgram.saveShaderCode (:355-374).
+static int saveShaderCodeForDebug(bool isVS, std::string const& desc,
+                                  std::string const& src)
+{
+    auto& files = debugShaderFilesRegistry();
+    std::string sname;
+    auto replaceAll = [](std::string s, std::string const& from,
+                         std::string const& to) {
+        size_t pos = 0;
+        while ((pos = s.find(from, pos)) != std::string::npos) {
+            s.replace(pos, from.size(), to);
+            pos += to.size();
+        }
+        return s;
+    };
+    if (!desc.empty()) {
+        sname = replaceAll(desc, isVS ? "//!V! " : "//!F! ", "");
+        sname = replaceAll(sname, ": ", "-");
+        sname = replaceAll(sname, "; ", "-");
+    } else {
+        // need to investigate shaders with no comments to derive names, for
+        // now come up with unique name（:367-368 逐字语义）
+        sname = "noname-" + std::to_string(files.size());
+    }
+    sname += isVS ? "_VS" : "_FS";
+    DebugShaderFile entry;
+    entry.filename = sname + ".glsl";
+    entry.src = src;
+    entry.isVS = isVS;
+    entry.isGL = true;
+    entry.isUsed = false;
+    files.push_back(std::move(entry));
+    return static_cast<int>(files.size()) - 1;
+}
 
 // ---------------------------------------------------------------------------
 // setSource — set shader source code before compilation
@@ -120,6 +159,18 @@ CompileStatus ShaderProgram::compile(rhi::Driver& driver)
     if (m_vertSource.empty() && m_fragSource.empty())
         return CompileStatus::Failure;
 
+    // saveShaderCode（M-O(2) 3d）——debug-shaders 收集开启时把两段源码连同
+    // 从 description 派生的文件名记入注册表（失败与否都记——compile 错误
+    // 的取证正是该面存在的目的）。
+    // Ported from: itwinjs-core ShaderProgram.saveShaderCode (:355-374——
+    // desc 剥 "//!V! "/"//!F! " 前缀、": "/"； "→"-"、空 desc → noname-N、
+    // 追加 _VS/_FS + .glsl；DanQing GL-only 单段）。索引存回成员供 use 标
+    // isUsed（setDebugShaderUsage :337-353）。
+    if (isDebugShadersEnabled()) {
+        m_vertDebugNdx = saveShaderCodeForDebug(true, m_description, m_vertSource);
+        m_fragDebugNdx = saveShaderCodeForDebug(false, m_description, m_fragSource);
+    }
+
     // Build ONE rhi::Program carrying BOTH vertex + fragment sources, then create
     // the program once. The driver's createProgram (OpenGLDriver) extracts both
     // stages and compiles+links them together.
@@ -189,6 +240,17 @@ bool ShaderProgram::use(rhi::Driver& driver, ShaderProgramParams const& params)
 
     assert(!m_inUse);
     m_inUse = true;
+
+    // setDebugShaderUsage（M-O(2) 3d）——程序激活即标已用（isUsed 供
+    // OutputShaders 的 u/n 过滤面）。
+    // Ported from: itwinjs-core ShaderProgram.setDebugShaderUsage (:337-353)。
+    if (isDebugShadersEnabled()) {
+        auto& files = debugShaderFilesRegistry();
+        if (m_vertDebugNdx >= 0 && m_vertDebugNdx < static_cast<int>(files.size()))
+            files[static_cast<size_t>(m_vertDebugNdx)].isUsed = true;
+        if (m_fragDebugNdx >= 0 && m_fragDebugNdx < static_cast<int>(files.size()))
+            files[static_cast<size_t>(m_fragDebugNdx)].isUsed = true;
+    }
 
     // Bind the program ONLY. Ported from: itwinjs-core ShaderProgram.use() —
     // gl.useProgram + program uniforms, NO render-state changes. The previous

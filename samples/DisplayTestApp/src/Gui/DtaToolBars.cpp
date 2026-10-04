@@ -32,6 +32,7 @@
 #include "DebugWindow.h"              // Viewer.ts:238-242 Debug info panel
 #include "DecorationGeometryExample.h"   // Surface.ts:155-165 entry
 #include "FeatureOverridesPanel.h"   // M-O(2) I10 Overrides 弹出面板
+#include "SavedViewsPanel.h"         // M-O(2) I9 Saved Views 弹出面板
 #include "MainWindow.h"               // M-O(1) R2 addPanelToggle（dock 面板开关）
 #include "View3DInventor.h"
 #include "ViewSettingsPanel.h"   // Task 4: View Settings 弹出面板
@@ -337,7 +338,28 @@ void DtaToolBarSet::buildViewsToolBar(QMainWindow* mw)
                    QStringLiteral("Models"));
     addPanelToggle(m_viewsToolBar, QStringLiteral("Categories"), 0xe901,
                    QStringLiteral("Categories"));
-    addEmptyDropDown(m_viewsToolBar, QStringLiteral("Saved Views"), 0xe90d);
+    // M-O(2) I9（SavedViews.ts:19-286 SavedViewPicker）：弹出面板
+    //（FeatureOverridesPanel 先例——DTA ToolBarDropDown 的 Qt 等价）。
+    {
+        auto* btn = new QToolButton(m_viewsToolBar);
+        btn->setObjectName(QStringLiteral("DTA.SavedViews.Button"));
+        btn->setText(QStringLiteral("Saved Views"));
+        btn->setIcon(dtaGlyphIcon(0xe90d));
+        btn->setToolTip(QStringLiteral("Saved Views"));
+        btn->setPopupMode(QToolButton::InstantPopup);
+        QObject::connect(btn, &QToolButton::clicked, btn, [btn] {
+            auto* vp = activeViewport();
+            if (!vp)
+                return;
+            auto* panel = new Gui::SavedViewPicker(vp, btn);
+            panel->setAttribute(Qt::WA_DeleteOnClose);
+            panel->move(btn->mapToGlobal(QPoint(0, btn->height())));
+            panel->show();
+        });
+        QAction* sva = m_viewsToolBar->addWidget(btn);
+        sva->setText(QStringLiteral("Saved Views"));
+        sva->setIcon(dtaGlyphIcon(0xe90d));
+    }
     addEmptyDropDown(m_viewsToolBar, QStringLiteral("Camera Paths"), 0xe932);
 }
 
