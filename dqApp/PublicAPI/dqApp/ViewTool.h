@@ -246,6 +246,10 @@ public:
     // Ported from: itwinjs-core ViewingToolHandle.onWheel (ViewTool.ts:148).
     virtual bool onWheel(BeWheelEvent const&) { return false; }
 
+    // Ported from: itwinjs-core ViewingToolHandle.onKeyTransition (ViewTool.ts:158).
+    // 键值 = ToolEvent.key（Qt::Key 域——ToolAdmin.cpp kKey* 先例同源登记）。
+    virtual bool onKeyTransition(bool /*wentDown*/, uint32_t /*key*/) { return false; }
+
     // Ported from: itwinjs-core ViewingToolHandle.needDepthPoint (ViewTool.ts:158).
     virtual bool needDepthPoint(BeButtonEvent const&, bool /*isPreview*/) { return false; }
 
@@ -534,8 +538,9 @@ public:
     // Ported from: itwinjs-core ViewManip.provideToolAssistance (ViewTool.ts:630-657).
     // M-O(2) 3i 实装（ViewTool.cpp）——主指令 + mouse/touch 双段经
     // NotificationManager.setToolAssistance 扇出（additionalInstr 按
-    // inputMethod 分段，:642-649）。
-    void provideToolAssistance(
+    // inputMethod 分段，:642-649）。virtual：Walk/Fly/LookAndMove 追加键盘
+    // 指令段（M-O(3) P1，:3123-3155/:3172-3177/:3193-3198 覆写面）。
+    virtual void provideToolAssistance(
         std::string const& mainInstrKey,
         std::vector<ToolAssistanceInstruction> const& additionalInstr
         = {}) const;
@@ -552,6 +557,17 @@ public:
     static dqGeom::Point3d getDefaultTargetPointWorld(Viewport const& vp);
     // Ported from: itwinjs-core ViewManip.isPointVisible (ViewTool.ts:801-807).
     bool isPointVisible(dqGeom::Point3d const& testPt) const;
+    // Ported from: itwinjs-core ViewManip.setCameraLensAngle (ViewTool.ts:860-878
+    // ——M-O(3) P1：retainEyePoint&&cameraOn → view.lookAt 保眼位；否则
+    // vp.TurnCameraOn(lensAngle))。
+    ViewStatus setCameraLensAngle(dqGeom::Angle const& lensAngle, bool retainEyePoint);
+    // Ported from: itwinjs-core ViewManip.enforceZUp (ViewTool.ts:880-895
+    // ——M-O(3) P1：viewY→unitZ 旋转绕 pivot 的 fixed-point 变换）。
+    bool enforceZUp(dqGeom::Point3d const& pivotPoint);
+
+    // Ported from: itwinjs-core ViewManip.onKeyTransition (ViewTool.ts:615-618
+    // ——M-O(3) P1：路由到 focusHandle；键值 = ToolEvent.key Qt 域)。
+    EventHandled onKeyTransition(bool wentDown, uint32_t key) override;
 
     // Override of ViewTool.getToolId — concrete subclasses (PanViewTool,
     // RotateViewTool, ...) override with their toolId. TestManip uses this default.
@@ -876,6 +892,255 @@ public:
     // TODO: canvas-decoration rendering — Task 15. Body is a no-op (base default).
 };
 
+// NavigateMode — ViewNavigate 的模态（shift/无相机→Pan；ctrl→Look；缺省→Travel）。
+// Ported from: itwinjs-core ViewTool.ts:73 const enum NavigateMode (M-O(3) P1).
+enum class NavigateMode : uint8_t {
+    Pan = 0,
+    Look = 1,
+    Travel = 2,
+};
+
+// ---------------------------------------------------------------------------
+// NavigateMotion — walk/fly 逐帧运动合成器（平移/旋转/鼠标看的 Transform 生成）。
+// Ported from: itwinjs-core NavigateMotion (ViewTool.ts:1747-1921 — M-O(3) P1)。
+//
+// init(seconds) 重置时间与 transform；pan/look/travel/moveAndMouseLook/
+// moveAndLook 合成到公开 transform（ViewNavigate.animate 每帧
+// frustum.multiply(transform) → setupViewFromFrustum）。
+// ---------------------------------------------------------------------------
+class DQ_APP_EXPORT NavigateMotion {
+public:
+    // viewport 可空（参考 :2030 `viewport!` 非空断言——DanQing 工具面可携空
+    // vp 构造；方法侧守卫恒等变换，与参考 `!vp` 早退同形）。
+    NavigateMotion() = default;
+    explicit NavigateMotion(Viewport* viewport)
+        : m_viewport(viewport)
+    {}
+
+    // Ported from: NavigateMotion.init (:1752-1755).
+    void init(double seconds);
+    // Ported from: NavigateMotion.transform (:1749 — 公开字段；读侧经引用)。
+    dqGeom::Transform& transform() noexcept { return m_transform; }
+    dqGeom::Transform const& transform() const noexcept { return m_transform; }
+
+    // Ported from: NavigateMotion.getViewUp (:1757).
+    dqGeom::Vector3d getViewUp() const;
+    // Ported from: NavigateMotion.getViewDirection (:1759-1763 — z 取负=入屏).
+    dqGeom::Vector3d getViewDirection() const;
+    // Ported from: NavigateMotion.takeElevator (:1765-1768).
+    void takeElevator(double height);
+    // Ported from: NavigateMotion.modifyPitchAngleToPreventInversion
+    //               (:1770-1796 — ±85° 限位 + 0.01° 容差).
+    double modifyPitchAngleToPreventInversion(double pitchAngle) const;
+    // Ported from: NavigateMotion.generateMouseLookTransform (:1798-1828).
+    dqGeom::Transform generateMouseLookTransform(dqGeom::Vector3d& accumulator,
+                                                 dqGeom::Point3d const& movement);
+    // Ported from: NavigateMotion.generateRotationTransform (:1830-1850).
+    dqGeom::Transform generateRotationTransform(double yawRate, double pitchRate);
+    // Ported from: NavigateMotion.generateTranslationTransform (:1852-1883).
+    dqGeom::Transform generateTranslationTransform(dqGeom::Vector3d const& velocity,
+                                                   bool isConstrainedToXY);
+    // Ported from: NavigateMotion.moveAndMouseLook (:1885-1890).
+    bool moveAndMouseLook(dqGeom::Vector3d& accumulator,
+                          dqGeom::Vector3d const& linearVelocity,
+                          dqGeom::Point3d const& movement, bool isConstrainedToXY);
+    // Ported from: NavigateMotion.moveAndLook (:1892-1896).
+    void moveAndLook(dqGeom::Vector3d const& linearVelocity,
+                     double angularVelocityX, double angularVelocityY,
+                     bool isConstrainedToXY);
+    // Ported from: NavigateMotion.pan (:1898-1901).
+    void pan(double horizontalVelocity, double verticalVelocity);
+    // Ported from: NavigateMotion.travel (:1903-1906).
+    void travel(double yawRate, double pitchRate, double forwardVelocity,
+                bool isConstrainedToXY);
+    // Ported from: NavigateMotion.look (:1908).
+    void look(double yawRate, double pitchRate);
+    // Ported from: NavigateMotion.resetToLevel (:1911-1920).
+    void resetToLevel();
+
+private:
+    double m_seconds = 0.0;
+    dqGeom::Transform m_transform;
+    Viewport* m_viewport = nullptr;
+};
+
+// ---------------------------------------------------------------------------
+// ViewNavigate — Walk/Fly/LookAndMove 共有基（AnimatedHandle 的键盘/时间驱动
+// 导航面）。Ported from: itwinjs-core ViewNavigate (ViewTool.ts:1924-2003 —
+// M-O(3) P1)。
+//
+// animate() 逐帧取 getNavigateMotion（派生合成）→ frustum × transform →
+// setupViewFromFrustum。onReinitialize 相机归位（walk 镜头角 + enforceZUp）。
+// ---------------------------------------------------------------------------
+class DQ_APP_EXPORT ViewNavigate : public AnimatedHandle {
+public:
+    explicit ViewNavigate(ViewManip* vm) noexcept
+        : AnimatedHandle(vm)
+    {}
+
+    // Ported from: ViewNavigate.getHandleCursor (:1928 — walkCursor；游标
+    // 资产未移植，字符串契约 stub 同 ViewPan 先例)。
+    std::string getHandleCursor() const override { return "walk"; }
+    // Ported from: ViewNavigate.getMaxLinearVelocity (:1929 — ToolSettings.walkVelocity).
+    virtual double getMaxLinearVelocity() const { return ToolSettings::walkVelocity; }
+    // Ported from: ViewNavigate.getMaxAngularVelocity (:1930 — π/4).
+    virtual double getMaxAngularVelocity() const { return 3.14159265358979323846 / 4.0; }
+    // Ported from: ViewNavigate.getNavigateMode (:1932-1936 — 修饰键模态).
+    NavigateMode getNavigateMode() const;
+    // Pure virtual (:1926 getNavigateMotion abstract——派生持 NavigateMotion)。
+    virtual NavigateMotion* getNavigateMotion(double seconds) = 0;
+    // :1925 _initialized（onReinitialize 相机归位只跑一次）。
+    bool m_navigateInitialized = false;
+
+    // Ported from: ViewNavigate.animate (:1939-1954 — 逐帧 frustum 乘运动).
+    bool animate() override;
+    // Ported from: ViewNavigate.onReinitialize (:1956-1984 — walk 相机归位;
+    // walkEnforceZUp 缺省 false 分支)。
+    void onReinitialize() override;
+    // Ported from: ViewNavigate.drawHandle (:1986-2002 — 动态更新中的锚点
+    // 圆环 canvas 装饰；canvas 装饰面 = drawCanvasDecorations 接线后生效).
+    void drawHandle(DecorateContext& context, bool hasFocus) override;
+};
+
+// ---------------------------------------------------------------------------
+// ViewWalk — 键盘 walk 导航 handle（Travel 模式=角速率+前进；Pan=平面平移；
+// Look=环视）。Ported from: itwinjs-core ViewWalk (ViewTool.ts:2951-2990).
+// ---------------------------------------------------------------------------
+class DQ_APP_EXPORT ViewWalk : public ViewNavigate {
+public:
+    explicit ViewWalk(ViewManip* vm)
+        : ViewNavigate(vm)
+        , m_navigateMotion(vm->viewport)
+    {}
+
+    ViewHandleType handleType() const noexcept override { return ViewHandleType::Walk; }
+    // Ported from: ViewWalk.firstPoint (:2961-2964).
+    bool firstPoint(BeButtonEvent const& ev) override;
+    // Ported from: ViewWalk.getNavigateMotion (:2966-2989).
+    NavigateMotion* getNavigateMotion(double seconds) override;
+
+private:
+    NavigateMotion m_navigateMotion;
+};
+
+// ---------------------------------------------------------------------------
+// ViewFly — 键盘 fly 导航 handle（Travel 模式=角速率×2 + 前进[视角朝向]）。
+// Ported from: itwinjs-core ViewFly (ViewTool.ts:2992-3032).
+// ---------------------------------------------------------------------------
+class DQ_APP_EXPORT ViewFly : public ViewNavigate {
+public:
+    explicit ViewFly(ViewManip* vm)
+        : ViewNavigate(vm)
+        , m_navigateMotion(vm->viewport)
+    {}
+
+    ViewHandleType handleType() const noexcept override { return ViewHandleType::Fly; }
+    // Ported from: ViewFly.firstPoint (:3002-3005).
+    bool firstPoint(BeButtonEvent const& ev) override;
+    // Ported from: ViewFly.getNavigateMotion (:3007-3031).
+    NavigateMotion* getNavigateMotion(double seconds) override;
+
+private:
+    NavigateMotion m_navigateMotion;
+};
+
+// ---------------------------------------------------------------------------
+// ViewLookAndMove — 鼠标拖拽环视 + WASD 键盘移动的导航 handle。
+// Ported from: itwinjs-core ViewLookAndMove (ViewTool.ts:2006-2645 — M-O(3) P1
+// 核心子集).
+//
+// EQUIVALENCE（§11.10）：
+//   - pointer lock（:2057-2125 walkRequestPointerLock=true 的浏览器 UX）：
+//     DanQing 宿主无 pointer lock 概念——_lastMovement 恒 nullopt，鼠标环视
+//     走参考的无锁路径（getAngularVelocity → getInputVector 锚点拖拽向量，
+//     :2205-2213 的 !havePointerLock 分支即参考缺省行为）。验证法 =
+//     LookAndMoveMotionLocks（输入向量→角速率分流）。
+//   - touch sticks（:2016-2021/:2309-2440 _touchStartL/R 等）：DanQing 无
+//     touch 输入面——未移植（InputSource::Touch 不可达）。验证法 = 同上。
+//   - collision/floor 轮廓（:2224-2452 computeCollisionData + checkForCollision
+//     :2361-2452——beta，ToolSettings.walkCollisions/walkDetectFloor 缺省
+//     false 恒走 :2362-2363 早退）：轮廓 readPixels(GeometryAndDistance)
+//     机制延后（checkForCollision 恒 0 = walkCollisions=false 的参考语义）；
+//     C/Z 键仍翻转设置位（toggleCollisions/toggleDetectFloor :2511-2526——
+//     设置面 1:1，探测面随 readPixels 通道落地）。
+// ---------------------------------------------------------------------------
+class DQ_APP_EXPORT ViewLookAndMove : public ViewNavigate {
+public:
+    explicit ViewLookAndMove(ViewManip* vm)
+        : ViewNavigate(vm)
+        , m_navigateMotion(vm->viewport)
+    {}
+
+    // Ported from: ViewLookAndMove.handleType (:2033).
+    ViewHandleType handleType() const noexcept override
+    {
+        return ViewHandleType::LookAndMove;
+    }
+    // Ported from: ViewLookAndMove.getHandleCursor (:2034 — lookCursor stub).
+    std::string getHandleCursor() const override { return "look"; }
+    // Ported from: ViewLookAndMove.testHandleForHit (:2036-2040 — 恒命中
+    // Medium 优先——覆盖 Pan 的 force-hit)。
+    bool testHandleForHit(dqGeom::Point3d ptScreen, HitOut& out) override;
+    // Ported from: ViewLookAndMove.onReinitialize (:2042-2050 — 清态 + 焦点
+    // handle + onCleanup[pointer lock 面 EQUIVALENCE 恒无操作])。
+    void onReinitialize() override;
+    // Ported from: ViewLookAndMove.firstPoint (:2128-2144 — deadZone =
+    // pixelsFromInches(0.5)²；touch 分支不可达[无 touch 面])。
+    bool firstPoint(BeButtonEvent const& ev) override;
+    // Ported from: ViewLookAndMove.doManipulation (:2146-2154 — 无锁路径
+    // _lastMovement 恒 nullopt + 累加器清零)。
+    bool doManipulation(BeButtonEvent const& ev, bool inDynamics) override;
+    // Ported from: ViewLookAndMove.getMaxLinearVelocity (:2156-2165 —
+    // walkVelocityChange 倍率)。
+    double getMaxLinearVelocity() const override;
+    // Ported from: ViewLookAndMove.getMaxAngularVelocityX/Y (:2167-2168).
+    double getMaxAngularVelocityX() const { return 2 * getMaxAngularVelocity(); }
+    double getMaxAngularVelocityY() const { return getMaxAngularVelocity(); }
+    // Ported from: ViewLookAndMove.getLinearVelocity (:2170-2189 — 键盘
+    // _positionInput × maxV；touch 分支不可达)。
+    dqGeom::Vector3d getLinearVelocity();
+    // Ported from: ViewLookAndMove.getAngularVelocity (:2191-2214 — 无锁：
+    // getInputVector 拖拽向量 × maxAngular)。
+    dqGeom::Vector3d getAngularVelocity();
+    // Ported from: ViewLookAndMove.getHorizAndVertVelocity (:2216-2222).
+    std::optional<dqGeom::Vector3d> getHorizAndVertVelocity();
+    // Ported from: ViewLookAndMove.getNavigateMotion (:2454-2494 — 相机关→pan；
+    // moveAndLook；collision 早退恒 0)。
+    NavigateMotion* getNavigateMotion(double seconds) override;
+    // Ported from: ViewLookAndMove.onKeyTransition (:2587-2645 — WASD/箭头/
+    // QE/PgUp·Dn 累加 -1..1；C/Z 翻转；+/-/= 变速；非动态更新下导航键起拖).
+    bool onKeyTransition(bool wentDown, uint32_t key) override;
+    // Ported from: ViewLookAndMove.onWheel (:2537-2547 — 动态更新中滚轮变速).
+    bool onWheel(BeWheelEvent const& ev) override;
+
+    // _positionInput（:2013——键盘累积输入向量；测试断言面）。
+    dqGeom::Vector3d const& positionInput() const noexcept { return m_positionInput; }
+
+private:
+    // Ported from: ViewLookAndMove.changeWalkVelocity (:2528-2535).
+    void changeWalkVelocity(int increase /* -1/0/+1 三态：0=重置 */);
+    // Ported from: ViewLookAndMove.toggleCollisions (:2511-2517).
+    void toggleCollisions();
+    // Ported from: ViewLookAndMove.toggleDetectFloor (:2519-2526).
+    void toggleDetectFloor();
+    // Ported from: ViewLookAndMove.checkForCollision (:2361-2363 —— 早退面；
+    // 轮廓探测 EQUIVALENCE 延后见类注)。
+    int checkForCollision(NavigateMotion& /*motion*/,
+                          dqGeom::Vector3d const& /*positionInput*/)
+    {
+        return 0;
+    }
+    // Ported from: ViewLookAndMove.isNavigationKey (:2549-2570).
+    static bool isNavigationKey(uint32_t key);
+    // Ported from: ViewLookAndMove.enableKeyStart (:2570-2585 —— 导航键在
+    // 非动态更新下以视线中心点起拖)。
+    bool enableKeyStart();
+
+    NavigateMotion m_navigateMotion;
+    int m_lastCollision = 0;  // :2008
+    dqGeom::Vector3d m_positionInput;  // :2013（x=右左 y=升降 z=前后）
+};
+
 // ===========================================================================
 // Task 11 — Concrete view tools (PanViewTool / RotateViewTool /
 // ScrollViewTool / FitViewTool) + registration.
@@ -1013,6 +1278,108 @@ protected:
     {
         provideToolAssistance("Scroll.Prompts.FirstPoint");
     }
+};
+
+// ---------------------------------------------------------------------------
+// LookAndMoveTool — mouse-look + WASD 导航工具（keyin "View.LookAndMove"）。
+// Ported from: itwinjs-core LookAndMoveTool (ViewTool.ts:3107-3156 — M-O(3) P1).
+//
+// EQUIVALENCE：focusHome（:3118-3121/:82——浏览器把键盘焦点移到 home 元素，
+// 使 keydown 不落输入框）：Qt 宿主无 home 元素——no-op 登记（keyin 场景下
+// 键盘事件路由到 ToolAdmin 不依赖 DOM 焦点）。
+// ---------------------------------------------------------------------------
+class DQ_APP_EXPORT LookAndMoveTool : public ViewManip {
+public:
+    // Ported from: LookAndMoveTool constructor (:3110-3113 — 空 vp 取
+    // selectedView；DanQing 工具面由宿主传入选中视口)。
+    LookAndMoveTool(Viewport* vp, bool oneShot = false, bool isDraggingRequired = false)
+        : ViewManip(vp,
+                    static_cast<uint32_t>(ViewHandleType::LookAndMove |
+                                          ViewHandleType::Pan),
+                    oneShot, isDraggingRequired)
+    {}
+
+    // Ported from: LookAndMoveTool.toolId (:3108).
+    const char* getToolId() const noexcept override { return "View.LookAndMove"; }
+
+protected:
+    // Ported from: LookAndMoveTool.isExitAllowedOnReinitialize (:3115).
+    bool isExitAllowedOnReinitialize() const noexcept override { return true; }
+    // Ported from: LookAndMoveTool.provideInitialToolAssistance (:3116).
+    void provideInitialToolAssistance() override
+    {
+        provideToolAssistance("LookAndMove.Prompts.FirstPoint");
+    }
+    // Ported from: LookAndMoveTool.provideToolAssistance (:3123-3155 —— 键盘
+    // 指令段 WASD/箭头/QE/PgUp·Dn/C·Z/+-= + 滚轮变速；touch 段无输入面略).
+    void provideToolAssistance(
+        std::string const& mainInstrKey,
+        std::vector<ToolAssistanceInstruction> const& additionalInstr
+        = {}) const override;
+};
+
+// ---------------------------------------------------------------------------
+// WalkViewTool — 键盘 walk 导航工具（keyin "View.Walk"）。
+// Ported from: itwinjs-core WalkViewTool (ViewTool.ts:3161-3178 — M-O(3) P1).
+// ---------------------------------------------------------------------------
+class DQ_APP_EXPORT WalkViewTool : public ViewManip {
+public:
+    WalkViewTool(Viewport* vp, bool oneShot = false, bool isDraggingRequired = false)
+        : ViewManip(vp,
+                    static_cast<uint32_t>(ViewHandleType::Walk |
+                                          ViewHandleType::Pan),
+                    oneShot, isDraggingRequired)
+    {}
+
+    // Ported from: WalkViewTool.toolId (:3162).
+    const char* getToolId() const noexcept override { return "View.Walk"; }
+
+protected:
+    // Ported from: WalkViewTool.isExitAllowedOnReinitialize (:3169).
+    bool isExitAllowedOnReinitialize() const noexcept override { return true; }
+    // Ported from: WalkViewTool.provideInitialToolAssistance (:3170).
+    void provideInitialToolAssistance() override
+    {
+        provideToolAssistance("Walk.Prompts.FirstPoint");
+    }
+    // Ported from: WalkViewTool.provideToolAssistance (:3172-3177 —— 附加
+    // shift=平移/ctrl=环视 flyover 修饰键指令段).
+    void provideToolAssistance(
+        std::string const& mainInstrKey,
+        std::vector<ToolAssistanceInstruction> const& additionalInstr
+        = {}) const override;
+};
+
+// ---------------------------------------------------------------------------
+// FlyViewTool — 键盘 fly 导航工具（keyin "View.Fly"）。
+// Ported from: itwinjs-core FlyViewTool (ViewTool.ts:3183-3199 — M-O(3) P1).
+// ---------------------------------------------------------------------------
+class DQ_APP_EXPORT FlyViewTool : public ViewManip {
+public:
+    FlyViewTool(Viewport* vp, bool oneShot = false, bool isDraggingRequired = false)
+        : ViewManip(vp,
+                    static_cast<uint32_t>(ViewHandleType::Fly |
+                                          ViewHandleType::Pan),
+                    oneShot, isDraggingRequired)
+    {}
+
+    // Ported from: FlyViewTool.toolId (:3184).
+    const char* getToolId() const noexcept override { return "View.Fly"; }
+
+protected:
+    // Ported from: FlyViewTool.isExitAllowedOnReinitialize (:3190).
+    bool isExitAllowedOnReinitialize() const noexcept override { return true; }
+    // Ported from: FlyViewTool.provideInitialToolAssistance (:3191).
+    void provideInitialToolAssistance() override
+    {
+        provideToolAssistance("Fly.Prompts.FirstPoint");
+    }
+    // Ported from: FlyViewTool.provideToolAssistance (:3193-3198 —— 同 Walk
+    // 的 shift/ctrl flyover 指令段).
+    void provideToolAssistance(
+        std::string const& mainInstrKey,
+        std::vector<ToolAssistanceInstruction> const& additionalInstr
+        = {}) const override;
 };
 
 // ---------------------------------------------------------------------------

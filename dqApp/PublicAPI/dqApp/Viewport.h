@@ -417,6 +417,13 @@ public:
     // True iff the view is a 3D view with camera enabled.
     bool isCameraOn() const noexcept;
 
+    // Ported from: itwinjs-core Viewport.turnCameraOn (Viewport.ts:1988-2029
+    // ——M-O(3) P1：开相机；cameraOn→lookAt 保眼位；cameraOff→可见深度中点
+    // 取景。determineVisibleDepthRange 未移植（ViewTool.cpp:2707 登记）——
+    // 相机分支用参考 :2005-2006 的 undefined 回退域 {0,1}（EQUIVALENCE：
+    // 空场景语义等价；深度扫描随 readPixels 通道落地）。
+    ViewStatus TurnCameraOn(std::optional<dqGeom::Angle> lensAngle = std::nullopt);
+
     // Ported from: itwinjs-core Viewport.pickDepthPoint (Viewport.ts:3394)
     // Step 4 stub: returns the input point unchanged. Real depth-pick
     // (readPixels against the pick buffer) is deferred until geometry is

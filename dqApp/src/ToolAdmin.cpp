@@ -673,6 +673,25 @@ static InteractiveTool* CreateViewRedoTool(Viewport* vp, bool /*oneShot*/, bool 
     return new ViewRedoTool(vp);
 }
 
+// Factories: LookAndMoveTool / WalkViewTool / FlyViewTool（M-O(3) P1——
+// ViewTool.ts:3107-3156/:3161-3178/:3183-3199；oneShot/isDraggingRequired
+// ctor 形参保留参考缺省 false）。
+// Ported from: itwinjs-core ToolRegistry view-tool factory registration.
+static InteractiveTool* CreateLookAndMoveTool(Viewport* vp, bool oneShot, bool isDraggingRequired)
+{
+    return new LookAndMoveTool(vp, oneShot, isDraggingRequired);
+}
+
+static InteractiveTool* CreateWalkViewTool(Viewport* vp, bool oneShot, bool isDraggingRequired)
+{
+    return new WalkViewTool(vp, oneShot, isDraggingRequired);
+}
+
+static InteractiveTool* CreateFlyViewTool(Viewport* vp, bool oneShot, bool isDraggingRequired)
+{
+    return new FlyViewTool(vp, oneShot, isDraggingRequired);
+}
+
 // ---------------------------------------------------------------------------
 // OnInitialized — called after Application startup.
 // Ported from: itwinjs-core ToolAdmin.onInitialized() (ToolAdmin.ts:487-499)
@@ -708,6 +727,11 @@ void ToolAdmin::OnInitialized()
     // WindowArea/Look W4：WindowAreaTool（ViewTool.ts:3531-3816）——同属参考
     // registerModule(viewTool) 的注册净效果（IModelApp.ts:441/446）。
     m_registry.RegisterView("View.WindowArea", CreateWindowAreaTool);
+    // M-O(3) P1：Walk/Fly/LookAndMove（ViewTool.ts:3107-3199——同属
+    // registerModule(viewTool) 注册净效果）。
+    m_registry.RegisterView("View.LookAndMove", CreateLookAndMoveTool);
+    m_registry.RegisterView("View.Walk", CreateWalkViewTool);
+    m_registry.RegisterView("View.Fly", CreateFlyViewTool);
 
     // Ported from: itwinjs-core IModelApp.startup viewTool 模块注册
     //              （IModelApp.ts:438-446 registerModule(viewTool) 含 ViewUndoTool/

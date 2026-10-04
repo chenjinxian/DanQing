@@ -39,6 +39,7 @@
 #include <dqRender/RenderGraphic.h>     // RenderGraphicOwner（橡皮筋所有权）
 
 #include <dqGeom/Transform.h>  // StandardViewTool: Transform::CreateFixedPointAndMatrix
+#include <dqGeom/YawPitchRollAngles.h>  // M-O(3) P1：NavigateMotion.resetToLevel
 #include <dqGeom/Arc3d.h>        // previewDepthPoint 的椭圆（FromVectors）
 #include <dqGeom/LineString3d.h> // EmitStrokes 折线容器
 
@@ -380,6 +381,21 @@ std::string ViewTool::translate(std::string const& val)
         {"Fit.Prompts.FirstPoint", "Select view to fit"},
         {"WindowArea.Prompts.FirstPoint", "Define first corner point"},
         {"WindowArea.Prompts.NextPoint", "Define opposite corner point"},
+        // M-O(3) P1（CoreTools.json en 实值——Walk/Fly/LookAndMove Prompts/Inputs
+        // + Pan/Look.flyover）。
+        {"Walk.Prompts.FirstPoint", "Enter point to start walking"},
+        {"Walk.Prompts.NextPoint", "Enter point to stop walking"},
+        {"Fly.Prompts.FirstPoint", "Enter point to start flying"},
+        {"Fly.Prompts.NextPoint", "Enter point to stop flying"},
+        {"LookAndMove.Prompts.FirstPoint", "Enter point to look around or start moving"},
+        {"LookAndMove.Prompts.NextPoint", "Enter point to accept current location"},
+        {"LookAndMove.Inputs.AcceptLookPoint", "Accept point to begin look or move"},
+        {"LookAndMove.Inputs.WalkKeys", "Move forward, backward, left, right"},
+        {"LookAndMove.Inputs.ElevateKeys", "Move up and down"},
+        {"LookAndMove.Inputs.CollideKeys", "Toggle collisions and floor detection"},
+        {"LookAndMove.Inputs.VelocityChange", "Increase or decrease velocity"},
+        {"Pan.flyover", "Pan View"},
+        {"Look.flyover", "Look Around"},
     };
     for (auto const& entry : kViewPrompts)
         if (val == entry.key)
@@ -813,9 +829,9 @@ void ViewManip::changeViewport(Viewport* vp) noexcept
     // TS L908-933: add concrete handles by handleMask bit, in the reference's
     // order (Rotate, TargetCenter, Pan, Scroll, Zoom, Walk, Fly, Look,
     // LookAndMove). Ported: ViewRotate / ViewTargetCenter / ViewPan /
-    // ViewScroll / ViewLook. ViewZoom / ViewWalk / ViewFly / ViewLookAndMove
-    // are not yet ported — TODO, gated on their handle subclasses landing.
-    // Ported from: itwinjs-core ViewManip.changeViewport (ViewTool.ts:908-933).
+    // ViewScroll / ViewWalk / ViewFly / ViewLook / ViewLookAndMove.
+    // ViewZoom 未移植（Task 11 登记延后）。
+    // Ported from: itwinjs-core ViewManip.changeViewport (ViewTool.ts:908-936).
     ViewHandleType const mask = static_cast<ViewHandleType>(handleMask);
     if (anyHandle(mask & ViewHandleType::Rotate))
         viewHandles.add(std::make_unique<ViewRotate>(this));
@@ -826,11 +842,18 @@ void ViewManip::changeViewport(Viewport* vp) noexcept
         viewHandles.add(std::make_unique<ViewPan>(this));
     if (anyHandle(mask & ViewHandleType::Scroll))
         viewHandles.add(std::make_unique<ViewScroll>(this));
-    // TODO: ViewZoom / ViewWalk / ViewFly / ViewLookAndMove — port with their
-    //       handle subclasses. View.Zoom tool registration is gated on ViewZoom
-    //       (Task 11 deferred it).
+    // ViewZoom 未移植（Task 11 登记）。
+    // TS L925-926: Walk（M-O(3) P1）。
+    if (anyHandle(mask & ViewHandleType::Walk))
+        viewHandles.add(std::make_unique<ViewWalk>(this));
+    // TS L928-929: Fly（M-O(3) P1）。
+    if (anyHandle(mask & ViewHandleType::Fly))
+        viewHandles.add(std::make_unique<ViewFly>(this));
     if (anyHandle(mask & ViewHandleType::Look))
         viewHandles.add(std::make_unique<ViewLook>(this));
+    // TS L934-935: LookAndMove（M-O(3) P1）。
+    if (anyHandle(mask & ViewHandleType::LookAndMove))
+        viewHandles.add(std::make_unique<ViewLookAndMove>(this));
 }
 
 // Ported from: itwinjs-core ViewManip.setTargetCenterWorld (ViewTool.ts:689-701).
@@ -2154,6 +2177,927 @@ bool ViewScroll::needDepthPoint(BeButtonEvent const& ev, bool /*isPreview*/)
         return false;
     // TS L1595: vp.isCameraOn && CoordSource.User === ev.coordsFrom.
     return vp->isCameraOn() && CoordSource::User == ev.coordsFrom;
+}
+
+// ===========================================================================
+// M-O(3) P1 — NavigateMotion / ViewNavigate / ViewWalk / ViewFly /
+// ViewLookAndMove (ViewTool.ts:1747-2100/:2454-2645/:2951-3032).
+// ===========================================================================
+
+namespace {
+// LookAndMove 键位域（ToolEvent.key = Qt::Key 值——ToolAdmin.cpp:1535 的
+// kKey* 先例同源登记；参考键字符串 → Qt 键值的 1:1 映射）。
+constexpr uint32_t kKeyW = 0x57, kKeyA = 0x41, kKeyS = 0x53, kKeyD = 0x44;
+constexpr uint32_t kKeyQ = 0x51, kKeyE = 0x45, kKeyC = 0x43, kKeyZ = 0x5A;
+constexpr uint32_t kKeyPlus = 0x2B, kKeyMinus = 0x2D, kKeyEqual = 0x3D;
+constexpr uint32_t kKeyLeft = 0x01000012, kKeyUp = 0x01000013;
+constexpr uint32_t kKeyRight = 0x01000014, kKeyDown = 0x01000015;
+constexpr uint32_t kKeyPageUp = 0x01000016, kKeyPageDown = 0x01000017;
+
+double clampd(double v, double lo, double hi)
+{
+    return v < lo ? lo : (v > hi ? hi : v);
+}
+}  // namespace
+
+// ---------------------------------------------------------------------------
+// NavigateMotion — Ported from: ViewTool.ts:1747-1921.
+// ---------------------------------------------------------------------------
+
+// Ported from: NavigateMotion.init (:1752-1755).
+void NavigateMotion::init(double seconds)
+{
+    m_seconds = seconds;
+    m_transform = dqGeom::Transform::CreateIdentity();
+}
+
+// Ported from: NavigateMotion.getViewUp (:1757).
+dqGeom::Vector3d NavigateMotion::getViewUp() const
+{
+    return m_viewport ? m_viewport->getRotation().RowY()
+                      : dqGeom::Vector3d::From(0.0, 1.0, 0.0);
+}
+
+// Ported from: NavigateMotion.getViewDirection (:1759-1763 — z 取负=入屏).
+dqGeom::Vector3d NavigateMotion::getViewDirection() const
+{
+    dqGeom::Vector3d forward = m_viewport ? m_viewport->getRotation().RowZ()
+                                          : dqGeom::Vector3d::From(0.0, 0.0, 1.0);
+    forward.Scale(-1.0);
+    return forward;
+}
+
+// Ported from: NavigateMotion.takeElevator (:1765-1768).
+void NavigateMotion::takeElevator(double height)
+{
+    m_transform = dqGeom::Transform::CreateTranslation(
+        dqGeom::Vector3d::From(0.0, 0.0, height * m_seconds));
+}
+
+// Ported from: NavigateMotion.modifyPitchAngleToPreventInversion
+//               (:1770-1796 — ±85° 限位 + 0.01° 容差).
+double NavigateMotion::modifyPitchAngleToPreventInversion(double pitchAngle) const
+{
+    double const angleLimit = dqGeom::Angle::FromDegrees(85.0).Radians();
+    double const angleTolerance = dqGeom::Angle::FromDegrees(0.01).Radians();
+    if (0.0 == pitchAngle)
+        return 0.0;
+
+    dqGeom::Vector3d const viewUp = getViewUp();
+    dqGeom::Vector3d const viewDir = getViewDirection();
+    dqGeom::Vector3d const worldUp = dqGeom::Vector3d::From(0.0, 0.0, 1.0);
+
+    // worldUp.angleTo(viewUp)（两向量夹角[0, π]——atan2(|a×b|, a·b)）。
+    double const dotUp = worldUp.DotProduct(viewUp);
+    double const crossUpMag =
+        dqGeom::Vector3d::FromCrossProduct(worldUp, viewUp).Magnitude();
+    double viewAngle = std::atan2(crossUpMag, dotUp);
+    if (viewDir.z < 0)
+        viewAngle *= -1;
+
+    double newAngle = pitchAngle + viewAngle;
+    if (std::abs(newAngle) < angleLimit)
+        return pitchAngle;  // not close to the limit
+    if ((pitchAngle > 0) != (viewAngle > 0)
+        && std::abs(pitchAngle) < 3.14159265358979323846 / 2.0)
+        return pitchAngle;  // tilting away from the limit
+    if (std::abs(viewAngle) >= (angleLimit - angleTolerance))
+        return 0.0;  // at the limit already
+
+    double const difference = std::abs(newAngle) - angleLimit;
+    newAngle = (pitchAngle > 0) ? pitchAngle - difference : pitchAngle + difference;
+    return newAngle;  // almost at the limit, but still can go a little bit closer
+}
+
+// generateMouseLookTransform / generateRotationTransform 的公共几何半边
+//（pitch×view → invView×pitch×view → yaw×… 绕 eye 定点——:1813-1827/:1832-1849）。
+static dqGeom::Transform navigateRotationTransform(
+    Viewport* vp, double pitchAngleRadians, double yawAngleRadians)
+{
+    dqGeom::Matrix3d const viewRot = vp->getRotation();
+    dqGeom::Matrix3d invViewRot;
+    if (!viewRot.Inverse(invViewRot))
+        return dqGeom::Transform::CreateIdentity();
+    dqGeom::Matrix3d const pitchMatrix =
+        dqGeom::Matrix3d::CreateRotationAroundAxis(
+            dqGeom::Vector3d::From(1.0, 0.0, 0.0), pitchAngleRadians);
+    dqGeom::Matrix3d const pitchTimesView = pitchMatrix.MultiplyMatrix(viewRot);
+    dqGeom::Matrix3d const inverseViewTimesPitchTimesView =
+        invViewRot.MultiplyMatrix(pitchTimesView);
+    dqGeom::Matrix3d const yawMatrix = dqGeom::Matrix3d::CreateRotationAroundAxis(
+        dqGeom::Vector3d::From(0.0, 0.0, 1.0), yawAngleRadians);
+    dqGeom::Matrix3d const yawTimesInverseViewTimesPitchTimesView =
+        yawMatrix.MultiplyMatrix(inverseViewTimesPitchTimesView);
+    return dqGeom::Transform::CreateFixedPointAndMatrix(
+        vp->GetView()->AsViewState3d()->getEyePoint(),
+        yawTimesInverseViewTimesPitchTimesView);
+}
+
+// Ported from: NavigateMotion.generateMouseLookTransform (:1798-1828).
+dqGeom::Transform NavigateMotion::generateMouseLookTransform(
+    dqGeom::Vector3d& accumulator, dqGeom::Point3d const& movement)
+{
+    Viewport* vp = m_viewport;
+    if (vp == nullptr || vp->GetView() == nullptr
+        || vp->GetView()->AsViewState3d() == nullptr || !vp->isCameraOn())
+        return dqGeom::Transform::CreateIdentity();
+    ViewRect const viewRect = vp->viewRect();
+    double const xExtent = static_cast<double>(viewRect.width());
+    double const yExtent = static_cast<double>(viewRect.height());
+    accumulator.z += m_seconds;  // accumulate time delta since start...
+    double const snappiness = 10.0;  // larger values are more responsive...
+    double const fraction = clampd(snappiness * accumulator.z, 0.0, 1.0);
+    // Geometry.interpolate(accumulator.x, fraction, movement.x)
+    accumulator.x = accumulator.x + (fraction * (movement.x - accumulator.x));
+    accumulator.y = accumulator.y + (fraction * (movement.y - accumulator.y));
+    double const xAngle = -(accumulator.x / xExtent) * 3.14159265358979323846 * 2.0;
+    double const yAngle = -(accumulator.y / yExtent) * 3.14159265358979323846;
+    return navigateRotationTransform(
+        vp, modifyPitchAngleToPreventInversion(yAngle), xAngle);
+}
+
+// Ported from: NavigateMotion.generateRotationTransform (:1830-1850).
+dqGeom::Transform NavigateMotion::generateRotationTransform(double yawRate,
+                                                            double pitchRate)
+{
+    Viewport* vp = m_viewport;
+    if (vp == nullptr || vp->GetView() == nullptr
+        || vp->GetView()->AsViewState3d() == nullptr || !vp->isCameraOn())
+        return dqGeom::Transform::CreateIdentity();
+    return navigateRotationTransform(
+        vp, modifyPitchAngleToPreventInversion(pitchRate * m_seconds),
+        yawRate * m_seconds);
+}
+
+// Ported from: NavigateMotion.generateTranslationTransform (:1852-1883).
+dqGeom::Transform NavigateMotion::generateTranslationTransform(
+    dqGeom::Vector3d const& velocity, bool isConstrainedToXY)
+{
+    if (m_viewport == nullptr)
+        return dqGeom::Transform::CreateIdentity();
+    Viewport* vp = m_viewport;
+    ViewRect const rect = vp->viewRect();
+    double const w = static_cast<double>(rect.width());
+    double const h = static_cast<double>(rect.height());
+    dqGeom::Point3d points[3] = {
+        dqGeom::Point3d::From(0.0, 0.0, 0.0),
+        dqGeom::Point3d::From(1.0, 0.0, 0.0),
+        dqGeom::Point3d::From(0.0, 1.0, 0.0)};
+    if (vp->isCameraOn()) {
+        // viewToNpc（ViewScroll :2134 同款线性映射）→ z 钉焦平面 → npcToView。
+        for (auto& p : points)
+            p = dqGeom::Point3d::From(p.x / w, p.y / h, p.z);
+        double const focusZ = ViewManip::getFocusPlaneNpc(*vp);
+        points[0].z = points[1].z = points[2].z = focusZ;  // use the focal plane for z coordinates
+        for (auto& p : points)
+            p = dqGeom::Point3d::From(p.x * w, p.y * h, p.z);
+    }
+    for (auto& p : points)
+        p = vp->NpcToWorld(p);
+
+    dqGeom::Vector3d xDir = dqGeom::Vector3d::FromStartEnd(points[0], points[1]);
+    xDir.Normalize();
+    dqGeom::Vector3d yDir = dqGeom::Vector3d::FromStartEnd(points[0], points[2]);
+    yDir.Normalize();
+    dqGeom::Vector3d zDir = getViewDirection();
+
+    if (isConstrainedToXY) {
+        dqGeom::Vector3d const up = dqGeom::Vector3d::From(0.0, 0.0, 1.0);
+        // up × zDir → (up × zDir) × up（投影到水平面）。
+        dqGeom::Vector3d cross = dqGeom::Vector3d::FromCrossProduct(up, zDir);
+        zDir = dqGeom::Vector3d::FromCrossProduct(cross, up);
+        zDir.Normalize();
+    }
+
+    xDir.Scale(velocity.x * m_seconds);
+    yDir.Scale(velocity.y * m_seconds);
+    zDir.Scale(velocity.z * m_seconds);
+    xDir.Add(yDir);
+    xDir.Add(zDir);
+    return dqGeom::Transform::CreateTranslation(xDir);
+}
+
+// Ported from: NavigateMotion.moveAndMouseLook (:1885-1890).
+bool NavigateMotion::moveAndMouseLook(dqGeom::Vector3d& accumulator,
+                                      dqGeom::Vector3d const& linearVelocity,
+                                      dqGeom::Point3d const& movement,
+                                      bool isConstrainedToXY)
+{
+    dqGeom::Transform const rotateTrans =
+        generateMouseLookTransform(accumulator, movement);
+    dqGeom::Transform const dollyTrans =
+        generateTranslationTransform(linearVelocity, isConstrainedToXY);
+    // setMultiplyTransformTransform(rotateTrans, dollyTrans) — this = rotate * dolly。
+    m_transform = rotateTrans.MultiplyTransform(dollyTrans);
+    return (accumulator.x >= movement.x && accumulator.y >= movement.y);
+}
+
+// Ported from: NavigateMotion.moveAndLook (:1892-1896).
+void NavigateMotion::moveAndLook(dqGeom::Vector3d const& linearVelocity,
+                                 double angularVelocityX, double angularVelocityY,
+                                 bool isConstrainedToXY)
+{
+    dqGeom::Transform const rotateTrans =
+        generateRotationTransform(angularVelocityX, angularVelocityY);
+    dqGeom::Transform const dollyTrans =
+        generateTranslationTransform(linearVelocity, isConstrainedToXY);
+    m_transform = rotateTrans.MultiplyTransform(dollyTrans);
+}
+
+// Ported from: NavigateMotion.pan (:1898-1901).
+void NavigateMotion::pan(double horizontalVelocity, double verticalVelocity)
+{
+    dqGeom::Vector3d const travel =
+        dqGeom::Vector3d::From(horizontalVelocity, verticalVelocity, 0.0);
+    moveAndLook(travel, 0.0, 0.0, false);
+}
+
+// Ported from: NavigateMotion.travel (:1903-1906).
+void NavigateMotion::travel(double yawRate, double pitchRate, double forwardVelocity,
+                            bool isConstrainedToXY)
+{
+    dqGeom::Vector3d const travelVec =
+        dqGeom::Vector3d::From(0.0, 0.0, forwardVelocity);
+    moveAndLook(travelVec, yawRate, pitchRate, isConstrainedToXY);
+}
+
+// Ported from: NavigateMotion.look (:1908).
+void NavigateMotion::look(double yawRate, double pitchRate)
+{
+    m_transform = generateRotationTransform(yawRate, pitchRate);
+}
+
+// Ported from: NavigateMotion.resetToLevel (:1911-1920).
+void NavigateMotion::resetToLevel()
+{
+    Viewport* vp = m_viewport;
+    if (vp == nullptr || vp->GetView() == nullptr
+        || vp->GetView()->AsViewState3d() == nullptr || !vp->isCameraOn())
+        return;
+    auto angles = dqGeom::YawPitchRollAngles::CreateFromMatrix3d(vp->getRotation());
+    if (!angles.has_value())
+        return;
+    dqGeom::YawPitchRollAngles leveled = *angles;
+    leveled.pitch = dqGeom::Angle::FromRadians(0.0);  // reset pitch to zero
+    m_transform = dqGeom::Transform::CreateFixedPointAndMatrix(
+        vp->GetView()->AsViewState3d()->getEyePoint(), leveled.ToMatrix3d());
+}
+
+// ---------------------------------------------------------------------------
+// ViewNavigate — Ported from: ViewTool.ts:1924-2003.
+// ---------------------------------------------------------------------------
+
+// Ported from: ViewNavigate.getNavigateMode (:1932-1936 — 修饰键模态).
+NavigateMode ViewNavigate::getNavigateMode() const
+{
+    InputState const& state =
+        dqApp::Application::Get().GetToolAdmin().currentInputState();
+    if (viewTool == nullptr || viewTool->viewport == nullptr)
+        return NavigateMode::Pan;
+    return (state.isShiftDown() || !viewTool->viewport->isCameraOn())
+        ? NavigateMode::Pan
+        : (state.isControlDown() ? NavigateMode::Look : NavigateMode::Travel);
+}
+
+// Ported from: ViewNavigate.animate (:1939-1954 — 逐帧 frustum 乘运动).
+bool ViewNavigate::animate()
+{
+    if (!AnimatedHandle::animate())
+        return false;
+
+    NavigateMotion* motion = getNavigateMotion(getElapsedTime());
+    if (motion != nullptr) {
+        Viewport* vp = viewTool ? viewTool->viewport : nullptr;
+        if (vp == nullptr)
+            return false;
+        dqCommon::Frustum frust = vp->getWorldFrustum();
+        frust.transformBy(motion->transform());
+        vp->setupViewFromFrustum(frust);
+    }
+    return false;
+}
+
+// Ported from: ViewNavigate.onReinitialize (:1956-1984 — walk 相机归位).
+void ViewNavigate::onReinitialize()
+{
+    AnimatedHandle::onReinitialize();
+    if (m_navigateInitialized)
+        return;
+    m_navigateInitialized = true;
+
+    ViewManip* tool = viewTool;
+    Viewport* vp = tool ? tool->viewport : nullptr;
+    if (vp == nullptr || vp->GetView() == nullptr)
+        return;
+    ViewState* view = vp->GetView();
+    if (view->AsViewState3d() == nullptr
+        || !view->AsViewState3d()->Allow3dManipulations())
+        return;
+
+    dqGeom::Angle const walkAngle = ToolSettings::walkCameraAngle;
+    if (!tool->lensAngleMatches(walkAngle,
+                                dqGeom::Angle::FromDegrees(15.0).Radians())
+        || !tool->isZUp()) {
+        // This turns on the camera if its not already on. It also assures the
+        // camera is centered.（:1973-1977 注释逐字）
+        tool->setCameraLensAngle(
+            walkAngle,
+            tool->lensAngleMatches(walkAngle,
+                                   dqGeom::Angle::FromDegrees(45.0).Radians()));
+    }
+
+    if (ToolSettings::walkEnforceZUp)
+        tool->enforceZUp(view->AsViewState3d()->GetTargetPoint());
+
+    vp->animateFrustumChange(AnimationOptions{});
+}
+
+// Ported from: ViewNavigate.drawHandle (:1986-2002 — 动态更新中的锚点圆环
+// canvas 装饰).
+void ViewNavigate::drawHandle(DecorateContext& context, bool hasFocus)
+{
+    if (!hasFocus || viewTool == nullptr
+        || &context.GetViewport() != viewTool->viewport
+        || !viewTool->inDynamicUpdate)
+        return;
+    dqGeom::Point3d position = m_anchorPtView;
+    position.x = std::floor(position.x) + 0.5;
+    position.y = std::floor(position.y) + 0.5;
+    dqRender::CanvasDecoration decoration;
+    decoration.position = dqGeom::Point2d::From(position.x, position.y);
+    decoration.drawDecoration = [](dqRender::CanvasContext& ctx) {
+        ctx.beginPath();
+        ctx.setStrokeStyle(dqCommon::ColorDef::from(0, 0, 0));
+        // fill rgba(255,255,255,.3) → 白 + globalAlpha 0.3。
+        ctx.setGlobalAlpha(0.3);
+        ctx.setFillStyle(dqCommon::ColorDef::from(255, 255, 255));
+        ctx.setLineWidth(1);
+        ctx.arc(0.0, 0.0, 5.0, 0.0, 2.0 * 3.14159265358979323846);
+        ctx.fill();
+    };
+    context.AddCanvasDecoration(std::move(decoration));
+}
+
+// ---------------------------------------------------------------------------
+// ViewWalk — Ported from: ViewTool.ts:2951-2990.
+// ---------------------------------------------------------------------------
+
+// Ported from: ViewWalk.firstPoint (:2961-2964).
+bool ViewWalk::firstPoint(BeButtonEvent const& ev)
+{
+    if (viewTool)
+        viewTool->provideToolAssistance("Walk.Prompts.NextPoint");
+    return AnimatedHandle::firstPoint(ev);
+}
+
+// Ported from: ViewWalk.getNavigateMotion (:2966-2989).
+NavigateMotion* ViewWalk::getNavigateMotion(double seconds)
+{
+    auto input = getInputVector();
+    if (!input.has_value())
+        return nullptr;
+
+    NavigateMotion& motion = m_navigateMotion;
+    motion.init(seconds);
+
+    switch (getNavigateMode()) {
+        case NavigateMode::Pan:
+            input->Scale(getMaxLinearVelocity());
+            motion.pan(input->x, input->y);
+            break;
+        case NavigateMode::Look:
+            input->Scale(-getMaxAngularVelocity());
+            motion.look(input->x, input->y);
+            break;
+        case NavigateMode::Travel:
+            motion.travel(-input->x * getMaxAngularVelocity(), 0.0,
+                          -input->y * getMaxLinearVelocity(), true);
+            break;
+    }
+    return &motion;
+}
+
+// ---------------------------------------------------------------------------
+// ViewFly — Ported from: ViewTool.ts:2992-3032.
+// ---------------------------------------------------------------------------
+
+// Ported from: ViewFly.firstPoint (:3002-3005).
+bool ViewFly::firstPoint(BeButtonEvent const& ev)
+{
+    if (viewTool)
+        viewTool->provideToolAssistance("Fly.Prompts.NextPoint");
+    return AnimatedHandle::firstPoint(ev);
+}
+
+// Ported from: ViewFly.getNavigateMotion (:3007-3031).
+NavigateMotion* ViewFly::getNavigateMotion(double seconds)
+{
+    auto input = getInputVector();
+    if (!input.has_value())
+        return nullptr;
+
+    NavigateMotion& motion = m_navigateMotion;
+    motion.init(seconds);
+
+    switch (getNavigateMode()) {
+        case NavigateMode::Pan:
+            input->Scale(getMaxLinearVelocity());
+            motion.pan(input->x, input->y);
+            break;
+        case NavigateMode::Look:
+            input->Scale(-getMaxAngularVelocity());
+            motion.look(input->x, input->y);
+            break;
+        case NavigateMode::Travel:
+            input->Scale(-getMaxAngularVelocity() * 2.0);
+            motion.travel(input->x, input->y, getMaxLinearVelocity(), false);
+            break;
+    }
+    return &motion;
+}
+
+// ---------------------------------------------------------------------------
+// ViewLookAndMove — Ported from: ViewTool.ts:2006-2645（EQUIVALENCE 面见
+// ViewTool.h 类注：pointer lock/touch/collision 轮廓）。
+// ---------------------------------------------------------------------------
+
+// Ported from: ViewLookAndMove.testHandleForHit (:2036-2040).
+bool ViewLookAndMove::testHandleForHit(dqGeom::Point3d /*ptScreen*/, HitOut& out)
+{
+    out.distance = 0.0;
+    out.priority = ViewManipPriority::Medium;  // Always prefer over pan handle...
+    return true;
+}
+
+// Ported from: ViewLookAndMove.onReinitialize (:2042-2050 — 清态 + 焦点
+// handle；pointer lock 面 EQUIVALENCE 恒无操作).
+void ViewLookAndMove::onReinitialize()
+{
+    ViewNavigate::onReinitialize();
+    if (viewTool != nullptr
+        && viewTool->viewHandles.testHit(
+            dqGeom::Point3d::From(0.0, 0.0, 0.0), ViewHandleType::LookAndMove))
+        viewTool->viewHandles.focusHitHandle();  // Ensure key events go to this handle by default w/o requiring motion...
+}
+
+// Ported from: ViewLookAndMove.firstPoint (:2128-2144 — deadZone =
+// pixelsFromInches(0.5)²；InputSource::Mouse 分支[touch 面不可达]).
+bool ViewLookAndMove::firstPoint(BeButtonEvent const& ev)
+{
+    if (viewTool)
+        viewTool->provideToolAssistance("LookAndMove.Prompts.NextPoint");
+    if (!AnimatedHandle::firstPoint(ev))
+        return false;
+
+    Viewport* vp = viewTool ? viewTool->viewport : nullptr;
+    if (vp == nullptr || !vp->isCameraOn())
+        return true;
+
+    // Only used if pointer lock isn't supported...（:2138——无锁路径即 DanQing
+    // 常态[EQUIVALENCE 见类注]）
+    m_deadZone = std::pow(vp->PixelsFromInches(0.5), 2);
+    return true;
+}
+
+// Ported from: ViewLookAndMove.doManipulation (:2146-2154 — 无锁路径
+// _lastMovement 恒无（参考 :2148 的 !havePointerLock 分支=undefined）+
+// 累加器清零面随 mouse-look 落地).
+bool ViewLookAndMove::doManipulation(BeButtonEvent const& ev, bool inDynamics)
+{
+    return AnimatedHandle::doManipulation(ev, inDynamics);
+}
+
+// Ported from: ViewLookAndMove.getMaxLinearVelocity (:2156-2165 —
+// walkVelocityChange 倍率；_touchSpeedUp 面不可达).
+double ViewLookAndMove::getMaxLinearVelocity() const
+{
+    double const maxLinearVelocity = ViewNavigate::getMaxLinearVelocity();
+    if (0 == ToolSettings::walkVelocityChange)
+        return maxLinearVelocity;
+
+    double const speedFactor =
+        clampd(ToolSettings::walkVelocityChange
+                   + (ToolSettings::walkVelocityChange > 0 ? 1 : -1),
+               -10, 10);
+    double const speedMultiplier =
+        (speedFactor >= 0 ? speedFactor : 1 / std::abs(speedFactor));
+    return maxLinearVelocity * speedMultiplier;
+}
+
+// Ported from: ViewLookAndMove.getLinearVelocity (:2170-2189 — 键盘
+// _positionInput × maxV；touch 分支不可达).
+dqGeom::Vector3d ViewLookAndMove::getLinearVelocity()
+{
+    return dqGeom::Vector3d::From(
+        m_positionInput.x * getMaxLinearVelocity(),
+        m_positionInput.y * getMaxLinearVelocity(),
+        m_positionInput.z * getMaxLinearVelocity());
+}
+
+// Ported from: ViewLookAndMove.getAngularVelocity (:2191-2214 — 无锁：
+// getInputVector 拖拽向量 × maxAngular)。
+dqGeom::Vector3d ViewLookAndMove::getAngularVelocity()
+{
+    dqGeom::Vector3d angularInput = dqGeom::Vector3d::From(0.0, 0.0, 0.0);
+    auto input = getInputVector();
+    if (input.has_value()) {
+        angularInput.x = input->x * -getMaxAngularVelocityX();
+        angularInput.y = input->y * -getMaxAngularVelocityY();
+    }
+    return angularInput;
+}
+
+// Ported from: ViewLookAndMove.getHorizAndVertVelocity (:2216-2222).
+std::optional<dqGeom::Vector3d> ViewLookAndMove::getHorizAndVertVelocity()
+{
+    auto input = getInputVector();
+    if (!input.has_value())
+        return std::nullopt;
+    input->Scale(getMaxLinearVelocity());
+    return input;
+}
+
+// Ported from: ViewLookAndMove.getNavigateMotion (:2454-2494 — 相机关→pan；
+// moveAndLook；_lastMovement 无锁分支不可达；collision 早退恒 0).
+NavigateMotion* ViewLookAndMove::getNavigateMotion(double seconds)
+{
+    Viewport* vp = viewTool ? viewTool->viewport : nullptr;
+    if (vp == nullptr)
+        return nullptr;
+
+    NavigateMotion& motion = m_navigateMotion;
+    motion.init(seconds);
+
+    if (!vp->isCameraOn()) {
+        auto input = getHorizAndVertVelocity();
+        if (!input.has_value())
+            return nullptr;
+        motion.pan(input->x, input->y);
+        return &motion;
+    }
+
+    dqGeom::Vector3d const positionInput = getLinearVelocity();
+    dqGeom::Vector3d const angularInput = getAngularVelocity();
+
+    if (0.0 == angularInput.Magnitude() && 0.0 == positionInput.Magnitude())
+        return nullptr;
+
+    motion.moveAndLook(positionInput, angularInput.x, angularInput.y, true);
+
+    int const prevCollision = m_lastCollision;
+    m_lastCollision = checkForCollision(motion, positionInput);
+    if (m_lastCollision != prevCollision)
+        vp->InvalidateDecorations();
+
+    return m_lastCollision ? nullptr : &motion;
+}
+
+// Ported from: ViewLookAndMove.isNavigationKey (:2549-2570).
+bool ViewLookAndMove::isNavigationKey(uint32_t key)
+{
+    switch (key) {
+        case kKeyRight:
+        case kKeyD:
+        case kKeyLeft:
+        case kKeyA:
+        case kKeyUp:
+        case kKeyW:
+        case kKeyDown:
+        case kKeyS:
+        case kKeyPageDown:
+        case kKeyQ:
+        case kKeyPageUp:
+        case kKeyE:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// Ported from: ViewLookAndMove.enableKeyStart (:2570-2585 — 导航键在非动态
+// 更新下以视线中心点起拖).
+bool ViewLookAndMove::enableKeyStart()
+{
+    Viewport* vp = viewTool ? viewTool->viewport : nullptr;
+    if (vp == nullptr || vp->GetView() == nullptr
+        || vp->GetView()->AsViewState3d() == nullptr)
+        return false;
+
+    dqGeom::Point3d const pt = vp->GetView()->AsViewState3d()->GetTargetPoint();
+    BeButtonEvent ev;
+    ev.viewport = vp;
+    ev.point = pt;
+    ev.rawPoint = pt;
+    dqGeom::Point3d const viewPt = vp->WorldToView(pt);
+    ev.viewPoint = dqGeom::Point3d::From(viewPt.x, viewPt.y, 0.0);
+    ev.isDown = true;
+    viewTool->changeViewport(ev.viewport);
+    if (!viewTool->processFirstPoint(ev))
+        return false;
+
+    viewTool->nPts = 1;
+    return true;
+}
+
+// Ported from: ViewLookAndMove.onKeyTransition (:2587-2645 — WASD/箭头/QE/
+// PgUp·Dn 累加 -1..1；C/Z 翻转；+/-/= 变速).
+bool ViewLookAndMove::onKeyTransition(bool wentDown, uint32_t key)
+{
+    if (viewTool != nullptr && !viewTool->inDynamicUpdate) {
+        m_positionInput = dqGeom::Vector3d::From(0.0, 0.0, 0.0);  // clear input from a previous dynamic update...
+        if (!wentDown || !isNavigationKey(key) || !enableKeyStart())
+            return false;
+    }
+
+    // keyEvent.ctrlKey || keyEvent.altKey（:2594——修饰态经 InputState）。
+    InputState const& state =
+        dqApp::Application::Get().GetToolAdmin().currentInputState();
+    if (state.isControlDown() || state.isAltDown())
+        return false;
+
+    auto bump = [wentDown](double& axis, double delta) {
+        axis = clampd(axis + (wentDown ? delta : -delta), -1.0, 1.0);
+    };
+    switch (key) {
+        case kKeyRight:
+        case kKeyD:
+            bump(m_positionInput.x, 1.0);
+            return true;
+        case kKeyLeft:
+        case kKeyA:
+            bump(m_positionInput.x, -1.0);
+            return true;
+        case kKeyUp:
+        case kKeyW:
+            bump(m_positionInput.z, 1.0);
+            return true;
+        case kKeyDown:
+        case kKeyS:
+            bump(m_positionInput.z, -1.0);
+            return true;
+        case kKeyPageDown:
+        case kKeyQ:
+            bump(m_positionInput.y, 1.0);
+            return true;
+        case kKeyPageUp:
+        case kKeyE:
+            bump(m_positionInput.y, -1.0);
+            return true;
+        case kKeyC:
+            if (wentDown)
+                toggleCollisions();
+            return true;
+        case kKeyZ:
+            if (wentDown)
+                toggleDetectFloor();
+            return true;
+        case kKeyPlus:
+            if (wentDown)
+                changeWalkVelocity(1);
+            return true;
+        case kKeyMinus:
+            if (wentDown)
+                changeWalkVelocity(-1);
+            return true;
+        case kKeyEqual:
+            if (wentDown)
+                changeWalkVelocity(0);
+            return true;
+        default:
+            return false;
+    }
+}
+
+// Ported from: ViewLookAndMove.onWheel (:2537-2547 — 动态更新中滚轮变速).
+bool ViewLookAndMove::onWheel(BeWheelEvent const& ev)
+{
+    ViewManip* tool = viewTool;
+    if (tool == nullptr || !tool->inHandleModify || tool->viewport == nullptr)
+        return AnimatedHandle::onWheel(ev);
+    ViewingToolHandle* focusHandle = tool->viewHandles.focusHandle();
+    if (focusHandle == nullptr
+        || ViewHandleType::LookAndMove != focusHandle->handleType())
+        return AnimatedHandle::onWheel(ev);
+    changeWalkVelocity(ev.wheelDelta > 0 ? 1 : -1);
+    tool->viewport->setAnimatorRef(this);  // animator was cleared by wheel event...
+    return true;
+}
+
+// Ported from: ViewLookAndMove.changeWalkVelocity (:2528-2535 — increase
+// 三态：1/-1 调挡[clamp -9..9]、0 重置).
+void ViewLookAndMove::changeWalkVelocity(int increase)
+{
+    if (0 == increase)
+        ToolSettings::walkVelocityChange = 0;
+    else
+        ToolSettings::walkVelocityChange =
+            static_cast<int>(clampd(
+                static_cast<double>(ToolSettings::walkVelocityChange + increase),
+                -9, 9));
+    if (viewTool != nullptr && viewTool->viewport != nullptr)
+        viewTool->viewport->InvalidateDecorations();
+}
+
+// Ported from: ViewLookAndMove.toggleCollisions (:2511-2517 — 设置面 1:1；
+// 探测面 EQUIVALENCE 延后见类注).
+void ViewLookAndMove::toggleCollisions()
+{
+    ToolSettings::walkCollisions = !ToolSettings::walkCollisions;
+    m_lastCollision = 0;
+    if (viewTool != nullptr && viewTool->viewport != nullptr)
+        viewTool->viewport->InvalidateDecorations();
+}
+
+// Ported from: ViewLookAndMove.toggleDetectFloor (:2519-2526).
+void ViewLookAndMove::toggleDetectFloor()
+{
+    ToolSettings::walkDetectFloor = !ToolSettings::walkDetectFloor;
+    if (ToolSettings::walkDetectFloor && !ToolSettings::walkCollisions)
+        return toggleCollisions();
+    if (viewTool != nullptr && viewTool->viewport != nullptr)
+        viewTool->viewport->InvalidateDecorations();
+}
+
+// ---------------------------------------------------------------------------
+// ViewManip 相机面 — Ported from: ViewTool.ts:615-618/:860-895（M-O(3) P1）。
+// ---------------------------------------------------------------------------
+
+// Ported from: ViewManip.onKeyTransition (:615-618 — 路由到 focusHandle).
+EventHandled ViewManip::onKeyTransition(bool wentDown, uint32_t key)
+{
+    ViewingToolHandle* focusHandle = viewHandles.focusHandle();
+    return (focusHandle != nullptr && focusHandle->onKeyTransition(wentDown, key))
+        ? EventHandled::Yes
+        : EventHandled::No;
+}
+
+// Ported from: ViewManip.setCameraLensAngle (:860-878).
+ViewStatus ViewManip::setCameraLensAngle(dqGeom::Angle const& lensAngle,
+                                         bool retainEyePoint)
+{
+    if (viewport == nullptr)
+        return ViewStatus::InvalidViewport;
+
+    ViewState* view = viewport->GetView();
+    if (view == nullptr || view->AsViewState3d() == nullptr
+        || !view->AsViewState3d()->Allow3dManipulations())
+        return ViewStatus::InvalidViewport;
+
+    ViewStatus result;
+    auto* view3d = view->AsViewState3d();
+    if (retainEyePoint && viewport->isCameraOn()) {
+        LookAtArgs args;
+        args.eyePoint = view3d->getEyePoint();
+        args.targetPoint = view3d->GetTargetPoint();
+        args.upVector = view3d->GetYVec();
+        args.lensAngleRadians = lensAngle.Radians();
+        result = view3d->lookAt(args);
+    } else {
+        result = viewport->TurnCameraOn(lensAngle);
+    }
+
+    if (result != ViewStatus::Success)
+        return result;
+
+    viewport->SetupFromView();
+    return ViewStatus::Success;
+}
+
+// Ported from: ViewManip.enforceZUp (:880-895).
+bool ViewManip::enforceZUp(dqGeom::Point3d const& pivotPoint)
+{
+    if (viewport == nullptr || viewport->GetView() == nullptr || isZUp())
+        return false;
+
+    dqGeom::Vector3d const viewY =
+        viewport->GetView()->AsViewState3d()->GetYVec();
+    // Matrix3d.createRotationVectorToVector(viewY, unitZ)——dqGeom 未移植该工厂，
+    // 轴角组合（axis = a×b，angle = atan2(|a×b|, a·b)；平行同向=恒等[angle 0]、
+    // 平行反向=不可构造[参考 createRotationVectorToVector 平行返回 undefined 的
+    // 语义——enforceZUp 的 viewY≈-unitZ 情形视天倒置，返回 false]）。
+    dqGeom::Vector3d const worldUp = dqGeom::Vector3d::From(0.0, 0.0, 1.0);
+    dqGeom::Vector3d axis =
+        dqGeom::Vector3d::FromCrossProduct(viewY, worldUp);
+    double const crossMag = axis.Magnitude();
+    double const dot = viewY.DotProduct(worldUp);
+    dqGeom::Matrix3d rotMatrix;
+    if (crossMag < 1.0e-12) {
+        if (dot > 0.0) {
+            rotMatrix = dqGeom::Matrix3d::CreateIdentity();
+        } else {
+            return false;  // 180° 反向——参考返回 undefined → false
+        }
+    } else {
+        axis.Scale(1.0 / crossMag);
+        rotMatrix = dqGeom::Matrix3d::CreateRotationAroundAxis(
+            axis, std::atan2(crossMag, dot));
+    }
+
+    dqGeom::Transform const transform =
+        dqGeom::Transform::CreateFixedPointAndMatrix(pivotPoint, rotMatrix);
+    dqCommon::Frustum frust = viewport->getWorldFrustum();
+    frust.transformBy(transform);
+    viewport->setupViewFromFrustum(frust);
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// 三工具 provideToolAssistance — Ported from: ViewTool.ts:3107-3156/:3161-3178/
+// :3183-3199（键盘/修饰键指令段；touch 段无输入面略——类注 EQUIVALENCE）。
+// ---------------------------------------------------------------------------
+
+// Ported from: LookAndMoveTool.provideToolAssistance (:3123-3155).
+void LookAndMoveTool::provideToolAssistance(
+    std::string const& mainInstrKey,
+    std::vector<ToolAssistanceInstruction> const&) const
+{
+    // mainInstruction（:3124——iconSpec 字符串形）。
+    ToolAssistanceInstruction const mainInstruction =
+        ToolAssistance::createInstruction(
+            "icon-walk", ViewTool::translate(mainInstrKey), false,
+            ToolAssistanceInputMethod::Both);
+
+    // mouseInstructions（:3128-3140——键盘段经 createKeyboardInstruction）。
+    std::vector<ToolAssistanceInstruction> mouseInstructions;
+    bool const inDyn = inDynamicUpdate;
+    mouseInstructions.push_back(ToolAssistance::createInstruction(
+        ToolAssistanceImage::LeftClick,
+        inDyn ? coreToolsTranslate("ElementSet.Inputs.AcceptPoint")
+              : ViewTool::translate("LookAndMove.Inputs.AcceptLookPoint"),
+        false, ToolAssistanceInputMethod::Mouse));
+    mouseInstructions.push_back(ToolAssistance::createInstruction(
+        ToolAssistanceImage::RightClick,
+        coreToolsTranslate("ElementSet.Inputs.Exit"), false,
+        ToolAssistanceInputMethod::Mouse));
+    mouseInstructions.push_back(ToolAssistance::createKeyboardInstruction(
+        ToolAssistance::createKeyboardInfo(
+            {"W"}, std::optional<std::vector<std::string>>{{"A", "S", "D"}}),
+        ViewTool::translate("LookAndMove.Inputs.WalkKeys")));
+    mouseInstructions.push_back(ToolAssistance::createKeyboardInstruction(
+        ToolAssistance::arrowKeyboardInfo(),
+        ViewTool::translate("LookAndMove.Inputs.WalkKeys")));
+    mouseInstructions.push_back(ToolAssistance::createKeyboardInstruction(
+        ToolAssistance::createKeyboardInfo({"Q", "E"}),
+        ViewTool::translate("LookAndMove.Inputs.ElevateKeys")));
+    // :3137 ⭞⭟（⇞/⇟）。
+    mouseInstructions.push_back(ToolAssistance::createKeyboardInstruction(
+        ToolAssistance::createKeyboardInfo({"\xe2\xad\x9e", "\xe2\xad\x9f"}),
+        ViewTool::translate("LookAndMove.Inputs.ElevateKeys")));
+    mouseInstructions.push_back(ToolAssistance::createKeyboardInstruction(
+        ToolAssistance::createKeyboardInfo({"C", "Z"}),
+        ViewTool::translate("LookAndMove.Inputs.CollideKeys")));
+    mouseInstructions.push_back(ToolAssistance::createKeyboardInstruction(
+        ToolAssistance::createKeyboardInfo({"+", "-"}),
+        ViewTool::translate("LookAndMove.Inputs.VelocityChange")));
+    mouseInstructions.push_back(ToolAssistance::createInstruction(
+        ToolAssistanceImage::MouseWheel,
+        ViewTool::translate("LookAndMove.Inputs.VelocityChange"), false,
+        ToolAssistanceInputMethod::Mouse));
+
+    // sections + instructions（:3149-3154——touch 段无输入面略[EQUIVALENCE
+    // 见 ViewTool.h LookAndMoveTool 注]）。
+    std::vector<ToolAssistanceSection> sections;
+    sections.push_back(ToolAssistance::createSection(
+        std::move(mouseInstructions), ToolAssistance::inputsLabel()));
+    ToolAssistanceInstructions const instructions =
+        ToolAssistance::createInstructions(mainInstruction, std::move(sections));
+    dqApp::Application::Get().GetNotificationManager().setToolAssistance(
+        instructions);
+}
+
+// Ported from: WalkViewTool.provideToolAssistance (:3172-3177 —— 附加
+// shift/ctrl flyover 修饰键指令段后走基类双段扇出).
+void WalkViewTool::provideToolAssistance(
+    std::string const& mainInstrKey,
+    std::vector<ToolAssistanceInstruction> const&) const
+{
+    std::vector<ToolAssistanceInstruction> walkInstructions;
+    walkInstructions.push_back(ToolAssistance::createModifierKeyInstruction(
+        ToolAssistance::shiftKey(), ToolAssistanceImage::LeftClickDrag,
+        ViewTool::translate("Pan.flyover"), false,
+        ToolAssistanceInputMethod::Mouse));
+    walkInstructions.push_back(ToolAssistance::createModifierKeyInstruction(
+        ToolAssistance::ctrlKey(), ToolAssistanceImage::LeftClickDrag,
+        ViewTool::translate("Look.flyover"), false,
+        ToolAssistanceInputMethod::Mouse));
+    ViewManip::provideToolAssistance(mainInstrKey, walkInstructions);
+}
+
+// Ported from: FlyViewTool.provideToolAssistance (:3193-3198 —— 同 Walk).
+void FlyViewTool::provideToolAssistance(
+    std::string const& mainInstrKey,
+    std::vector<ToolAssistanceInstruction> const&) const
+{
+    std::vector<ToolAssistanceInstruction> flyInstructions;
+    flyInstructions.push_back(ToolAssistance::createModifierKeyInstruction(
+        ToolAssistance::shiftKey(), ToolAssistanceImage::LeftClickDrag,
+        ViewTool::translate("Pan.flyover"), false,
+        ToolAssistanceInputMethod::Mouse));
+    flyInstructions.push_back(ToolAssistance::createModifierKeyInstruction(
+        ToolAssistance::ctrlKey(), ToolAssistanceImage::LeftClickDrag,
+        ViewTool::translate("Look.flyover"), false,
+        ToolAssistanceInputMethod::Mouse));
+    ViewManip::provideToolAssistance(mainInstrKey, flyInstructions);
 }
 
 // ===========================================================================

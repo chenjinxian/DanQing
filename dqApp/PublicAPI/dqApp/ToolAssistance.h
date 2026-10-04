@@ -108,6 +108,55 @@ struct ToolAssistanceInstructions {
 // ---------------------------------------------------------------------------
 class DQ_APP_EXPORT ToolAssistance {
 public:
+    // Up/Down/Left/Right key symbols（:142-148——⯅..⯈ 逐字）。
+    static std::string const& upSymbol() noexcept
+    {
+        static std::string const k = "\xe2\xaf\x85";
+        return k;
+    }
+    static std::string const& downSymbol() noexcept
+    {
+        static std::string const k = "\xe2\xaf\x86";
+        return k;
+    }
+    static std::string const& leftSymbol() noexcept
+    {
+        static std::string const k = "\xe2\xaf\x87";
+        return k;
+    }
+    static std::string const& rightSymbol() noexcept
+    {
+        static std::string const k = "\xe2\xaf\x88";
+        return k;
+    }
+
+    // Keyboard info for Arrow keys（:151-154）。
+    static ToolAssistanceKeyboardInfo arrowKeyboardInfo()
+    {
+        ToolAssistanceKeyboardInfo info;
+        info.keys = {upSymbol()};
+        info.bottomKeys = {leftSymbol(), downSymbol(), rightSymbol()};
+        return info;
+    }
+
+    // Alt/Ctrl/Shift key text（:170-182——translateKey；en 实值
+    // CoreTools.json toolAssistance.altKey/ctrlKey/shiftKey）。
+    static std::string const& altKey() noexcept
+    {
+        static std::string const k = "Alt";
+        return k;
+    }
+    static std::string const& ctrlKey() noexcept
+    {
+        static std::string const k = "Ctrl";
+        return k;
+    }
+    static std::string const& shiftKey() noexcept
+    {
+        static std::string const k = "Shift";
+        return k;
+    }
+
     // ← inputsLabel（:185-187——translateKey("inputs")；DanQing 无 localization
     // 系统，en 值 "Inputs" 内嵌——CoreTools.json toolAssistance.inputs）。
     // EQUIVALENCE: 参考源=ToolAssistance.ts:156 translateKey 经
@@ -147,6 +196,50 @@ public:
         instruction.isNew = isNew;
         instruction.inputMethod = inputMethod;
         return instruction;
+    }
+
+    // Ported from: ToolAssistance.createKeyboardInstruction（:251-263——
+    // image=Keyboard + keyboardInfo；inputMethod 缺省 Mouse :253。
+    // M-O(3) P1：Walk/Fly/LookAndMove 键盘指令段消费面）。
+    static ToolAssistanceInstruction createKeyboardInstruction(
+        ToolAssistanceKeyboardInfo keyboardInfo, std::string const& text,
+        bool isNew = false,
+        ToolAssistanceInputMethod inputMethod = ToolAssistanceInputMethod::Mouse)
+    {
+        ToolAssistanceInstruction instruction;
+        instruction.image = ToolAssistanceImage::Keyboard;
+        instruction.text = text;
+        instruction.keyboardInfo = std::move(keyboardInfo);
+        instruction.isNew = isNew;
+        instruction.inputMethod = inputMethod;
+        return instruction;
+    }
+
+    // Ported from: ToolAssistance.createModifierKeyInstruction（:267-282——
+    // keyboardInfo={keys:[modifierKey]} + image 形。M-O(3) P1：Walk/Fly 的
+    // shift/ctrl flyover 段消费面）。
+    static ToolAssistanceInstruction createModifierKeyInstruction(
+        std::string const& modifierKey, ToolAssistanceImage image,
+        std::string const& text, bool isNew = false,
+        ToolAssistanceInputMethod inputMethod = ToolAssistanceInputMethod::Both)
+    {
+        ToolAssistanceInstruction instruction;
+        instruction.image = image;
+        instruction.text = text;
+        ToolAssistanceKeyboardInfo info;
+        info.keys = {modifierKey};
+        instruction.keyboardInfo = std::move(info);
+        instruction.isNew = isNew;
+        instruction.inputMethod = inputMethod;
+        return instruction;
+    }
+
+    // Ported from: ToolAssistance.createKeyboardInfo（:286-292）。
+    static ToolAssistanceKeyboardInfo createKeyboardInfo(
+        std::vector<std::string> keys,
+        std::optional<std::vector<std::string>> bottomKeys = std::nullopt)
+    {
+        return ToolAssistanceKeyboardInfo{std::move(keys), std::move(bottomKeys)};
     }
 
     // Ported from: itwinjs-core ToolAssistance.createSection（ToolAssistance

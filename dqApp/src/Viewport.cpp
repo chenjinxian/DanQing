@@ -1346,6 +1346,76 @@ bool Viewport::isCameraOn() const noexcept
     return v3 && v3->IsCameraOn();
 }
 
+// Ported from: itwinjs-core Viewport.turnCameraOn (Viewport.ts:1988-2029 —
+// M-O(3) P1)。
+ViewStatus Viewport::TurnCameraOn(std::optional<dqGeom::Angle> lensAngle)
+{
+    auto* v3 = m_view ? m_view->AsViewState3d() : nullptr;
+    if (v3 == nullptr || !v3->supportsCamera())
+        return ViewStatus::InvalidViewport;
+
+    // :1993-1996 lensAngle 缺省取当前镜头角 + validateLensAngle。
+    dqGeom::Angle lens =
+        lensAngle.has_value() ? *lensAngle
+                              : dqGeom::Angle::FromRadians(v3->GetLensAngle());
+    // Camera.validateLensAngle（Camera.ts——[1°, 170°] clamp）。
+    {
+        double radians = lens.Radians();
+        double const kMin = dqGeom::Angle::FromDegrees(1.0).Radians();
+        double const kMax = dqGeom::Angle::FromDegrees(170.0).Radians();
+        if (radians < kMin)
+            radians = kMin;
+        if (radians > kMax)
+            radians = kMax;
+        lens = dqGeom::Angle::FromRadians(radians);
+    }
+
+    ViewStatus status;
+    if (v3->IsCameraOn()) {
+        // :1999-2000 lookAt 保眼位。
+        LookAtArgs args;
+        args.eyePoint = v3->getEyePoint();
+        args.targetPoint = v3->GetTargetPoint();
+        args.upVector = v3->GetYVec();
+        args.lensAngleRadians = lens.Radians();
+        status = v3->lookAt(args);
+    } else {
+        // :2002-2022 相机开启分支：可见深度中点取景。determineVisibleDepthRange
+        // 未移植（ViewTool.cpp:2707 登记）——用参考 :2005-2006 的 undefined 回退
+        // 域 {0,1}（EQUIVALENCE 见 Viewport.h 声明注）。
+        double const minimum = 0.0, maximum = 1.0;
+        double const middle = minimum + ((maximum - minimum) / 2.0);
+        dqGeom::Point3d corners[4] = {
+            dqGeom::Point3d::From(0.0, 0.0, middle),   // lower left, at target depth
+            dqGeom::Point3d::From(1.0, 1.0, middle),   // upper right at target depth
+            dqGeom::Point3d::From(0.0, 0.0, maximum),  // lower left, at closest npc
+            dqGeom::Point3d::From(1.0, 1.0, maximum),  // upper right at closest
+        };
+        for (auto& corner : corners)
+            corner = NpcToWorld(corner);
+
+        dqGeom::Point3d const eyePoint =  // middle of closest plane
+            dqGeom::Point3d::FromInterpolate(corners[2], 0.5, corners[3]);
+        dqGeom::Point3d const targetPoint =  // middle of halfway plane
+            dqGeom::Point3d::FromInterpolate(corners[0], 0.5, corners[1]);
+        double const backDistance = eyePoint.Distance(targetPoint) * 2.0;
+        double const frontDistance = v3->minimumFrontDistance();
+        LookAtArgs args;
+        args.eyePoint = eyePoint;
+        args.targetPoint = targetPoint;
+        args.upVector = v3->GetYVec();
+        args.lensAngleRadians = lens.Radians();
+        args.frontDistance = frontDistance;
+        args.backDistance = backDistance;
+        status = v3->lookAt(args);
+    }
+
+    if (status == ViewStatus::Success)
+        SetupFromView();
+
+    return status;
+}
+
 // Ported from: itwinjs-core Viewport.pickDepthPoint (Viewport.ts:3394)
 dqGeom::Point3d Viewport::pickDepthPoint(dqGeom::Point3d pt, double /*pickRadius*/) const
 {
