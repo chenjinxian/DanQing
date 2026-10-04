@@ -31,6 +31,7 @@
 
 #include "FpsMonitor.h"
 #include "Application.h"
+#include "GltfDecorationTool.h"
 #include "GridSettingsTool.h"
 #include "KeyinField.h"
 #include "MainWindow.h"
@@ -72,6 +73,11 @@ void registerDtaTools()
     registry.Register("GridSettings",
                       []() -> dqApp::InteractiveTool* { return new ChangeGridSettingsTool(); },
                       "dta grid settings");
+    // M-O(2) 3f：GltfDecorationTool（GltfDecoration.ts:103-228——keyin "dta gltf"
+    // [SVTTools.json 无该键——以工具类名注册面为准]；i>/s>/c>/r>/f> 实例化参数面）。
+    registry.Register("AddGltfDecoration",
+                      []() -> dqApp::InteractiveTool* { return new GltfDecorationTool(); },
+                      "dta gltf");
 }
 
 void setupDtaStatusBar(MainWindow* mainWindow)

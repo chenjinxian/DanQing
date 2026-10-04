@@ -47,12 +47,20 @@
 #include "InputHint.h"
 
 #include <dqApp/Application.h>
+#include <dqApp/GltfDecoration.h>  // M-O(2) 3f——DropDecorator 的完整类型上转
+#include <dqApp/GltfImport.h>  // M-O(2) 3f——InstallGltfDecoration
 #include <dqApp/NotificationManager.h>
 #include <dqApp/ViewManager.h>
 #include <dqApp/Viewport.h>
 #include <dqApp/ViewState.h>
 #include <dqApp/ViewTool.h>  // M-O(2) 3i——PanViewTool/RotateViewTool 事件源
 
+#include <dqRender/GltfReader.h>  // M-O(2) 3f——GltfScene/GltfReader
+
+#include "Gui/GltfDecorationTool.h"  // M-O(2) 3f——实例化缝
+
+#include <algorithm>
+#include <cmath>
 #include <optional>
 #include <dqCommon/GridOrientationType.h>
 
@@ -683,4 +691,203 @@ TEST(DtaToolsWiring, DtaShortcutsRegistered)
         ASSERT_NE(sc, nullptr) << name << " 快捷键未注册";
         EXPECT_EQ(sc->parent(), &mw);
     }
+}
+
+// ---------------------------------------------------------------------------
+// M-O(2) 3f——glTF 实例化开关（GltfDecoration.ts:103-228）。
+// ---------------------------------------------------------------------------
+
+// Authored: no reference test exists in display-test-app for the glTF
+//           decoration tool (test app ships no tests); scenario transcribes
+//           GltfDecoration.ts:58-66（scale 域 [0.25,2.5] / 关闭时恒等）与
+//           :41-53（位置域 ±maxExtent 逐分量随机）。
+TEST(DtaToolsWiring, GltfDecorationToolCreateTransformDomains)
+{
+    ensureEngineReady();
+    constexpr double kMaxExtent = 100.0;
+    // 关闭两开关：matrix 恒等（:60 scaleFactor=1 / :63 zAngle=0）。
+    {
+        auto const tf = Gui::GltfDecorationTool::createGltfInstanceTransform(
+            kMaxExtent, /*wantScale=*/false, /*wantRotate=*/false);
+        auto const& identity = dqGeom::Matrix3d::CreateIdentity();
+        for (int i = 0; i < 9; ++i)
+            EXPECT_NEAR(identity.coffs[static_cast<size_t>(i)],
+                        tf.matrix.coffs[static_cast<size_t>(i)], 1.0e-9)
+                << "coffs[" << i << "]";
+    }
+    // 全开：合成 origin = t + P − sR·P（参考 :56-66 的乘积序
+    // translation×scale×rotation——scale/rotation 均固定于随机点 P），
+    // |origin| ≤ |t|+|P|+s|P| ≤ (2+s)·maxExtent ≤ 4.5·maxExtent；缩放域
+    // [0.25, 2.5]（行范数——uniform scale 三行同范数，:58-59）。
+    for (int trial = 0; trial < 25; ++trial) {
+        auto const tf = Gui::GltfDecorationTool::createGltfInstanceTransform(
+            kMaxExtent, /*wantScale=*/true, /*wantRotate=*/true);
+        EXPECT_LE(std::abs(tf.origin.x), kMaxExtent * 4.5 + 1.0e-6);
+        EXPECT_LE(std::abs(tf.origin.y), kMaxExtent * 4.5 + 1.0e-6);
+        EXPECT_LE(std::abs(tf.origin.z), kMaxExtent * 4.5 + 1.0e-6);
+        double const rowNorm = std::sqrt(
+            tf.matrix.coffs[0] * tf.matrix.coffs[0] +
+            tf.matrix.coffs[1] * tf.matrix.coffs[1] +
+            tf.matrix.coffs[2] * tf.matrix.coffs[2]);
+        EXPECT_GE(rowNorm, 0.25 - 1.0e-6);
+        EXPECT_LE(rowNorm, 2.5 + 1.0e-6);
+    }
+}
+
+// Authored: no reference test exists in display-test-app for the glTF
+//           decoration tool; scenario transcribes GltfDecoration.ts:76-88
+//           （七色循环）与 :87-94 的逐实例装配面（N 份 mesh + 烘后恒等）。
+TEST(DtaToolsWiring, GltfDecorationToolBuildInstancedSceneCyclesColors)
+{
+    ensureEngineReady();
+    // 单 mesh 源（BoxTexturedDots——树内不对称标记资产）。
+    auto src = dqRender::GltfReader::LoadFromFile(
+        DANQING_GLTF_ASSETS_DIR "/BoxTexturedDots/BoxTextured.gltf");
+    ASSERT_NE(src, nullptr);
+    ASSERT_FALSE(src->meshes.empty());
+    size_t const srcMeshCount = src->meshes.size();
+    float const srcAlpha = src->meshes[0].baseColorFactor[3];
+
+    int const kNumInstances = 5;
+    auto instanced = Gui::GltfDecorationTool::buildInstancedScene(
+        *src, kNumInstances, /*maxExtent=*/3.0,
+        /*wantScale=*/false, /*wantColor=*/true, /*wantRotate=*/false);
+    ASSERT_NE(instanced, nullptr);
+    ASSERT_EQ(kNumInstances * srcMeshCount, instanced->meshes.size());
+
+    // 七色循环（:77-84 序：green/blue/red/white/yellow/orange/black——
+    // 前 5 实例 = green/blue/red/white/yellow）；alpha 透传。
+    static float const kExpected[5][3] = {
+        {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f},
+        {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.0f},
+    };
+    for (int i = 0; i < kNumInstances; ++i) {
+        auto const& mesh = instanced->meshes[static_cast<size_t>(i) * srcMeshCount];
+        for (int c = 0; c < 3; ++c)
+            EXPECT_NEAR(kExpected[i][c], mesh.baseColorFactor[c], 1.0e-6f)
+                << "instance " << i << " channel " << c;
+        EXPECT_FLOAT_EQ(srcAlpha, mesh.baseColorFactor[3]);
+        // 烘后 mesh transform 恒等（buildInstancedScene 的烘变换契约）。
+        auto const& identity = dqGeom::Matrix3d::CreateIdentity();
+        for (int e = 0; e < 9; ++e)
+            EXPECT_NEAR(identity.coffs[static_cast<size_t>(e)],
+                        mesh.transform.matrix.coffs[static_cast<size_t>(e)], 1.0e-9);
+    }
+
+    // 位置展开：5 实例的原点两两距离 > 0（随机位置——几乎必然不重合）。
+    for (size_t a = 0; a < instanced->meshes.size(); a += srcMeshCount) {
+        for (size_t b = a + srcMeshCount; b < instanced->meshes.size(); b += srcMeshCount) {
+            auto const& pa = instanced->meshes[a].polyface->Data().points[0];
+            auto const& pb = instanced->meshes[b].polyface->Data().points[0];
+            double const dist = std::sqrt(
+                (pa.x - pb.x) * (pa.x - pb.x) + (pa.y - pb.y) * (pa.y - pb.y) +
+                (pa.z - pb.z) * (pa.z - pb.z));
+            EXPECT_GT(dist, 1.0e-6) << "instances " << a << "/" << b;
+        }
+    }
+}
+
+// 像素锁（§11.11 WHERE 断言）：5 实例散布 ±maxExtent 后上屏——内容在
+// 水平/垂直两轴的多簇展开（单实例立方体会聚为单一中央块）。
+// Authored: no reference test exists in display-test-app for the glTF
+//           decoration tool; scenario = GltfDecoration.ts:180-204 装配 +
+//           :41-53 的散布域（maxExtent=3.0 的受控数据面——机制即 :74-75 的
+//           projectExtents 对角线最小分量，值随数据面）。
+TEST(DtaToolsWiring, GltfDecorationInstancesRenderSeparatedClusters)
+{
+    ensureEngineReady();
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    view.resize(1000, 700);
+    view.show();
+    {
+        qint64 const t0 = QDateTime::currentMSecsSinceEpoch();
+        while (QDateTime::currentMSecsSinceEpoch() - t0 < 400)
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    }
+
+    auto src = dqRender::GltfReader::LoadFromFile(
+        DANQING_GLTF_ASSETS_DIR "/BoxTexturedDots/BoxTextured.gltf");
+    ASSERT_NE(src, nullptr);
+    // 固定种子 = 确定性布局（生产 seed=0 随机——参考 Math.random）。
+    auto instanced = Gui::GltfDecorationTool::buildInstancedScene(
+        *src, /*numInstances=*/5, /*maxExtent=*/3.0,
+        /*wantScale=*/false, /*wantColor=*/false, /*wantRotate=*/false,
+        /*seed=*/42);
+    ASSERT_NE(instanced, nullptr);
+
+    auto decoration = dqApp::InstallGltfDecoration(
+        *view.getUeViewport(), std::move(instanced), "BoxTexturedDots-x5");
+    ASSERT_NE(decoration, nullptr);
+    // InstallGltfDecoration 的 fit 是即时的（InvalidateController 非 synchWithView
+    // 动画——GltfImport.cpp:44-49 登记）；渲染一帧后取帧。
+    {
+        qint64 const t0 = QDateTime::currentMSecsSinceEpoch();
+        while (QDateTime::currentMSecsSinceEpoch() - t0 < 300)
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    }
+    view.getUeViewport()->RenderFrame();
+
+    std::vector<uint8_t> frame;
+    uint32_t w = 0, h = 0;
+    ASSERT_TRUE(view.getUeViewport()->ReadFrameForTest(frame, w, h));
+
+    auto const px = [&](uint32_t x, uint32_t y) -> size_t {
+        return (static_cast<size_t>(y) * w + x) * 4;
+    };
+    // 逐行背景 = 该行中位色（空白连接的天空渐变竖直单向——行内恒定；实例
+    // 像素为离群）。内容 = 与行中位差的 L1 > 120。
+    auto const rowContentGroups = [&](uint32_t y, int& groups,
+                                      int& contentCols) {
+        std::vector<uint8_t> rs, gs, bs;
+        rs.reserve(w); gs.reserve(w); bs.reserve(w);
+        for (uint32_t x = 0; x < w; x += 3) {
+            rs.push_back(frame[px(x, y)]);
+            gs.push_back(frame[px(x, y) + 1]);
+            bs.push_back(frame[px(x, y) + 2]);
+        }
+        std::sort(rs.begin(), rs.end());
+        std::sort(gs.begin(), gs.end());
+        std::sort(bs.begin(), bs.end());
+        double const mr = rs[rs.size() / 2], mg = gs[gs.size() / 2],
+                     mb = bs[bs.size() / 2];
+        groups = 0;
+        contentCols = 0;
+        bool inGroup = false;
+        for (uint32_t x = 0; x < w; ++x) {
+            bool const content =
+                std::abs(frame[px(x, y)] - mr) +
+                    std::abs(frame[px(x, y) + 1] - mg) +
+                    std::abs(frame[px(x, y) + 2] - mb) > 120.0;
+            if (content) {
+                ++contentCols;
+                if (!inGroup) {
+                    ++groups;
+                    inGroup = true;
+                }
+            } else {
+                inGroup = false;
+            }
+        }
+    };
+
+    // 扫描行带（h/16 步）取列组峰值——5 实例散布后至少一行切过 ≥2 个水平
+    // 分离的实例剪影（单实例立方体在任意行至多 1 组）。
+    int maxGroups = 0, maxGroupsRow = 0, maxRowContentCols = 0;
+    for (uint32_t y = h / 16; y < h - h / 16; y += h / 16) {
+        int groups = 0, contentCols = 0;
+        rowContentGroups(y, groups, contentCols);
+        if (groups > maxGroups) {
+            maxGroups = groups;
+            maxGroupsRow = static_cast<int>(y);
+            maxRowContentCols = contentCols;
+        }
+    }
+    printf("[GLTFINST] frame=%ux%u maxGroups=%d@row=%d rowContentCols=%d\n",
+           w, h, maxGroups, maxGroupsRow, maxRowContentCols);
+
+    // WHERE 断言：水平多簇分离（≥2 列组——散布实例剪影）。
+    EXPECT_GE(maxGroups, 2);
+
+    // 清理（ViewManager 非拥有指针——销毁前 Drop）。
+    dqApp::Application::Get().GetViewManager().DropDecorator(decoration.get());
 }
