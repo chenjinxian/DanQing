@@ -6,6 +6,7 @@
 #include "Tile.h"
 #include "TileRequestChannel.h"
 #include "TileTree.h"
+#include "ImdlTileTree.h"  // EdgeOptions（edgeOptions 权威源——M-O(4) P6）
 
 #include <dqBase/DqEvent.h>
 
@@ -56,6 +57,19 @@ public:
 
     /// Get the global TileAdmin instance
     static TileAdmin& instance();
+
+    /// Edge options used when deriving primary tile-tree Ids.
+    /// Ported from: itwinjs-core TileAdmin.edgeOptions (TileAdmin.ts:86
+    /// `public readonly edgeOptions: EdgeOptions = defaultTileOptions.edgeOptions`
+    /// ——可变面经 `IModelApp.tileAdmin.edgeOptions.smooth = ...`[ViewAttributes
+    /// :866 Smooth Polyface Edges 复选]；M-O(4) P6——树 Id 派生点
+    /// [DumpOpenHelper/TiledGraphics 的 iModelTileTreeIdToString 第三参]读此
+    /// 单一权威源，缺省 = TileOptions{}.edgeOptions[捕获键域不变]。
+    EdgeOptions const& edgeOptions() const noexcept { return m_edgeOptions; }
+    void setEdgeOptions(EdgeOptions const& options) noexcept
+    {
+        m_edgeOptions = options;
+    }
 
     /// Whether a TileAdmin instance exists (guards ~Tile's LRU unregister
     /// against static-destruction ordering — the default instance may be gone
@@ -297,6 +311,9 @@ public:
     static void clearNowOverrideForTest() { setNowOverrideForTest(std::nullopt); }
 
 private:
+    /// Ported from: TileAdmin.edgeOptions（M-O(4) P6——见公开面注释）。
+    EdgeOptions m_edgeOptions;
+
     /// Process the request queue
     void processQueue();
 

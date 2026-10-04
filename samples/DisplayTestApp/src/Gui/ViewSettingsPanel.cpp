@@ -10,6 +10,8 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QSlider>
+#include <QSpinBox>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -20,6 +22,7 @@
 #include <dqApp/ViewState.h>
 #include <dqCommon/DisplayStyleSettings.h>
 #include <dqCommon/ViewFlags.h>
+#include <dqRender/tile/TileAdmin.h>  // M-O(4) P6：edgeOptions 权威源
 
 namespace Gui {
 namespace {
@@ -229,9 +232,254 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
     });
     layout->addWidget(hidEdges);
 
-    // 置灰分区标注（DTA 面板的其余分区：Environment/BackgroundMap/边线样式编辑器/AO/Thematic）。
+    // ── Edge Display 分区（ViewAttributes.ts:835-1008——M-O(4) P6）──
+    // Transparency Threshold slider（:852-862——0.0-1.0 step 0.05）。
+    {
+        auto* tt = new QSlider(Qt::Horizontal, this);
+        tt->setObjectName(QStringLiteral("TransparencyThreshold"));
+        tt->setRange(0, 20);  // 0.0-1.0 step 0.05 ×100
+        tt->setValue(20);     // 缺省 1.0
+        connect(tt, &QSlider::valueChanged, this, [this, tt](int value) {
+            double const t = value / 20.0;
+            dqCommon::HiddenLineSettingsProps props;
+            props.transThreshold = t;
+            overrideEdgeSettings(props);
+        });
+        m_transThreshold = tt;
+        auto* row = new QWidget(this);
+        auto* rl = new QHBoxLayout(row);
+        rl->setContentsMargins(0, 0, 0, 0);
+        rl->addWidget(new QLabel(QStringLiteral("Transparency Threshold"), row));
+        rl->addWidget(tt);
+        layout->addWidget(row);
+    }
+    // Smooth Polyface Edges 复选（:865-869——tileAdmin.edgeOptions.smooth）。
+    {
+        auto* cb = new QCheckBox(QStringLiteral("Smooth Polyface Edges"), this);
+        cb->setObjectName(QStringLiteral("SmoothEdges"));
+        connect(cb, &QCheckBox::toggled, this,
+                [this](bool on) { setSmoothPolyfaceEdges(on); });
+        m_smoothEdges = cb;
+        layout->addWidget(cb);
+    }
+    // Visible 边编辑器（:879 + :914-1008 addHiddenLineEditor(false)——Color
+    // [visible 专属 :927-949]/Weight 1-31 [:951-976]/Pattern [:978-981]）。
+    {
+        auto* visBox = new QWidget(this);
+        visBox->setObjectName(QStringLiteral("VisibleEdgeEditor"));
+        auto* vl = new QVBoxLayout(visBox);
+        vl->setContentsMargins(10, 0, 0, 0);
+        auto* colorRow = new QWidget(visBox);
+        auto* cl = new QHBoxLayout(colorRow);
+        cl->setContentsMargins(0, 0, 0, 0);
+        m_visColorCb = new QCheckBox(QStringLiteral("Color"), colorRow);
+        m_visColorButton = new QPushButton(colorRow);
+        m_visColorButton->setObjectName(QStringLiteral("VisibleEdgeColor"));
+        m_visColorButton->setFixedWidth(40);
+        connect(m_visColorButton, &QPushButton::clicked, this, [this]() {
+            auto* vp = activeViewport();
+            uint32_t const initialTbgr = (vp && vp->GetView())
+                ? vp->GetView()->GetDisplayStyle()
+                      .getSettings()
+                      .getHiddenLineSettings()
+                      .visible.color.value_or(dqCommon::ColorDef::white)
+                      .getTbgr()
+                : 0xFFFFFFFFu;
+            QColor const initial = TbgrToQColor(initialTbgr);
+            QColor const picked = QColorDialog::getColor(initial, this);
+            if (!picked.isValid())
+                return;
+            // 参考 :945 handler——overrideColor(getSettings() 现值 + 新色)。
+            auto* vp2 = activeViewport();
+            if (!vp2 || !vp2->GetView())
+                return;
+            auto const& style
+                = vp2->GetView()->GetDisplayStyle().getSettings()
+                      .getHiddenLineSettings().visible;
+            dqCommon::HiddenLineSettingsProps props;
+            dqCommon::HiddenLineStyleProps sp = style.toJSON();
+            sp.color = QColorToTbgr(picked);
+            sp.ovrColor = true;
+            props.visible = sp;
+            overrideEdgeSettings(props);
+        });
+        connect(m_visColorCb, &QCheckBox::toggled, this, [this](bool on) {
+            m_visColorButton->setEnabled(on);
+            if (!on) {
+                // 参考 :948——overrideColor(undefined) 清覆写。
+                auto* vp = activeViewport();
+                if (!vp || !vp->GetView())
+                    return;
+                auto const& style = vp->GetView()->GetDisplayStyle()
+                                        .getSettings()
+                                        .getHiddenLineSettings().visible;
+                dqCommon::HiddenLineSettingsProps props;
+                dqCommon::HiddenLineStyleProps sp = style.toJSON();
+                sp.color = std::nullopt;
+                sp.ovrColor = false;
+                props.visible = sp;
+                overrideEdgeSettings(props);
+            }
+        });
+        cl->addWidget(m_visColorCb);
+        cl->addWidget(m_visColorButton);
+        vl->addWidget(colorRow);
+
+        auto* widthRow = new QWidget(visBox);
+        auto* wl = new QHBoxLayout(widthRow);
+        wl->setContentsMargins(0, 0, 0, 0);
+        m_visWidthCb = new QCheckBox(QStringLiteral("Weight"), widthRow);
+        m_visWidth = new QSpinBox(widthRow);
+        m_visWidth->setObjectName(QStringLiteral("VisibleEdgeWeight"));
+        m_visWidth->setRange(1, 31);
+        m_visWidth->setValue(1);
+        connect(m_visWidth, &QSpinBox::valueChanged, this, [this](int value) {
+            auto* vp = activeViewport();
+            if (!vp || !vp->GetView())
+                return;
+            auto const& style = vp->GetView()->GetDisplayStyle()
+                                    .getSettings()
+                                    .getHiddenLineSettings().visible;
+            dqCommon::HiddenLineSettingsProps props;
+            dqCommon::HiddenLineStyleProps sp = style.toJSON();
+            sp.width = value;
+            props.visible = sp;
+            overrideEdgeSettings(props);
+        });
+        connect(m_visWidthCb, &QCheckBox::toggled, this, [this](bool on) {
+            m_visWidth->setEnabled(on);
+            if (!on) {
+                // 参考 :976——overrideWidth(undefined) 清覆写。
+                auto* vp = activeViewport();
+                if (!vp || !vp->GetView())
+                    return;
+                auto const& style = vp->GetView()->GetDisplayStyle()
+                                        .getSettings()
+                                        .getHiddenLineSettings().visible;
+                dqCommon::HiddenLineSettingsProps props;
+                dqCommon::HiddenLineStyleProps sp = style.toJSON();
+                sp.width = std::nullopt;
+                props.visible = sp;
+                overrideEdgeSettings(props);
+            } else {
+                // 勾选时取 spin 当前值（参考 :976 widthCb.checked 分支）。
+                m_visWidth->valueChanged(m_visWidth->value());
+            }
+        });
+        wl->addWidget(m_visWidthCb);
+        wl->addWidget(m_visWidth);
+        vl->addWidget(widthRow);
+
+        m_visPattern = new QComboBox(visBox);
+        m_visPattern->setObjectName(QStringLiteral("VisibleEdgePattern"));
+        m_visPattern->addItem(QStringLiteral("Invalid"));  // LinePixels::Invalid 显示名
+        m_visPattern->addItem(QStringLiteral("Solid"));
+        m_visPattern->addItem(QStringLiteral("Code1"));
+        m_visPattern->addItem(QStringLiteral("HiddenLine"));
+        connect(m_visPattern, &QComboBox::currentIndexChanged, this,
+                [this](int index) {
+                    auto* vp = activeViewport();
+                    if (!vp || !vp->GetView())
+                        return;
+                    // index → LinePixels（:980 parseInt——值序）。
+                    dqCommon::LinePixels const pix[] = {
+                        dqCommon::LinePixels::Invalid,
+                        dqCommon::LinePixels::Solid,
+                        dqCommon::LinePixels::Code1,
+                        dqCommon::LinePixels::HiddenLine,
+                    };
+                    auto const& style = vp->GetView()->GetDisplayStyle()
+                                            .getSettings()
+                                            .getHiddenLineSettings().visible;
+                    dqCommon::HiddenLineSettingsProps props;
+                    dqCommon::HiddenLineStyleProps sp = style.toJSON();
+                    sp.pattern = pix[static_cast<size_t>(index)];
+                    props.visible = sp;
+                    overrideEdgeSettings(props);
+                });
+        vl->addWidget(m_visPattern);
+        layout->addWidget(visBox);
+    }
+    // Hidden 边编辑器（:888 + addHiddenLineEditor(true)——无 Color 段
+    // [:927 forHiddenEdges 专属门]）。
+    {
+        auto* hidBox = new QWidget(this);
+        hidBox->setObjectName(QStringLiteral("HiddenEdgeEditor"));
+        auto* hl2 = new QVBoxLayout(hidBox);
+        hl2->setContentsMargins(10, 0, 0, 0);
+        auto* widthRow = new QWidget(hidBox);
+        auto* wl = new QHBoxLayout(widthRow);
+        wl->setContentsMargins(0, 0, 0, 0);
+        m_hidWidthCb = new QCheckBox(QStringLiteral("Weight"), widthRow);
+        m_hidWidth = new QSpinBox(widthRow);
+        m_hidWidth->setObjectName(QStringLiteral("HiddenEdgeWeight"));
+        m_hidWidth->setRange(1, 31);
+        m_hidWidth->setValue(1);
+        connect(m_hidWidth, &QSpinBox::valueChanged, this, [this](int value) {
+            auto* vp = activeViewport();
+            if (!vp || !vp->GetView())
+                return;
+            auto const& style = vp->GetView()->GetDisplayStyle()
+                                    .getSettings()
+                                    .getHiddenLineSettings().hidden;
+            dqCommon::HiddenLineSettingsProps props;
+            dqCommon::HiddenLineStyleProps sp = style.toJSON();
+            sp.width = value;
+            props.hidden = sp;
+            overrideEdgeSettings(props);
+        });
+        connect(m_hidWidthCb, &QCheckBox::toggled, this, [this](bool on) {
+            m_hidWidth->setEnabled(on);
+            auto* vp = activeViewport();
+            if (!vp || !vp->GetView())
+                return;
+            auto const& style = vp->GetView()->GetDisplayStyle()
+                                    .getSettings()
+                                    .getHiddenLineSettings().hidden;
+            dqCommon::HiddenLineSettingsProps props;
+            dqCommon::HiddenLineStyleProps sp = style.toJSON();
+            sp.width = on ? std::optional<int>(m_hidWidth->value())
+                          : std::nullopt;
+            props.hidden = sp;
+            overrideEdgeSettings(props);
+        });
+        wl->addWidget(m_hidWidthCb);
+        wl->addWidget(m_hidWidth);
+        hl2->addWidget(widthRow);
+
+        m_hidPattern = new QComboBox(hidBox);
+        m_hidPattern->setObjectName(QStringLiteral("HiddenEdgePattern"));
+        m_hidPattern->addItem(QStringLiteral("Invalid"));
+        m_hidPattern->addItem(QStringLiteral("Solid"));
+        m_hidPattern->addItem(QStringLiteral("Code1"));
+        m_hidPattern->addItem(QStringLiteral("HiddenLine"));
+        connect(m_hidPattern, &QComboBox::currentIndexChanged, this,
+                [this](int index) {
+                    auto* vp = activeViewport();
+                    if (!vp || !vp->GetView())
+                        return;
+                    dqCommon::LinePixels const pix[] = {
+                        dqCommon::LinePixels::Invalid,
+                        dqCommon::LinePixels::Solid,
+                        dqCommon::LinePixels::Code1,
+                        dqCommon::LinePixels::HiddenLine,
+                    };
+                    auto const& style = vp->GetView()->GetDisplayStyle()
+                                            .getSettings()
+                                            .getHiddenLineSettings().hidden;
+                    dqCommon::HiddenLineSettingsProps props;
+                    dqCommon::HiddenLineStyleProps sp = style.toJSON();
+                    sp.pattern = pix[static_cast<size_t>(index)];
+                    props.hidden = sp;
+                    overrideEdgeSettings(props);
+                });
+        hl2->addWidget(m_hidPattern);
+        layout->addWidget(hidBox);
+    }
+
+    // 置灰分区标注（DTA 面板的其余分区：Environment/BackgroundMap/AO/Thematic）。
     const char* disabledSections[] = {
-        "Environment editor", "Background Map", "Edge style editor (hline overrides)",
+        "Environment editor", "Background Map",
         "Ambient Occlusion", "Thematic Display",
     };
     for (auto* s : disabledSections) {
@@ -250,6 +498,37 @@ void ViewSettingsPanel::applyFlags(std::function<void(dqCommon::ViewFlagsPropert
     mod(props);
     style.setViewFlags(dqCommon::ViewFlags(props));
     vp->SetupFromView();
+}
+
+// Ported from: ViewAttributes.ts:829-833 overrideEdgeSettings（M-O(4) P6）。
+void ViewSettingsPanel::overrideEdgeSettings(
+    dqCommon::HiddenLineSettingsProps const& props)
+{
+    auto* vp = activeViewport();
+    if (!vp || !vp->GetView())
+        return;
+    auto* v3d = vp->GetView()->AsViewState3d();
+    if (v3d == nullptr)
+        return;
+    auto& settings = v3d->GetDisplayStyle().getSettings();
+    settings.setHiddenLineSettings(settings.getHiddenLineSettings().override(props));
+    // sync（:820-822——vp.synchWithView({noSaveInUndo:true})）。
+    vp->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+}
+
+// Ported from: ViewAttributes.ts:865-869 Smooth Polyface Edges（M-O(4) P6——
+// tileAdmin.edgeOptions.smooth + invalidateScene + sync）。
+void ViewSettingsPanel::setSmoothPolyfaceEdges(bool enabled)
+{
+    auto& admin = dqRender::TileAdmin::instance();
+    dqRender::EdgeOptions options = admin.edgeOptions();
+    options.smooth = enabled;
+    admin.setEdgeOptions(options);
+    auto* vp = activeViewport();
+    if (!vp)
+        return;
+    vp->InvalidateScene();
+    vp->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
 }
 
 void ViewSettingsPanel::applyMonochromeColor(QColor const& color)

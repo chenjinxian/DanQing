@@ -6,12 +6,15 @@
 
 #include <functional>
 
+#include <dqCommon/HiddenLine.h>   // HiddenLineSettingsProps（P6 overrideEdgeSettings）
 #include <dqCommon/ViewFlags.h>   // ViewFlagsProperties（applyFlags 签名；Step 4 备注批准）
 
 class QCheckBox;
 class QComboBox;
 class QColor;
 class QPushButton;
+class QSlider;
+class QSpinBox;
 class QWidget;
 
 namespace Gui {
@@ -30,6 +33,14 @@ public:
     // 独立为可测槽：QColorDialog 是模态 UI，测试直接调用本函数锁写通道。
     void applyMonochromeColor(QColor const& color);
 
+    // Ported from: ViewAttributes.ts:829-833 overrideEdgeSettings（M-O(4) P6
+    // ——hiddenLineSettings = current.override(props) + sync）。独立可测槽。
+    void overrideEdgeSettings(dqCommon::HiddenLineSettingsProps const& props);
+
+    // Ported from: ViewAttributes.ts:865-869 Smooth Polyface Edges 复选
+    //（tileAdmin.edgeOptions.smooth + invalidateScene + sync）。独立可测槽。
+    void setSmoothPolyfaceEdges(bool enabled);
+
 private:
     // 任务书 Step 4 批准偏差：捕获 lambda 无法转 void(*)(...) 函数指针，
     // 采用备选方案 std::function（行为不变）。
@@ -40,5 +51,16 @@ private:
     QWidget* m_monochromeRow = nullptr;
     QPushButton* m_monochromeColorButton = nullptr;
     QCheckBox* m_scaledCheckbox = nullptr;
+    // Edge Display 分区（M-O(4) P6——ViewAttributes.ts:835-1008）。
+    QSlider* m_transThreshold = nullptr;
+    QCheckBox* m_smoothEdges = nullptr;
+    QCheckBox* m_visColorCb = nullptr;
+    QPushButton* m_visColorButton = nullptr;
+    QCheckBox* m_visWidthCb = nullptr;
+    QSpinBox* m_visWidth = nullptr;
+    QComboBox* m_visPattern = nullptr;
+    QCheckBox* m_hidWidthCb = nullptr;
+    QSpinBox* m_hidWidth = nullptr;
+    QComboBox* m_hidPattern = nullptr;
 };
 }  // namespace Gui

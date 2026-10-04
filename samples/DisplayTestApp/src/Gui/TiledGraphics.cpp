@@ -125,9 +125,9 @@ std::unique_ptr<TiledGraphicsAttachment> createSecondaryIModelAttachment(
 
     for (auto modelId : models) {
         // treeId 派生（PrimaryTileTree.ts:268-290——打开链 ④ 同源；edges
-        // 恒 required[缺省 SmoothShade——参考 defaultTileOptions 语义]）。
+        // 恒 required[缺省 SmoothShade]——M-O(4) P6 起读 TileAdmin 权威源）。
         dqRender::PrimaryTileTreeId treeIdObj;
-        treeIdObj.edges = dqRender::TileOptions{}.edgeOptions;
+        treeIdObj.edges = dqRender::TileAdmin::instance().edgeOptions();
         std::string const treeId = dqRender::iModelTileTreeIdToString(
             modelId.ToString(), treeIdObj, dqRender::TileOptions{});
 

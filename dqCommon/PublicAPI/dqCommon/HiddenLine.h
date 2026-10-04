@@ -73,6 +73,21 @@ public:
     static HiddenLineSettings fromJSON(const HiddenLineSettingsProps& props);
     HiddenLineSettingsProps toJSON() const;
 
+    // Ported from: itwinjs-core HiddenLine.Settings.override (HiddenLine.ts:210-219
+    // ——段级合并：显式段覆写，缺席段保持现值；M-O(4) P6 hline 编辑器的
+    // overrideEdgeSettings 消费面)。
+    HiddenLineSettings override(HiddenLineSettingsProps const& props) const
+    {
+        HiddenLineSettingsProps merged;
+        merged.visible = props.visible.has_value() ? props.visible
+                                                   : visible.toJSON();
+        merged.hidden = props.hidden.has_value() ? props.hidden : hidden.toJSON();
+        merged.transThreshold = props.transThreshold.has_value()
+            ? props.transThreshold
+            : transparencyThreshold;
+        return fromJSON(merged);
+    }
+
     bool equals(const HiddenLineSettings& other) const noexcept;
     bool matchesDefaults() const noexcept { return equals(defaults()); }
 };

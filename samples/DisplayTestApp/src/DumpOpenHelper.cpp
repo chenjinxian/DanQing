@@ -152,9 +152,10 @@ std::optional<DumpOpenResult> openDumpIModel(Gui::View3DInventor& view,
             || dqCommon::RenderMode::SmoothShade != vf.renderMode();
         dqRender::PrimaryTileTreeId treeIdObj;
         if (edgesRequired)
-            treeIdObj.edges = dqRender::TileOptions{}.edgeOptions;
+            treeIdObj.edges = dqRender::TileAdmin::instance().edgeOptions();
         // PrimaryTreeSupplier.createTileTree（PrimaryTileTree.ts:65）的
-        // iModelTileTreeIdToString 调用（options = tileAdmin = defaultTileOptions）。
+        // iModelTileTreeIdToString 调用（options = tileAdmin ——M-O(4) P6 起
+        // edgeOptions 读 TileAdmin 权威源，缺省值不变[捕获键域稳定]）。
         std::string const treeId = dqRender::iModelTileTreeIdToString(
             modelId.ToString(), treeIdObj, dqRender::TileOptions{});
 
