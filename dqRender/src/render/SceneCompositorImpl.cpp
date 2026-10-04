@@ -2375,6 +2375,18 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                         batch->setLastSubCategoryVisibilityVersion(
                             m_target.getSubCategoryVisibilityVersion());
                     }
+                    // M-O(2) I10：元素 appearance 覆盖惰性重算（webgl
+                    // FeatureOverrides.update :412-441 的 ovrsUpdated 分支——
+                    // 参考以 currentFeatureSymbologyOverrides 对象同一性判新，
+                    // DanQing 以版本计数等价；与 hilite/visibility 位正交[读-
+                    // 保-写]）。
+                    if (batch->getLastAppearanceOverridesVersion()
+                            != m_target.getFeatureOverridesVersion()) {
+                        if (auto const* ovrs = m_target.getFeatureOverrides())
+                            batch->updateAppearanceOverrides(*ovrs);
+                        batch->setLastAppearanceOverridesVersion(
+                            m_target.getFeatureOverridesVersion());
+                    }
                     // Create the LUT when the batch has a feature table: the
                     // Overrides variant (gated on an ACTIVE override set —
                     // BatchUniforms._setCurrentBatch :74) samples it. A

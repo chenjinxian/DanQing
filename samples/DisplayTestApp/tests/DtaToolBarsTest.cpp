@@ -232,11 +232,11 @@ TEST(DtaToolBarsViewTools, StandardViewsPanelHasEightDirectionButtonsInDtaOrder)
     EXPECT_EQ(panel->findChildren<QToolButton*>().size(), 8);
 }
 
-// Analysis 工具栏：Undo/Redo（View.Undo/View.Redo 工具，真 action）+ 7 个置灰分析项
-//（Viewer.ts:370-436）。
+// Analysis 工具栏：Undo/Redo（View.Undo/View.Redo 工具，真 action）+ 6 个置灰
+// 分析项 + Overrides 弹出面板（M-O(2) I10——Viewer.ts:405-409 转 live）。
 // Authored: no reference test exists in display-test-app for the analysis
 //           toolbar; scenario transcribes Viewer.ts:370-436 (Undo/Redo enabled
-//           actions + disabled analysis entries).
+//           actions + disabled analysis entries + live Overrides dropdown).
 TEST(DtaToolBarsAnalysis, AnalysisUndoRedoEnabledRestDisabled)
 {
     QMainWindow mw;
@@ -250,7 +250,8 @@ TEST(DtaToolBarsAnalysis, AnalysisUndoRedoEnabledRestDisabled)
         EXPECT_EQ(acts[i]->text(), texts[i]) << i;
     EXPECT_TRUE(acts[0]->isEnabled());   // Undo → View.Undo 工具（ViewTool.ts:4111-4120）
     EXPECT_TRUE(acts[1]->isEnabled());   // Redo → View.Redo 工具（ViewTool.ts:4125-4134）
-    for (int i = 2; i < 9; ++i)
+    EXPECT_TRUE(acts[5]->isEnabled());   // M-O(2) I10：Overrides → FeatureOverridesPanel 弹出（live）
+    for (int i : {2, 3, 4, 6, 7, 8})
         EXPECT_FALSE(acts[i]->isEnabled()) << texts[i];
 }
 

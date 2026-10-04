@@ -335,6 +335,23 @@ void OpenGLRenderTarget::setInvisibleSubCategories(std::set<uint64_t> const& inv
         m_impl->setInvisibleSubCategories(invisibleSubCategories);
 }
 
+// M-O(2) I10——viewport overrides 交付（桥接 → TargetImpl）。
+void OpenGLRenderTarget::overrideFeatureSymbology(dqCommon::FeatureOverrides const* ovrs)
+{
+    if (m_impl)
+        m_impl->overrideFeatureSymbology(ovrs);
+}
+
+dqCommon::FeatureOverrides const* OpenGLRenderTarget::getFeatureOverrides() const
+{
+    return m_impl ? m_impl->getFeatureOverrides() : nullptr;
+}
+
+uint32_t OpenGLRenderTarget::getFeatureOverridesVersion() const
+{
+    return m_impl ? m_impl->getFeatureOverridesVersion() : 0;
+}
+
 void OpenGLRenderTarget::setFlashed(uint32_t elementId, float intensity)
 {
     // Ported from: itwinjs-core Target.setFlashed() (Target.ts:482-489)

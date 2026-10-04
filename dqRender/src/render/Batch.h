@@ -10,6 +10,7 @@
 
 #include "Graphic.h"
 
+#include <dqCommon/FeatureOverrides.h>  // M-O(2) I10——updateAppearanceOverrides
 #include <dqCommon/FeatureTable.h>
 #include "FeatureOverrideLUT.h"
 
@@ -131,6 +132,20 @@ public:
     /// drives this on subCategory-visibility version change (M-N(1)).
     void applySubCategoryVisibility(std::set<uint64_t> const& invisibleSubCategories);
 
+    /// M-O(2) I10：元素 appearance 覆盖的全量重算——逐 feature 经 viewport
+    /// overrides 的 getAppearance 解析（webgl FeatureOverrides.update :412-441
+    /// 的 ovrsUpdated 分支——_update 的 per-feature appearance 打包），写入
+    /// LUT 行（Rgb/Alpha/Weight/LineRgb + Emphasized/IgnoreMaterial/
+    /// NonLocatable/ViewIndependentTransparency 位；Hilited/Flashed/Visibility
+    /// 位保留）。触发面 = PushBatch 观测 overrides 版本过期（参考为
+    /// currentFeatureSymbologyOverrides 对象同一性——EQUIVALENCE 见
+    /// RenderTarget.h 注）。LineCode 覆盖随 TD-23 既有登记（u_lineCode 仅实线）。
+    void updateAppearanceOverrides(dqCommon::FeatureOverrides const& ovrs);
+
+    /// The overrides version this batch's LUT appearance was last updated from.
+    uint32_t getLastAppearanceOverridesVersion() const noexcept { return m_lastAppearanceOverridesVersion; }
+    void setLastAppearanceOverridesVersion(uint32_t v) noexcept { m_lastAppearanceOverridesVersion = v; }
+
     /// The subCategory-visibility version this batch's LUT was last updated
     /// from (M-N(1)——与 m_lastHiliteVersion 同构的批次侧版本比对位)。
     uint32_t getLastSubCategoryVisibilityVersion() const noexcept { return m_lastSubCategoryVisibilityVersion; }
@@ -191,6 +206,7 @@ private:
     uint32_t m_batchId = 0;
     uint32_t m_lastHiliteVersion = 0;
     uint32_t m_lastSubCategoryVisibilityVersion = 0;  // M-N(1)
+    uint32_t m_lastAppearanceOverridesVersion = 0;    // M-O(2) I10
     bool m_locateOnly = false;
 };
 

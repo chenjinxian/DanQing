@@ -730,6 +730,25 @@ void TargetImpl::setInvisibleSubCategories(std::set<uint64_t> const& invisibleSu
     }
 }
 
+// M-O(2) I10：viewport overrides 重建的版本面（参考 = currentFeatureSymbology
+// Overrides 对象同一性——webgl FeatureOverrides.update :413-418 的 ovrsUpdated
+// 判据；DanQing 持久成员就地改写 → 版本计数等价，EQUIVALENCE 见接口注）。
+void TargetImpl::overrideFeatureSymbology(dqCommon::FeatureOverrides const* ovrs)
+{
+    m_featureOverrides = ovrs;
+    ++m_featureOverridesVersion;
+}
+
+dqCommon::FeatureOverrides const* TargetImpl::getFeatureOverrides() const
+{
+    return m_featureOverrides;
+}
+
+uint32_t TargetImpl::getFeatureOverridesVersion() const
+{
+    return m_featureOverridesVersion;
+}
+
 // ---------------------------------------------------------------------------
 // setHiliteColor — set hilite color
 // Ported from: itwinjs-core Target.setHiliteColor()

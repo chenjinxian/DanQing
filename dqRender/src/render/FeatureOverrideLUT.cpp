@@ -69,6 +69,13 @@ void FeatureOverrideLUT::setFeatureOverride(uint32_t featureIndex, const Feature
     m_dirty = true;
 }
 
+FeatureOverrideData FeatureOverrideLUT::getFeatureData(uint32_t featureIndex) const
+{
+    if (featureIndex >= m_numFeatures)
+        return {};
+    return m_overrides[featureIndex];
+}
+
 // ---------------------------------------------------------------------------
 // setFeatureVisibility — toggle feature visibility
 // ---------------------------------------------------------------------------

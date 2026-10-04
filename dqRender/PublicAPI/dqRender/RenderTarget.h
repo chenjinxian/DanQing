@@ -13,6 +13,7 @@
 #include "Scene.h"
 
 #include <dqBase/DqEvent.h>
+#include <dqCommon/FeatureOverrides.h>  // M-O(2) I10——overrideFeatureSymbology
 #include <dqCommon/Image.h>
 
 #ifndef BEGIN_DQ_RENDER_NAMESPACE
@@ -202,6 +203,20 @@ public:
     // so the set arrives pre-expanded by subCategoryId (each feature's
     // subCategoryId is in the packed feature table).
     virtual void setInvisibleSubCategories(std::set<uint64_t> const& /*invisibleSubCategories*/) {}
+
+    // Set the viewport's current feature symbology overrides (M-O(2) I10). The
+    // per-batch LUTs recompute per-feature appearance lazily at draw time when
+    // the version changed (PushBatch drives it).
+    // Ported from: itwinjs-core Target.overrideFeatureSymbology(ovr)
+    // (Target.ts:534-536——Viewport.ts:2643 Step 9 重建后传入).
+    // EQUIVALENCE: 参考源=webgl FeatureOverrides.update :412-441 的 ovrsUpdated
+    // 判据（target.currentFeatureSymbologyOverrides 对象同一性——参考 Step 9 每次
+    // new Overrides 对象，:2642）；发散=DanQing 的 overrides 为持久成员就地改写，
+    // 以版本计数承载"对象换了"语义；验证法=PickDumpScene
+    // FeatureOverrideProviderRestylesHitElement 像素锁。
+    virtual void overrideFeatureSymbology(dqCommon::FeatureOverrides const* /*ovrs*/) {}
+    virtual dqCommon::FeatureOverrides const* getFeatureOverrides() const { return nullptr; }
+    virtual uint32_t getFeatureOverridesVersion() const { return 0; }
 };
 
 END_DQ_RENDER_NAMESPACE

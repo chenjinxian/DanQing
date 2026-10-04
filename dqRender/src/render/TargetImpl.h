@@ -24,6 +24,7 @@
 
 #include <dqCommon/ContourDisplay.h>
 #include <dqCommon/DisplayStyleSettings.h>
+#include <dqCommon/FeatureOverrides.h>  // M-O(2) I10——overrides 指针成员
 
 #include <dqRender/CanvasDecoration.h>
 
@@ -174,6 +175,15 @@ public:
 
     /// The current invisible subCategory ids.
     std::set<uint64_t> const& getInvisibleSubCategories() const noexcept { return m_invisibleSubCategories; }
+
+    /// M-O(2) I10：viewport 当前 feature symbology overrides（Step 9 重建后经
+    /// overrideFeatureSymbology 传入——参考 Target.overrideFeatureSymbology
+    /// Target.ts:534-536）。每 Batch 在 PushBatch 时按观测版本过期全量重算
+    /// 逐 feature appearance（webgl FeatureOverrides.update :412-441 的
+    /// ovrsUpdated 分支——EQUIVALENCE 见 RenderTarget.h 注）。
+    void overrideFeatureSymbology(dqCommon::FeatureOverrides const* ovrs);
+    dqCommon::FeatureOverrides const* getFeatureOverrides() const;
+    uint32_t getFeatureOverridesVersion() const;
 
     /// Set the hilite color (RGB).
     void setHiliteColor(float r, float g, float b);
@@ -452,6 +462,10 @@ private:
     // M-N(1)：subCategory 可见性（不可见集合 + 惰性重算版本）。
     std::set<uint64_t> m_invisibleSubCategories;
     uint32_t m_subCategoryVisibilityVersion = 1;
+
+    // M-O(2) I10：viewport overrides 指针 + 重建版本（PushBatch 惰性重算触发位）。
+    dqCommon::FeatureOverrides const* m_featureOverrides = nullptr;
+    uint32_t m_featureOverridesVersion = 1;
 
     // Overlay render state (Ported from: itwinjs-core Target._overlayRenderState)
     // depthMask=false, blend=true, blendFunc=(ONE, ONE_MINUS_SRC_ALPHA)

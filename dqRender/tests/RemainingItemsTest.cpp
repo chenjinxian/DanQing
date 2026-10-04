@@ -174,7 +174,8 @@ TEST(RenderPlanTest, DefaultState)
     RenderPlan plan;
     EXPECT_EQ(plan.backgroundColor, 0xFFFFFFFFu);  // white
     EXPECT_FLOAT_EQ(plan.sunIntensity, 0.7f);
-    EXPECT_FALSE(plan.monochromeMode);
+    // M-O(1)：bool → dqCommon::MonochromeMode（默认 Scaled，RenderPlan.ts:83）。
+    EXPECT_EQ(plan.monochromeMode, dqCommon::MonochromeMode::Scaled);
     EXPECT_TRUE(plan.whiteOnWhiteReversal);
     EXPECT_EQ(plan.featureOverrides, nullptr);
 }
@@ -188,12 +189,12 @@ TEST(RenderPlanTest, ConfigureFields)
     plan.sunDirection[1] = 0.5f;
     plan.sunDirection[2] = 0.7071f;
     plan.sunIntensity = 0.8f;
-    plan.monochromeMode = true;
+    plan.monochromeMode = dqCommon::MonochromeMode::Flat;
 
     EXPECT_EQ(plan.backgroundColor, 0x000000FFu);
     EXPECT_FLOAT_EQ(plan.sunDirection[2], 0.7071f);
     EXPECT_FLOAT_EQ(plan.sunIntensity, 0.8f);
-    EXPECT_TRUE(plan.monochromeMode);
+    EXPECT_EQ(plan.monochromeMode, dqCommon::MonochromeMode::Flat);
 }
 
 // Authored: Equals drives Viewport change detection

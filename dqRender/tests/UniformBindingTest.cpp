@@ -146,7 +146,12 @@ TEST(UniformBindingTest, MonochromeMixBindingRegistered)
     addSurfaceMonochrome(builder);
     ShaderProgram prog;
     builder.getFragmentBuilder().addBindings(prog);
-    EXPECT_TRUE(prog.hasProgramUniform("u_mixMonoColor"));
+    // M-O(1)：u_mixMonoColor 是 GRAPHIC 语义（Monochrome.ts:46-50——逐 draw 读
+    // target.plan.monochromeMode 与 geometry.wantMixMonochromeColor），经 params
+    // 名值通道上传（ShaderBindings wireMonochromeMix 注册 nullptr 回调）——
+    // 断言从 ProgramUniform 注册改为源声明存在。
+    std::string const src = builder.getFragmentBuilder().buildSourceWithComponents();
+    EXPECT_NE(src.find("u_mixMonoColor"), std::string::npos);
 }
 
 // All wired ProgramUniforms null-guard when no target is set (no crash).

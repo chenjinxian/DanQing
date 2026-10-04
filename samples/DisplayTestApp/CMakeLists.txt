@@ -46,6 +46,8 @@ add_executable(DisplayTestApp WIN32
     src/Gui/GridSettingsTool.cpp    # ChangeGridSettings（M-O(1) I5——grid 设置 keyin 接线）
     src/Gui/GltfDecorationTool.cpp  # AddGltfDecoration（M-O(2) 3f——glTF keyin + 实例化参数面）
     src/Gui/GltfDecorationTool.h
+    src/Gui/FeatureOverridesPanel.cpp  # Overrides 面板（M-O(2) I10——选择集 appearance 覆盖）
+    src/Gui/FeatureOverridesPanel.h    # MOC needs this for Q_OBJECT
     src/Gui/SnapModeTool.h
     src/Gui/CategoriesPanel.cpp     # Categories 面板（M-N(1)——category 可见性引擎通道的 UI）
     src/Gui/CategoriesPanel.h
@@ -262,6 +264,8 @@ if(TARGET gtest_main AND TARGET dqApp)
         src/Gui/GridSettingsTool.cpp  # M-O(1) I5：ChangeGridSettings（grid 设置锁被测面）
         src/Gui/GltfDecorationTool.cpp  # M-O(2) 3f：AddGltfDecoration（gltf keyin 锁被测面）
         src/Gui/GltfDecorationTool.h  # MOC needs this (no Q_OBJECT; include-path parity)
+        src/Gui/FeatureOverridesPanel.cpp  # M-O(2) I10：Overrides 面板（像素锁被测面）
+        src/Gui/FeatureOverridesPanel.h  # MOC needs this for Q_OBJECT
         src/Gui/CategoriesPanel.cpp   # M-O(1) R2：面板开关锁（dock 装配被测面）
         tests/ModelsPanelWiringTest.cpp # M-L(3) Models 演示版机制锁：provider 逐模型可见性 → 场景 → 像素（注册在 JoesHouseHoverTest 之后：同因 fetcher 替换不回溢）
         src/Gui/View3DInventor.cpp       # 测试构造真实 View3DInventor（真视口）

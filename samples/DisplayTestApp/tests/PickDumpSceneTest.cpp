@@ -44,8 +44,11 @@
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 #include "View3DInventor.h"
+#include "Gui/FeatureOverridesPanel.h"  // M-O(2) I10——Provider 引擎通道
 
 #include "DumpOpenHelper.h"
 
@@ -535,4 +538,165 @@ TEST(PickDumpScene, SelectionHilitesTilePixelsAndUnselectRestores)
 
     dqApp::Application::Get().GetToolAdmin().setPrimitiveTool(nullptr);
     delete tool;
+}
+
+// ---------------------------------------------------------------------------
+// M-O(2) I10 — FeatureOverrides 面板引擎通道（选择集 appearance 覆盖上屏）。
+// 锚定：FeatureOverrides.ts:14-97（Provider.addFeatureOverrides → ovrs.override
+//       (elementId, appearance)）+ Viewport.ts:2619-2645（overridesNeeded =
+//       changeFlags.areFeatureOverridesDirty → rebuild）+ Viewport.ts:1637-1640
+//       （setFeatureOverrideProviderChanged 置位）。
+// 修复前 RED：Step 9 的 m_featureOverridesDirty 只在首帧为 true——provider
+// 变更永不触发重建 → override 后像素不变。
+// ---------------------------------------------------------------------------
+TEST(PickDumpScene, FeatureOverrideProviderRestylesHitElement)
+{
+    DumpPick s;
+    ASSERT_TRUE(s.setup());
+
+    // 命中元素 id（不进选择集——避免 hilite wash 混淆 override 判据；面板的
+    // overrideElements = 同一 overrideElement 循环[选择集驱动]，通道同构）。
+    uint32_t const hit = s.vp->PickAtPoint(s.cssX(s.px), s.cssY(s.py));
+    ASSERT_GT(hit, 0u);
+
+    s.vp->RenderFrame();
+    std::vector<uint8_t> before;
+    uint32_t bw = 0, bh = 0;
+    ASSERT_TRUE(s.vp->ReadFrameForTest(before, bw, bh));
+
+    // 命中簇基准色（(px,py) 邻域内容像素均值——实例球单色行，均值稳定）。
+    auto clusterMean = [&](std::vector<uint8_t> const& f) -> RgbPDS {
+        long r = 0, g = 0, b = 0;
+        int n = 0;
+        uint8_t const* bg = &f[0];
+        for (int dy = -24; dy <= 24; dy += 2) {
+            for (int dx = -24; dx <= 24; dx += 2) {
+                int const x = static_cast<int>(s.px) + dx;
+                int const y = static_cast<int>(s.py) + dy;
+                if (x < 0 || y < 0 || x >= static_cast<int>(bw) || y >= static_cast<int>(bh))
+                    continue;
+                uint8_t const* p = &f[(static_cast<size_t>(y) * bw + x) * 4];
+                if (std::abs(p[0] - bg[0]) + std::abs(p[1] - bg[1]) + std::abs(p[2] - bg[2]) <= 90)
+                    continue;  // 非内容
+                r += p[0]; g += p[1]; b += p[2]; ++n;
+            }
+        }
+        return n > 0 ? RgbPDS{static_cast<int>(r / n), static_cast<int>(g / n), static_cast<int>(b / n)}
+                     : RgbPDS{0, 0, 0};
+    };
+    RgbPDS const beforeMean = clusterMean(before);
+    ASSERT_GT(beforeMean.r + beforeMean.g + beforeMean.b, 0) << "命中簇无内容像素";
+
+    // 自适应覆盖色：取命中色最弱通道 → 置 255 其余 0（红/绿/蓝三选——与任意
+    // 实例行色的主导通道都翻转；instances60 行色 green/purple/blue/yellow/
+    // orange/red）。
+    int or_, og, ob;
+    if (beforeMean.r <= beforeMean.g && beforeMean.r <= beforeMean.b) {
+        or_ = 255; og = 0; ob = 0;  // 原色弱红 → 覆盖红
+    } else if (beforeMean.g <= beforeMean.b) {
+        or_ = 0; og = 255; ob = 0;  // 弱绿 → 绿
+    } else {
+        or_ = 0; og = 0; ob = 255;  // 弱蓝 → 蓝
+    }
+
+    // Provider（面板引擎通道同款——Gui::FeatureOverridesProvider::override
+    // ElementsByArray 的直接形态，I9 recall 消费面）。
+    auto* provider = Gui::FeatureOverridesProvider::getOrCreate(s.vp);
+    ASSERT_NE(provider, nullptr);
+    std::vector<Gui::FeatureOverridesProvider::ElementOverride> ovrs;
+    Gui::FeatureOverridesProvider::ElementOverride eo;
+    eo.id = std::to_string(hit);
+    eo.fsaJson = QString::fromUtf8(QJsonDocument(QJsonObject{
+        {"rgb", QJsonObject{{"r", or_}, {"g", og}, {"b", ob}}},
+    }).toJson(QJsonDocument::Compact)).toStdString();
+    ovrs.push_back(eo);
+    provider->overrideElementsByArray(ovrs);
+
+    s.vp->RenderFrame();
+    std::vector<uint8_t> after;
+    uint32_t aw = 0, ah = 0;
+    ASSERT_TRUE(s.vp->ReadFrameForTest(after, aw, ah));
+    ASSERT_EQ(aw, bw);
+    ASSERT_EQ(ah, bh);
+
+    RgbPDS const kOvr{or_, og, ob};
+    // 簇级判据（同 movedTowardHiliteCluster 形态）：覆盖的可观测面 = 命中
+    // element 的可视像素簇（全帧差分扫描），非拾取点邻域——同 element 的多
+    // batch 拷贝中仅持 feature 表的 batch 实例参与覆盖（文件头"已登记非阻断"），
+    // 可视覆盖实例可偏离拾取点（高亮锁首绿实测 y 向偏移 68）。判据 = 位移
+    // 可观测（通道和 ≥15）且向覆盖色移动（色距严格变小——Surface-Overrides
+    // 变体 kOvrBit_Rgb → baseColor.rgb = 第 2 texel rgb 的确定性几何后果）。
+    auto movedTowardOverrideCluster = [&](std::vector<uint8_t> const& post) {
+        long moved = 0;
+        uint32_t mMinX = s.fw, mMaxX = 0, mMinY = s.fh, mMaxY = 0;
+        for (uint32_t y = 0; y < s.fh; y += 2)
+            for (uint32_t x = 0; x < s.fw; x += 2) {
+                RgbPDS const p2 = pixelAtPDS(post, s.fw, x, y);
+                RgbPDS const p1 = pixelAtPDS(before, s.fw, x, y);
+                int const delta = std::abs(p2.r - p1.r) + std::abs(p2.g - p1.g)
+                                  + std::abs(p2.b - p1.b);
+                if (delta < 15)
+                    continue;
+                if (distToPDS(p2, kOvr) + 5 < distToPDS(p1, kOvr)) {
+                    ++moved;
+                    if (x < mMinX) mMinX = x;
+                    if (x > mMaxX) mMaxX = x;
+                    if (y < mMinY) mMinY = y;
+                    if (y > mMaxY) mMaxY = y;
+                }
+            }
+        return std::make_tuple(moved, mMinX, mMinY, mMaxX, mMaxY);
+    };
+    long moved = 0, mMinX = 0, mMinY = 0, mMaxX = 0, mMaxY = 0;
+    std::tie(moved, mMinX, mMinY, mMaxX, mMaxY) = movedTowardOverrideCluster(after);
+    printf("[FOVR] hit=0x%08x before=(%d,%d,%d) ovr=(%d,%d,%d) "
+           "movedTowardOvr(2px grid)=%ld clusterBBox=(%ld,%ld)-(%ld,%ld) "
+           "contentBBox=(%u,%u)-(%u,%u) pick=(%u,%u)\n",
+           hit, beforeMean.r, beforeMean.g, beforeMean.b, or_, og, ob, moved,
+           mMinX, mMinY, mMaxX, mMaxY,
+           s.cMinX, s.cMinY, s.cMaxX, s.cMaxY, s.px, s.py);
+
+    // WHERE ①（可观测面）：命中 element 的可视像素簇向覆盖色移动——一个
+    // 实例球足迹（高亮锁同域首绿 2307，2px 网格）；阈值 = 0.2×。
+    EXPECT_GE(moved, 500) << "覆盖后无向覆盖色移动的像素簇（override 未上屏）";
+
+    // WHERE ②（域）：移动簇被内容 bbox 包住——覆盖只落在场景内容上，
+    // 天空/背景永不参与（排除整帧污染/全局色调变化）。
+    EXPECT_GE(mMinX, s.cMinX);
+    EXPECT_GE(mMinY, s.cMinY);
+    EXPECT_LE(mMaxX, s.cMaxX);
+    EXPECT_LE(mMaxY, s.cMaxY);
+
+    // WHERE ③（位置）：移动簇邻近拾取点（簇 bbox 外扩 200 设备像素须含
+    // 拾取点——覆盖的就是所点 element 的可视足迹；不取"簇覆盖拾取点"：
+    // 拾取像素的所有权在重叠几何随绘制序漂移，可见覆盖落在持有 feature
+    // 表的 batch 实例上——高亮锁首绿实测簇-拾取点 y 向偏移 68）。
+    uint32_t const kProximity = 200;
+    EXPECT_LE(mMinX, s.px + kProximity);
+    EXPECT_GE(mMaxX, s.px > kProximity ? s.px - kProximity : 0u);
+    EXPECT_LE(mMinY, s.py + kProximity);
+    EXPECT_GE(mMaxY, s.py > kProximity ? s.py - kProximity : 0u);
+
+    // WHERE ④：远端内容（内容 bbox 左上角最近内容像素——另一实例球）逐通道
+    // 不变（override 只作用于命中元素）。
+    {
+        uint32_t dx = 0, dy = 0;
+        ASSERT_TRUE(firstContentPixelNear(after, aw, ah,
+                                          (s.cMinX + s.cMaxX) / 4, (s.cMinY + s.cMaxY) / 4,
+                                          s.cMinX, s.cMaxX, s.cMinY, s.cMaxY, dx, dy));
+        // 距命中点足够远（不同实例——instances60 多球布局）。
+        ASSERT_GT(std::abs(static_cast<int>(dx) - static_cast<int>(s.px))
+                      + std::abs(static_cast<int>(dy) - static_cast<int>(s.py)),
+                 60);
+        RgbPDS const beforeFar = pixelAtPDS(before, bw, dx, dy);
+        RgbPDS const afterFar = pixelAtPDS(after, aw, dx, dy);
+        printf("[FOVR] far=(%u,%u) before=(%d,%d,%d) after=(%d,%d,%d)\n",
+               dx, dy, beforeFar.r, beforeFar.g, beforeFar.b, afterFar.r, afterFar.g,
+               afterFar.b);
+        EXPECT_LE(distToPDS(beforeFar, afterFar), 24) << "非命中元素的像素被改动";
+    }
+
+    // 清面（provider 撤下——夹具隔离；宿主所有权角色 delete）。
+    Gui::FeatureOverridesProvider::remove(s.vp);
+    delete provider;
 }

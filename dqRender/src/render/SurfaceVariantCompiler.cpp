@@ -322,8 +322,18 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
                 "    float ovrFlags = overrideTexel.r * 255.0;\n"
                 "    float ovrFlags16 = overrideTexel.g * 255.0;\n"
                 "    if (!nthBitSet(ovrFlags16, kOvrBit_Visibility)) discard;\n"
-                "    if (nthBitSet(ovrFlags, kOvrBit_Rgb)) baseColor.rgb = overrideTexel.rgb;\n"
-                "    if (nthBitSet(ovrFlags, kOvrBit_Alpha)) baseColor.a = overrideTexel.a;\n"
+                // rgb/alpha 覆盖值取第 2 texel——Ported from: itwinjs-core
+                // FeatureSymbology.ts:642-651（computeFeatureOverrides：
+                // rgbOverridden/alphaOverridden 时 rgba = getSecondFeatureRgba(isLinear)）
+                // + :111-117（getSecondFeatureRgba——coord.x += stepX×1[非 linear]；
+                // linear 着色器读 texel[2] 线色）。texel0.rgb 是 flags 字节，直接
+                // 当颜色用会把命中元素画成 flags 字节的近黑色（M-O(2) I10 眼验
+                // 实锤：覆盖球呈 (3,16,0)/255 暗色）。
+                "    if (nthBitSet(ovrFlags, kOvrBit_Rgb) || nthBitSet(ovrFlags, kOvrBit_Alpha)) {\n"
+                "        vec4 rgbaTexel = texture(u_featureOverrides, vec2(featureU + u_featureOverrideWidth, 0.5));\n"
+                "        if (nthBitSet(ovrFlags, kOvrBit_Rgb)) baseColor.rgb = rgbaTexel.rgb;\n"
+                "        if (nthBitSet(ovrFlags, kOvrBit_Alpha)) baseColor.a = rgbaTexel.a;\n"
+                "    }\n"
                 "    if (nthBitSet(ovrFlags16, kOvrBit_Hilited)) baseColor.rgb = mix(baseColor.rgb, u_hiliteColor.rgb, 0.25);\n"
                 // doApplyFlash（glsl/FeatureSymbology.ts:685-707）：Brighten（默认
                 // 模式，u_flash_mode=1）取 brightRgb = baseColor + intensity×0.2；

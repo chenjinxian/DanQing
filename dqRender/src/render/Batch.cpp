@@ -111,6 +111,106 @@ void Batch::applySubCategoryVisibility(std::set<uint64_t> const& invisibleSubCat
 }
 
 // ---------------------------------------------------------------------------
+// Batch — updateAppearanceOverrides
+// M-O(2) I10：元素 appearance 覆盖全量重算（参考 webgl FeatureOverrides.
+// update :412-441 的 ovrsUpdated 分支——逐 feature 经 Overrides.getAppearance
+// 解析 appearance → LUT 行；hilite/flash/visibility 位由各自路径独占，此处
+// 读-保-写不互踩）。
+// ---------------------------------------------------------------------------
+void Batch::updateAppearanceOverrides(dqCommon::FeatureOverrides const& ovrs)
+{
+    if (!m_featureTable)
+        return;
+
+    FeatureOverrideLUT* lut = getOrCreateFeatureOverrideLUT();
+    if (!lut)
+        return;
+
+    dqBase::DqId const& modelId = m_featureTable->getModelId();
+    uint32_t const modelLo = dqBase::Id64::GetLowerUint32(modelId);
+    uint32_t const modelHi = dqBase::Id64::GetUpperUint32(modelId);
+    int const n = m_featureTable->getSize();
+    for (int i = 0; i < n; ++i) {
+        auto const feature = m_featureTable->findFeature(i);
+        if (!feature)
+            continue;
+        // 读-保-写：Hilited/Flashed/Visibility 位归 hilite/visibility 路径。
+        FeatureOverrideData data = lut->getFeatureData(static_cast<uint32_t>(i));
+        dqCommon::OvrFlag const keepFlags = dqCommon::OvrFlag::Flashed;
+        dqCommon::OvrFlags16 const keepFlags16 = static_cast<dqCommon::OvrFlags16>(
+            static_cast<uint8_t>(dqCommon::OvrFlags16::Hilited)
+            | static_cast<uint8_t>(dqCommon::OvrFlags16::Visibility));
+        data.flags = data.flags & keepFlags;
+        data.flags16 = static_cast<dqCommon::OvrFlags16>(
+            static_cast<uint8_t>(data.flags16)
+            & static_cast<uint8_t>(keepFlags16));
+        data.lineCode = 0;
+        data.lineWeight = 0;
+        data.r = data.g = data.b = 0;
+        data.alpha = 255;
+        data.lineR = data.lineG = data.lineB = 0;
+        data.lineAlpha = 255;
+
+        auto const appearance = ovrs.getAppearance(
+            dqBase::Id64::GetLowerUint32(feature->elementId),
+            dqBase::Id64::GetUpperUint32(feature->elementId),
+            dqBase::Id64::GetLowerUint32(feature->subCategoryId),
+            dqBase::Id64::GetUpperUint32(feature->subCategoryId),
+            feature->geometryClass, modelLo, modelHi,
+            dqCommon::BatchType::Primary, /*animationNodeId=*/0);
+        if (appearance.has_value()) {
+            if (auto const& rgb = appearance->getRgb()) {
+                data.flags = data.flags | dqCommon::OvrFlag::Rgb;
+                data.r = static_cast<uint8_t>(rgb->r);
+                data.g = static_cast<uint8_t>(rgb->g);
+                data.b = static_cast<uint8_t>(rgb->b);
+            }
+            if (auto const& lineRgb = appearance->getEffectiveLineRgb()) {
+                data.flags = data.flags | dqCommon::OvrFlag::LineRgb;
+                data.lineR = static_cast<uint8_t>(lineRgb->r);
+                data.lineG = static_cast<uint8_t>(lineRgb->g);
+                data.lineB = static_cast<uint8_t>(lineRgb->b);
+            }
+            if (auto const transparency = appearance->getTransparency()) {
+                data.flags = data.flags | dqCommon::OvrFlag::Alpha;
+                double const t = *transparency < 0.0 ? 0.0
+                    : (*transparency > 1.0 ? 1.0 : *transparency);
+                data.alpha = static_cast<uint8_t>((1.0 - t) * 255.0 + 0.5);
+            }
+            if (auto const lineTransparency = appearance->getEffectiveLineTransparency()) {
+                data.flags = data.flags | dqCommon::OvrFlag::LineAlpha;
+                double const t = *lineTransparency < 0.0 ? 0.0
+                    : (*lineTransparency > 1.0 ? 1.0 : *lineTransparency);
+                data.lineAlpha = static_cast<uint8_t>((1.0 - t) * 255.0 + 0.5);
+            }
+            if (auto const weight = appearance->getWeight()) {
+                data.flags = data.flags | dqCommon::OvrFlag::Weight;
+                int const w = *weight < 1.0 ? 1 : (*weight > 31.0 ? 31
+                    : static_cast<int>(*weight));
+                data.lineWeight = static_cast<uint8_t>(w);
+            }
+            // flags16 面（appearance 携带的布尔覆盖）。
+            if (appearance->getEmphasized())
+                data.flags16 = data.flags16 | dqCommon::OvrFlags16::Emphasized;
+            if (appearance->getIgnoresMaterial())
+                data.flags16 = data.flags16 | dqCommon::OvrFlags16::IgnoreMaterial;
+            if (appearance->getNonLocatable())
+                data.flags = data.flags | dqCommon::OvrFlag::NonLocatable;
+            if (appearance->getViewDependentTransparency())
+                data.flags16 = static_cast<dqCommon::OvrFlags16>(
+                    static_cast<uint8_t>(data.flags16)
+                    & ~static_cast<uint8_t>(dqCommon::OvrFlags16::ViewIndependentTransparency));
+            else if (appearance->getTransparency().has_value())
+                data.flags16 = data.flags16
+                    | dqCommon::OvrFlags16::ViewIndependentTransparency;
+            // linePixels → LineCode：lineCode 纹理未接（TD-23 既有登记——
+            // u_lineCode 恒实线），位与码值随该登记挂起。
+        }
+        lut->setFeatureOverride(static_cast<uint32_t>(i), data);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Batch — addCommands
 // Ported from: itwinjs-core Batch.addCommands() (line 288-293)
 //

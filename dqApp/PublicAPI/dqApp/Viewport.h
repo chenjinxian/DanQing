@@ -509,6 +509,28 @@ public:
     void DropTiledGraphicsProvider(class TiledGraphicsProvider* provider);
     // <- Viewport.hasTiledGraphicsProvider (Viewport.ts:1743-1745).
     bool HasTiledGraphicsProvider(class TiledGraphicsProvider* provider) const;
+
+    // ── FeatureOverrideProvider 注册面（per-viewport——M-O(2) I10）──────
+    // Register a provider of feature symbology overrides (selection-set
+    // appearance overrides 的应用通道——参考 Viewer.ts:405-409 面板的引擎面)。
+    // <- itwinjs-core Viewport.addFeatureOverrideProvider (Viewport.ts:1570-1577)。
+    bool AddFeatureOverrideProvider(dqCommon::FeatureOverrideProvider* provider);
+    // <- Viewport.dropFeatureOverrideProvider (Viewport.ts:1584-1592)。
+    bool DropFeatureOverrideProvider(dqCommon::FeatureOverrideProvider* provider);
+    // <- Viewport.findFeatureOverrideProvider (Viewport.ts:1600-1606)——
+    // 谓词式查找（findFeatureOverrideProviderOfType 的类型判据在其上构造）。
+    dqCommon::FeatureOverrideProvider* FindFeatureOverrideProvider(
+        std::function<bool(dqCommon::FeatureOverrideProvider*)> const& predicate) const;
+    // <- Viewport.featureOverrideProviders iterable (Viewport.ts:1613-1615)。
+    std::vector<dqCommon::FeatureOverrideProvider*> const& getFeatureOverrideProviders() const
+    {
+        return m_featureOverrideProviders;
+    }
+    // <- Viewport.setFeatureOverrideProviderChanged (Viewport.ts:1637-1640)——
+    // provider 内部状态变化后的重算通知（maybeInvalidateScene 半边 = DanQing
+    // 的 InvalidateScene）。
+    void SetFeatureOverrideProviderChanged();
+
     std::vector<dqRender::TileTree*> const& GetTileTrees() const { return m_tileTrees; }
     // NOTE(2026-09-21): AddTileTree is a temporary scaffold for the offline
     // tileset tests (TileTreeRender*). The faithful port replaces it with the
@@ -810,7 +832,11 @@ private:
     // Feature symbology overrides (← itwinjs-core FeatureSymbology.Overrides)
     // Per-feature appearance overrides computed in RenderFrame Step 9.
     dqCommon::FeatureOverrides m_featureOverrides;
-    bool m_featureOverridesDirty = true;
+
+    // Per-viewport override providers (← Viewport._featureOverrideProviders
+    // Viewport.ts:538——M-O(2) I10 自 ViewManager 全局面迁 per-viewport 参考形；
+    // ViewManager 级面零调用者已删)。
+    std::vector<dqCommon::FeatureOverrideProvider*> m_featureOverrideProviders;
 
     // Per-model category visibility overrides (← itwinjs-core Viewport._perModelCategoryVisibility)
     // Ported from: itwinjs-core Viewport.ts line 464

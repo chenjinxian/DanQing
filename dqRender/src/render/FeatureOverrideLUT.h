@@ -64,6 +64,10 @@ public:
     /// Set override for a specific feature.
     void setFeatureOverride(uint32_t featureIndex, const FeatureOverrideData& data);
 
+    /// Peek one feature's current data (M-O(2) I10——updateAppearanceOverrides
+    /// 的位保持读：appearance 重算保留 Hilited/Flashed/Visibility 位）。
+    FeatureOverrideData getFeatureData(uint32_t featureIndex) const;
+
     /// Set visibility for a specific feature.
     void setFeatureVisibility(uint32_t featureIndex, bool visible);
 

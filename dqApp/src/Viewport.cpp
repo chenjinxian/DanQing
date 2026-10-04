@@ -162,6 +162,10 @@ Viewport::Viewport(QWidget* parent, dqBase::RefPtr<ViewState> view)
     m_onTileLoadDisconnect = dqRender::TileAdmin::instance().onTileLoad.AddListener(
         [this](dqRender::Tile&) { InvalidateScene(); });
 
+    // 首帧 overrides 重建（旧 m_featureOverridesDirty=true 初值的面——参考
+    // 首帧经 Initial/ViewState change flags 进 areFeatureOverridesDirty）。
+    m_changeFlags.SetFeatureOverridesDirty();
+
     // Attach to view events (DisplayStyle, ViewState changes)
     AttachToView();
 }
@@ -1408,6 +1412,53 @@ bool Viewport::HasTiledGraphicsProvider(TiledGraphicsProvider* provider) const
         != m_tiledGraphicsProviders.end();
 }
 
+// ── FeatureOverrideProvider 注册面（M-O(2) I10——per-viewport 参考形）──
+
+// Ported from: itwinjs-core Viewport.addFeatureOverrideProvider (Viewport.ts:1570-1577).
+bool Viewport::AddFeatureOverrideProvider(dqCommon::FeatureOverrideProvider* provider)
+{
+    if (!provider)
+        return false;
+    if (std::find(m_featureOverrideProviders.begin(), m_featureOverrideProviders.end(), provider)
+        != m_featureOverrideProviders.end())
+        return false;  // :1571-1572 已注册 → false
+
+    m_featureOverrideProviders.push_back(provider);
+    SetFeatureOverrideProviderChanged();
+    return true;
+}
+
+// Ported from: itwinjs-core Viewport.dropFeatureOverrideProvider (Viewport.ts:1584-1592).
+bool Viewport::DropFeatureOverrideProvider(dqCommon::FeatureOverrideProvider* provider)
+{
+    auto const it = std::find(m_featureOverrideProviders.begin(), m_featureOverrideProviders.end(), provider);
+    if (it == m_featureOverrideProviders.end())
+        return false;  // :1585-1586 未注册 → false
+
+    m_featureOverrideProviders.erase(it);
+    SetFeatureOverrideProviderChanged();
+    return true;
+}
+
+// Ported from: itwinjs-core Viewport.findFeatureOverrideProvider (Viewport.ts:1600-1606).
+dqCommon::FeatureOverrideProvider* Viewport::FindFeatureOverrideProvider(
+    std::function<bool(dqCommon::FeatureOverrideProvider*)> const& predicate) const
+{
+    for (auto* provider : m_featureOverrideProviders)
+        if (predicate(provider))
+            return provider;
+    return nullptr;
+}
+
+// Ported from: itwinjs-core Viewport.setFeatureOverrideProviderChanged
+// (Viewport.ts:1637-1640 —— _changeFlags.setFeatureOverrideProvider() +
+// maybeInvalidateScene())。
+void Viewport::SetFeatureOverrideProviderChanged()
+{
+    m_changeFlags.SetFeatureOverrideProvider();
+    InvalidateScene();
+}
+
 void Viewport::RemoveTileTree(dqRender::TileTree* tree)
 {
     auto it = std::find(m_tileTrees.begin(), m_tileTrees.end(), tree);
@@ -1605,18 +1656,40 @@ void Viewport::RenderFrame()
     }
 
     // Step 9: Feature symbology overrides
-    // Ported from: itwinjs-core Viewport.ts step 9
-    if (m_featureOverridesDirty) {
-        m_featureOverridesDirty = false;
+    // Ported from: itwinjs-core Viewport.ts step 9（:2619 overridesNeeded =
+    // changeFlags.areFeatureOverridesDirty + :2641-2645 rebuild——provider 变更
+    // 经 setFeatureOverrideProviderChanged 置位、随捕获快照驱动重建）。
+    // M-O(2) I10：驱动位从恒死布尔（m_featureOverridesDirty 只在首帧为 true，
+    // provider 变更永不触发重建——行为 RED 实锤）改为捕获快照的 change flags；
+    // provider 列表自 ViewManager 全局面迁 per-viewport 参考形（:1630-1632
+    // addFeatureOverrides 的遍历面）。
+    bool const overridesNeeded = changeFlags.AreFeatureOverridesDirty();
+    if (overridesNeeded) {
         m_featureOverrides.clearModelSubCategoryOverrides();
         m_featureOverrides.clear();
 
-        // Collect feature overrides from all providers
-        // ← itwinjs-core: addFeatureOverrides()
-        auto& viewMgr = Application::Get().GetViewManager();
-        for (auto* provider : viewMgr.GetFeatureOverrideProviders()) {
+        // Collect feature overrides from all viewport providers.
+        // ← itwinjs-core: Viewport.addFeatureOverrides (:1629-1632)
+        for (auto* provider : m_featureOverrideProviders) {
             if (provider) {
                 provider->addFeatureOverrides(m_featureOverrides, this);
+            }
+        }
+
+        // ← 参考 initFromView（FeatureSymbology.ts:134-150）——categorySelector
+        //   × subcategories 表装载 visibleSubCategories（参考侧该集合恒非空，
+        //   getAppearance 的成员判定依赖它）。DanQing dump 回放面无
+        //   subcategories RPC 表——按 M-N(1) 的 cat+1 默认子类规则展开
+        //   （imodel-native 默认子类 = categoryId+1；instances60 实态 0x17→0x18）。
+        // EQUIVALENCE: 参考源=FeatureSymbology.ts:134-150 +
+        //   iModel.subcategories.getSubCategories；发散=无 RPC 表、仅默认子类
+        //   展开——非默认子类（baytown cat+2）不进 appearance 面（可见性走
+        //   M-N(1) 的不可见集 LUT 路径，正交）；验证法=PickDumpScene
+        //   FeatureOverrideProviderRestylesHitElement（元素 override 上屏）。
+        if (m_view) {
+            for (auto const& catId : m_view->GetCategorySelector().getCategories()) {
+                m_featureOverrides.setVisibleSubCategory(
+                    dqBase::DqId(catId.GetValue() + 1));
             }
         }
 
@@ -1625,6 +1698,13 @@ void Viewport::RenderFrame()
         if (!m_perModelCategoryVisibility.isEmpty()) {
             addModelSubCategoryVisibilityOverrides(m_featureOverrides);
         }
+
+        // ← itwinjs-core Viewport.ts:2643 target.overrideFeatureSymbology(ovr)
+        //   ——重建后的 overrides 交付 target（逐 batch LUT 的惰性重算触发面，
+        //   M-O(2) I10；参考以新对象传递，DanQing 以版本计数——见
+        //   RenderTarget.h 的 EQUIVALENCE 注）。
+        if (m_renderTarget)
+            m_renderTarget->overrideFeatureSymbology(&m_featureOverrides);
 
         isRedrawNeeded = true;
     }

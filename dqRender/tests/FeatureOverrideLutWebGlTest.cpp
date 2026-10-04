@@ -260,10 +260,13 @@ TEST(FeatureOverrideLutWebGlTest, BatchUniformsSymbologyFlagsNoOverrides)
 // leaves the uniform untouched (no-op). Ported from BatchUniforms.bindNumThematicSensors.
 TEST(FeatureOverrideLutWebGlTest, BatchUniformsNumThematicSensors)
 {
-    std::vector<ThematicDisplaySensor> sensors = {
-        ThematicDisplaySensor::fromJSON(0.0, 0.0, 0.0, 1.0),
-        ThematicDisplaySensor::fromJSON(1.0, 1.0, 1.0, 2.0),
-        ThematicDisplaySensor::fromJSON(2.0, 2.0, 2.0, 3.0),
+    // dqRender::ThematicDisplaySensor（ThematicSensors 的消费形态）——
+    // dqCommon 后起同名类（ThematicDisplay.h:184）令非限定名在双 using 下
+    // 歧义，限定到本意符号。
+    std::vector<dqRender::ThematicDisplaySensor> sensors = {
+        dqRender::ThematicDisplaySensor::fromJSON(0.0, 0.0, 0.0, 1.0),
+        dqRender::ThematicDisplaySensor::fromJSON(1.0, 1.0, 1.0, 2.0),
+        dqRender::ThematicDisplaySensor::fromJSON(2.0, 2.0, 2.0, 3.0),
     };
     ThematicSensors ts = ThematicSensors::create(sensors, dqGeom::Transform::CreateIdentity());
     ASSERT_EQ(ts.numSensors(), 3u);

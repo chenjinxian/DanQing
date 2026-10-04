@@ -104,10 +104,10 @@ public:
     // LRU 无 per-tree 时间戳，恒为"全部未选中"——注册表落地时接回时间过滤）。
     void purgeTileTrees(double olderThanMs = 0.0);
 
-    // Feature override provider management (← ViewManager.addFeatureOverrideProvider/dropFeatureOverrideProvider)
-    void AddFeatureOverrideProvider(dqCommon::FeatureOverrideProvider* provider);
-    void DropFeatureOverrideProvider(dqCommon::FeatureOverrideProvider* provider);
-    std::vector<dqCommon::FeatureOverrideProvider*> const& GetFeatureOverrideProviders() const { return m_featureOverrideProviders; }
+    // Feature override provider management——M-O(2) I10 删除：参考的 provider
+    // 注册面在 Viewport（Viewport.ts:1570-1615，per-viewport），ViewManager 无
+    // 此面；本仓原全局面零调用者且绕过 per-viewport 语义，按参考形迁
+    // Viewport::Add/Drop/FindFeatureOverrideProvider。
 
     /// Find the decorator that owns the given feature ID.
     /// @return The decorator, or nullptr if no decorator claims the hit.
@@ -176,7 +176,6 @@ private:
     // Always-on ACS-triad decorator (← itwinjs ViewManager.onInitialized installs
     // AccuDraw; DanQing owns the triad here). Gated per-view by viewFlags.acsTriad.
     std::unique_ptr<AcsTriadDecorator> m_acsTriad;
-    std::vector<dqCommon::FeatureOverrideProvider*> m_featureOverrideProviders;
     Viewport* m_selectedViewport = nullptr;
 };
 

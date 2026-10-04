@@ -4,7 +4,13 @@
 // Ported from: itwinjs-core core/frontend/src/test/render/FeatureSymbology.test.ts
 #include <gtest/gtest.h>
 
+#include <QApplication>
+
+#include <dqApp/BlankConnection.h>
 #include <dqApp/FeatureOverrideProvider.h>
+#include <dqApp/Viewport.h>
+#include <dqApp/ViewState.h>
+#include <dqCommon/FeatureOverrides.h>
 #include <dqCommon/FeatureSymbology.h>
 
 using namespace dqApp;
@@ -12,7 +18,9 @@ using namespace dqCommon;
 using namespace dqBase;
 
 // Concrete test provider
-class TestProvider : public FeatureOverrideProvider {
+//（M-O(2) I10 注：dqCommon::FeatureOverrideProvider 引入后 unqualified 名
+//  在双 using 下歧义——dqApp 旧接口限定之。）
+class TestProvider : public dqApp::FeatureOverrideProvider {
 public:
     int callCount = 0;
 
@@ -150,3 +158,86 @@ TEST(ViewportFeatureOverridesIntegration, clear)
     EXPECT_FALSE(overrides.getAppearance(DqId(1)).has_value());
     EXPECT_TRUE(overrides.getDefaultOverrides().matchesDefaults());
 }
+
+// ===========================================================================
+// M-O(2) I10 — Viewport 级 FeatureOverrideProvider 注册面
+// Ported from: itwinjs-core Viewport.addFeatureOverrideProvider /
+//              dropFeatureOverrideProvider / findFeatureOverrideProvider
+//              (Viewport.ts:1570-1615——重复注册 false / 未注册 drop false /
+//              谓词查找)。参考无直接单测（Viewport 集成面经 browser tests）；
+// Authored: 断言值 = Viewport.ts:1571-1576/:1584-1591/:1600-1606 的返回值
+//           语义逐行。
+// ===========================================================================
+namespace {
+
+class TestVpOverrideProvider : public dqCommon::FeatureOverrideProvider {
+public:
+    int callCount = 0;
+    void addFeatureOverrides(dqCommon::FeatureOverrides& ovrs, void* /*context*/) override
+    {
+        ++callCount;
+        ovrs.overrideElement(dqBase::DqId(0x1234),
+                             dqCommon::FeatureAppearance::fromRgb(
+                                 dqCommon::ColorDef::from(255, 0, 0)));
+    }
+};
+
+// Viewport 构造需要 QApplication（ViewToolTest 的 Task10QApplicationEnv
+// 先行创建；qApp 全局守卫下补一份本 TU 的惰性初始化）。
+struct QtEnvFO {
+    QtEnvFO()
+    {
+        if (qApp == nullptr) {
+            static int argc = 1;
+            static char name[] = "t";
+            static char* argv[] = {name, nullptr};
+            static QApplication app(argc, argv);
+        }
+    }
+};
+QtEnvFO s_qtEnvFO;
+
+// 空白视图 + Viewport（ViewToolTest::buildViewWithValidViewingSpace 的最小变体）。
+dqApp::Viewport* makeBlankViewport()
+{
+    auto props = dqApp::BlankConnectionProps{};
+    props.extents = dqGeom::Range3d(dqGeom::Point3d::From(-100, -100, -100),
+                                    dqGeom::Point3d::From(100, 100, 100));
+    auto imodel = dqApp::BlankConnection::create(props);
+    auto view = dqApp::SpatialViewState::CreateBlank(
+        imodel.Get(), dqGeom::Point3d::From(0, 0, 0),
+        dqGeom::Vector3d::From(200, 200, 200));
+    return dqApp::Viewport::Create(nullptr, view);
+}
+
+}  // namespace
+
+TEST(ViewportFeatureOverrideProvider, RegistrationSemanticsMatchReference)
+{
+    auto* vp = makeBlankViewport();
+    ASSERT_NE(vp, nullptr);
+    TestVpOverrideProvider provider;
+
+    // addFeatureOverrideProvider (:1570-1577)——首次 true、重复 false。
+    EXPECT_TRUE(vp->AddFeatureOverrideProvider(&provider));
+    EXPECT_FALSE(vp->AddFeatureOverrideProvider(&provider));
+    EXPECT_EQ(1u, vp->getFeatureOverrideProviders().size());
+
+    // findFeatureOverrideProvider (:1600-1606)——谓词命中/未命中。
+    EXPECT_EQ(&provider,
+              vp->FindFeatureOverrideProvider([](dqCommon::FeatureOverrideProvider* x) {
+                  return x != nullptr;
+              }));
+    EXPECT_EQ(nullptr,
+              vp->FindFeatureOverrideProvider([](dqCommon::FeatureOverrideProvider*) {
+                  return false;
+              }));
+
+    // dropFeatureOverrideProvider (:1584-1592)——已注册 true、未注册 false。
+    EXPECT_TRUE(vp->DropFeatureOverrideProvider(&provider));
+    EXPECT_FALSE(vp->DropFeatureOverrideProvider(&provider));
+    EXPECT_EQ(0u, vp->getFeatureOverrideProviders().size());
+
+    delete vp;
+}
+

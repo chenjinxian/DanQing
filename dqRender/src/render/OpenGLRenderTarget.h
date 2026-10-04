@@ -55,6 +55,11 @@ public:
                        float* outFractions, uint32_t outCount) override;
     void setHiliteSet(uint32_t const* elementIds, size_t count) override;
     void setInvisibleSubCategories(std::set<uint64_t> const& invisibleSubCategories) override;
+    // M-O(2) I10——viewport overrides 交付（Step 9 重建后；版本面驱动逐 batch
+    // LUT 的 appearance 惰性重算）。
+    void overrideFeatureSymbology(dqCommon::FeatureOverrides const* ovrs) override;
+    dqCommon::FeatureOverrides const* getFeatureOverrides() const override;
+    uint32_t getFeatureOverridesVersion() const override;
     void setFlashed(uint32_t elementId, float intensity) override;
     void setHiliteColor(float r, float g, float b) override;
     void setViewportTransform(float const* mv16, float const* mvp16) override;

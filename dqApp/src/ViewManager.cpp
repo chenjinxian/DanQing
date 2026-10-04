@@ -212,21 +212,6 @@ void ViewManager::DropDecorator(IDecorator* decorator)
     m_decorators.erase(it);
 }
 
-void ViewManager::AddFeatureOverrideProvider(dqCommon::FeatureOverrideProvider* provider)
-{
-    if (!provider) return;
-    auto it = std::find(m_featureOverrideProviders.begin(), m_featureOverrideProviders.end(), provider);
-    if (it != m_featureOverrideProviders.end()) return;
-    m_featureOverrideProviders.push_back(provider);
-}
-
-void ViewManager::DropFeatureOverrideProvider(dqCommon::FeatureOverrideProvider* provider)
-{
-    auto it = std::find(m_featureOverrideProviders.begin(), m_featureOverrideProviders.end(), provider);
-    if (it == m_featureOverrideProviders.end()) return;
-    m_featureOverrideProviders.erase(it);
-}
-
 IDecorator* ViewManager::FindDecoratorForHit(uint32_t featureId) const
 {
     for (auto* dec : m_decorators) {
