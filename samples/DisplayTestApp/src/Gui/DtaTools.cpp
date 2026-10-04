@@ -34,6 +34,7 @@
 #include "GltfDecorationTool.h"
 #include "OutputShadersTool.h"        // M-O(2) 3d OutputShaders 工具注册
 #include "TiledGraphics.h"            // M-O(2) I11 第二 iModel 叠加工具注册
+#include "MacroTool.h"                // M-O(4) P9 Macro 播放器注册
 #include "GridSettingsTool.h"
 #include "KeyinField.h"
 #include "MainWindow.h"
@@ -90,6 +91,11 @@ void registerDtaTools()
     registry.Register("ToggleSecondaryIModel",
                       []() -> dqApp::InteractiveTool* { return new ToggleSecondaryIModelTool(); },
                       "dta tiled graphics");
+    // M-O(4) P9：MacroTool（MacroTools.ts:8-55——keyin "dta macro <file>"；
+    // keyin 序列逐行播放 + 三分支告警）。
+    registry.Register("Macro",
+                      []() -> dqApp::InteractiveTool* { return new MacroTool(); },
+                      "dta macro");
 }
 
 void setupDtaStatusBar(MainWindow* mainWindow)

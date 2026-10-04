@@ -47,8 +47,8 @@ QColor TbgrToQColor(uint32_t tbgr)
                   static_cast<int>((tbgr >> 24) & 0xFF));
 }
 
-// DTA renderMode 下拉（ViewAttributes.ts addRenderMode :425-428）。dqCommon::RenderMode
-// 现有 4 值（CrossingEdges/HiddenLineVisibleEdges 未移植）。
+// DTA renderMode 下拉（ViewAttributes.ts addRenderMode :421-437——恰 4 entries；
+// 参考 RenderMode 枚举即 4 值[ViewFlags.ts:18-43]，M-O(4) P4 勘误结案）。
 const struct { const char* name; dqCommon::RenderMode mode; } kModes[] = {
     { "Wireframe", dqCommon::RenderMode::Wireframe },
     { "Solid Fill", dqCommon::RenderMode::SolidFill },
