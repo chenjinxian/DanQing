@@ -3,9 +3,13 @@
 // Ported from: itwinjs-core core/frontend/src/internal/render/webgl/ClipStack.ts
 #include "ClipStack.h"
 
+#include "rhi/opengl/GlLoader.h"  // [CLIPDUMP] 探针（DANQING_CLIP_TRACE）
+
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace dqRender {
@@ -196,12 +200,38 @@ void ClipStack::uploadTexture() {
             rhi::SamplerType::SAMPLER_2D, 1, rhi::TextureFormat::RGBA32F, 1, m_numTotalRows, 1,
             rhi::TextureUsage::DEFAULT);
         if (m_texture)
-            m_driver->setTextureWrapMode(m_texture, 0x812F, 0x812F);  // CLAMP_TO_EDGE
+            m_driver->setTextureFilters(m_texture, 0x2600, 0x2600);  // NEAREST（数据纹理——见 Driver.h 注）
     }
     if (m_texture) {
+        // 客户端格式 = GL_RGBA/GL_FLOAT（RGBA32F 行数据——参考 createForData
+        // 的 Float32Array 语义；Driver 侧按 descriptor type 派发）。
         rhi::PixelBufferDescriptor pbd(
-            m_cpuBuffer.data(), m_cpuBuffer.size(), 0, 0, 0, 1, 0, 0, 1, m_numTotalRows, 1);
+            m_cpuBuffer.data(), m_cpuBuffer.size(),
+            0x1908 /* GL_RGBA */, 0x1406 /* GL_FLOAT */,
+            0, 1, 0, 0, 1, m_numTotalRows, 1);
         m_driver->setTextureData(m_texture, 0, 0, 0, 0, 1, m_numTotalRows, 1, std::move(pbd));
+        // [CLIPDUMP] 探针（DANQING_CLIP_TRACE=1，§13.1 族）：上传后回读前两行
+        // 浮点 + 帧参数——与 CPU 编码值对拍（M-P P-D 剖切纹理上传链取证所加；
+        // RGBA32F 映射 saga 的定音证据源）。
+        if (std::getenv("DANQING_CLIP_TRACE")) {
+            static int s_nClipDump = 0;
+            if (s_nClipDump++ < 8) {
+                // 绑到 unit 0 回读（不动既有单元占用——探针路径仅取证用）。
+                m_driver->bindTexture(0, m_texture);
+                float rows[8] = {-9, -9, -9, -9, -9, -9, -9, -9};
+                glPixelStorei(GL_PACK_ALIGNMENT, 1);
+                glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, rows);
+                float cpuRows[8] = {0};
+                std::memcpy(cpuRows, m_cpuBuffer.data(),
+                            std::min(m_cpuBuffer.size(), sizeof(cpuRows)));
+                printf("[CLIPDUMP] rows=%u start=%u end=%u gpuR0=(%g,%g,%g,%g) gpuR1=(%g,%g,%g,%g) cpuR0=(%g,%g,%g,%g) cpuR1=(%g,%g,%g,%g)\n",
+                       m_numTotalRows, startIndex(), endIndex(),
+                       rows[0], rows[1], rows[2], rows[3], rows[4], rows[5], rows[6], rows[7],
+                       cpuRows[0], cpuRows[1], cpuRows[2], cpuRows[3],
+                       cpuRows[4], cpuRows[5], cpuRows[6], cpuRows[7]);
+                fflush(stdout);
+            }
+        }
     }
     m_textureHeight = m_numTotalRows;
 }

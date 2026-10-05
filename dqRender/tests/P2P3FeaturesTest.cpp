@@ -453,15 +453,6 @@ TEST(RemainingShaderModulesTest, Lighting)
 }
 
 // Ported from: itwinjs-core core/frontend/src/test/FeatureSymbology.test.ts
-TEST(RemainingShaderModulesTest, Clipping)
-{
-    char const* code = getClippingFunctions();
-    std::string src(code);
-    EXPECT_NE(src.find("isClipped"), std::string::npos);
-    EXPECT_NE(src.find("u_clipPlanes"), std::string::npos);
-}
-
-// Ported from: itwinjs-core core/frontend/src/test/FeatureSymbology.test.ts
 TEST(RemainingShaderModulesTest, Monochrome)
 {
     char const* code = getMonochromeFunctions();

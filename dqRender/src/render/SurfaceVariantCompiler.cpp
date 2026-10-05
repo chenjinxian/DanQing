@@ -11,6 +11,7 @@
 #include "AnimationShaders.h"  // addAnimation
 #include "AtmosphereShaderHelpers.h"  // addAtmosphericScatteringEffect
 #include "CommonShaders.h"     // addFrustum, addShaderFlags
+#include "ShaderBindings.h"      // addClipping（M-P P-D）
 #include "FeatureEffectShaderBuilders.h"
 #include "FeatureSymbologyShaders.h"
 #include "LightingShaders.h"   // addLighting
@@ -375,20 +376,8 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
     if (thematic) {
         addThematicDisplay(builder);
     }
-
-    // --- Clip planes ---
-    // Ported from: itwinjs-core Surface.ts (clip distance output)
-    {
-        auto& vert = builder.getVertexBuilder();
-        vert.addVariable({"u_numClipPlanes", VariableType::Int, VariableScope::Uniform, 0});
-        vert.addVariable({"u_clipPlanes", VariableType::Vec4, VariableScope::Uniform, 6});
-        vert.addCode("out float gl_ClipDistance[6];");
-        vert.setVertexComponent(VertexShaderComponent::FinalizePosition,
-            "    for (int i = 0; i < u_numClipPlanes; i++)\n"
-            "        gl_ClipDistance[i] = dot(gl_Position.xyz, u_clipPlanes[i].xyz) + u_clipPlanes[i].w;\n"
-            "    for (int i = u_numClipPlanes; i < 6; i++)\n"
-            "        gl_ClipDistance[i] = 1.0;\n"
-            "    return gl_Position;\n");
+    if (flags.hasClip()) {
+        addClipping(builder.getFragmentBuilder());
     }
 
     // --- Generate GLSL source ---

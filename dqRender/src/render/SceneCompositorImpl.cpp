@@ -17,6 +17,7 @@
 #include "TargetImpl.h"
 #include "TechniqueImpl.h"
 #include "ShaderProgramImpl.h"
+#include "shader/ClippingShaders.h"    // kClipVolumeTextureUnit（M-P P-D）
 #include "shader/OitShaders.h"
 #include "shader/CompositeShaders.h"   // compositeHiliteFrag
 #include "shader/PostProcessShaders.h" // kFullscreenQuadVert
@@ -1371,6 +1372,26 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     flags.isTranslucent = true;
                 }
 
+                // View clip 维度（M-P P-D）。
+                // Ported from: itwinjs-core TechniqueFlags.init（TechniqueFlags.ts:81-83
+                // ——numClipPlanes = clipStack.hasClip ? clipStack.textureHeight : 0）。
+                // 逐图元读 target clipStack（参考 init 的 target 形参语义）；§3.4：
+                // DanQing 字段 uint8_t → clamp 255（参考 number；纹理行数超 255 的
+                // 极端剪裁以 clamp 承载——变体选择只用 >0 判）。纹理由此绑定到
+                // kClipVolumeTextureUnit（unit 0 被 s_texture 占——见 ClippingShaders.h
+                // EQUIVALENCE）；s_clipSampler 的单元号 uniform 在 graphic 绑定里上传。
+                {
+                    ClipStack& clipStack = m_target.getClipStack();
+                    flags.numClipPlanes = clipStack.hasClip()
+                        ? static_cast<uint8_t>(std::min<uint32_t>(clipStack.textureHeight(), 255u))
+                        : 0;
+                    if (flags.numClipPlanes > 0) {
+                        rhi::TextureHandle const clipTex = clipStack.texture();
+                        if (clipTex)
+                            driver.bindTexture(static_cast<uint32_t>(kClipVolumeTextureUnit), clipTex);
+                    }
+                }
+
                 // Determine feature mode (pick during readPixels, else overrides
                 // when the active batch carries a feature-override LUT).
                 // Ported from: itwinjs-core DrawCommand.ts PrimitiveCommand.execute()
@@ -1427,6 +1448,7 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     flags.isInstanced == m_cachedTechniqueFlags.isInstanced &&
                     flags.positionType == m_cachedTechniqueFlags.positionType &&
                     flags.isLutUnquantized == m_cachedTechniqueFlags.isLutUnquantized &&
+                    flags.numClipPlanes == m_cachedTechniqueFlags.numClipPlanes &&
                     m_cachedShader) {
                     shader = m_cachedShader;
                 } else {

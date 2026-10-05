@@ -10,7 +10,9 @@
 #include "ShaderBindings.h"
 #include "DrawParams.h"         // DrawParams (for GraphicUniform bindings)
 #include "ShaderProgramImpl.h"  // ShaderProgram, addProgramUniform, addGraphicUniform, ShaderProgramParams
-#include "TargetImpl.h"         // getUniforms()
+#include "TargetImpl.h"         // getUniforms()/getClipStack()
+#include "ClipStack.h"          // ClipStack（addClipping）
+#include "shader/ClippingShaders.h"  // kClippingHelpers/kApplyClippingBody/kClipVolumeTextureUnit
 
 BEGIN_DQ_RENDER_NAMESPACE
 
@@ -267,6 +269,104 @@ void wireAnimDispOrigin(ShaderBuilder& vert)
                 u.setUniform3fv(p);
         });
     });
+}
+
+
+// ---------------------------------------------------------------------------
+// addClipping — full view-clip fragment path（M-P P-D）
+// Ported from: itwinjs-core glsl/Clipping.ts addClipping (:136-208)
+// ---------------------------------------------------------------------------
+void addClipping(ShaderBuilder& frag)
+{
+    // g_clipColor（prelude 全局——ShaderBuilder.ts:1017 prelude.addline）+
+    // g_hasClipColor（Clipping.ts:163 addGlobal）。
+    frag.addGlobal("g_clipColor", VariableType::Vec3);
+    frag.addGlobal("g_hasClipColor", VariableType::BVec2);
+
+    // u_outsideRgba — clip-outside color (alpha>0 → colorize, else discard)。
+    // Ported from: Clipping.ts:142-152（outsideColor.bind）
+    frag.addUniform("u_outsideRgba", VariableType::Vec4, [](ShaderProgram& prog) {
+        prog.addGraphicUniform("u_outsideRgba", [](UniformHandle& u, DrawParams const& p) {
+            if (auto* t = p.getTarget()) {
+                auto const& c = t->getClipStack().outsideColor();
+                float rgba[4] = {c.r, c.g, c.b, c.a};
+                u.setUniform4fv(rgba, 1);
+            }
+        });
+    });
+
+    // u_insideRgba — clip-inside color。
+    // Ported from: Clipping.ts:142-152（insideColor.bind）
+    frag.addUniform("u_insideRgba", VariableType::Vec4, [](ShaderProgram& prog) {
+        prog.addGraphicUniform("u_insideRgba", [](UniformHandle& u, DrawParams const& p) {
+            if (auto* t = p.getTarget()) {
+                auto const& c = t->getClipStack().insideColor();
+                float rgba[4] = {c.r, c.g, c.b, c.a};
+                u.setUniform4fv(rgba, 1);
+            }
+        });
+    });
+
+    // u_clipParams[3] — [0]=first plane, [1]=one past last, [2]=texture height。
+    // Ported from: Clipping.ts:165-177（doClipping 恒 true）
+    // NOTE：绑定名带 "[0]" 后缀——GLSL 数组 uniform 的 location 解析需要元素名
+    //（u_lightSettings[0] 先例，ShaderBindings.cpp:49；裸数组名在多数驱动解析
+    // -1 → TD-15 的 null-location 静默跳过 → M-P P-D 剖切无效果 saga 的根因）。
+    frag.addUniformArray("u_clipParams", VariableType::Int, 3, [](ShaderProgram& prog) {
+        prog.addGraphicUniform("u_clipParams[0]", [](UniformHandle& u, DrawParams const& p) {
+            if (auto* t = p.getTarget()) {
+                auto const& stack = t->getClipStack();
+                int clipParams[3] = {static_cast<int>(stack.startIndex()),
+                                     static_cast<int>(stack.endIndex()),
+                                     static_cast<int>(stack.textureHeight())};
+                u.setUniform1iv(clipParams, 3);
+            }
+        });
+    });
+
+    // u_colorizeIntersection — program uniform（clipStack.colorizeIntersection）。
+    // Ported from: Clipping.ts:179-183
+    frag.addUniform("u_colorizeIntersection", VariableType::Boolean, [](ShaderProgram& prog) {
+        prog.addProgramUniform("u_colorizeIntersection", [](UniformHandle& u, ShaderProgramParams const& p) {
+            if (auto* t = p.getTarget())
+                u.setUniform1i(t->getClipStack().colorizeIntersection() ? 1 : 0);
+        });
+    });
+
+    // u_clipIntersection — intersection style（alpha 段=线宽，参考怪癖）。
+    // Ported from: Clipping.ts:185-189（intersectionStyle.bind）
+    frag.addUniform("u_clipIntersection", VariableType::Vec4, [](ShaderProgram& prog) {
+        prog.addGraphicUniform("u_clipIntersection", [](UniformHandle& u, DrawParams const& p) {
+            if (auto* t = p.getTarget()) {
+                auto const& s = t->getClipStack().intersectionStyle();
+                float rgba[4] = {s.r, s.g, s.b, s.a};
+                u.setUniform4fv(rgba, 1);
+            }
+        });
+    });
+
+    // u_pixelWidthFactor — TODO（见 ShaderBindings.h 登记）：planes 面未移植，
+    // 恒 0.0（colorizeIntersection 默认关 = 无行为面）。
+    // Ported from: Clipping.ts:154-155 + FeatureSymbology.ts:498-504
+    frag.addUniform("u_pixelWidthFactor", VariableType::Float, [](ShaderProgram& prog) {
+        prog.addGraphicUniform("u_pixelWidthFactor", [](UniformHandle& u, DrawParams const&) {
+            u.setUniform1f(0.0f);
+        });
+    });
+
+    // s_clipSampler — clip 平面纹理（单元号经 uniform；纹理由 dispatch 绑定
+    // 到 kClipVolumeTextureUnit——见头注 EQUIVALENCE：unit 0 被 s_texture 占）。
+    // Ported from: Clipping.ts:194-201（TextureUnit.ClipVolume）
+    frag.addUniform("s_clipSampler", VariableType::Sampler2D, [](ShaderProgram& prog) {
+        prog.addGraphicUniform("s_clipSampler", [](UniformHandle& u, DrawParams const&) {
+            u.setUniform1i(kClipVolumeTextureUnit);
+        });
+    }, VariablePrecision::High);
+
+    // 辅助函数（getClipPlane/calcClipPlaneDist——Clipping.ts:191-193
+    // frag.addFunction）+ ApplyClipping 槽体（Clipping.ts:203 frag.set）。
+    frag.addFunction(kClippingHelpers);
+    frag.setFragmentComponent(FragmentShaderComponent::ApplyClipping, kApplyClippingBody);
 }
 
 END_DQ_RENDER_NAMESPACE

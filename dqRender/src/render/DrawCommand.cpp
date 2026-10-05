@@ -67,10 +67,15 @@ void PrimitiveCommand::execute(ShaderProgramExecutor& exec)
                      vf.shadows && !thematic;
     }
 
-    // Count clip planes from clip volume
+    // Count clip planes from the view clip stack
+    // Ported from: itwinjs-core TechniqueFlags.init（TechniqueFlags.ts:81-83——
+    // numClipPlanes = clipStack.hasClip ? textureHeight : 0）。M-P P-D：原
+    // "Simplified 恒 1"（target.getClipVolume() 旧简化面）归位为 clipStack 读。
     uint8_t numClipPlanes = 0;
-    if (target.getClipVolume()) {
-        numClipPlanes = 1;  // Simplified — actual count from clip planes
+    {
+        ClipStack const& clipStack = target.getClipStack();
+        if (clipStack.hasClip())
+            numClipPlanes = static_cast<uint8_t>(std::min<uint32_t>(clipStack.textureHeight(), 255u));
     }
 
     flags.init(exec.getRenderPass(),

@@ -81,6 +81,9 @@ private:
 
     std::unique_ptr<VariantShaderCompiler> m_compiler;
     std::array<std::unique_ptr<ShaderProgram>, kVariantCount> m_programs;
+    // M-P P-D：clip 变体平行槽（参考 VariedTechnique._clippingPrograms——
+    // Technique.ts:241-255：numClipPlanes>0 → clipping 程序，否则 basic）。
+    std::array<std::unique_ptr<ShaderProgram>, kVariantCount> m_clipPrograms;
 };
 
 END_DQ_RENDER_NAMESPACE

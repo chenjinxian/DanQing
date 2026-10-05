@@ -356,8 +356,6 @@ public:
     // Ported from: itwinjs-core Target._clipVolume
 
     /// Get the current clip volume.
-    ClipVolume* getClipVolume() const noexcept { return m_clipVolume; }
-    void setClipVolume(ClipVolume* vol) noexcept { m_clipVolume = vol; }
 
     // --- Shadow map ---
     // Ported from: itwinjs-core Target.solarShadowMap
@@ -537,8 +535,6 @@ private:
     float m_devicePixelRatio = 1.0f;          // host-assigned window ratio
     float m_devicePixelRatioOverride = 0.0f;  // >0 forces a specific ratio
 
-    // Clip volume (Ported from: itwinjs-core Target._clipVolume)
-    ClipVolume* m_clipVolume = nullptr;
 
     // Shadow map (Ported from: itwinjs-core Target.solarShadowMap)
     SolarShadowMap* m_shadowMap = nullptr;
@@ -551,6 +547,9 @@ private:
     // 调用 getViewMatrix/wantViewClip）。m_viewClipEnabled = pushViewClip 门。
     bool m_viewClipEnabled = false;
     ClipStack m_clipStack;
+    // ClipStack 视矩阵的派生缓存（见 .cpp ctor 的 EQUIVALENCE 注——
+    // branch 栈底 mv·localToWorld⁻¹，逐次重算写入）。
+    dqGeom::Transform m_clipViewMatrixScratch;
 
     // 2D canvas decoration backend (lazy). Records CanvasContext strokes and
     // rasterizes them as GL_LINES at the end of the drawn frame.

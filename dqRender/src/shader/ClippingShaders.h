@@ -38,68 +38,49 @@ float unpackFloat(vec4 v) {
 )glsl";
 
 // ---------------------------------------------------------------------------
-// Clipping functions (included by other shaders via #include)
+// Clipping functions（M-P P-D 接线版）
 // ---------------------------------------------------------------------------
-// Requires varyings: v_eyeSpace (vec3) — eye-space position of fragment.
-// Requires uniforms from other shader modules:
-//   u_frustum (vec3) — {near, far, cameraType}, cameraType 2.0 = perspective.
+// 依赖（由 wire 侧/宿主 shader 提供）：
+//   varying v_eyeSpace (vec3) —— Surface 的 createCommon() 已含（SurfaceCommon.h:154）；
+//   uniform u_frustum (vec3) —— addFrustum 已含。
+// 本文件不再内嵌 uniform 声明——uniforms 经 addClipping（ShaderBindings.cpp）
+// 逐个注册（绑定面同步建立）；applyClipping 签名对齐 ShaderBuilder 的
+// ApplyClipping 槽（"bvec2 applyClipping(vec4 baseColor)"——ShaderBuilder.cpp:548），
+// g_clipColor/g_hasClipColor 为全局（参考 prelude.addline + addGlobal——
+// ShaderBuilder.ts:1017 / Clipping.ts:163）。
 //
-// Our uniforms:
-//   u_clipParams[3] — [0]=startIndex, [1]=endIndex (one past), [2]=textureHeight
-//   u_outsideRgba (vec4) — clip-outside color (alpha > 0 → output color, else discard)
-//   u_insideRgba  (vec4) — clip-inside  color (alpha > 0 → output color, else skip)
-//   s_clipSampler (sampler2D) — clip planes, one per row (row-major texelFetch)
-//   u_colorizeIntersection (bool) — enable edge highlighting near clip planes
-//   u_clipIntersection (vec4) — intersection highlight color + width (.a = width scale)
-//   u_pixelWidthFactor (float) — screen-space pixel width for intersection width calc
-//
-// Sentinel protocol (encoded by C++ clip-plane upload):
+// 拆分（M-P P-D）：kClippingHelpers（完整函数——addFunction）+
+// kApplyClippingBody（槽体语句——setFragmentComponent 包裹签名）。
+// Sentinel protocol（C++ 侧 ClipVolume 编码，见 ClipVolume.cpp）：
 //   plane.x == 2.0          → start of a new union set
 //   plane.xyz == vec3(0.0)  → start of a new intersection set within current union
 // ---------------------------------------------------------------------------
 
-static char const* kClippingFunctions = R"glsl(
-    // Frustum camera type constants
-    const float kFrustumType_Perspective = 2.0;
-
-    // Clip plane uniforms
-    uniform int u_clipParams[3];  // [0]=startIndex, [1]=endIndex, [2]=textureHeight
-    uniform vec4 u_outsideRgba;
-    uniform vec4 u_insideRgba;
-    uniform sampler2D s_clipSampler;
-
-    // Intersection colorization uniforms
-    uniform bool u_colorizeIntersection;
-    uniform vec4 u_clipIntersection;   // rgb = color, a = width scale
-    uniform float u_pixelWidthFactor;
-
+static char const* kClippingHelpers = R"glsl(
     // Read clip plane from texture (row-major: plane at row = index).
-    // Ported from: itwinjs-core core/frontend/src/internal/render/webgl/glsl/Clipping.ts
-    //   getClipPlaneFloat
+    // Ported from: itwinjs-core Clipping.ts getClipPlaneFloat (:17-21)
     vec4 getClipPlane(int index) {
         return texelFetch(s_clipSampler, ivec2(0, index), 0);
     }
 
     // Signed distance from eye-space point to clip plane.
-    // Ported from: itwinjs-core core/frontend/src/internal/render/webgl/glsl/Clipping.ts
-    //   calcClipPlaneDist
+    // Ported from: itwinjs-core Clipping.ts calcClipPlaneDist (:37-41)
     float calcClipPlaneDist(vec3 camPos, vec4 plane) {
         return dot(vec4(camPos, 1.0), plane);
     }
+)glsl";
 
-    // Apply UnionOfConvexClipPlaneSets clipping.
-    // Ported from: itwinjs-core core/frontend/src/internal/render/webgl/glsl/Clipping.ts
-    //   applyClipPlanesPrelude + applyClipPlanesPostlude + applyClipPlanesLoopBody
-    //   + applyClipPlanesIntersectionLoopBody
-    //
-    // A fragment is clipped when every intersection set in every union set clips it.
-    // Sentinel values in the plane texture encode set boundaries (see header comment).
-    bvec2 applyClipPlanes() {
+// applyClipping 的槽体（纯语句——setFragmentComponent 以签名
+// "bvec2 applyClipping(vec4 baseColor)" 包裹，ShaderBuilder.cpp:548）。
+// Ported from: itwinjs-core Clipping.ts applyClipPlanesPrelude +
+//   applyClipPlanesPostlude + applyClipPlanesLoopBody +
+//   applyClipPlanesIntersectionLoopBody (:43-131)。
+// A fragment is clipped when every intersection set in every union set clips it.
+static char const* kApplyClippingBody = R"glsl(
         int numPlaneSets = 1;
         int numSetsClippedBy = 0;
         bool clippedByCurrentPlaneSet = false;
         bool colorizeIntersection = false;
-
         if (u_colorizeIntersection) {
             float widthFactor = u_pixelWidthFactor * 2.0 * u_clipIntersection.a;
 
@@ -143,6 +124,7 @@ static char const* kClippingFunctions = R"glsl(
             for (int i = u_clipParams[0]; i < u_clipParams[1]; i++) {
                 vec4 plane = getClipPlane(i);
 
+
                 if (plane.x == 2.0) {
                     if (numSetsClippedBy + int(clippedByCurrentPlaneSet) == numPlaneSets)
                         break;
@@ -163,6 +145,7 @@ static char const* kClippingFunctions = R"glsl(
         // Finalize: count last intersection set
         numSetsClippedBy += int(clippedByCurrentPlaneSet);
 
+
         if (numSetsClippedBy == numPlaneSets) {
             // All intersection sets clipped → fragment is outside
             // Ported from: itwinjs-core Clipping.ts line 103
@@ -180,7 +163,8 @@ static char const* kClippingFunctions = R"glsl(
         }
 
         return bvec2(false, false);
-    }
 )glsl";
+
+inline constexpr int kClipVolumeTextureUnit = 9;
 
 END_DQ_RENDER_NAMESPACE

@@ -400,15 +400,39 @@ TEST(SurfaceVariantCompilerTest, TranslucentFragment)
     EXPECT_NE(frag.find("discard"), std::string::npos);
 }
 
-// Authored: no reference test exists in itwinjs-core for batch clip rendering
-TEST(SurfaceVariantCompilerTest, ClipPlanes)
+// M-P P-D：参考式片元裁剪变体锁（原 u_numClipPlanes/gl_ClipDistance 顶点注入
+// 为无参考对应物的自创面——已拆除，见 SurfaceVariantCompiler.cpp 注）。
+// 锚定：Clipping.ts addClipping（:136-208）——变体源含 s_clipSampler/
+// u_clipParams/applyClipping/discard + 全局 g_clipColor/g_hasClipColor；
+// 基础变体（numClipPlanes=0）全不含。
+// Authored: 参考无 SurfaceVariantCompiler 级源码锁（addClipping 由 webgl
+//           ClippingProgram.test 间接锁——DanQing 变体源以编译器直出为本测试面）。
+TEST(SurfaceVariantCompilerTest, ClipVariantSources)
 {
     SurfaceVariantCompiler compiler;
     std::string vert, frag;
 
-    BuildSurfaceSource(compiler, false, false, FeatureMode::None, false, false, false, false, false, vert, frag);
+    // clip 变体（numClipPlanes > 0 → addClipping）
+    TechniqueFlags clipFlags;
+    clipFlags.numClipPlanes = 5;
+    ShaderProgram clipProg;
+    compiler.buildProgram(clipProg, clipFlags);
+    vert = clipProg.getVertSource();
+    frag = clipProg.getFragSource();
+    EXPECT_NE(frag.find("s_clipSampler"), std::string::npos);
+    EXPECT_NE(frag.find("u_clipParams"), std::string::npos);
+    EXPECT_NE(frag.find("u_outsideRgba"), std::string::npos);
+    EXPECT_NE(frag.find("u_insideRgba"), std::string::npos);
+    EXPECT_NE(frag.find("applyClipping"), std::string::npos);
+    EXPECT_NE(frag.find("discard"), std::string::npos);
+    EXPECT_NE(frag.find("g_clipColor"), std::string::npos);
+    EXPECT_NE(frag.find("g_hasClipColor"), std::string::npos);
+    // 顶点级自创面已拆除
+    EXPECT_EQ(vert.find("gl_ClipDistance"), std::string::npos);
+    EXPECT_EQ(vert.find("u_numClipPlanes"), std::string::npos);
 
-    EXPECT_NE(vert.find("u_numClipPlanes"), std::string::npos);
-    EXPECT_NE(vert.find("u_clipPlanes"), std::string::npos);
-    EXPECT_NE(vert.find("gl_ClipDistance"), std::string::npos);
+    // 基础变体（numClipPlanes = 0）不含裁剪面
+    BuildSurfaceSource(compiler, false, false, FeatureMode::None, false, false, false, false, false, vert, frag);
+    EXPECT_EQ(frag.find("s_clipSampler"), std::string::npos);
+    EXPECT_EQ(frag.find("applyClipping"), std::string::npos);
 }

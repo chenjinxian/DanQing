@@ -323,6 +323,8 @@ public:
                         PixelBufferDescriptor&& data) noexcept override;
     // Ported from: itwinjs-core Texture.ts:87-88 (texParameteri TEXTURE_WRAP_S/T).
     void setTextureWrapMode(TextureHandle th, uint32_t wrapS, uint32_t wrapT) noexcept override;
+    // M-P P-D：数据纹理 NEAREST（RGBA32F 非 core-filterable——见 Driver.h 注）。
+    void setTextureFilters(TextureHandle th, uint32_t minFilter, uint32_t magFilter) noexcept override;
     TextureHandle createTextureView(TextureHandle src, uint8_t baseLevel,
                                     uint8_t levelCount) noexcept override;
     void generateMipmaps(TextureHandle th) noexcept override;

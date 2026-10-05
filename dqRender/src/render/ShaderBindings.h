@@ -97,4 +97,24 @@ void wireAnimDispScale(ShaderBuilder& vert);
 /// Ported from: itwinjs-core Animation.ts addAnimation() (line 244-254)
 void wireAnimDispOrigin(ShaderBuilder& vert);
 
+/// Wire the full view-clip fragment path（M-P P-D）。
+/// Ported from: itwinjs-core glsl/Clipping.ts addClipping (:136-208)：
+/// u_outsideRgba/u_insideRgba（graphic ← clipStack 颜色）+ u_clipParams[3]
+///（graphic ← startIndex/endIndex/textureHeight）+ s_clipSampler（单元号；
+/// 纹理由 dispatch 绑定）+ u_colorizeIntersection（program uniform）+
+/// u_clipIntersection（graphic ← intersectionStyle）+ u_pixelWidthFactor
+///（graphic ← PixelWidthFactor 移植计算）+ g_clipColor/g_hasClipColor 全局 +
+/// ApplyClipping 槽（kClippingFunctions）。
+/// 前置（参考 addEyeSpace/addFrustum/addModelViewMatrix）：宿主 surface builder
+/// 经 createCommon 已含 v_eyeSpace/u_frustum/u_mv——不重复添加。
+/// §3.4/EQUIVALENCE：translucent 的 AssignFragData clip 变体（参考 :205-207，
+/// FragColor1=(1,1,0,1) revealage 标记）随 DanQing 单输出 OIT 结构登记 TODO
+///（复合层协作面）；u_pixelWidthFactor 的 PixelWidthFactor 类（TargetUniforms.ts
+/// :28-68）TODO：计算需 FrustumUniforms 的 planes 面（top/bottom/left/right，
+/// 未移植）——恒绑 0.0（colorizeIntersection 默认关，交线着色距离阈值 0 =
+/// 不着色；随 planes 面落地补全计算）。
+void addClipping(ShaderBuilder& frag);
+
+
+
 END_DQ_RENDER_NAMESPACE

@@ -27,6 +27,10 @@
 #include <dqApp/ViewTool.h>
 #include <dqApp/ViewState.h>
 #include <dqCommon/DisplayStyleSettings.h>
+#include <dqGeom/ClipPlane.h>
+#include <dqGeom/ClipPrimitive.h>
+#include <dqGeom/ClipVector.h>
+#include <dqGeom/ConvexClipPlaneSet.h>
 #include <dqRender/tile/RealityTileTree.h>
 #include <dqApp/tile/SimpleTileTreeReference.h>
 #include <dqApp/tile/TiledGraphicsProvider.h>
@@ -815,6 +819,204 @@ TEST(TileTreeRender, SolidBaseColorFactorRendersMaterialColors)
     ASSERT_GT(rn, 30) << "red box (baseColorFactor) not rendered in its color";
     ASSERT_GT(gn, 30) << "green box rendered wrong (channel-shifted? TD-17)";
     ASSERT_GT(bn, 30) << "blue box rendered wrong (channel-shifted? TD-17)";
+
+    view.close();
+    spin3(200);
+}
+
+// View clip 端到端（M-P P-D 全链锁）：setViewClip 平面剖切 → OnClipVectorChanged
+// → InvalidateRenderPlan → RenderPlan.clip → TargetImpl.updateViewClip →
+// ClipStack（纹理上传 + startIndex/endIndex）→ TechniqueFlags.numClipPlanes →
+// Surface clip 变体（addClipping 片元 discard）。锚定：Clipping.ts addClipping
+//（:136-208）+ ClipViewTool.doClipToPlane 的构造面（单 ConvexClipPlaneSet）。
+//
+// 断言面（§11.11 WHERE——不对称位置断言）：
+//  - 剖切后恰一色塌缩（世界 x=-1 平面、内法向 +X——左盒[世界 x≈-2]被裁），
+//    存留色的质心相对塌缩色仍在原侧（方向锚）；
+//  - 内容 bbox 从塌缩色一侧回退；
+//  - viewFlags.clipVolume=false → 不裁（旗标语义）；
+//  - setViewClip(nullptr) → 塌缩色恢复（可逆）。
+//
+// Authored: no reference test exists for view-clip rendering（参考 ClipStack/
+//           ClipVolume webgl 测试为 headless 单元；窗口级全链为 DanQing §5(g) 面）。
+TEST(TileTreeRender, ViewClipPlaneDiscardsHalfspace)
+{
+    std::string const tilesetPath = DANQING_TILE_ASSETS_DIR "/minimal-solid/tileset.json";
+
+    auto& app = dqApp::Application::Get();
+    if (!app.isInitialized()) {
+        dqApp::Application::Options opts;
+        opts.applicationId = "TileTreeRender";
+        opts.applicationVersion = "1.0";
+        ASSERT_TRUE(app.Startup(opts));
+    }
+
+    std::unique_ptr<dqRender::RealityTileTree> tree;
+
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    view.resize(1000, 700);
+    view.show();
+    spin3(400);
+
+    {
+        std::ifstream in(tilesetPath, std::ios::binary);
+        ASSERT_TRUE(in.good()) << "cannot open " << tilesetPath;
+        std::vector<uint8_t> jsonBytes((std::istreambuf_iterator<char>(in)),
+                                        std::istreambuf_iterator<char>());
+        tree = dqRender::RealityTileTree::loadTileset(tilesetPath, jsonBytes.data(), jsonBytes.size());
+    }
+    ASSERT_NE(tree, nullptr);
+    view.getUeViewport()->AddTileTree(tree.get());
+
+    auto* view3d = view.getUeViewport()->GetView()->AsViewState3d();
+    ASSERT_NE(view3d, nullptr);
+    view3d->LookAtVolume(dqGeom::Range3d::CreateXYZXYZ(-3, -1.2, -1.2, 3, 1.2, 1.2));
+    {
+        auto& style = view.getUeViewport()->GetView()->GetDisplayStyle();
+        auto p = style.getViewFlags().Properties();
+        p.grid = false;
+        p.acsTriad = false;
+        style.setViewFlags(dqCommon::ViewFlags(p));
+    }
+    view.getUeViewport()->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+    spin3(1600);
+    view.getUeViewport()->RenderFrame();
+
+    // --- 基线帧：三色 + bbox ---
+    auto readFrame = [&](std::vector<uint8_t>& frame, uint32_t& w, uint32_t& h) {
+        view.getUeViewport()->RenderFrame();
+        return view.getUeViewport()->ReadFrameForTest(frame, w, h);
+    };
+    auto colorStats = [](std::vector<uint8_t> const& frame, uint32_t w, uint32_t /*h*/,
+                         uint32_t minX, uint32_t maxX, uint32_t minY, uint32_t maxY,
+                         long counts[3], double cxs[3]) {
+        for (int c = 0; c < 3; ++c)
+            counts[c] = colorCentroid(frame, w, minX, maxX, minY, maxY, c, cxs[c]);
+    };
+
+    std::vector<uint8_t> frame;
+    uint32_t w = 0, h = 0;
+    ASSERT_TRUE(readFrame(frame, w, h));
+    uint32_t bMinX, bMaxX, bMinY, bMaxY;
+    ASSERT_TRUE(contentBBox(frame, w, h, bMinX, bMaxX, bMinY, bMaxY));
+    long baseCounts[3]; double baseCxs[3];
+    colorStats(frame, w, h, bMinX, bMaxX, bMinY, bMaxY, baseCounts, baseCxs);
+    ASSERT_GT(baseCounts[0] + baseCounts[1] + baseCounts[2], 200) << "baseline rendered nothing";
+    printf("[VIEWCLIP] base r=%ld@%.0f g=%ld@%.0f b=%ld@%.0f bbox=[%u,%u]\n",
+           baseCounts[0], baseCxs[0], baseCounts[1], baseCxs[1], baseCounts[2], baseCxs[2],
+           bMinX, bMaxX);
+
+    // --- 平面剖切：世界 x=-1、内法向 +X（保 x>-1 半空间——裁掉左盒）---
+    // 构造面 1:1 ViewClipTool.doClipToPlane（ClipViewTool.ts:159-177）：
+    // ClipPlane → ConvexClipPlaneSet → ClipPrimitive::createCapture → ClipVector。
+    {
+        auto plane = dqGeom::ClipPlane::createNormalAndPoint(
+            dqGeom::Vector3d::From(1.0, 0.0, 0.0), dqGeom::Point3d::From(-1.0, 0.0, 0.0));
+        ASSERT_TRUE(plane.has_value());
+        dqGeom::ConvexClipPlaneSet const set = dqGeom::ConvexClipPlaneSet::createPlanes({*plane});
+        dqGeom::ClipVector::Ptr const clip = dqGeom::ClipVector::createCapture(
+            {dqGeom::ClipPrimitive::createCapture(set)});
+        view3d->setViewClip(clip);
+    }
+    // 重绘确定性：clip 失效级联（OnClipVectorChanged → InvalidateRenderPlan →
+    // … → RequestRedraw）经事件循环异步推进——踢一次失效并等待至内容稳定
+    //（连续两帧相同；保全型平面下稳定帧可与基线相同，断言在后续色彩计数）。
+    view.getUeViewport()->InvalidateController();
+    spin3(400);
+    {
+        std::vector<uint8_t> prev;
+        for (int i = 0; i < 30; ++i) {
+            prev = frame;
+            spin3(100);
+            view.getUeViewport()->InvalidateController();
+            ASSERT_TRUE(readFrame(frame, w, h));
+            if (i > 0 && frame == prev)
+                break;
+        }
+    }
+
+    // --- 断言：恰一色塌缩 + WHERE（塌缩色在屏幕一侧极端；bbox 同侧回退）---
+    uint32_t cMinX, cMaxX, cMinY, cMaxY;
+    ASSERT_TRUE(contentBBox(frame, w, h, cMinX, cMaxX, cMinY, cMaxY));
+    long clipCounts[3]; double clipCxs[3];
+    colorStats(frame, w, h, cMinX, cMaxX, cMinY, cMaxY, clipCounts, clipCxs);
+    printf("[VIEWCLIP] clipped r=%ld g=%ld b=%ld bbox=[%u,%u]\n",
+           clipCounts[0], clipCounts[1], clipCounts[2], cMinX, cMaxX);
+
+    int collapsed = -1;
+    for (int c = 0; c < 3; ++c) {
+        if (clipCounts[c] < 5 && baseCounts[c] > 30) {
+            ASSERT_EQ(collapsed, -1) << "more than one color collapsed";
+            collapsed = c;
+        }
+    }
+    ASSERT_NE(collapsed, -1) << "no color collapsed — clip did not discard";
+    // 存留色计数基本保持
+    long survivorTotal = clipCounts[0] + clipCounts[1] + clipCounts[2];
+    ASSERT_GT(survivorTotal, 100) << "clip discarded everything (wrong normal/plane?)";
+
+    // WHERE：塌缩色基线质心在内容 bbox 的外侧三分之一（极端侧）——剖切是
+    // 方向性的，不是全图淡化。
+    double const collapsedCx = baseCxs[collapsed];
+    double const bboxMid = 0.5 * (bMinX + bMaxX);
+    bool const collapsedOnLeft = (collapsedCx < bboxMid);
+    double const third = (bMaxX - bMinX) / 3.0;
+    if (collapsedOnLeft)
+        ASSERT_LT(collapsedCx, bMinX + third) << "collapsed color not on the extreme left";
+    else
+        ASSERT_GT(collapsedCx, bMaxX - third) << "collapsed color not on the extreme right";
+    // bbox 从塌缩侧回退
+    if (collapsedOnLeft)
+        ASSERT_GT(cMinX, bMinX + 5) << "content bbox did not retreat from the clipped side";
+    else
+        ASSERT_LT(cMaxX, bMaxX - 5) << "content bbox did not retreat from the clipped side";
+
+    // --- 旗标语义：viewFlags.clipVolume=false → 不裁 ---
+    {
+        auto& style = view.getUeViewport()->GetView()->GetDisplayStyle();
+        auto p = style.getViewFlags().Properties();
+        p.clipVolume = false;
+        style.setViewFlags(dqCommon::ViewFlags(p));
+    }
+    view.getUeViewport()->InvalidateController();  // 旗标经 render plan 生效
+    spin3(400);
+    ASSERT_TRUE(readFrame(frame, w, h));
+    {
+        uint32_t fMinX, fMaxX, fMinY, fMaxY;
+        ASSERT_TRUE(contentBBox(frame, w, h, fMinX, fMaxX, fMinY, fMaxY));
+        long flagCounts[3]; double flagCxs[3];
+        colorStats(frame, w, h, fMinX, fMaxX, fMinY, fMaxY, flagCounts, flagCxs);
+        printf("[VIEWCLIP] flag-off r=%ld g=%ld b=%ld\n", flagCounts[0], flagCounts[1], flagCounts[2]);
+        ASSERT_GT(flagCounts[collapsed], 30) << "clipVolume=false should disable clipping";
+    }
+    // 恢复旗标
+    {
+        auto& style = view.getUeViewport()->GetView()->GetDisplayStyle();
+        auto p = style.getViewFlags().Properties();
+        p.clipVolume = true;
+        style.setViewFlags(dqCommon::ViewFlags(p));
+    }
+    view.getUeViewport()->InvalidateController();
+    spin3(400);
+
+    // --- 可逆：setViewClip(nullptr) → 塌缩色恢复 ---
+    view3d->setViewClip(nullptr);
+    spin3(400);
+    ASSERT_TRUE(readFrame(frame, w, h));
+    {
+        uint32_t r2MinX, r2MaxX, r2MinY, r2MaxY;
+        ASSERT_TRUE(contentBBox(frame, w, h, r2MinX, r2MaxX, r2MinY, r2MaxY));
+        long restoreCounts[3]; double restoreCxs[3];
+        colorStats(frame, w, h, r2MinX, r2MaxX, r2MinY, r2MaxY, restoreCounts, restoreCxs);
+        printf("[VIEWCLIP] restored r=%ld g=%ld b=%ld bbox=[%u,%u]\n",
+               restoreCounts[0], restoreCounts[1], restoreCounts[2], r2MinX, r2MaxX);
+        ASSERT_GT(restoreCounts[collapsed], 30) << "clearing the clip should restore the color";
+        // bbox 回到基线侧
+        if (collapsedOnLeft)
+            ASSERT_LT(r2MinX, cMinX) << "bbox did not extend back after clear";
+        else
+            ASSERT_GT(r2MaxX, cMaxX) << "bbox did not extend back after clear";
+    }
 
     view.close();
     spin3(200);

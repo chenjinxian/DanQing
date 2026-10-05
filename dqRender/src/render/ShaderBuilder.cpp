@@ -978,8 +978,12 @@ std::string ShaderBuilder::buildFragmentMain() const
 
         bool const hasClip = has(FragmentShaderComponent::ApplyClipping);
         if (hasClip) {
-            main += "    vec3 g_clipColor;\n";
-            main += "    bvec2 g_hasClipColor = applyClipping(baseColor);\n";
+            // 参考合同（ShaderBuilder.ts:1017-1020 + Clipping.ts:163）：
+            // g_clipColor（prelude 全局）+ g_hasClipColor（addGlobal 全局）——
+            // main 只赋值不声明（applyClipping 函数体写全局 g_clipColor）。
+            // M-P P-D：预移植版的局部声明归位（局部会遮蔽全局 → 函数体写入
+            // 的全局与 main 读的局部脱节）。
+            main += "    g_hasClipColor = applyClipping(baseColor);\n";
             main += "    if (g_hasClipColor.x) {\n";
             main += "        baseColor.rgb = g_clipColor;\n";
             main += "    } else {\n";

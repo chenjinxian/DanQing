@@ -48,32 +48,6 @@ vec3 computeLightingWithSpecular(vec3 normal, vec3 viewDir, Light light, float s
 }
 
 // ---------------------------------------------------------------------------
-// Clipping GLSL (Ported from: itwinjs-core glsl/Clipping.ts)
-// ---------------------------------------------------------------------------
-
-/// Clip plane evaluation
-inline char const* getClippingFunctions()
-{
-    return R"(
-uniform int u_numClipPlanes;
-uniform vec4 u_clipPlanes[6];
-
-float computeClipDistance(vec4 position) {
-    float minDist = 1.0;
-    for (int i = 0; i < u_numClipPlanes; i++) {
-        float dist = dot(position.xyz, u_clipPlanes[i].xyz) + u_clipPlanes[i].w;
-        minDist = min(minDist, dist);
-    }
-    return minDist;
-}
-
-bool isClipped(vec4 position) {
-    return computeClipDistance(position) < 0.0;
-}
-)";
-}
-
-// ---------------------------------------------------------------------------
 // Monochrome GLSL (Ported from: itwinjs-core glsl/Monochrome.ts)
 // ---------------------------------------------------------------------------
 

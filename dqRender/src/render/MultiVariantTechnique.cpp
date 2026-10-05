@@ -44,7 +44,9 @@ ShaderProgram* MultiVariantTechnique::getShader(TechniqueFlags const& flags)
     size_t index = computeShaderIndex(flags);
     if (index >= kVariantCount) return nullptr;
 
-    auto& slot = m_programs[index];
+    // M-P P-D：参考 VariedTechnique.getShader（Technique.ts:241-255）——
+    // numClipPlanes > 0 → clip 变体（builder 侧 addClipping）；否则 basic。
+    auto& slot = flags.hasClip() ? m_clipPrograms[index] : m_programs[index];
     if (!slot) {
         auto prog = std::make_unique<ShaderProgram>();
         m_compiler->buildProgram(*prog, flags);

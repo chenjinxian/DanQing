@@ -31,10 +31,33 @@ TargetImpl::TargetImpl(RenderSystemImpl& system, Techniques& techniques, ViewRec
     , m_commands(*this, m_branchStack, m_batchState)
     , m_compositor(std::make_unique<SceneCompositor>(*this, techniques))
     , m_decorationsState(BranchState::createForDecorations())
-    // BranchUniforms ctor（:78-81）：clipStack 挂 frustum.viewMatrix 与
+    // BranchUniforms ctor（:78-81）：clipStack 挂视矩阵与
     // _viewClipEnabled && viewFlags.clipVolume 门（lambda 惰性调用）。
-    , m_clipStack([this]() -> dqGeom::Transform const& { return getViewMatrix(); },
-                  [this]() { return m_viewClipEnabled && m_branchStack.getTop().getViewFlags().clipVolume; })
+    // EQUIVALENCE（§11.10，M-P P-D）：参考源 = target.uniforms.frustum.
+    // viewMatrix——DanQing 活路径该值恒 identity（changeViewMatrix 零调用，
+    // FrustumUniforms.h:283-292 登记的已知缺口），而 v_eyeSpace 的实际生产者
+    // 是 BranchStack 栈底 mv（u_mv·p）。以 栈底 mv·localToWorld⁻¹ 承载同一
+    // "视矩阵"语义（clip 平面与 v_eyeSpace 同空间——参考合同）；
+    // 发散 = 嵌套 branch 的 localToWorld≠identity 时仍取栈底（参考同取
+    // 纯视图，无 branch 依赖——本式即纯视图的等价重表达）；
+    // 验证法 = TileTreeRender.ViewClipPlaneDiscardsHalfspace 像素锁。
+    , m_clipStack([this]() -> dqGeom::Transform const& {
+          BranchState const& bottom = m_branchStack.getBottom();
+          // col-major mv[16] → Transform（行主 Matrix3d + origin）。
+          auto const& mv = bottom.getMv();
+          dqGeom::Matrix3d const mat = dqGeom::Matrix3d::CreateRowValues(
+              mv[0], mv[4], mv[8],
+              mv[1], mv[5], mv[9],
+              mv[2], mv[6], mv[10]);
+          dqGeom::Transform const mvT(dqGeom::Point3d::From(mv[12], mv[13], mv[14]), mat);
+          dqGeom::Transform modelInv;
+          if (bottom.getLocalToWorld().Inverse(modelInv))
+              m_clipViewMatrixScratch = mvT.MultiplyTransform(modelInv);
+          else
+              m_clipViewMatrixScratch = mvT;  // 奇异模型变换 → 按 mv 原样（退化护栏）
+          return m_clipViewMatrixScratch;
+      },
+      [this]() { return m_viewClipEnabled && m_branchStack.getTop().getViewFlags().clipVolume; })
 {
     // 生产上传通道（参考 Texture2DHandle 全局 GL 门面 → 注入 driver）。
     m_clipStack.setDriver(&m_system.getDriver());

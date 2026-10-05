@@ -174,6 +174,14 @@ public:
     {
         (void)th; (void)wrapS; (void)wrapT;
     }
+    /// Set min/mag filter (raw GL enums: GL_NEAREST 0x2600 / GL_LINEAR 0x2601).
+    /// M-P P-D：数据纹理（clip 平面表）需 NEAREST——RGBA32F 非 core-filterable，
+    /// createTexture 的缺省 LINEAR 使纹理不完整 → texelFetch 未定义。参考
+    /// Texture.ts:87-88 同门面。
+    virtual void setTextureFilters(TextureHandle th, uint32_t minFilter, uint32_t magFilter) noexcept
+    {
+        (void)th; (void)minFilter; (void)magFilter;
+    }
     virtual TextureHandle createTextureView(TextureHandle src, uint8_t baseLevel,
                                             uint8_t levelCount) noexcept = 0;
     virtual void generateMipmaps(TextureHandle th) noexcept = 0;

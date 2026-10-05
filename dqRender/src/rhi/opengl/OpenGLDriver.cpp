@@ -1491,6 +1491,7 @@ static GLenum toGLPixelType(TextureFormat format) noexcept
         case TextureFormat::RGB16F:
         case TextureFormat::RGBA16F:
         case TextureFormat::R32F:
+        case TextureFormat::RGBA32F:
             return GL_FLOAT;
         default:
             return GL_UNSIGNED_BYTE;
@@ -1521,6 +1522,9 @@ static std::pair<GLenum, GLenum> toGLTextureFormat(TextureFormat format) noexcep
         case TextureFormat::RGB16F: return {GL_RGB16F, GL_RGB};
         // 64-bits per element
         case TextureFormat::RGBA16F: return {GL_RGBA16F, GL_RGBA};
+        case TextureFormat::RGBA32F: return {GL_RGBA32F, GL_RGBA};
+        case TextureFormat::RGBA32UI: return {GL_RGBA32UI, GL_RGBA_INTEGER};
+        case TextureFormat::RGBA32I: return {GL_RGBA32I, GL_RGBA_INTEGER};
         // BGRA8 — not in Filament, added for Metal/Vulkan compatibility
         case TextureFormat::BGRA8: return {GL_RGBA8, GL_BGRA};
         default: return {GL_RGBA8, GL_RGBA};
@@ -1646,16 +1650,23 @@ void OpenGLDriver::setTextureData(TextureHandle th, uint32_t level,
     if (!tex || !tex->id) return;
 
     auto [internalFormat, pixelFormat] = toGLTextureFormat(tex->format);
+    // M-P P-D：clientType 从**纹理自身格式族**推导（参考 texSubImage2D 的
+    // type-匹配-internalformat 语义；RGBA32F 数据纹理 → GL_FLOAT）。不读
+    // descriptor 的 format/type 字段——既有调用方 TextureHandle.cpp:33 把
+    // DanQing TextureFormat 枚举值（非 GL 枚举）塞 format 字段，尊重它会
+    // 传无效枚举给 glTexSubImage2D → 贴纹上传静默失败（minimal 全黑 saga）。
+    GLenum const clientFormat = pixelFormat;
+    GLenum const clientType = toGLPixelType(tex->format);
     m_state.bindTexture(0, tex->glTarget, tex->id);
     if (tex->glTarget == GL_TEXTURE_3D || tex->glTarget == GL_TEXTURE_2D_ARRAY) {
         glTexSubImage3D(tex->glTarget, static_cast<GLint>(level),
                         static_cast<GLint>(x), static_cast<GLint>(y), static_cast<GLint>(z),
                         static_cast<GLsizei>(width), static_cast<GLsizei>(height),
                         static_cast<GLsizei>(depth),
-                        pixelFormat, GL_UNSIGNED_BYTE, data.buffer());
+                        clientFormat, clientType, data.buffer());
     } else {
         glTexSubImage2D(tex->glTarget, level, x, y, width, height,
-                        pixelFormat, GL_UNSIGNED_BYTE, data.buffer());
+                        clientFormat, clientType, data.buffer());
     }
     // TEMP-DIAG（M-M(1) 方向光缺失 saga）：DANQING_LUT_DUMP=1 时回读宽>256 的
     // 2D 纹理（顶点 LUT 形态）首 128 字节——与 tile 的 bvVertex 字节对拍（上传
@@ -1712,6 +1723,14 @@ void OpenGLDriver::setTextureWrapMode(TextureHandle th, uint32_t wrapS, uint32_t
     glTexParameteri(tex->glTarget, GL_TEXTURE_WRAP_S, static_cast<GLint>(wrapS));
     glTexParameteri(tex->glTarget, GL_TEXTURE_WRAP_T, static_cast<GLint>(wrapT));
     m_state.bindTexture(0, tex->glTarget, 0);
+}
+void OpenGLDriver::setTextureFilters(TextureHandle th, uint32_t minFilter, uint32_t magFilter) noexcept
+{
+    auto* tex = m_handleAllocator.handle_cast<GLTexture, HwTexture>(th);
+    if (!tex || !tex->id) return;
+    m_state.bindTexture(0, tex->glTarget, tex->id);
+    glTexParameteri(tex->glTarget, GL_TEXTURE_MIN_FILTER, static_cast<GLint>(minFilter));
+    glTexParameteri(tex->glTarget, GL_TEXTURE_MAG_FILTER, static_cast<GLint>(magFilter));
 }
 
 // ---------------------------------------------------------------------------
