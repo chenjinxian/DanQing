@@ -802,7 +802,10 @@ void RenderCommands::pushAndPop(DrawCommand& push, DrawCommand& pop,
                     break;
                 }
                 case DrawCommandType::PushClip: {
-                    cmds.push_back(std::make_unique<PushClipCommand>());
+                    // M-P P-C：克隆携带体积（原无参克隆恒丢体积——动画 clip 路径
+                    // 的既有缺陷修复，RenderCommands 克隆面）。
+                    auto& src = static_cast<PushClipCommand&>(push);
+                    cmds.push_back(std::make_unique<PushClipCommand>(src.getClipVolumeRef()));
                     break;
                 }
                 case DrawCommandType::PushState: {
@@ -834,7 +837,10 @@ void RenderCommands::pushAndPop(DrawCommand& push, DrawCommand& pop,
                     break;
                 }
                 case DrawCommandType::PushClip: {
-                    cmds.push_back(std::make_unique<PushClipCommand>());
+                    // M-P P-C：克隆携带体积（原无参克隆恒丢体积——动画 clip 路径
+                    // 的既有缺陷修复，RenderCommands 克隆面）。
+                    auto& src = static_cast<PushClipCommand&>(push);
+                    cmds.push_back(std::make_unique<PushClipCommand>(src.getClipVolumeRef()));
                     break;
                 }
                 case DrawCommandType::PushState: {

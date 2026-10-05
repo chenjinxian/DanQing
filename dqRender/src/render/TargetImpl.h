@@ -19,6 +19,7 @@
 #include "ShadowUniforms.h" // SolarShadowMap
 #include "Batch.h"          // BatchState
 #include "BranchStack.h"    // BranchStack
+#include "ClipStack.h"      // ClipStack（view clip 栈——M-P P-C）
 #include "dqRender/rhi/Driver.h"
 #include "dqRender/rhi/Handle.h"
 
@@ -382,6 +383,26 @@ public:
     /// Ported from: itwinjs-core Target.uniforms.frustum.viewMatrix
     dqGeom::Transform const& getViewMatrix() const noexcept { return m_uniforms.frustum.getViewMatrix(); }
 
+    // --- View clip stack（M-P P-C——参考 BranchUniforms.clipStack 的 Target 侧归属）---
+    /// Ported from: itwinjs-core BranchUniforms.clipStack（构造 :78-81 —— getTransform
+    /// = frustum.viewMatrix、wantViewClip = _viewClipEnabled && top.viewFlags.clipVolume）。
+    ClipStack& getClipStack() noexcept { return m_clipStack; }
+
+    /// Ported from: itwinjs-core Target.pushViewClip（Target.ts:351-356 →
+    /// BranchUniforms.pushViewClip :136-142——置 _viewClipEnabled，栈底视图
+    /// clip 生效[ClipStack.startIndex 从 0 起]）。
+    void pushViewClip();
+    /// Ported from: itwinjs-core Target.popViewClip（:358-361）。
+    void popViewClip();
+
+    /// Ported from: itwinjs-core BranchUniforms.updateViewClip（BranchUniforms.ts
+    /// :153-155 → clipStack.setViewClip；Target.changeRenderPlan :519 消费）。
+    void updateViewClip(dqGeom::ClipVector const* clip, dqCommon::ClipStyle const& style);
+
+    /// Ported from: itwinjs-core Target.isRangeOutsideActiveVolume（Target.ts:361-363
+    /// → clipStack.isRangeClipped(range, currentTransform)）。
+    bool isRangeOutsideActiveVolume(dqGeom::Range3d const& range);
+
 private:
     bool glTimerActive() const noexcept;            // isGLTimerSupported + resultsCallback
 
@@ -525,6 +546,11 @@ private:
     // Target uniforms aggregator (Ported from: itwinjs-core Target.uniforms)
     // Composes frustum/viewRect/lights/style/hilite/branch/batch.
     TargetUniforms m_uniforms;
+
+    // View clip stack（M-P P-C——BranchUniforms.clipStack 对应物；构造 lambda 惰性
+    // 调用 getViewMatrix/wantViewClip）。m_viewClipEnabled = pushViewClip 门。
+    bool m_viewClipEnabled = false;
+    ClipStack m_clipStack;
 
     // 2D canvas decoration backend (lazy). Records CanvasContext strokes and
     // rasterizes them as GL_LINES at the end of the drawn frame.

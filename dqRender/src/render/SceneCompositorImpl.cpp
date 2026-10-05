@@ -573,6 +573,9 @@ void SceneCompositor::compositeOit(rhi::Driver& driver)
 // draw — main rendering pipeline (16 steps)
 // Ported from: itwinjs-core Compositor.draw() (lines 1410-1519)
 // ---------------------------------------------------------------------------
+// M-P P-C：转发 TargetImpl 的 clip 栈（TargetImpl 在此 cpp 完整）。
+ClipStack& SceneCompositor::getClipStack() { return m_target.getClipStack(); }
+
 void SceneCompositor::draw(RenderCommands& commands)
 {
     auto& driver = m_target.getDriver();
@@ -644,6 +647,10 @@ void SceneCompositor::draw(RenderCommands& commands)
     m_target.beginPerfMetricRecord("Render Background Map");  // :1437
     renderBackgroundMap(commands, needComposite);
     m_target.endPerfMetricRecord();
+
+    // Enable Clipping（SceneCompositor.ts:1441-1444——pushViewClip 使栈底视图
+    // clip 生效；popViewClip 与 Overlay Layers 后配对，M-P P-C）。
+    m_target.pushViewClip();
 
     // Step 6: Render volume classification
     m_target.beginPerfMetricRecord("Render VolumeClassification");  // :1450
@@ -759,6 +766,10 @@ void SceneCompositor::draw(RenderCommands& commands)
     m_target.beginPerfMetricRecord("Render Overlay Layers");  // 参考同名
     renderLayers(commands, false, RenderPass::OverlayLayers);
     m_target.endPerfMetricRecord();
+
+    // SceneCompositor.ts:1515——Overlay Layers 后 popViewClip（与 :1442 的
+    // pushViewClip 配对；M-P P-C）。
+    m_target.popViewClip();
 
     // TEMP-DIAG：帧尾主 RT 状态（与 postComposite 对照，锁定 composite 之后
     // 是否还有步骤改写主 RT）。
@@ -2417,16 +2428,15 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                 break;
             case DrawCommandType::PushClip: {
                 // Ported from: itwinjs-core DrawCommand.ts PushClipCommand.execute()
+                //（M-P P3：栈归 Target——经 getClipStack 转发；体积经 RefPtr）
                 auto* clipCmd = static_cast<PushClipCommand*>(cmd.get());
-                auto* clipVol = clipCmd->getClipVolume();
-                if (clipVol) {
-                    m_clipStack.push(*clipVol);
-                }
+                if (clipCmd->getClipVolume() != nullptr)
+                    m_target.getClipStack().push(clipCmd->getClipVolumeRef());
                 break;
             }
             case DrawCommandType::PopClip:
                 // Ported from: itwinjs-core DrawCommand.ts PopClipCommand.execute()
-                m_clipStack.pop();
+                m_target.getClipStack().pop();
                 break;
             case DrawCommandType::PushState: {
                 // Push a BranchState onto the stack (used for decorations).

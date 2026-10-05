@@ -92,8 +92,9 @@ public:
     /// Get the batch state.
     BatchState& getBatchState() { return m_batchState; }
 
-    /// Get the clip stack.
-    ClipStack& getClipStack() { return m_clipStack; }
+    /// Get the clip stack（M-P P-C：归属 TargetImpl——参考 BranchUniforms.clipStack；
+    /// compositor 转发。原 compositor 本地简化栈移除）。
+    ClipStack& getClipStack();
 
     /// Set the hilite color (RGB).
     /// 参考默认色 = ColorDef.from(0x23, 0xbb, 0xfc)（Hilite.ts:53）。hilite LUT
@@ -204,7 +205,6 @@ private:
     // (draw-time) must see ONE shared registry, or batch-registered hilite/uniform state
     // never reaches the dispatch.
     BatchState& m_batchState;
-    ClipStack m_clipStack;
     BranchUniforms m_branchUniforms;  // per-geometry matrix computation
     SyncObserver m_branchObserver;    // skip redundant BranchUniforms updates
 

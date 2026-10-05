@@ -31,7 +31,14 @@ TargetImpl::TargetImpl(RenderSystemImpl& system, Techniques& techniques, ViewRec
     , m_commands(*this, m_branchStack, m_batchState)
     , m_compositor(std::make_unique<SceneCompositor>(*this, techniques))
     , m_decorationsState(BranchState::createForDecorations())
+    // BranchUniforms ctor（:78-81）：clipStack 挂 frustum.viewMatrix 与
+    // _viewClipEnabled && viewFlags.clipVolume 门（lambda 惰性调用）。
+    , m_clipStack([this]() -> dqGeom::Transform const& { return getViewMatrix(); },
+                  [this]() { return m_viewClipEnabled && m_branchStack.getTop().getViewFlags().clipVolume; })
 {
+    // 生产上传通道（参考 Texture2DHandle 全局 GL 门面 → 注入 driver）。
+    m_clipStack.setDriver(&m_system.getDriver());
+
     // Create a render target for this viewport
     m_renderTarget = m_system.getDriver().createRenderTarget(
         rhi::TargetBufferFlags::ALL, rect.width(), rect.height(), 1, 1);
@@ -686,6 +693,37 @@ void TargetImpl::changeRenderPlan(ViewFlags const& viewFlags, bool is3d,
     //（Target.ts:533——vf + is3d + hline 透传；BranchState.ts:93-96 消费
     // edgeSettings.init(hline)）
     m_branchStack.changeRenderPlan(viewFlags, is3d, hline);
+}
+
+// ---------------------------------------------------------------------------
+// View clip stack（M-P P-C）
+// ---------------------------------------------------------------------------
+// Ported from: itwinjs-core Target.pushViewClip（Target.ts:351-356 →
+// BranchUniforms.pushViewClip :128-134）。
+void TargetImpl::pushViewClip() {
+    assert(!m_viewClipEnabled);
+    m_viewClipEnabled = true;
+    // readPixels 双栈断言（:132-133）不适配——DanQing readPixels 路径未推
+    // view clip（P-D 收尾时随 pick 视图接线核实）。
+}
+
+// Ported from: itwinjs-core Target.popViewClip（Target.ts:358-361）。
+void TargetImpl::popViewClip() {
+    assert(m_viewClipEnabled);
+    m_viewClipEnabled = false;
+}
+
+// Ported from: itwinjs-core BranchUniforms.updateViewClip（BranchUniforms.ts:153-155）。
+void TargetImpl::updateViewClip(dqGeom::ClipVector const* clip, dqCommon::ClipStyle const& style) {
+    m_clipStack.setViewClip(clip, style);
+}
+
+// Ported from: itwinjs-core Target.isRangeOutsideActiveVolume（Target.ts:361-363）。
+// EQUIVALENCE（§11.10）：参考的 this.currentTransform（Target 的当前模型 Transform，
+// BranchUniforms.update 消费同一值）→ DanQing branch 栈顶 getLocalToWorld；
+// 发散=无（同一 transform 语义）；验证法=ClipStackTest（isRangeClipped 直接锁）。
+bool TargetImpl::isRangeOutsideActiveVolume(dqGeom::Range3d const& range) {
+    return m_clipStack.isRangeClipped(range, m_branchStack.getTop().getLocalToWorld());
 }
 
 // ---------------------------------------------------------------------------

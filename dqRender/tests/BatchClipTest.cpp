@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// DanQing dqRender — Batch, ClipVolume, ClipStack, BranchStack tests
+// DanQing dqRender — Batch, BranchStack tests（clip 族参考移植见 ClipVolumeStackTest.cpp——M-P P-C）
 // Authored: no reference test exists in itwinjs-core for batch clip rendering
 
 #include "render/Batch.h"
 #include "render/BranchStack.h"
-#include "render/ClipStack.h"
-#include "render/ClipVolume.h"
 #include "render/Graphic.h"
 #include "render/ShaderBuilder.h"
 #include "render/SurfaceVariantCompiler.h"
@@ -87,135 +85,6 @@ TEST(BatchStateTest, Reset)
 
     state.reset();
     EXPECT_EQ(state.getCurrentBatchId(), 0u);
-}
-
-// ============================================================================
-// ClipVolume tests
-// ============================================================================
-
-// Authored: no reference test exists in itwinjs-core for batch clip rendering
-TEST(ClipVolumeTest, EmptyVolume)
-{
-    ClipVolume vol;
-    EXPECT_TRUE(vol.isEmpty());
-    EXPECT_EQ(vol.getPlaneCount(), 0u);
-}
-
-// Authored: no reference test exists in itwinjs-core for batch clip rendering
-TEST(ClipVolumeTest, SetPlanes)
-{
-    ClipVolume vol;
-    std::vector<ClipPlane> planes = {
-        ClipPlane(1.0f, 0.0f, 0.0f, -5.0f),
-        ClipPlane(0.0f, 1.0f, 0.0f, -3.0f),
-    };
-    vol.setPlanes(planes);
-
-    EXPECT_FALSE(vol.isEmpty());
-    EXPECT_EQ(vol.getPlaneCount(), 2u);
-}
-
-// Authored: no reference test exists in itwinjs-core for batch clip rendering
-TEST(ClipVolumeTest, buildTextureData)
-{
-    ClipVolume vol;
-    std::vector<ClipPlane> planes = {
-        ClipPlane(1.0f, 0.0f, 0.0f, -5.0f),
-        ClipPlane(0.0f, 1.0f, 0.0f, -3.0f),
-    };
-    vol.setPlanes(planes);
-
-    auto data = vol.buildTextureData();
-    EXPECT_EQ(data.size(), 8u);  // 2 planes × 4 floats
-
-    // First plane
-    EXPECT_FLOAT_EQ(data[0], 1.0f);
-    EXPECT_FLOAT_EQ(data[1], 0.0f);
-    EXPECT_FLOAT_EQ(data[2], 0.0f);
-    EXPECT_FLOAT_EQ(data[3], -5.0f);
-
-    // Second plane
-    EXPECT_FLOAT_EQ(data[4], 0.0f);
-    EXPECT_FLOAT_EQ(data[5], 1.0f);
-    EXPECT_FLOAT_EQ(data[6], 0.0f);
-    EXPECT_FLOAT_EQ(data[7], -3.0f);
-}
-
-// Authored: no reference test exists in itwinjs-core for batch clip rendering
-TEST(ClipVolumeTest, EmptyTextureData)
-{
-    ClipVolume vol;
-    auto data = vol.buildTextureData();
-    EXPECT_EQ(data.size(), 4u);  // padded to minimum
-}
-
-// ============================================================================
-// ClipStack tests
-// ============================================================================
-
-// Authored: no reference test exists in itwinjs-core for batch clip rendering
-TEST(ClipStackTest, EmptyStack)
-{
-    ClipStack stack;
-    EXPECT_TRUE(stack.isEmpty());
-    EXPECT_EQ(stack.getActivePlaneCount(), 0u);
-}
-
-// Authored: no reference test exists in itwinjs-core for batch clip rendering
-TEST(ClipStackTest, PushPop)
-{
-    ClipStack stack;
-    ClipVolume vol1;
-    vol1.setPlanes({ClipPlane(1, 0, 0, -5)});
-    ClipVolume vol2;
-    vol2.setPlanes({ClipPlane(0, 1, 0, -3), ClipPlane(0, 0, 1, -1)});
-
-    stack.push(vol1);
-    EXPECT_FALSE(stack.isEmpty());
-    EXPECT_EQ(stack.getActivePlaneCount(), 1u);
-
-    stack.push(vol2);
-    EXPECT_EQ(stack.getActivePlaneCount(), 3u);
-
-    stack.pop();
-    EXPECT_EQ(stack.getActivePlaneCount(), 1u);
-
-    stack.pop();
-    EXPECT_TRUE(stack.isEmpty());
-}
-
-// Authored: no reference test exists in itwinjs-core for batch clip rendering
-TEST(ClipStackTest, CombinedPlanes)
-{
-    ClipStack stack;
-    ClipVolume vol1;
-    vol1.setPlanes({ClipPlane(1, 0, 0, -5)});
-    ClipVolume vol2;
-    vol2.setPlanes({ClipPlane(0, 1, 0, -3)});
-
-    stack.push(vol1);
-    stack.push(vol2);
-
-    auto combined = stack.getCombinedPlanes();
-    EXPECT_EQ(combined.size(), 2u);
-    EXPECT_FLOAT_EQ(combined[0].nx, 1.0f);
-    EXPECT_FLOAT_EQ(combined[1].ny, 1.0f);
-}
-
-// Authored: no reference test exists in itwinjs-core for batch clip rendering
-TEST(ClipStackTest, CombinedTextureData)
-{
-    ClipStack stack;
-    ClipVolume vol1;
-    vol1.setPlanes({ClipPlane(1, 0, 0, -5)});
-    ClipVolume vol2;
-    vol2.setPlanes({ClipPlane(0, 1, 0, -3)});
-
-    stack.push(vol1);
-    stack.push(vol2);
-
-    auto data = stack.buildCombinedTextureData();
-    EXPECT_EQ(data.size(), 8u);  // 2 planes × 4 floats
 }
 
 // ============================================================================

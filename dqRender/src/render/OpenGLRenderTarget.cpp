@@ -137,6 +137,9 @@ void OpenGLRenderTarget::changeRenderPlan(RenderPlan const& plan)
     dqCommon::ViewFlagsProperties vf = plan.viewFlags.Properties();
     if (!plan.is3d)
         vf.renderMode = dqCommon::RenderMode::Wireframe;
+    // View clip（M-P P-C）——Target.ts:519（updateViewClip 在 branch.
+    // changeRenderPlan :533 之前）。
+    m_impl->updateViewClip(plan.clip, plan.clipStyle);
     m_impl->changeRenderPlan(vf, plan.is3d,
                              plan.hline.has_value() ? &*plan.hline : nullptr);
 

@@ -277,6 +277,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/PolyfaceGraphicTest.cpp
         tests/SurfaceShaderTest.cpp
         tests/BatchClipTest.cpp
+        tests/ClipVolumeStackTest.cpp  # M-P P-C：ClipVolume/ClipStack（参考 webgl 测试移植）
         tests/TextureInstancingTest.cpp
         tests/RenderingPipelineTest.cpp
         tests/P2P3FeaturesTest.cpp

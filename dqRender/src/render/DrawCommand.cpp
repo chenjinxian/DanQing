@@ -159,9 +159,9 @@ void PopBatchCommand::execute(ShaderProgramExecutor& exec)
 void PushClipCommand::execute(ShaderProgramExecutor& exec)
 {
     if (m_clipVolume) {
-        auto& target = exec.getTarget();
-        auto& compositor = static_cast<SceneCompositor&>(target.getCompositor());
-        compositor.getClipStack().push(*m_clipVolume);
+        // M-P P3：栈归 Target（参考 BranchUniforms.clipStack）——push 引用计数
+        // 体积（原值拷贝 push）。
+        exec.getTarget().getClipStack().push(m_clipVolume);
     }
 }
 
@@ -171,9 +171,7 @@ void PushClipCommand::execute(ShaderProgramExecutor& exec)
 // ---------------------------------------------------------------------------
 void PopClipCommand::execute(ShaderProgramExecutor& exec)
 {
-    auto& target = exec.getTarget();
-    auto& compositor = static_cast<SceneCompositor&>(target.getCompositor());
-    compositor.getClipStack().pop();
+    exec.getTarget().getClipStack().pop();
 }
 
 // ---------------------------------------------------------------------------

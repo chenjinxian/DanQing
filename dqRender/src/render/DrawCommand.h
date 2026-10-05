@@ -7,6 +7,7 @@
 #pragma once
 
 #include <cstdint>
+#include "ClipVolume.h"  // PushClipCommand 的 RefPtr<ClipVolume>（M-P P-C）
 #include "ViewFlags.h"  // Must be before namespace opening (includes dqCommon headers)
 
 #ifndef BEGIN_DQ_RENDER_NAMESPACE
@@ -145,20 +146,21 @@ public:
 // PushClipCommand / PopClipCommand — clip volume state
 // (Ported from: itwinjs-core DrawCommand.ts PushClip/PopClip)
 // ---------------------------------------------------------------------------
-class ClipVolume;
-
 class PushClipCommand : public DrawCommand {
 public:
     PushClipCommand() : DrawCommand(DrawCommandType::PushClip) {}
-    explicit PushClipCommand(ClipVolume* vol)
-        : DrawCommand(DrawCommandType::PushClip), m_clipVolume(vol) {}
+    // M-P P-C：体积经 RefPtr 持有（参考 GC 引用语义；原裸指针 + 克隆丢体积缺陷
+    // 一并修复——RenderCommands::pushAndPop 两处）。
+    explicit PushClipCommand(dqBase::RefPtr<ClipVolume> vol)
+        : DrawCommand(DrawCommandType::PushClip), m_clipVolume(std::move(vol)) {}
 
-    ClipVolume* getClipVolume() const noexcept { return m_clipVolume; }
+    ClipVolume* getClipVolume() const noexcept { return m_clipVolume.Get(); }
+    dqBase::RefPtr<ClipVolume> const& getClipVolumeRef() const noexcept { return m_clipVolume; }
 
     void execute(ShaderProgramExecutor& executor) override;
 
 private:
-    ClipVolume* m_clipVolume = nullptr;
+    dqBase::RefPtr<ClipVolume> m_clipVolume;
 };
 
 class PopClipCommand : public DrawCommand {

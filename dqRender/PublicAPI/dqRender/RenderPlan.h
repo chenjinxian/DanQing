@@ -9,12 +9,14 @@
 
 #include "Export.h"
 
+#include <dqCommon/ClipStyle.h>
 #include <dqCommon/DisplayStyleSettings.h>
 #include <dqCommon/FeatureOverrides.h>
 #include <dqCommon/Frustum.h>
 #include <dqCommon/HiddenLine.h>
 #include <dqCommon/LightSettings.h>
 #include <dqCommon/ViewFlags.h>
+#include <dqGeom/ClipVector.h>
 
 #include <cstdint>
 #include <optional>
@@ -86,6 +88,19 @@ struct DQ_RENDER_EXPORT RenderPlan {
     // 的最后一跳）。
     std::optional<dqCommon::HiddenLineSettings> hline;
 
+    // View clip（视图剖切体）。
+    // Ported from: itwinjs-core RenderPlan.ts:56（`readonly clip?: ClipVector`）
+    // + :122 填充（`clip: view.getViewClip()`）+ Target.ts:519 消费
+    //（`uniforms.branch.updateViewClip(plan.clip, plan.clipStyle)`）。
+    // §3.4 适配：TS 对象引用 → 借用裸指针（ViewState 持有，ClipStack 以几何
+    // 同一性短路替换——参考生命周期语义）。M-P P-C。
+    dqGeom::ClipVector const* clip = nullptr;
+
+    // Clip style（剖切配色/交线风格）。
+    // Ported from: itwinjs-core RenderPlan.ts:57（`readonly clipStyle: ClipStyle`）
+    // + :123 填充（`style.settings.clipStyle`）。M-P P-C。
+    dqCommon::ClipStyle clipStyle;
+
     // Check if this plan equals another (for change detection)
     bool equals(RenderPlan const& rhs) const {
         if (!viewFlags.equals(rhs.viewFlags)) return false;
@@ -108,6 +123,11 @@ struct DQ_RENDER_EXPORT RenderPlan {
         //（HiddenLine.ts:221-228）。
         if (hline.has_value() != rhs.hline.has_value()) return false;
         if (hline.has_value() && !hline->equals(*rhs.hline)) return false;
+        // clip 段（RenderPlan.ts:56——M-P P-C）：几何同一性（ViewState 持有、
+        // setViewClip 恒等短路替换——指针比较充分，同 featureOverrides 模式）。
+        if (clip != rhs.clip) return false;
+        // clipStyle 段（RenderPlan.ts:57——M-P P-C）。
+        if (!clipStyle.equals(rhs.clipStyle)) return false;
         // Feature overrides pointer comparison is sufficient
         // (overrides are rebuilt when they change)
         if (featureOverrides != rhs.featureOverrides) return false;

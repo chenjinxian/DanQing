@@ -2210,6 +2210,14 @@ void Viewport::ValidateRenderPlan()
             newPlan.hline = style.getSettings().getHiddenLineSettings();
     }
 
+    // View clip + clip style（M-P P-C）。
+    // Ported from: itwinjs-core RenderPlan.ts:122-123——
+    //   clip: view.getViewClip(), clipStyle: style.settings.clipStyle
+    //（clip 为借用指针：ViewState 持有；Target 侧 ClipStack 以几何同一性短路）。
+    newPlan.clip = m_view ? m_view->getViewClip().Get() : nullptr;
+    if (m_view)
+        newPlan.clipStyle = m_view->GetDisplayStyle().getClipStyle();
+
     // Attach feature overrides
     newPlan.featureOverrides = &m_featureOverrides;
 
