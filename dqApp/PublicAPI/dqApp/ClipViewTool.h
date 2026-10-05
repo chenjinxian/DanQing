@@ -238,6 +238,10 @@ class DQ_APP_EXPORT ViewClipClearTool final : public ViewClipTool {
 public:
     const char* getToolId() const override { return "ViewClip.Clear"; }
 
+    /// Ported from: ctor 继承（参考子类未声明 ctor——继承基类
+    /// constructor(clipEventHandler?) :78；C++ using 继承构造承载）。
+    using ViewClipTool::ViewClipTool;
+
     /// Ported from: isCompatibleViewport (:449 —— hasClip 门)
     bool isCompatibleViewport(Viewport* vp) const;
 
@@ -282,6 +286,10 @@ class DQ_APP_EXPORT ViewClipByShapeTool : public ViewClipTool {
 public:
     const char* getToolId() const override { return "ViewClip.ByShape"; }
 
+    /// Ported from: ctor 继承（参考子类未声明 ctor——继承基类
+    /// constructor(clipEventHandler?) :78；C++ using 继承构造承载）。
+    using ViewClipTool::ViewClipTool;
+
     /// Ported from: orientation (:571-574)
     ContextRotationId orientation() const { return m_orientation; }
     void setOrientation(ContextRotationId option) { m_orientation = option; }
@@ -313,6 +321,10 @@ protected:
 class DQ_APP_EXPORT ViewClipByRangeTool : public ViewClipTool {
 public:
     const char* getToolId() const override { return "ViewClip.ByRange"; }
+
+    /// Ported from: ctor 继承（参考子类未声明 ctor——继承基类
+    /// constructor(clipEventHandler?) :78；C++ using 继承构造承载）。
+    using ViewClipTool::ViewClipTool;
 
     /// Ported from: getClipRange (:840-852 —— Top 上下文旋转基 + 逆变换
     /// 两角点；EQUIVALENCE：AccuDraw ACS 锁 → 世界 Top 恒等基）

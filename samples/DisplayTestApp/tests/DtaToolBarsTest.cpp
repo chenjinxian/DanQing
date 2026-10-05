@@ -254,8 +254,9 @@ TEST(DtaToolBarsAnalysis, AnalysisUndoRedoEnabledRestDisabled)
         EXPECT_EQ(acts[i]->text(), texts[i]) << i;
     EXPECT_TRUE(acts[0]->isEnabled());   // Undo → View.Undo 工具（ViewTool.ts:4111-4120）
     EXPECT_TRUE(acts[1]->isEnabled());   // Redo → View.Redo 工具（ViewTool.ts:4125-4134）
+    EXPECT_TRUE(acts[3]->isEnabled());   // M-P P-G：Sectioning → SectionsPanel 弹出（Viewer.ts:390-393）
     EXPECT_TRUE(acts[5]->isEnabled());   // M-O(2) I10：Overrides → FeatureOverridesPanel 弹出（live）
-    for (int i : {2, 3, 4, 6, 7, 8})
+    for (int i : {2, 4, 6, 7, 8})
         EXPECT_FALSE(acts[i]->isEnabled()) << texts[i];
 }
 

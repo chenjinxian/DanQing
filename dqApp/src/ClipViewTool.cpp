@@ -363,20 +363,21 @@ bool ViewClipClearTool::doClipClear(Viewport& viewport)
 }
 
 // Ported from: onPostInstall (:462-466 —— targetView 有 clip 则安装即清).
-// §3.4：targetView → ToolAdmin 安装目标视口（DanQing 以 ToolAdmin 当前活动
-// 视口承载——无安装期槽，工具事件流以 ev.viewport 为准；安装即清路径由
-// run() 后 host 驱动，见 DtaTools wiring）。
+// §3.4：targetView = PrimitiveTool 公有字段（PrimitiveTool.ts:27）——DanQing
+// 以宿主安装位赋值承载（面板/工具安装点；参考经 ToolAdmin 安装路径赋值）。
 void ViewClipClearTool::onPostInstall()
 {
     ViewClipTool::onPostInstall();
+    if (targetView != nullptr)
+        doClipClear(*targetView);
 }
 
-// Ported from: onDataButtonDown (:468-473).
-EventHandled ViewClipClearTool::onDataButtonDown(BeButtonEvent const& ev)
+// Ported from: onDataButtonDown (:468-473 —— targetView 面).
+EventHandled ViewClipClearTool::onDataButtonDown(BeButtonEvent const& /*ev*/)
 {
-    if (ev.viewport == nullptr)
+    if (targetView == nullptr)
         return EventHandled::No;
-    return doClipClear(*ev.viewport) ? EventHandled::Yes : EventHandled::No;
+    return doClipClear(*targetView) ? EventHandled::Yes : EventHandled::No;
 }
 
 // ---------------------------------------------------------------------------
@@ -386,17 +387,17 @@ EventHandled ViewClipClearTool::onDataButtonDown(BeButtonEvent const& ev)
 // Ported from: onDataButtonDown (:545-558).
 EventHandled ViewClipByPlaneTool::onDataButtonDown(BeButtonEvent const& ev)
 {
-    Viewport* targetView = ev.viewport;
-    if (targetView == nullptr)
+    Viewport* const targetViewport = ev.viewport;  // 参考 this.targetView（EQUIVALENCE：ev.viewport 承载）
+    if (targetViewport == nullptr)
         return EventHandled::No;
-    std::optional<dqGeom::Vector3d> const normal = getPlaneInwardNormal(m_orientation, *targetView);
+    std::optional<dqGeom::Vector3d> const normal = getPlaneInwardNormal(m_orientation, *targetViewport);
     if (!normal.has_value())
         return EventHandled::No;
-    enableClipVolume(*targetView);
-    if (!doClipToPlane(*targetView, ev.point, *normal, m_clearExistingPlanes))
+    enableClipVolume(*targetViewport);
+    if (!doClipToPlane(*targetViewport, ev.point, *normal, m_clearExistingPlanes))
         return EventHandled::No;
     if (m_clipEventHandler != nullptr)
-        m_clipEventHandler->onNewClipPlane(*targetView);
+        m_clipEventHandler->onNewClipPlane(*targetViewport);
     onReinitialize();
     return EventHandled::Yes;
 }
@@ -459,8 +460,8 @@ std::vector<dqGeom::Point3d> ViewClipByShapeTool::getClipPoints(BeButtonEvent co
 // Ported from: onDataButtonDown (:759-800).
 EventHandled ViewClipByShapeTool::onDataButtonDown(BeButtonEvent const& ev)
 {
-    Viewport* targetView = ev.viewport;
-    if (targetView == nullptr)
+    Viewport* const targetViewport = ev.viewport;  // 参考 this.targetView（EQUIVALENCE：ev.viewport 承载）
+    if (targetViewport == nullptr)
         return EventHandled::No;
 
     if (m_points.size() > 1
@@ -475,11 +476,11 @@ EventHandled ViewClipByShapeTool::onDataButtonDown(BeButtonEvent const& ev)
             dqGeom::Point3d const src = p;
             transform.MultiplyInversePoint3d(src, p);
         }
-        enableClipVolume(*targetView);
-        if (!doClipToShape(*targetView, points, &transform, m_zLow, m_zHigh))
+        enableClipVolume(*targetViewport);
+        if (!doClipToShape(*targetViewport, points, &transform, m_zLow, m_zHigh))
             return EventHandled::No;
         if (m_clipEventHandler != nullptr)
-            m_clipEventHandler->onNewClip(*targetView);
+            m_clipEventHandler->onNewClip(*targetViewport);
         onReinitialize();
         return EventHandled::Yes;
     }
@@ -508,7 +509,7 @@ EventHandled ViewClipByShapeTool::onDataButtonDown(BeButtonEvent const& ev)
                 break;
             case ContextRotationId::View:
             case ContextRotationId::Face: {
-                ViewState3d const* view3d = targetView->GetView()->AsViewState3d();
+                ViewState3d const* view3d = targetViewport->GetView()->AsViewState3d();
                 if (view3d == nullptr)
                     return EventHandled::No;
                 m_matrix = view3d->getRotation();
@@ -572,8 +573,8 @@ bool ViewClipByRangeTool::getClipRange(dqGeom::Range3d& range, dqGeom::Transform
 // Ported from: onDataButtonDown (:880-914).
 EventHandled ViewClipByRangeTool::onDataButtonDown(BeButtonEvent const& ev)
 {
-    Viewport* targetView = ev.viewport;
-    if (targetView == nullptr)
+    Viewport* const targetViewport = ev.viewport;  // 参考 this.targetView（EQUIVALENCE：ev.viewport 承载）
+    if (targetViewport == nullptr)
         return EventHandled::No;
 
     if (m_corner.has_value()) {
@@ -581,11 +582,11 @@ EventHandled ViewClipByRangeTool::onDataButtonDown(BeButtonEvent const& ev)
         dqGeom::Transform transform = dqGeom::Transform::CreateIdentity();
         if (!getClipRange(range, transform, ev))
             return EventHandled::No;
-        enableClipVolume(*targetView);
-        if (!doClipToRange(*targetView, range, &transform))
+        enableClipVolume(*targetViewport);
+        if (!doClipToRange(*targetViewport, range, &transform))
             return EventHandled::No;
         if (m_clipEventHandler != nullptr)
-            m_clipEventHandler->onNewClip(*targetView);
+            m_clipEventHandler->onNewClip(*targetViewport);
         onReinitialize();
         return EventHandled::Yes;
     }
@@ -706,14 +707,14 @@ bool ViewClipByElementTool::doClipToElements(Viewport& viewport,
 // （PickAtPoint→SelectionSet 命中链，PickDumpScene 先例）。
 EventHandled ViewClipByElementTool::onDataButtonDown(BeButtonEvent const& ev)
 {
-    Viewport* targetView = ev.viewport;
-    if (targetView == nullptr)
+    Viewport* const targetViewport = ev.viewport;  // 参考 this.targetView（EQUIVALENCE：ev.viewport 承载）
+    if (targetViewport == nullptr)
         return EventHandled::No;
-    uint32_t const hit = targetView->PickAtPoint(
+    uint32_t const hit = targetViewport->PickAtPoint(
         static_cast<int32_t>(ev.viewPoint.x), static_cast<int32_t>(ev.viewPoint.y));
     if (0 == hit)
         return EventHandled::No;
-    return doClipToElements(*targetView, std::vector<uint64_t>{hit}, m_alwaysUseRange)
+    return doClipToElements(*targetViewport, std::vector<uint64_t>{hit}, m_alwaysUseRange)
                ? EventHandled::Yes
                : EventHandled::No;
 }

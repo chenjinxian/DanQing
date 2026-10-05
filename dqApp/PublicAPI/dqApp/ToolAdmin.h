@@ -631,6 +631,13 @@ public:
 // Ported from: itwinjs-core core/frontend/src/tools/PrimitiveTool.ts:23-229
 class DQ_APP_EXPORT PrimitiveTool : public InteractiveTool {
 public:
+    // The view the tool operates on. Set by the host on install (the reference
+    // assigns it in ToolAdmin's install path / tools.run; DanQing host seam:
+    // the installing site assigns it after construction).
+    // Ported from: itwinjs-core PrimitiveTool.targetView (PrimitiveTool.ts:27
+    // —— public 可选字段；M-P P-G 补——ViewClip 工具族 :546/:468 的消费面)。
+    Viewport* targetView = nullptr;
+
     // Called on data button down event to lock the tool to its current target model.
     // Ported from: itwinjs-core PrimitiveTool.autoLockTarget (PrimitiveTool.ts:145-150)
     // (targetIsLocked flip; full iModel target resolution deferred.)
@@ -1292,6 +1299,15 @@ public:
     // Events
     dqBase::DqEvent<> OnActiveToolChanged;
 
+    // Button-down/up dispatch helpers (Task 7). Build a BeButtonEvent from the
+    // cursor position + InputState tracking, then route via sendButtonEvent
+    // (down) / sendButtonEvent-or-sendEndDragEvent (up, wasDragging branch).
+    // Ported from: itwinjs-core ToolAdmin.onButtonDown (ToolAdmin.ts:1387-1403)
+    // —— 参考 public（事件汇入口；宿主输入桥与测试单点注入共用）。
+    void onButtonDown(Viewport* vp, dqGeom::Point2d pt2d, BeButton button, InputSource inputSource);
+    // Ported from: itwinjs-core ToolAdmin.onButtonUp (ToolAdmin.ts:1405-1421)
+    void onButtonUp(Viewport* vp, dqGeom::Point2d pt2d, BeButton button, InputSource inputSource);
+
 private:
     // Saved cursor while an incompatible-viewport suspension is active
     // (ToolAdmin._saveCursor, ToolAdmin.ts:111). Empty = no suspension.
@@ -1351,14 +1367,6 @@ private:
     void onMouseEnter(ToolEvent const& /*ev*/) {}
     void onWheel(ToolEvent const& ev);
     void onKeyTransition(ToolEvent const& ev, bool wentDown);
-
-    // Button-down/up dispatch helpers (Task 7). Build a BeButtonEvent from the
-    // cursor position + InputState tracking, then route via sendButtonEvent
-    // (down) / sendButtonEvent-or-sendEndDragEvent (up, wasDragging branch).
-    // Ported from: itwinjs-core ToolAdmin.onButtonDown (ToolAdmin.ts:1387-1403)
-    void onButtonDown(Viewport* vp, dqGeom::Point2d pt2d, BeButton button, InputSource inputSource);
-    // Ported from: itwinjs-core ToolAdmin.onButtonUp (ToolAdmin.ts:1405-1421)
-    void onButtonUp(Viewport* vp, dqGeom::Point2d pt2d, BeButton button, InputSource inputSource);
 
     // --- Motion / drag dispatch (Task 8) -----------------------------------
     // Ported from: itwinjs-core ToolAdmin.onMouseMove (ToolAdmin.ts:1186-1201)
