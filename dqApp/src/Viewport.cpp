@@ -2659,6 +2659,19 @@ BackgroundMapGeometry const* Viewport::backgroundMapGeometry() const
     return nullptr;
 }
 
+// Ported from: itwinjs-core Viewport.clipStyle getter/setter (Viewport.ts:662-679)。
+dqCommon::ClipStyle const& Viewport::GetClipStyle() const
+{
+    // `return this.displayStyle.settings.clipStyle;`
+    return GetView()->GetDisplayStyle().getClipStyle();
+}
+void Viewport::SetClipStyle(dqCommon::ClipStyle const& style)
+{
+    // `this.displayStyle.settings.clipStyle = style;` —— setter 经
+    // DisplayStyle 门面 Raise OnClipStyleChanged → 既有监听 InvalidateRenderPlan。
+    GetView()->GetDisplayStyle().setClipStyle(style);
+}
+
 // Ported from: itwinjs-core Viewport.pickNearestVisibleGeometry (Viewport.ts:3404-3425)。
 std::optional<dqGeom::Point3d> Viewport::pickNearestVisibleGeometry(dqGeom::Point3d const& pickPoint,
                                                                     double radiusPixels)

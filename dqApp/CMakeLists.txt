@@ -126,6 +126,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
 
     add_executable(dqAppTest
         tests/BlankConnectionTest.cpp
+        tests/ViewClipStateTest.cpp  # M-P P-B：ViewState clipVector（ViewDetails.test.ts 六例）
         tests/ViewPoseTest.cpp
         tests/ViewUndoTest.cpp
         tests/EntityStateTest.cpp

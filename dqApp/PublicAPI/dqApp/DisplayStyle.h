@@ -150,6 +150,17 @@ public:
         OnAnalysisFractionChanged.Raise();
     }
 
+    // ── Clip style ──────────────────────────────────────────────
+    // ← itwinjs-core DisplayStyleState.clipStyle（settings.clipStyle 的 frontend
+    //   门面——M-P P-B：Viewport.clipStyle 的读写面；setter 经
+    //   DisplayStyleSettings.clipStyle 赋值 + onClipStyleChanged（DisplayStyle
+    //   Settings.ts setter 语义），Viewport 既有监听（Viewport.cpp:649）接失效链）。
+    dqCommon::ClipStyle const& getClipStyle() const noexcept { return m_settings.getClipStyle(); }
+    void setClipStyle(dqCommon::ClipStyle const& style) {
+        m_settings.setClipStyle(style);
+        OnClipStyleChanged.Raise();
+    }
+
     // ── Time point ──────────────────────────────────────────────
     double getTimePoint() const noexcept { return m_settings.getTimePoint().value_or(0.0); }
     void setTimePoint(double time) {

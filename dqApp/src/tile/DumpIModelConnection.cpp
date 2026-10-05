@@ -264,6 +264,104 @@ dqCommon::LightSettingsProps parseLightSettingsProps(dumpjson::JsonValue const& 
     return out;
 }
 
+// viewDetails.clip JSON → ClipVectorProps（M-P P-B——线格式 1:1：
+// [{shape:{points,trans?,zlow?,zhigh?,mask?,invisible?}} |
+//   {planes:{clips?:[[{normal:[x,y,z],dist,invisible?,interior?}]],invisible?}}]，
+// ClipPrimitive.ts:62-96 / ClipPlane.ts:213-223）。
+dqGeom::ClipVectorProps parseClipVectorProps(dumpjson::JsonValue const& json)
+{
+    dqGeom::ClipVectorProps out;
+    if (json.type != dumpjson::JsonValue::Type::Array)
+        return out;
+    for (dumpjson::JsonValue const& primJson : json.arr) {
+        if (primJson.type != dumpjson::JsonValue::Type::Object)
+            continue;
+        dqGeom::ClipPrimitiveProps prim;
+        if (dumpjson::JsonValue const* shape = primJson.find("shape")) {
+            if (shape->type == dumpjson::JsonValue::Type::Object) {
+                dqGeom::ClipPrimitiveShapePart part;
+                if (dumpjson::JsonValue const* points = shape->find("points")) {
+                    if (points->type == dumpjson::JsonValue::Type::Array) {
+                        for (dumpjson::JsonValue const& pt : points->arr) {
+                            if (pt.type == dumpjson::JsonValue::Type::Array && pt.arr.size() >= 3)
+                                part.points.push_back(dqGeom::Point3d::From(
+                                    pt.arr[0].number, pt.arr[1].number, pt.arr[2].number));
+                        }
+                    }
+                }
+                if (dumpjson::JsonValue const* trans = shape->find("trans")) {
+                    if (trans->type == dumpjson::JsonValue::Type::Array && trans->arr.size() >= 3) {
+                        dqGeom::ClipShapeTransformProps rows;
+                        for (int r = 0; r < 3; ++r) {
+                            dumpjson::JsonValue const& row = trans->arr[r];
+                            if (row.type == dumpjson::JsonValue::Type::Array && row.arr.size() >= 4)
+                                for (int c = 0; c < 4; ++c)
+                                    rows.rows[r][c] = row.arr[c].number;
+                        }
+                        part.trans = rows;
+                    }
+                }
+                if (dumpjson::JsonValue const* v = shape->find("zlow"))
+                    if (v->type == dumpjson::JsonValue::Type::Number)
+                        part.zlow = v->number;
+                if (dumpjson::JsonValue const* v = shape->find("zhigh"))
+                    if (v->type == dumpjson::JsonValue::Type::Number)
+                        part.zhigh = v->number;
+                if (dumpjson::JsonValue const* v = shape->find("mask"))
+                    if (v->type == dumpjson::JsonValue::Type::Bool)
+                        part.mask = v->boolean;
+                if (dumpjson::JsonValue const* v = shape->find("invisible"))
+                    if (v->type == dumpjson::JsonValue::Type::Bool)
+                        part.invisible = v->boolean;
+                prim.shape = part;
+            }
+        } else if (dumpjson::JsonValue const* planes = primJson.find("planes")) {
+            if (planes->type == dumpjson::JsonValue::Type::Object) {
+                dqGeom::ClipPrimitivePlanesPart part;
+                if (dumpjson::JsonValue const* clips = planes->find("clips")) {
+                    // UnionOfConvexClipPlaneSetsProps = [ConvexClipPlaneSetProps]
+                    if (clips->type == dumpjson::JsonValue::Type::Array) {
+                        dqGeom::UnionOfConvexClipPlaneSetsProps unionProps;
+                        for (dumpjson::JsonValue const& setJson : clips->arr) {
+                            dqGeom::ConvexClipPlaneSetProps setProps;
+                            if (setJson.type == dumpjson::JsonValue::Type::Array) {
+                                for (dumpjson::JsonValue const& planeJson : setJson.arr) {
+                                    if (planeJson.type != dumpjson::JsonValue::Type::Object)
+                                        continue;
+                                    dqGeom::ClipPlaneProps plane;
+                                    if (dumpjson::JsonValue const* n = planeJson.find("normal")) {
+                                        if (n->type == dumpjson::JsonValue::Type::Array && n->arr.size() >= 3)
+                                            plane.normal = dqGeom::Vector3d::From(
+                                                n->arr[0].number, n->arr[1].number, n->arr[2].number);
+                                    }
+                                    if (dumpjson::JsonValue const* d = planeJson.find("dist"))
+                                        if (d->type == dumpjson::JsonValue::Type::Number)
+                                            plane.dist = d->number;
+                                    if (dumpjson::JsonValue const* v = planeJson.find("invisible"))
+                                        if (v->type == dumpjson::JsonValue::Type::Bool)
+                                            plane.invisible = v->boolean;
+                                    if (dumpjson::JsonValue const* v = planeJson.find("interior"))
+                                        if (v->type == dumpjson::JsonValue::Type::Bool)
+                                            plane.interior = v->boolean;
+                                    setProps.push_back(plane);
+                                }
+                            }
+                            unionProps.push_back(setProps);
+                        }
+                        part.clips = unionProps;
+                    }
+                }
+                if (dumpjson::JsonValue const* v = planes->find("invisible"))
+                    if (v->type == dumpjson::JsonValue::Type::Bool)
+                        part.invisible = v->boolean;
+                prim.planes = part;
+            }
+        }
+        out.push_back(prim);
+    }
+    return out;
+}
+
 // views.defaultViewState JSON（getViewStateData RPC 载荷原样）→ ViewStateProps。
 // 参考锚 = convertViewStatePropsToViewState 的 props 形态（IModelConnection.ts
 // :1548-1561）+ ViewState3d ctor 的消费面（ViewState.ts:1497-1515）。
@@ -326,6 +424,15 @@ std::optional<ViewStateProps> parseViewStateProps(dumpjson::JsonValue const& jso
             out.viewDefinitionProps.camera.focusDist = f->number;
         if (dumpjson::JsonValue const* l = v->find("lens"))
             out.viewDefinitionProps.camera.lensDegrees = l->number;
+    }
+
+    // jsonProperties.viewDetails.clip（M-P P-B——ViewDetails.ts:137-146 惰性
+    // getter 的线形态）。
+    if (dumpjson::JsonValue const* jp = vdp->find("jsonProperties")) {
+        if (dumpjson::JsonValue const* vd = jp->find("viewDetails")) {
+            if (dumpjson::JsonValue const* clip = vd->find("clip"))
+                out.viewDetailsProps.clip = parseClipVectorProps(*clip);
+        }
     }
 
     // --- categorySelectorProps ---

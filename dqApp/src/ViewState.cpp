@@ -235,7 +235,56 @@ dqBase::RefPtr<ViewState> ViewState::Clone() const
     raw->m_id = m_id;
     raw->m_codeValue = m_codeValue;
     // m_attachedViewports intentionally empty — clone is not attached
+    // ← ViewDetails clip 双态随克隆（json 线形态复制，物化态重置惰性——参考
+    //   clone 经 toProps 携带 _json.clip 的等价面）。
+    raw->m_clipVectorJson = m_clipVectorJson;
     return dqBase::RefPtr<ViewState>(raw);
+}
+
+// ---------------------------------------------------------------------------
+// View clip（ViewDetails.clipVector 就地承载——M-P P-B）
+// Ported from: itwinjs-core ViewDetails.clipVector getter/setter
+//              (ViewDetails.ts:137-166) + ViewState.setViewClip/getViewClip
+//              (ViewState.ts:996-1009)。
+// ---------------------------------------------------------------------------
+void ViewState::setViewClip(dqGeom::ClipVector::Ptr clip)
+{
+    dqGeom::ClipVector::Ptr const curClip = getViewClip();
+    if (curClip.Get() == clip.Get())  // 恒等短路（对象同一性）
+        return;
+
+    if (!curClip) {
+        // 参考此处 assert(clip !== undefined)（dev-only）——测试钉死的可观测语义
+        // 是 undefined/empty 双双 no-event（ViewDetails.test.ts:95-99），按可观测
+        // 面实现：无效/空 clip 在无现 clip 时 no-op。
+        if (!clip || !clip->isValid())
+            return;  // "An empty clip is equivalent to no clip."
+    }
+
+    if (!clip)
+        clip = dqGeom::ClipVector::createEmpty();
+
+    OnClipVectorChanged.Raise();  // 参考先 Raise 后写（:160）；载荷 EQUIVALENCE 见 .h
+
+    m_clipVector = clip;
+    if (clip->isValid())
+        m_clipVectorJson = clip->toJSON();
+    else
+        m_clipVectorJson.reset();  // delete this._json.clip
+}
+
+dqGeom::ClipVector::Ptr ViewState::getViewClip()
+{
+    if (!m_clipVector) {
+        // 惰性物化（ViewDetails.ts:137-146）：_clipVector 未分配 → 从 _json.clip
+        // 解析（无则 createEmpty）。
+        if (m_clipVectorJson.has_value())
+            m_clipVector = dqGeom::ClipVector::fromJSON(&*m_clipVectorJson);
+        else
+            m_clipVector = dqGeom::ClipVector::createEmpty();
+    }
+
+    return m_clipVector->isValid() ? m_clipVector : dqGeom::ClipVector::Ptr{};
 }
 
 // ---------------------------------------------------------------------------
@@ -287,6 +336,8 @@ dqBase::RefPtr<ViewState> ViewState3d::Clone() const
     raw->m_rotation = m_rotation;
     raw->m_camera = m_camera;
     raw->m_cameraOn = m_cameraOn;
+    // ← ViewDetails clip 双态随克隆（同 ViewState::Clone 注）。
+    raw->m_clipVectorJson = m_clipVectorJson;
     return dqBase::RefPtr<ViewState>(raw);
 }
 
@@ -1599,6 +1650,8 @@ void SpatialViewState::cloneSpatialInto(SpatialViewState* raw) const
     raw->m_rotation = m_rotation;
     raw->m_camera = m_camera;
     raw->m_cameraOn = m_cameraOn;
+    // ← ViewDetails clip 双态随克隆（同 ViewState::Clone 注）。
+    raw->m_clipVectorJson = m_clipVectorJson;
     // Clone model selector data (events are not cloned).
     for (auto const& modelId : m_modelSelector.getModels()) {
         raw->m_modelSelector.addModel(modelId);
@@ -1670,6 +1723,16 @@ ViewStateProps SpatialViewState::ToProps() const
     //     的 EntityProps 消费段；M-O(2) 3h）---
     vd.id = GetId();
     vd.codeValue = getCodeValue();
+
+    // --- ViewDetailsProps（jsonProperties.viewDetails.clip 的序列化对偶——
+    //     M-P P-B；参考 ViewState.toJSON 经 _json 保留 clip 段。物化态优先：
+    //     clip 已设置/物化 → 当前内容序列化；未触达 → 线形态原样保持）。
+    if (m_clipVector) {
+        if (m_clipVector->isValid())
+            props.viewDetailsProps.clip = m_clipVector->toJSON();
+    } else if (m_clipVectorJson.has_value()) {
+        props.viewDetailsProps.clip = m_clipVectorJson;
+    }
 
     // --- CategorySelectorProps（toProps :329）---
     for (auto const& id : GetCategorySelector().getCategories())
@@ -1776,6 +1839,10 @@ dqBase::RefPtr<SpatialViewState> SpatialViewState::CreateFromProps(
     // 构造后逐字段应用等价。
     dqBase::RefPtr<SpatialViewState> view(new SpatialViewState());
     applyViewStateProps(*view, props, iModel);
+    // ← jsonProperties.viewDetails.clip（ViewDetails ctor 语义：json 原样保留 +
+    //   clipVector 惰性物化——M-P P-B；成员内应用 protected 双态）。
+    view->m_clipVectorJson = props.viewDetailsProps.clip;
+    view->m_clipVector = nullptr;
     return view;
 }
 
@@ -1791,6 +1858,10 @@ dqBase::RefPtr<OrthographicViewState> OrthographicViewState::CreateFromProps(
 {
     auto view = dqBase::RefPtr<OrthographicViewState>(new OrthographicViewState());
     applyViewStateProps(*view, props, iModel);
+    // ← jsonProperties.viewDetails.clip（ViewDetails ctor 语义：json 原样保留 +
+    //   clipVector 惰性物化——M-P P-B；成员内应用 protected 双态）。
+    view->m_clipVectorJson = props.viewDetailsProps.clip;
+    view->m_clipVector = nullptr;
     return view;
 }
 

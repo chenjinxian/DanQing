@@ -45,6 +45,7 @@
 #include <dqRender/rhi/Handle.h>
 #include <dqRender/tile/TileAdmin.h>
 
+#include <dqCommon/ClipStyle.h>  // GetClipStyle/SetClipStyle（M-P P-B）
 #include <dqCommon/FeatureOverrides.h>
 #include <dqCommon/Frustum.h>
 #include <dqCommon/PerModelCategoryVisibility.h>
@@ -291,6 +292,13 @@ public:
     // 连接恒 null）——pickDepthPoint 的背景图求交分支的唯一来源。
     // 返回值归 DisplayStyle 缓存所有（借用语义）。
     BackgroundMapGeometry const* backgroundMapGeometry() const;
+
+    // Ported from: itwinjs-core Viewport.clipStyle getter/setter
+    //              (Viewport.ts:662-679 — displayStyle.settings.clipStyle 的
+    //              读写门面；setter 经 settings 赋值 → onClipStyleChanged →
+    //              Viewport 既有监听（Viewport.cpp:649）InvalidateRenderPlan）。
+    dqCommon::ClipStyle const& GetClipStyle() const;
+    void SetClipStyle(dqCommon::ClipStyle const& style);
 
     // Ported from: itwinjs-core Viewport.pickNearestVisibleGeometry (Viewport.ts:3404-3425) —
     // pickDepthPoint 的有效性门（Geometry/Model/Map 直通；平面源 npc z∈[0,1]），

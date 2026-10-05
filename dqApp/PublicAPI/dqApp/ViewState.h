@@ -17,6 +17,7 @@
 #include <dqCommon/GridOrientationType.h>
 #include <dqCommon/ViewFlags.h>
 #include <dqCommon/ModelSelectorState.h>
+#include <dqGeom/ClipVector.h>  // ClipVector::Ptr（view clip——M-P P-B）
 #include <dqGeom/Map4d.h>
 #include <dqGeom/Matrix3d.h>
 #include <dqGeom/Point2d.h>
@@ -199,6 +200,24 @@ public:
     std::string const& getDescription() const { return m_description; }
     void SetDescription(std::string const& desc) { m_description = desc; }
 
+    // --- View clip（ViewDetails.clipVector 就地承载——grid settings 同先例）---
+    // Set or clear the clipping volume for this view.
+    // Ported from: itwinjs-core ViewState.setViewClip (ViewState.ts:996-1001)
+    //              → ViewDetails.clipVector setter (ViewDetails.ts:148-166)。
+    // 语义 1:1：恒等短路（对象同一性）；当前无 clip 且新 clip 无效 → no-op
+    //（"An empty clip is equivalent to no clip"）；OnClipVectorChanged 先 Raise
+    // 后写；props（json.clip）随写随删。
+    // EQUIVALENCE（§11.10）：参考事件载荷 = clip（或 undefined）——DanQing 事件
+    // 无载荷（既有监听面 Viewport.ts:1237 不读载荷）；载荷面随需要载荷的消费者
+    // 出现再扩。验证法 = ViewClipStateTest（ViewDetails.test.ts 六例）。
+    void setViewClip(dqGeom::ClipVector::Ptr clip);
+    // Get the clipping volume for this view, if defined（惰性：首次调用从
+    // viewDetailsProps.clip 物化——ViewDetails.ts:137-146）。无效/空 clip →
+    // null（undefined 语义）。
+    // Ported from: itwinjs-core ViewState.getViewClip (ViewState.ts:1006-1009)
+    //              → ViewDetails.clipVector getter。
+    dqGeom::ClipVector::Ptr getViewClip();
+
     // The Id of the view definition this state represents.
     // ← EntityState.id（参考 ViewState extends EntityState——EntityState ctor
     // 消费 EntityProps.id；DanQing ViewState 为独立基类，id/codeValue 就地
@@ -279,6 +298,10 @@ protected:
     dqCommon::CategorySelectorState m_categorySelector;
     DisplayStyle m_displayStyle;
     std::string m_description;
+    // ← ViewDetails.clipVector（ViewDetails.ts：_json.clip 线形态 + _clipVector
+    // 惰性物化双态——M-P P-B）。
+    std::optional<dqGeom::ClipVectorProps> m_clipVectorJson;
+    dqGeom::ClipVector::Ptr m_clipVector;
     // ← EntityProps.id / ViewDefinitionProps.code.value（就地承载，见 GetId/
     // getCodeValue 注——M-O(2) 3h）。
     dqBase::DqId m_id;

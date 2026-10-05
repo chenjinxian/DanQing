@@ -16,8 +16,9 @@
 //     边色/宽/图案 + transThreshold；消费链 = DisplayStyle3dSettings ctor
 //     DisplayStyleSettings.ts:1104 → RenderPlan.ts:124 → EdgeSettings）。
 // 登记未移植（载体归对应特性落地时补）：
-//   - jsonProperties.viewDetails（ViewDetails——acs/gridOrient 等，ViewState
-//     无 ViewDetails 载体）；
+//   - jsonProperties.viewDetails 的非 clip 段（ViewDetails——acs/gridOrient 等，
+//     ViewState3d grid settings 已就地承载消费面；M-P P-B 落地 clip 段 →
+//     ViewDetailsProps）；
 //   - displayStyleProps.jsonProperties.styles 的其余段（environment sky/ground
 //     色与 display、sceneLights sunDir/ambient、excludedElements、
 //     scheduleScript——DisplayStyleSettings 有 environment 载体但
@@ -34,6 +35,7 @@
 #include <dqCommon/HiddenLine.h>  // HiddenLineSettingsProps（styles.hline）
 #include <dqCommon/LightSettings.h>  // LightSettingsProps（styles.lights——M-M(1)）
 #include <dqCommon/ViewFlags.h>  // ViewFlagProps
+#include <dqGeom/ClipVector.h>   // ClipVectorProps（viewDetails.clip——M-P P-B）
 #include <dqGeom/Point3d.h>
 #include <dqGeom/Vector3d.h>
 
@@ -115,6 +117,17 @@ struct DisplayStyleProps {
 };
 
 // ---------------------------------------------------------------------------
+// ViewDetailsProps — jsonProperties.viewDetails 的已移植消费面子集。
+// Ported from: itwinjs-core ViewDetails（core/common/src/ViewDetails.ts——
+// clipVector 惰性 getter 消费 viewDetails.clip :137-146 / setter 回写 :160-166）。
+// 其余段（acs/gridOrient/gridSpace*）由 ViewState3d grid settings 就地承载
+// （见 ViewState.h），载体不在此扩。
+// ---------------------------------------------------------------------------
+struct ViewDetailsProps {
+    std::optional<dqGeom::ClipVectorProps> clip;  // ← viewDetails.clip（ClipVectorProps）
+};
+
+// ---------------------------------------------------------------------------
 // ViewStateProps — Ported from: itwinjs-core ViewStateProps
 //（core/common/src/ViewStateProps.ts——getViewStateData RPC 的返回形态；
 // modelSelectorProps 仅空间视图携带，:optional）。
@@ -123,6 +136,7 @@ struct ViewStateProps {
     ViewDefinitionProps viewDefinitionProps;                  // ← viewDefinitionProps
     CategorySelectorProps categorySelectorProps;              // ← categorySelectorProps
     DisplayStyleProps displayStyleProps;                      // ← displayStyleProps
+    ViewDetailsProps viewDetailsProps;                        // ← viewDefinitionProps.jsonProperties.viewDetails（clip 段——M-P P-B）
     std::optional<ModelSelectorProps> modelSelectorProps;     // ← modelSelectorProps?
 };
 
