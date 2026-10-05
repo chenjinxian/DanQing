@@ -1258,6 +1258,36 @@ dqCommon::Frustum Viewport::getWorldFrustum() const
     return getFrustum(true, /*adjustedBox=*/false);
 }
 
+// Ported from: itwinjs-core Viewport.computeViewRange (Viewport.ts:2332-2340)
+//   const fitRange = this.view.computeFitRange();
+//   for (const ref of this.tiledGraphicsProviderRefs()) ref.unionFitRange(fitRange);
+// M-P P-F。computeFitRange 的 DanQing 承载在 SpatialViewState（3d 视图——
+// ViewClip 工具的 isCompatibleViewport 同门）；tiledGraphicsProviderRefs =
+// 逐 provider getTileTreeRefs 展开（Viewport.ts:1658-1662）。
+dqGeom::Range3d Viewport::computeViewRange()
+{
+    dqGeom::Range3d fitRange;
+    SpatialViewState const* spatial =
+        (m_view.IsValid() && m_view->AsViewState3d() != nullptr
+             ? m_view->AsViewState3d()->AsSpatialViewState()
+             : nullptr);
+    if (spatial != nullptr)
+        fitRange = spatial->ComputeFitRange();
+    for (TiledGraphicsProvider* provider : m_tiledGraphicsProviders) {
+        if (provider == nullptr)
+            continue;
+        for (TileTreeReference* ref : TiledGraphicsProviders::getTileTreeRefs(*provider, *this))
+            if (ref != nullptr)
+                ref->unionFitRange(fitRange);
+    }
+    // AddTileTree 脚手架 refs——createScene 的同一内容集合（参考无脚手架面：
+    // 内容全经 provider；DanQing 脚手架的等价面——fit 范围须见渲染内容）。
+    for (auto& ref : m_scaffoldRefs)
+        if (ref)
+            ref->unionFitRange(fitRange);
+    return fitRange;
+}
+
 // Ported from: itwinjs-core Viewport.setupViewFromFrustum (Viewport.ts:2289)
 bool Viewport::setupViewFromFrustum(dqCommon::Frustum const& inFrustum)
 {

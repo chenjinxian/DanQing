@@ -396,6 +396,12 @@ public:
     // 锚定拖动视口错乱事故的根因）。
     dqCommon::Frustum getWorldFrustum() const;
 
+    // Ported from: itwinjs-core Viewport.computeViewRange (Viewport.ts:2332-2340)
+    // Compute the range of all geometry to be displayed in this viewport.
+    // M-P P-F（ViewClipDecoration 的 loop 相交域）。view.computeFitRange 的
+    // DanQing 承载在 SpatialViewState::ComputeFitRange（3d 视图面）。
+    dqGeom::Range3d computeViewRange();
+
     // Ported from: itwinjs-core Viewport.setupViewFromFrustum (Viewport.ts:2289)
     // Apply a frustum to the view, then synchronize the viewport. Returns the
     // SetupFromFrustum validity result. Always calls SetupFromView + invalidate

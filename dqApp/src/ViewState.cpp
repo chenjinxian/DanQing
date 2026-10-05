@@ -1890,10 +1890,15 @@ dqGeom::Range3d SpatialViewState::ComputeBaseExtents() const
 // Ported from: itwinjs-core SpatialViewState.computeFitRange (SpatialViewState.ts:145-160).
 dqGeom::Range3d SpatialViewState::ComputeFitRange() const
 {
-    // SpatialViewState.ts:147 — options.baseExtents / ref.unionFitRange (the tile-tree
-    // range union) is not ported; a blank connection has no loaded tiles, so `range`
-    // stays null and we fall back to computeBaseExtents (SpatialViewState.ts:153-154).
+    // SpatialViewState.ts:147-150 —— 无 options：range 起 null，逐 ref
+    // unionFitRange（已装载树的紧域并集；M-P P-F 补齐——此前恒走 projectExtents
+    // 回退，剖切装饰的 viewRange 会被空连接的宽松 extents 推到内容域外）。
     dqGeom::Range3d range;  // default-constructed == null
+    GetTileTreeRefs().forEachTileTreeRef([&range](TileTreeReference& ref) {
+        ref.unionFitRange(range);
+    });
+    // SpatialViewState.ts:153-154 — 空则回退 computeBaseExtents（projectExtents
+    // ×1.0001；空连接无已装载树的面）。
     if (range.isNull())
         range = ComputeBaseExtents();
     range.ensureMinLengths(1.0);  // SpatialViewState.ts:157

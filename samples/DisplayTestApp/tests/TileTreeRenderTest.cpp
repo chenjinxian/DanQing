@@ -22,6 +22,7 @@
 #include "View3DInventor.h"
 
 #include <dqApp/Application.h>
+#include <dqApp/ClipViewTool.h>  // M-P P-F：ViewClipDecoration E2E 像素锁
 #include <dqApp/Viewport.h>
 #include <dqApp/StandardView.h>
 #include <dqApp/ViewTool.h>
@@ -1029,6 +1030,206 @@ TEST(TileTreeRender, ViewClipPlaneDiscardsHalfspace)
 // undefined + MeshGraphic 断言）的窗口级等价。
 // 资产：minimal-imdl/（tileset.json + root.imdl = TileIO.data.1.1.ts
 // rectangle 场景字节，Authored 组装，§5(g)）。
+// M-P P-F：ViewClipDecoration 装饰轮廓像素锁 + Provider 默认右键 negate 的
+// 像素双向锁（§11.11 WHERE 断言）。
+// Authored: no reference test exists in itwinjs-core for ViewClipDecoration
+//           （无 .test.ts；行为锚 = ClipViewTool.ts decorate :1854-1964 的
+//           WorldDecoration 白线轮廓 + doClipPlaneNegate :1587-1605）。
+// WHERE：剖切面轮廓 = 竖直窄带（面 x=-1 过视域中心，LookAtVolume 前视），
+// 带宽 << 帧宽、带高跨内容 bbox 过半——方向性锚（水平带=错，斜带=错）。
+// 双向：negate 后塌缩色翻转（先前塌缩色回归、对侧色塌缩）。
+TEST(TileTreeRender, ViewClipDecorationOutlineAndNegatePixelLock)
+{
+    std::string const tilesetPath = DANQING_TILE_ASSETS_DIR "/minimal-solid/tileset.json";
+
+    auto& app = dqApp::Application::Get();
+    if (!app.isInitialized()) {
+        dqApp::Application::Options opts;
+        opts.applicationId = "TileTreeRender";
+        opts.applicationVersion = "1.0";
+        ASSERT_TRUE(app.Startup(opts));
+    }
+
+    std::unique_ptr<dqRender::RealityTileTree> tree;
+
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    view.resize(1000, 700);
+    view.show();
+    spin3(400);
+
+    {
+        std::ifstream in(tilesetPath, std::ios::binary);
+        ASSERT_TRUE(in.good()) << "cannot open " << tilesetPath;
+        std::vector<uint8_t> jsonBytes((std::istreambuf_iterator<char>(in)),
+                                        std::istreambuf_iterator<char>());
+        tree = dqRender::RealityTileTree::loadTileset(tilesetPath, jsonBytes.data(), jsonBytes.size());
+    }
+    ASSERT_NE(tree, nullptr);
+    view.getUeViewport()->AddTileTree(tree.get());
+
+    auto* view3d = view.getUeViewport()->GetView()->AsViewState3d();
+    ASSERT_NE(view3d, nullptr);
+    view3d->LookAtVolume(dqGeom::Range3d::CreateXYZXYZ(-3, -1.2, -1.2, 3, 1.2, 1.2));
+    {
+        auto& style = view.getUeViewport()->GetView()->GetDisplayStyle();
+        auto p = style.getViewFlags().Properties();
+        p.grid = false;
+        p.acsTriad = false;
+        style.setViewFlags(dqCommon::ViewFlags(p));
+        // 装饰判据确定性：关天空球（本 harness 默认开——ISO 视域上下半球渐变
+        // 会吃掉填充带的暗青判据）+ 黑背景。
+        style.getSettings().toggleSkyBox(false);
+        style.getSettings().setBackgroundColor(dqCommon::ColorDef::from(0, 0, 0));
+    }
+    view.getUeViewport()->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+    spin3(1600);
+    view.getUeViewport()->RenderFrame();
+
+    auto readFrame = [&](std::vector<uint8_t>& frame, uint32_t& w, uint32_t& h) {
+        view.getUeViewport()->RenderFrame();
+        return view.getUeViewport()->ReadFrameForTest(frame, w, h);
+    };
+    auto colorStats = [](std::vector<uint8_t> const& frame, uint32_t w, uint32_t /*h*/,
+                         uint32_t minX, uint32_t maxX, uint32_t minY, uint32_t maxY,
+                         long counts[3], double cxs[3]) {
+        for (int c = 0; c < 3; ++c)
+            counts[c] = colorCentroid(frame, w, minX, maxX, minY, maxY, c, cxs[c]);
+    };
+    // 装饰手柄箭头簇（近白：箭头轮廓 (0,0,0,50) 经 adjustForBackgroundColor
+    // 在黑背景翻白——:285-290 语义；边侧看呈水平细条）。轮廓白线与填充 quad
+    // hugs viewRange（空连接 extents ±1000/±100——loop 边/巨三角形在本 GL 路径
+    // 视锥外丢弃，参考同形几何）；箭头位于 loop 质心（面迹线 x=-1 列、帧高
+    // 中带——z=0 → y≈h/2）——装饰上屏的 WHERE 锚。
+    auto arrowStripStats = [](std::vector<uint8_t> const& frame, uint32_t w, uint32_t h,
+                              uint32_t& minX, uint32_t& maxX, uint32_t& minY, uint32_t& maxY) {
+        minX = w; maxX = 0; minY = h; maxY = 0;
+        long n = 0;
+        for (uint32_t y = 0; y < h; ++y)
+            for (uint32_t x = 0; x < w; ++x) {
+                uint8_t const* p = &frame[(static_cast<size_t>(y) * w + x) * 4];
+                if (p[0] >= 200 && p[1] >= 200 && p[2] >= 200) {
+                    ++n;
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            }
+        return n;
+    };
+    auto pumpToStable = [&](std::vector<uint8_t>& frame, uint32_t& w, uint32_t& h) {
+        std::vector<uint8_t> prev;
+        for (int i = 0; i < 30; ++i) {
+            prev = frame;
+            spin3(100);
+            view.getUeViewport()->InvalidateController();
+            ASSERT_TRUE(readFrame(frame, w, h));
+            if (i > 0 && frame == prev)
+                break;
+        }
+    };
+
+    std::vector<uint8_t> frame;
+    uint32_t w = 0, h = 0;
+    ASSERT_TRUE(readFrame(frame, w, h));
+    uint32_t bMinX, bMaxX, bMinY, bMaxY;
+    ASSERT_TRUE(contentBBox(frame, w, h, bMinX, bMaxX, bMinY, bMaxY));
+    long baseCounts[3]; double baseCxs[3];
+    colorStats(frame, w, h, bMinX, bMaxX, bMinY, bMaxY, baseCounts, baseCxs);
+    ASSERT_GT(baseCounts[0] + baseCounts[1] + baseCounts[2], 200) << "baseline rendered nothing";
+    // 基线无近白簇（内容为饱和三色——near-white 应近零）
+    uint32_t wbMinX, wbMaxX, wbMinY, wbMaxY;
+    long const baseArrow = arrowStripStats(frame, w, h, wbMinX, wbMaxX, wbMinY, wbMaxY);
+    printf("[CLIPDECO] base r=%ld g=%ld b=%ld arrow=%ld\n",
+           baseCounts[0], baseCounts[1], baseCounts[2], baseArrow);
+    ASSERT_LT(baseArrow, 50) << "baseline already has near-white pixels - arrow assert would be blind";
+
+    // --- 平面剖切（x=-1、内法向 +X——裁掉左盒）+ 装饰激活 ---
+    {
+        auto plane = dqGeom::ClipPlane::createNormalAndPoint(
+            dqGeom::Vector3d::From(1.0, 0.0, 0.0), dqGeom::Point3d::From(-1.0, 0.0, 0.0));
+        ASSERT_TRUE(plane.has_value());
+        dqGeom::ConvexClipPlaneSet const set = dqGeom::ConvexClipPlaneSet::createPlanes({*plane});
+        dqGeom::ClipVector::Ptr const clip = dqGeom::ClipVector::createCapture(
+            {dqGeom::ClipPrimitive::createCapture(set)});
+        view3d->setViewClip(clip);
+    }
+    dqApp::ViewClipDecorationProvider& provider = dqApp::ViewClipDecorationProvider::create();
+    provider.onNewClipPlane(*view.getUeViewport());
+    ASSERT_TRUE(provider.isDecorationActive(*view.getUeViewport()));
+    view.getUeViewport()->InvalidateController();
+    pumpToStable(frame, w, h);
+
+    // --- 断言 1：恰一色塌缩（P-D 同判据）---
+    uint32_t cMinX, cMaxX, cMinY, cMaxY;
+    ASSERT_TRUE(contentBBox(frame, w, h, cMinX, cMaxX, cMinY, cMaxY));
+    long clipCounts[3]; double clipCxs[3];
+    colorStats(frame, w, h, cMinX, cMaxX, cMinY, cMaxY, clipCounts, clipCxs);
+    printf("[CLIPDECO] clipped r=%ld g=%ld b=%ld\n", clipCounts[0], clipCounts[1], clipCounts[2]);
+    int collapsed = -1;
+    for (int c = 0; c < 3; ++c) {
+        if (clipCounts[c] < 5 && baseCounts[c] > 30) {
+            ASSERT_EQ(collapsed, -1) << "more than one color collapsed";
+            collapsed = c;
+        }
+    }
+    ASSERT_NE(collapsed, -1) << "no color collapsed - clip did not discard";
+    ASSERT_GT(clipCounts[0] + clipCounts[1] + clipCounts[2], 100);
+
+    // --- 断言 2：手柄箭头簇上屏 + WHERE（水平细条，贴面迹线列、帧高中带）---
+    uint32_t oMinX, oMaxX, oMinY, oMaxY;
+    long const arrow = arrowStripStats(frame, w, h, oMinX, oMaxX, oMinY, oMaxY);
+    printf("[CLIPDECO] arrow px=%ld bbox=[%u,%u]x[%u,%u]\n",
+           arrow, oMinX, oMaxX, oMinY, oMaxY);
+    ASSERT_GT(arrow, 100) << "clip handle arrow cluster not rendered";
+    double const arrowH = static_cast<double>(oMaxY - oMinY);
+    ASSERT_LE(arrowH, 12.0) << "arrow cluster should be a thin edge-on strip";
+    // WHERE-1：簇右缘 = 面迹线列（x=-1 于 [-3,3] 域 ≈ 左 1/4——非内容边缘）
+    ASSERT_GT(oMaxX, cMinX + (cMaxX - cMinX) / 8.0);
+    ASSERT_LT(oMaxX, cMinX + (cMaxX - cMinX) / 2.0);
+    // WHERE-2：loop 质心 z=0 → 簇位于帧高中带（±15%）
+    double const arrowCy = 0.5 * (oMinY + oMaxY);
+    ASSERT_GT(arrowCy, 0.35 * h);
+    ASSERT_LT(arrowCy, 0.65 * h);
+
+    // --- 断言 3：Provider 默认右键（无监听）→ negate → 塌缩色翻转 ---
+    dqApp::ViewClipDecoration* deco = dqApp::ViewClipDecoration::get(*view.getUeViewport());
+    ASSERT_NE(deco, nullptr);
+    ASSERT_EQ(deco->controls().size(), 1u);  // 单面 → loop 质心单手柄
+    dqApp::BeButtonEvent ev;
+    ev.viewport = view.getUeViewport();
+    ASSERT_TRUE(provider.onRightClick(deco->controlIds()[0], ev));
+
+    view.getUeViewport()->InvalidateController();
+    pumpToStable(frame, w, h);
+    uint32_t nMinX, nMaxX, nMinY, nMaxY;
+    ASSERT_TRUE(contentBBox(frame, w, h, nMinX, nMaxX, nMinY, nMaxY));
+    long negCounts[3]; double negCxs[3];
+    colorStats(frame, w, h, nMinX, nMaxX, nMinY, nMaxY, negCounts, negCxs);
+    printf("[CLIPDECO] negated r=%ld g=%ld b=%ld\n", negCounts[0], negCounts[1], negCounts[2]);
+    // 先前塌缩色回归（双向）
+    ASSERT_GT(negCounts[collapsed], 30) << "negate should restore the previously discarded half";
+    // 对侧出现新的塌缩（内法向翻转 -X → 保 x<-1——面在盒交界处，g+b 双塌缩）
+    int numCollapsed2 = 0;
+    for (int c = 0; c < 3; ++c) {
+        if (negCounts[c] < 5 && baseCounts[c] > 30) {
+            ASSERT_NE(c, collapsed) << "previously collapsed color collapsed again";
+            ++numCollapsed2;
+        }
+    }
+    ASSERT_GE(numCollapsed2, 1) << "negate did not discard the opposite half";
+    // 箭头簇仍在（面位置不变，法向翻转）
+    long const arrow2 = arrowStripStats(frame, w, h, oMinX, oMaxX, oMinY, oMaxY);
+    ASSERT_GT(arrow2, 100) << "arrow cluster should persist across negate";
+
+    // --- 清理（单例跨测试污染防）---
+    dqApp::ViewClipDecorationProvider::clearProvider();
+    view3d->setViewClip(nullptr);
+    spin3(200);
+    view.close();
+    spin3(200);
+}
+
 TEST(TileTreeRender, ImdlTilesetRendersRecordedFixture)
 {
     std::string const tilesetPath = DANQING_TILE_ASSETS_DIR "/minimal-imdl/tileset.json";

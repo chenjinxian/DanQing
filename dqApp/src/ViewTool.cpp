@@ -3229,8 +3229,8 @@ bool FitViewTool::doFit(Viewport* vp, bool oneShotArg, bool doAnimateArg, bool /
         return oneShotArg;  // 2D view fit is TODO (Step 3 only has 3D views).
 
     // Ported from: itwinjs-core ViewManip.computeFitRange (ViewTool.ts:810-819) ->
-    //   viewport.computeViewRange(). computeViewRange (TileTree-range union + clip
-    //   intersection) is not ported; SpatialViewState::ComputeFitRange falls back to
+    //   viewport.computeViewRange(). （computeViewRange 已于 M-P P-F 移植——此处
+    //   保留 fit-range 直取面。）SpatialViewState::ComputeFitRange falls back to
     //   projectExtents x1.0001 (SpatialViewState.ts:145-160), which is exactly the
     //   blank-connection case (no loaded tiles). For a non-spatial ViewState3d we keep
     //   the prior fallback of the view's current world extents as the fit range.

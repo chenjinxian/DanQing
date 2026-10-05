@@ -69,6 +69,14 @@ struct DQ_GEOM_EXPORT Plane3dByOriginAndUnitNormal {
              + normal.z * (spacePoint.z - origin.z);
     }
 
+    /// Returns true if spacePoint is on the plane within tolerance.
+    /// Ported from: Plane3dByOriginAndUnitNormal.isPointInPlane (L355-357)
+    bool isPointInPlane(Point3d const& spacePoint,
+                        double tolerance = kSmallMetricDistance) const noexcept
+    {
+        return std::abs(altitude(spacePoint)) <= tolerance;
+    }
+
     /// Signed altitude of (x,y,z) above the plane.
     /// Ported from: Plane3dByOriginAndUnitNormal.altitudeXYZ (L335-337)
     double altitudeXYZ(double x, double y, double z) const noexcept {

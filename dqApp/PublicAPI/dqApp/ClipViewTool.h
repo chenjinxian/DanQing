@@ -29,23 +29,28 @@
 //    ViewClipDecoration 消费面（本件只落数据面与判定面）。
 #pragma once
 
+#include "EditManipulator.h"
 #include "Export.h"
 #include "ToolAdmin.h"
 #include "Viewport.h"
 
+#include <dqCommon/ColorDef.h>
 #include <dqCommon/ViewFlags.h>
 #include <dqGeom/ClipPlane.h>
 #include <dqGeom/ClipPrimitive.h>
+#include <dqGeom/ClipUtilsLoops.h>
 #include <dqGeom/ClipVector.h>
 #include <dqGeom/ConvexClipPlaneSet.h>
 #include <dqGeom/Matrix3d.h>
 #include <dqGeom/Plane3dByOriginAndUnitNormal.h>
 #include <dqGeom/Point3d.h>
 #include <dqGeom/Range3d.h>
+#include <dqGeom/Ray3d.h>
 #include <dqGeom/Transform.h>
 #include <dqGeom/Vector3d.h>
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -92,9 +97,17 @@ public:
     /// Called when an existing clip is cleared.
     /// Ported from: ViewClipEventHandler.onClearClip (:51)
     virtual void onClearClip(Viewport& viewport) { (void)viewport; }
-    /// Called when a right click is performed on the clip decoration.
-    /// Ported from: ViewClipEventHandler.onRightClick (:49 of provider 面)
-    virtual void onRightClick(Viewport& viewport) { (void)viewport; }
+    /// Called when user right clicks on clip geometry or clip modify handle.
+    /// Return true if event handled.
+    /// Ported from: ViewClipEventHandler.onRightClick (:51)
+    /// §3.4：HitDetail（DanQing 拾取链无该类型——PickDumpScene 先例）→
+    /// sourceId 载荷承载 hit.sourceId。
+    virtual bool onRightClick(uint32_t sourceId, BeButtonEvent const& ev)
+    {
+        (void)sourceId;
+        (void)ev;
+        return false;
+    }
 };
 
 /// Tool to define a clip volume for a view（基类——五种定义的共用面）.
@@ -189,8 +202,34 @@ public:
     /// Ported from: hasClip (:441-443)
     static bool hasClip(Viewport const& viewport);
 
+    // --- 装饰绘制面（:232-343 + drawClipPlanesLoops :356-382；P-F）---
+
+    /// Ported from: addClipPlanesLoops (:232-238 —— outline=路径/填充=loop）
+    static void addClipPlanesLoops(dqRender::GraphicBuilder& builder,
+                                   std::vector<dqBase::RefPtr<dqGeom::Loop>> const& loops,
+                                   bool outline);
+
+    /// Ported from: drawClipShape (:294-309 —— WorldDecoration 轮廓 + 未选时
+    /// WorldOverlay 隐藏线；flashed→hilite 色）
+    static void drawClipShape(DecorateContext& context, dqGeom::ClipShape const& shape,
+                              dqGeom::Range1d const& extents, dqCommon::ColorDef const& color,
+                              double weight, std::optional<uint32_t> id = std::nullopt);
+
+    /// Ported from: drawClipPlanesLoops (:356-382 —— WorldDecoration 边线 +
+    /// WorldOverlay 隐藏线 + 可选填充面）
+    static void drawClipPlanesLoops(DecorateContext& context,
+                                    std::vector<dqBase::RefPtr<dqGeom::Loop>> const& loops,
+                                    dqCommon::ColorDef const& color, double weight, bool dashed,
+                                    std::optional<dqCommon::ColorDef> fill = std::nullopt,
+                                    std::optional<uint32_t> id = std::nullopt);
+
 protected:
     ViewClipEventHandler* m_clipEventHandler = nullptr;  // not owned（参考 ctor 形参）
+
+private:
+    /// Ported from: addClipShape (:239-246 —— lo/hi 两多边形 + 竖线连接）
+    static void addClipShape(dqRender::GraphicBuilder& builder, dqGeom::ClipShape const& shape,
+                             dqGeom::Range1d const& extents);
 };
 
 /// Tool to remove a clip volume for a view.
@@ -319,6 +358,245 @@ public:
 
 protected:
     bool m_alwaysUseRange = false;
+};
+
+// ---------------------------------------------------------------------------
+// ViewClipDecoration（ClipViewTool.ts:1285-1997）——剖切装饰 + 修改手柄
+// M-P P-F。EQUIVALENCE：
+//  - 拖拽修改工具（ViewClipShapeModifyTool/ViewClipPlanesModifyTool :1061-1282）
+//    依赖 InputCollector 安装调度（DanQulaing stub）——modifyControls 返回 false
+//    承载（TODO 随 InputCollector 落地补齐）。
+//  - >5 点多边形压缩（PolylineOps.compressByChapterError 未移植）——不压缩
+//    直接使用（凸/凹多边形全保真；压缩为优化非语义）。
+//  - 右键菜单宿主（onActiveClipRightClick 菜单面）——Provider onRightClick
+//    无监听时默认 negate 语义 1:1（:2048-2049）；菜单宿主接线归 P-G。
+//  - 单面 clip 的 floatingOrigin 迁移（isPointVisibleXY 未移植）——手柄恒
+//    位于 loop 质心/平面投影点（参考默认路径）。
+//  - animateFrustumChange（orientView 尾）——SetupFromFrustum+synchWithView
+//    终态 1:1，动画面缺席。
+// ---------------------------------------------------------------------------
+
+/// Handle data for clip volume control.
+/// Ported from: itwinjs-core ViewClipControlArrow (ClipViewTool.ts:1285-1308)
+struct ViewClipControlArrow {
+    ViewClipControlArrow() = default;  // vector::resize 需默认构造（§3.4 技术适配）
+
+    /// Ported from: ctor (:1287-1296)
+    ViewClipControlArrow(dqGeom::Point3d const& originIn, dqGeom::Vector3d const& directionIn,
+                         double sizeInchesIn,
+                         std::optional<dqCommon::ColorDef> fillIn = std::nullopt,
+                         std::optional<dqCommon::ColorDef> outlineIn = std::nullopt,
+                         std::optional<std::string> nameIn = std::nullopt)
+        : origin(originIn)
+        , direction(directionIn)
+        , sizeInches(sizeInchesIn)
+        , fill(fillIn)
+        , outline(outlineIn)
+        , name(nameIn.has_value() ? *nameIn : "") {}
+
+    dqGeom::Point3d origin;                          // :1288
+    dqGeom::Vector3d direction;                      // :1289
+    double sizeInches = 0.0;                         // :1290
+    std::optional<dqCommon::ColorDef> fill;          // :1291
+    std::optional<dqCommon::ColorDef> outline;       // :1292
+    std::string name;                                // :1293（zLow/zHigh 命名手柄）
+    std::optional<dqGeom::Point3d> floatingOrigin;   // :1294（单面手柄可见性迁移）
+};
+
+/// Tool to show a manipulator for clip volumes.
+/// Ported from: itwinjs-core ViewClipDecoration (ClipViewTool.ts:1310-1997)
+class DQ_APP_EXPORT ViewClipDecoration final : public HandleProvider {
+public:
+    /// Ported from: ctor (:1335-1344 —— getClipData + clipId + decorator 注册 +
+    /// selectOnCreate 选集替换）
+    ViewClipDecoration(Viewport& clipView, ViewClipEventHandler* clipEventHandler = nullptr);
+
+    dqGeom::ClipShape const* clipShape() const { return m_clipShape; }
+    dqGeom::ConvexClipPlaneSet const* clipPlaneSet() const { return m_clipPlanes; }
+    dqGeom::ClipVector::Ptr const& clip() const { return m_clip; }
+    uint32_t clipId() const { return m_clipId; }
+    /// Ported from: getControlIndex (:1350)
+    int getControlIndex(uint32_t id) const;
+
+    /// Ported from: stop (:1352-1365)
+    void stop();
+
+    /// Ported from: createControls (:1535-1563 —— 选集门[clipId 选中 + 无其它
+    /// 元素] + clearOnDeselect 清理）+ createClipShapeControls (:1441-1465 每边
+    /// 中点法向箭头 + zLow/zHigh）+ createClipPlanesControls (:1477-1533 loop
+    /// 质心优先 + 非贡献面红箭头）
+    bool createControls() override;
+
+    /// Ported from: clearControls (:1565-1568 —— 选集控制 id 移除）
+    void clearControls() override;
+
+    /// Ported from: modifyControls (:1571-1585 —— modify 工具安装；拖拽面
+    /// EQUIVALENCE——InputCollector 调度缺席，登记 false）
+    bool modifyControls(uint32_t sourceId, BeButtonEvent const& ev) override;
+
+    /// Ported from: doClipPlaneNegate (:1587-1605 —— 逐面 cloneNegated 重建）
+    bool doClipPlaneNegate(int index);
+
+    /// Ported from: doClipPlaneClear (:1607-1635 —— 单面→整体 clear；多面→重建
+    /// 去该面）
+    bool doClipPlaneClear(int index);
+
+    /// Ported from: doClipPlaneOrientView (:1727-1755 —— 锚定射线刚体矩阵 +
+    /// setupFromFrustum + synchWithView；animateFrustumChange EQUIVALENCE）
+    bool doClipPlaneOrientView(int index);
+
+    /// Ported from: isClipShapeAlignedWithWorldUp (:1767-1798 —— 世界上面平行
+    /// 判别 + extents 世界化填充）
+    bool isClipShapeAlignedWithWorldUp(dqGeom::Range1d* extents = nullptr);
+
+    /// Ported from: doClipShapeSetZExtents (:1800-1828 —— 世界 zLow/zHigh →
+    /// transformToClip 逆变换 → ClipShape.createFrom + initSecondaryProps）
+    bool doClipShapeSetZExtents(dqGeom::Range1d const& extents);
+
+    /// Ported from: onRightClick (:1830-1833 —— 交 handler）
+    bool onRightClick(uint32_t sourceId, BeButtonEvent const& ev);
+
+    /// Ported from: onSelectionChanged (:182-185 面) —— 选集事件深度包裹
+    /// （延迟 delete 的释放点——见 ViewClipDecoration.cpp 文件头注）
+    void onSelectionChanged() override;
+
+    /// Ported from: onManipulatorEvent (:1841-1846 —— Accept→onModifyClip）
+    void onManipulatorEvent(ManipulatorEventType eventType) override;
+
+    /// Ported from: testDecorationHit (:1848)
+    bool TestDecorationHit(uint32_t featureId) const override;
+
+    /// Ported from: getDecorationToolTip (:1850-1853 —— "View Clip"/
+    /// "Modify View Clip"——CoreTools.json tools.ViewClip.Message 解析值内联，
+    /// DanQing 无 localization 面）
+    QString GetDecorationToolTip(uint32_t featureId) const override;
+
+    /// Ported from: updateDecorationListener override (:1855 —— 装饰器注册
+    /// 以 clipId 存在性为门，非 add 形参）
+    void updateDecorationListener(bool add) override;
+
+    /// Ported from: decorate (:1854-1964 —— 轮廓[白线 + 青填充 + 非贡献红虚线]
+    /// + 手柄箭头[getArrowShape + getArrowTransform + 选中态填充]）
+    void Decorate(DecorateContext& context) override;
+
+    // --- 单例面（:1966-1996）---
+
+    /// Ported from: get (:1966-1970)
+    static ViewClipDecoration* get(Viewport& vp);
+    /// Ported from: create (:1972-1979 —— hasClip 门）
+    static std::optional<uint32_t> create(Viewport& vp,
+                                          ViewClipEventHandler* clipEventHandler = nullptr);
+    /// Ported from: clear (:1981-1986)
+    static void clear();
+    /// Ported from: toggle (:1988-1994)
+    static std::optional<uint32_t> toggle(Viewport& vp,
+                                         ViewClipEventHandler* clipEventHandler = nullptr);
+
+    /// onViewClose 事件面登记：DanQing ViewManager 无 onViewClose（参考
+    /// :1341 经 IModelApp.viewManager.onViewClose 注册）——保留公开可调面，
+    /// 宿主关闭视口时接线。
+    void onViewClose(Viewport& vp);
+
+    /// 修改工具数据面访问（EQUIVALENCE 下的测试缝）。
+    std::vector<ViewClipControlArrow> const& controls() const { return m_controls; }
+    std::vector<uint32_t> const& controlIds() const { return m_controlIds; }
+
+private:
+    /// Ported from: getClipData (:1368-1425 —— shape/planes 解析 + >12 面只读
+    /// 预览 loops + loops.length > planes.length 拒绝）
+    bool getClipData();
+
+    /// Ported from: ensureNumControls (:1427-1436)
+    void ensureNumControls(size_t numReqControls);
+
+    /// Ported from: createClipShapeControls (:1438-1465)
+    bool createClipShapeControls();
+
+    /// Ported from: createClipPlanesControls (:1477-1533)
+    bool createClipPlanesControls();
+
+    /// Ported from: getLoopCentroidAreaNormal (:1467-1475 —— PolygonOps.
+    /// centroidAreaNormal 的 loop/LineString 形态面）
+    static std::optional<dqGeom::Ray3d> getLoopCentroidAreaNormal(dqGeom::Loop const* geom);
+
+    /// Ported from: getWorldUpPlane (:1757-1766)
+    /// EQUIVALENCE：AccuDrawHintBuilder.getContextRotation(Top) 未移植——世界 Z
+    /// 列承载；isContextRotationRequired/getAuxCoordOrigin（ACS 面）缺席——
+    /// 世界原点承载。
+    std::optional<dqGeom::Plane3dByOriginAndUnitNormal> getWorldUpPlane() const;
+
+    /// Ported from: isAlignedToWorldUpPlane (:1762-1765 —— 双向平行判别）
+    bool isAlignedToWorldUpPlane(dqGeom::Plane3dByOriginAndUnitNormal const& plane,
+                                 dqGeom::Transform const* transformFromClip) const;
+
+    dqGeom::ClipVector::Ptr m_clip;                       // :1316 _clip
+    uint32_t m_clipId = 0;                                // :1317 _clipId（transient id 面）
+    std::optional<dqGeom::Range1d> m_clipShapeExtents;    // :1319
+    dqGeom::ClipShape const* m_clipShape = nullptr;       // :1318（借自 clip——不拥有）
+    dqGeom::ConvexClipPlaneSet const* m_clipPlanes = nullptr;  // :1320（借自 clip）
+    std::vector<dqBase::RefPtr<dqGeom::Loop>> m_clipPlanesLoops;      // :1321
+    std::vector<dqBase::RefPtr<dqGeom::Loop>> m_clipPlanesLoopsNoncontributing;  // :1322
+    std::vector<uint32_t> m_controlIds;                   // :1323
+    std::vector<ViewClipControlArrow> m_controls;         // :1324
+    bool m_suspendDecorator = false;                      // :1325
+    ViewClipEventHandler* m_clipEventHandler = nullptr;   // not owned
+
+    static ViewClipDecoration* s_decorator;               // :1311 _decorator 单例
+    static uint32_t s_nextTransientId;                    // transientIds.getNext() 面
+    /// clear() 重入守卫（DanQing 选集直挂适配——EditManipulator.h 文件头
+    /// EQUIVALENCE——的同步重入面：clearControls 的 selectionSet.remove 触发
+    /// Synch → createControls → clearOnDeselect → clear()；参考经 ToolAdmin
+    /// manipulatorToolEvent 无此同步重入）。
+    static bool s_clearing;
+};
+
+/// Event types for ViewClipDecorationProvider.onActiveClipChanged.
+/// Ported from: itwinjs-core ClipEventType (ClipViewTool.ts:2003)
+enum class ClipEventType : uint8_t { New, NewPlane, Modify, Clear };
+
+/// An implementation of ViewClipEventHandler that responds to new clips by
+/// presenting clip modification handles.
+/// Ported from: itwinjs-core ViewClipDecorationProvider (ClipViewTool.ts:2008-2073)
+class DQ_APP_EXPORT ViewClipDecorationProvider final : public ViewClipEventHandler {
+public:
+    bool selectDecorationOnCreate = true;   // :2011
+    bool clearDecorationOnDeselect = true;  // :2012
+
+    /// Ported from: onActiveClipChanged BeEvent (:2014 —— 载荷 (viewport,
+    /// eventType, provider)；§3.4：HitDetail → sourceId 见 ViewClipEventHandler）
+    dqBase::DqEvent<Viewport&, ClipEventType, ViewClipDecorationProvider*> onActiveClipChanged;
+    /// Ported from: onActiveClipRightClick BeEvent (:2024 —— 载荷 (hit, ev,
+    /// provider)）
+    dqBase::DqEvent<uint32_t, BeButtonEvent const&, ViewClipDecorationProvider*> onActiveClipRightClick;
+
+    /// Ported from: selectOnCreate (:2028)
+    bool selectOnCreate() const override { return selectDecorationOnCreate; }
+    /// Ported from: clearOnDeselect (:2029)
+    bool clearOnDeselect() const override { return clearDecorationOnDeselect; }
+
+    /// Ported from: onNewClip (:2031-2034）
+    void onNewClip(Viewport& viewport) override;
+    /// Ported from: onNewClipPlane (:2036-2039）
+    void onNewClipPlane(Viewport& viewport) override;
+    /// Ported from: onModifyClip (:2041-2043）
+    void onModifyClip(Viewport& viewport) override;
+    /// Ported from: onClearClip (:2045-2048）
+    void onClearClip(Viewport& viewport) override;
+    /// Ported from: onRightClick (:2044-2048 —— 无监听 → 默认 negate :2046-2047）
+    bool onRightClick(uint32_t sourceId, BeButtonEvent const& ev) override;
+
+    /// Ported from: show/hide/toggle/isActive (:2058-2061）
+    void showDecoration(Viewport& vp);
+    void hideDecoration();
+    std::optional<uint32_t> toggleDecoration(Viewport& vp);
+    bool isDecorationActive(Viewport& vp) const;
+
+    /// Ported from: static create/clear (:2063-2073 —— 单例）
+    static ViewClipDecorationProvider& create();
+    static void clearProvider();
+
+private:
+    static ViewClipDecorationProvider* s_provider;  // :2009
 };
 
 }  // namespace dqApp

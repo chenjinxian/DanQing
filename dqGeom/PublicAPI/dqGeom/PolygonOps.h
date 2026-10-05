@@ -10,6 +10,7 @@
 
 #include "Point3d.h"
 #include "Range3d.h"
+#include "Ray3d.h"
 #include "Vector3d.h"
 
 #include <cmath>
@@ -73,6 +74,83 @@ public:
         for (size_t i = 1; i + 1 < points.size(); ++i)
             area += points[0].CrossProductToPointsXY(points[i], points[i + 1]);
         return 0.5 * area;
+    }
+
+    /// Centroid, area normal, and area of a 3d polygon (fan sum; works with or
+    /// without closure point). Returns the centroid/normal ray with
+    /// area-weight normalized normal; nullopt for degenerate (<3 pts or zero
+    /// area).
+    /// Ported from: PolygonOps.centroidAreaNormal (PolygonOps.ts:577-634)
+    /// M-P P-F（ViewClipDecoration 的 loop 质心面）。tryNormalizeInPlaceWithAreaWeight
+    /// 语义 = 面积权重 > smallMetricDistance 时归一。
+    static std::optional<dqGeom::Ray3d> centroidAreaNormal(std::vector<Point3d> const& points)
+    {
+        size_t const n = points.size();
+        if (n < 3)
+            return std::nullopt;
+        if (n == 3) {
+            dqGeom::Vector3d const normal = dqGeom::Vector3d::FromCrossProduct(
+                points[1].x - points[0].x, points[1].y - points[0].y, points[1].z - points[0].z,
+                points[2].x - points[0].x, points[2].y - points[0].y, points[2].z - points[0].z);
+            double const a = 0.5 * std::sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
+            dqGeom::Point3d centroid = dqGeom::Point3d::From(
+                (points[0].x + points[1].x + points[2].x) / 3.0,
+                (points[0].y + points[1].y + points[2].y) / 3.0,
+                (points[0].z + points[1].z + points[2].z) / 3.0);
+            dqGeom::Ray3d result{centroid, normal};
+            if (a > 1.0e-6) {  // tryNormalizeInPlaceWithAreaWeight（面积权重门）
+                result.direction.Normalize();
+                return result;
+            }
+            return std::nullopt;
+        }
+        // n > 3：参考 accumulateCross(0,i-1,i) 面法向 + 面积加权重心。
+        dqGeom::Vector3d areaNormal = dqGeom::Vector3d::FromZero();
+        for (size_t i = 2; i < n; ++i) {
+            dqGeom::Vector3d const c = dqGeom::Vector3d::FromCrossProduct(
+                points[i - 1].x - points[0].x, points[i - 1].y - points[0].y,
+                points[i - 1].z - points[0].z,
+                points[i].x - points[0].x, points[i].y - points[0].y,
+                points[i].z - points[0].z);
+            areaNormal.x += c.x;
+            areaNormal.y += c.y;
+            areaNormal.z += c.z;
+        }
+        areaNormal.Normalize();
+        dqGeom::Point3d const& origin = points[0];
+        dqGeom::Vector3d vector0 = dqGeom::Vector3d::From(
+            points[1].x - origin.x, points[1].y - origin.y, points[1].z - origin.z);
+        dqGeom::Vector3d centroidSum = dqGeom::Vector3d::FromZero();
+        dqGeom::Vector3d normal = dqGeom::Vector3d::FromZero();
+        for (size_t i = 2; i < n; ++i) {
+            dqGeom::Vector3d const vector1 = dqGeom::Vector3d::From(
+                points[i].x - origin.x, points[i].y - origin.y, points[i].z - origin.z);
+            dqGeom::Vector3d const cross = dqGeom::Vector3d::FromCrossProduct(vector0, vector1);
+            double const signedTriangleArea = areaNormal.DotProduct(cross);  // twice the area
+            normal.x += cross.x;
+            normal.y += cross.y;
+            normal.z += cross.z;
+            double const b = signedTriangleArea / 6.0;
+            centroidSum.x += vector0.x * b + vector1.x * b;
+            centroidSum.y += vector0.y * b + vector1.y * b;
+            centroidSum.z += vector0.z * b + vector1.z * b;
+            vector0 = vector1;
+        }
+        double const area = 0.5 * std::sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
+        if (area > 1.0e-14) {  // conditionalDivideFraction(1, area) 面
+            double const inverseArea = 1.0 / area;
+            dqGeom::Point3d const centroid = dqGeom::Point3d::From(
+                origin.x + centroidSum.x * inverseArea,
+                origin.y + centroidSum.y * inverseArea,
+                origin.z + centroidSum.z * inverseArea);
+            dqGeom::Ray3d result{centroid, normal};
+            if (area > 1.0e-6) {
+                result.direction.Normalize();
+                return result;
+            }
+            return result;
+        }
+        return std::nullopt;
     }
 
     /// Test convexity/orientation of the xy polygon: 1 = CCW convex, -1 = CW
