@@ -193,4 +193,45 @@
 
 ## 完成实录（收口时回填）
 
-（待逐件完成后回填：每件提交哈希 + 锁清单 + 门禁数字 + 裁决落实情况。）
+七件全清（P-A..P-G，2026-10-05/06，提交 7 笔）：
+
+| 件 | 提交 | 锁 | 门禁 |
+|---|---|---|---|
+| P-A dqGeom 几何三件 | e22380226c | ClipVectorTest 6 + ClipPrimitiveTest 5 + ClipUtilsLoopsTest 1（RED→GREEN） | dqGeom 292/292 |
+| P-B ViewState 存储 + clipStyle | cb7db4624c | ViewClipStateTest 6（ViewDetails.test.ts 六例 1:1） | dqAppTest 423+1 跳 + DisplayTestAppTest 146/146 |
+| P-C RenderPlan→ClipStack/ClipVolume | e7fb9342ca | ClipVolumeStackTest 10（webgl 测试移植；旧 BatchClip 8 测随简化面拆除） | dqRenderTest 741 + dqAppTest 除 AcsDisc[TD-26 净基线实锤] |
+| P-D shader 片元裁剪 | 9fbc204445 | ClipVariantSources + ViewClipPlaneDiscardsHalfspace E2E（五层根因链全录） | TileTreeRender 12/12 + dqRenderTest 740 |
+| P-E ViewClip 工具族 | 843f401f1d | ClipViewToolTest 10 | dqAppTest 433 全绿（AcsDisc 自然通过） |
+| P-F ViewClipDecoration + EditManipulator | efa8b25e10 | ClipDecorationTest 11 + ViewClipDecorationOutlineAndNegatePixelLock E2E | clip 相邻族 70/70 + 全模块除 TD-26/TD-29 归因项 |
+| P-G SectionsPanel + 工具栏 + 工具入口 E2E | 003e485f1f | SectionsPanelTest 4（含 Instances60ToolEntryClipsContent） | dqAppTest 445[444+1 跳] + DtaTest 2 环境态隔离 ×2 全绿 |
+
+**裁决落实**：Geometry 第五型 out（后端 mesh RPC + vhacd 双缺席——面板下拉不列）；
+ModelClipGroups/Add Panel/Negate Plane ➖（per-model clip 面未移植）；produceCutGeometry
+➖（§3.3 既有裁决）；E1-E8 预登记全部开工核实——E1 ViewDetails 承载=ViewState 就地
++props 载体（ViewClipStateTest 锁）；E2 上下文旋转=世界轴/视图 Z 承载（六朝向精确值
+锁）；E3 placements=既有数据面（六轴世界域锁）；E4 瞬态 id=0xFF000000 递增（选集门
+锁）；E5 右键菜单=无监听默认 negate 1:1（Provider 事件序锁）；E6 animateFrustumChange
+=终态 1:1（SetupFromFrustum+synchWithView）；E7 compressByChapterError=不压缩
+（轮廓循环面锁）；E8 cutStyle=produceCutGeometry ➖ 同族。
+
+**引擎侧顺带修复**（取证实录）：SelectionSet 变更门（no-op remove 不再触发——
+Synch↔clearControls 无限往复根因）；Viewport::computeViewRange 移植（ComputeFitRange
+补 ref union——装饰 viewRange 此前被空连接宽松 extents 推出内容域）；PrimitiveTool
+::targetView 公有字段 + ViewClipClearTool 安装即清闭环；ToolAdmin::onButtonDown 移
+public；isPointInPlane（Plane3dByOriginAndUnitNormal L355-357）；centroidAreaNormal
+（PolygonOps :577-634）；C++ 生命周期安全面（clear() 重入守卫 + 选集事件栈延迟
+delete——参考 TS GC 的显式删除等价物）。
+
+**收口门禁**（2026-10-06，Debug，全量 ctest）：**2679 项 = 2652 通过 + 26 跳过 + 1
+失败**——唯一失败 AcsDiscSurvivesDeepZoomPixels（TD-26 归因：同一二进制在本会话
+P-G 收口轮全量自然通过[直接非代码证据]；本轮新形态 step-0 呈现分裂，与桌面残留
+不可杀僵尸测试进程污染 CAPTUREBLT 相关疑；隔离 ×3 同败实录）；TD-29 满载族
+（MinimizeRestore/Baytown）本轮满载轮败后隔离复跑 ×2 全绿归因。
+
+**新探针**（§13.1 登记）：DANQING_CLIP_TRACE（P-D，[CLIPDUMP] 纹理回读）+
+DANQING_CLIPDECO_TRACE（P-F，[CLIPDECO-DEC]/[CLIPDECO-DRAW] 装饰进入/绘制/loop 域）。
+
+**取证教训新录**：①python 经 Bash heredoc 的 `\n` 双反斜杠会被剥一层成实换行——
+C 字符串内联探针一律走 Edit/Write 工具（M-O(2) PS 编码损坏教训同族）；②DqEventScope
+退订必须先于 provider 析构（悬垂退订=14 线程全 Wait join 死锁——阶段二分五轮定位）；
+③僵尸测试进程污染后续窗口态测试（"先杀僵尸再跑"再实录）。
