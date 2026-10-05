@@ -47,6 +47,7 @@ target_sources(dqApp
         src/ViewTool.cpp
         src/SelectionTool.cpp
         src/IdleTool.cpp
+        src/ClipViewTool.cpp  # M-P P-E：ViewClip 工具族（ClipViewTool.ts）
         src/MeasureTool.cpp  # M-O(3) P2：MeasureDistanceTool
         src/GltfDecoration.cpp
         src/GltfImport.cpp
@@ -127,6 +128,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
     add_executable(dqAppTest
         tests/BlankConnectionTest.cpp
         tests/ViewClipStateTest.cpp  # M-P P-B：ViewState clipVector（ViewDetails.test.ts 六例）
+        tests/ClipViewToolTest.cpp  # M-P P-E：ViewClip 工具族（ClipViewTool.ts 数据面）
         tests/ViewPoseTest.cpp
         tests/ViewUndoTest.cpp
         tests/EntityStateTest.cpp

@@ -275,6 +275,20 @@ struct DQ_GEOM_EXPORT Range3d {
         return a > 0.0 ? a : 0.0;
     }
 
+    /// True if the x-length is approximately zero.
+    /// Ported from: itwinjs-core Range3d.isAlmostZeroX (= Geometry.isSmallMetricDistance(xLength)).
+    /// M-P P-E（ViewClipByElementTool.doClipToElements 的 XY 退化判别面）。
+    bool isAlmostZeroX() const
+    {
+        return XLength() <= kSmallMetricDistance;
+    }
+    /// True if the y-length is approximately zero.
+    /// Ported from: itwinjs-core Range3d.isAlmostZeroY (= Geometry.isSmallMetricDistance(yLength)).
+    /// M-P P-E（同上）。
+    bool isAlmostZeroY() const
+    {
+        return YLength() <= kSmallMetricDistance;
+    }
     /// True if the z-length is approximately zero (range is effectively planar in XY).
     /// Ported from: itwinjs-core Range3d.isAlmostZeroZ (= Geometry.isSmallMetricDistance(zLength)).
     bool isAlmostZeroZ() const

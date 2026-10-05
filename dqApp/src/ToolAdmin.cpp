@@ -7,6 +7,7 @@
 #include <cmath>
 #include "dqApp/ViewState.h"
 #include "dqApp/ViewTool.h"  // ViewTool complete type (activeTool/currentTool upcast).
+#include "dqApp/ClipViewTool.h"  // M-P P-E：ViewClip 工具族注册
 #include "dqApp/MeasureTool.h"  // M-O(3) P2：MeasureDistanceTool 注册
 #include "SelectionTool.h"
 #include "IdleTool.h"
@@ -740,6 +741,25 @@ void ToolAdmin::OnInitialized()
     m_registry.Register("Measure.Distance",
                         []() -> InteractiveTool* { return new MeasureDistanceTool(); },
                         "measure distance");
+
+    // Ported from: itwinjs-core IModelApp.startup clipViewTool 模块注册
+    //              （IModelApp.ts:438-446 registerModule(clipViewTool)——keyin =
+    //              CoreTools.json 的 ViewClip.* 族；M-P P-E）。
+    m_registry.Register("ViewClip.Clear",
+                        []() -> InteractiveTool* { return new ViewClipClearTool(); },
+                        "view clip clear");
+    m_registry.Register("ViewClip.ByPlane",
+                        []() -> InteractiveTool* { return new ViewClipByPlaneTool(); },
+                        "view clip by plane");
+    m_registry.Register("ViewClip.ByShape",
+                        []() -> InteractiveTool* { return new ViewClipByShapeTool(); },
+                        "view clip by shape");
+    m_registry.Register("ViewClip.ByRange",
+                        []() -> InteractiveTool* { return new ViewClipByRangeTool(); },
+                        "view clip by range");
+    m_registry.Register("ViewClip.ByElement",
+                        []() -> InteractiveTool* { return new ViewClipByElementTool(); },
+                        "view clip by element");
 
     // Ported from: itwinjs-core IModelApp.startup viewTool 模块注册
     //              （IModelApp.ts:438-446 registerModule(viewTool) 含 ViewUndoTool/
