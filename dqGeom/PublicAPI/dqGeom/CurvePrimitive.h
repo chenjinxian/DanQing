@@ -32,6 +32,10 @@ class Arc3d;
 // ---------------------------------------------------------------------------
 using AnnounceNumberNumberCurvePrimitive = std::function<void(double, double, Arc3d const&)>;
 
+// Ported from: itwinjs-core AnnounceNumberNumber (CurvePrimitive.ts)
+// M-P P-A：剖切段区间回调（announceClippedSegmentIntervals 链）。
+using AnnounceNumberNumber = std::function<void(double, double)>;
+
 // ---------------------------------------------------------------------------
 // CurveType — type discriminator for curve primitives
 // (Ported from: itwinjs-core CurvePrimitiveType)

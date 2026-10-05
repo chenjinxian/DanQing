@@ -11,13 +11,21 @@
 
 #include <dqGeom/ClipPlane.h>
 #include <dqGeom/ClipUtils.h>
+#include <dqGeom/Geometry.h>
+#include <dqGeom/Matrix3d.h>
 #include <dqGeom/Point3d.h>
 #include <dqGeom/PolygonOps.h>
+#include <dqGeom/Transform.h>
 #include <dqGeom/Vector3d.h>
 
+#include <optional>
 #include <vector>
 
 BEGIN_DQ_GEOM_NAMESPACE
+
+/// Wire format describing a ConvexClipPlaneSet: array of clip plane props.
+/// Ported from: itwinjs-core ConvexClipPlaneSetProps (ConvexClipPlaneSet.ts:32-35)
+using ConvexClipPlaneSetProps = std::vector<ClipPlaneProps>;
 
 // Ported from: itwinjs-core ConvexClipPlaneSet (ConvexClipPlaneSet.ts)
 class DQ_GEOM_EXPORT ConvexClipPlaneSet {
@@ -134,6 +142,229 @@ public:
     /// (ConvexClipPlaneSet.ts:412-420)
     bool announceClippedArcIntervals(Arc3d const& arc,
                                      AnnounceNumberNumberCurvePrimitive const& announce) const;
+
+    // ------------------------------------------------------------------
+    // M-P P-A additions (sectioning chain). All Ported from
+    // ConvexClipPlaneSet.ts unless noted; §3.4 adaptations as annotated.
+
+    /// Create a set from an array of planes (references taken into the result).
+    /// Ported from: ConvexClipPlaneSet.createPlanes (ConvexClipPlaneSet.ts:101-114)
+    // §3.4 适配：Plane3dByOriginAndUnitNormal 形态缺（DanQing 调用方均传 ClipPlane）。
+    static ConvexClipPlaneSet createPlanes(std::vector<ClipPlane> const& planes) {
+        ConvexClipPlaneSet result;
+        for (ClipPlane const& plane : planes)
+            result.planes.push_back(plane);
+        return result;
+    }
+
+    /// Create a convex set using selected planes of a Range3d.
+    /// Ported from: ConvexClipPlaneSet.createRange3dPlanes (ConvexClipPlaneSet.ts:125-152)
+    // §3.4 适配：createNormalAndPointXYZXYZ → createNormalAndPoint（同一数学：
+    /// 过点、给法向的单位平面）。
+    static ConvexClipPlaneSet createRange3dPlanes(
+        Range3d const& range, bool lowX = true, bool highX = true,
+        bool lowY = true, bool highY = true, bool lowZ = true, bool highZ = true) noexcept {
+        ConvexClipPlaneSet result = createEmpty();
+        // all normals are nonzero, so ClipPlane creation can only fail on out-of-memory
+        if (lowX)
+            if (auto p = ClipPlane::createNormalAndPoint(Vector3d::From(1, 0, 0), Point3d::From(range.low.x, 0, 0))) result.planes.push_back(*p);
+        if (highX)
+            if (auto p = ClipPlane::createNormalAndPoint(Vector3d::From(-1, 0, 0), Point3d::From(range.high.x, 0, 0))) result.planes.push_back(*p);
+        if (lowY)
+            if (auto p = ClipPlane::createNormalAndPoint(Vector3d::From(0, 1, 0), Point3d::From(0, range.low.y, 0))) result.planes.push_back(*p);
+        if (highY)
+            if (auto p = ClipPlane::createNormalAndPoint(Vector3d::From(0, -1, 0), Point3d::From(0, range.high.y, 0))) result.planes.push_back(*p);
+        if (lowZ)
+            if (auto p = ClipPlane::createNormalAndPoint(Vector3d::From(0, 0, 1), Point3d::From(0, 0, range.low.z))) result.planes.push_back(*p);
+        if (highZ)
+            if (auto p = ClipPlane::createNormalAndPoint(Vector3d::From(0, 0, -1), Point3d::From(0, 0, range.high.z))) result.planes.push_back(*p);
+        return result;
+    }
+
+    /// Negate all planes of the set.
+    /// Ported from: ConvexClipPlaneSet.negateAllPlanes (ConvexClipPlaneSet.ts:161-165)
+    void negateAllPlanes() noexcept {
+        for (ClipPlane& plane : planes)
+            plane.negateInPlace();
+    }
+
+    /// Return true if all members are almostEqual to corresponding members of
+    /// other (same order).
+    /// Ported from: ConvexClipPlaneSet.isAlmostEqual (ConvexClipPlaneSet.ts:88-95)
+    bool isAlmostEqual(ConvexClipPlaneSet const& other) const noexcept {
+        if (planes.size() != other.planes.size())
+            return false;
+        for (size_t i = 0; i < planes.size(); ++i)
+            if (!planes[i].isAlmostEqual(other.planes[i]))
+                return false;
+        return true;
+    }
+
+    /// Return true if `point` satisfies isPointInside for all planes.
+    /// Ported from: ConvexClipPlaneSet.isPointInside (ConvexClipPlaneSet.ts:339-347)
+    bool isPointInside(Point3d const& point) const noexcept {
+        for (ClipPlane const& plane : planes) {
+            if (!plane.isPointInside(point))
+                return false;
+        }
+        return true;
+    }
+
+    /// Test if a sphere is completely inside the convex set.
+    /// Ported from: ConvexClipPlaneSet.isSphereInside (ConvexClipPlaneSet.ts:363-371)
+    bool isSphereInside(Point3d const& centerPoint, double radius) const noexcept {
+        double const r1 = std::abs(radius) + 1.0e-6;  // + Geometry.smallMetricDistance
+        for (ClipPlane const& plane : planes) {
+            if (!plane.isPointOnOrInside(centerPoint, r1))
+                return false;
+        }
+        return true;
+    }
+
+    /// Emit json form.
+    /// Ported from: ConvexClipPlaneSet.toJSON (ConvexClipPlaneSet.ts:62-67)
+    ConvexClipPlaneSetProps toJSON() const noexcept {
+        ConvexClipPlaneSetProps val;
+        for (ClipPlane const& plane : planes)
+            val.push_back(plane.toJSON());
+        return val;
+    }
+    /// Extract clip planes from a props array; non-plane members are ignored
+    /// (null plane entries skipped — 1:1 reference).
+    /// Ported from: ConvexClipPlaneSet.fromJSON (ConvexClipPlaneSet.ts:72-83)
+    static ConvexClipPlaneSet fromJSON(ConvexClipPlaneSetProps const* json) noexcept {
+        ConvexClipPlaneSet result;
+        if (json == nullptr)
+            return result;
+        for (ClipPlaneProps const& jsonPlane : *json) {
+            std::optional<ClipPlane> plane = ClipPlane::fromJSON(&jsonPlane);
+            if (plane.has_value())
+                result.planes.push_back(*plane);
+        }
+        return result;
+    }
+
+    /// Announce the fractional interval [f0,f1] of segment pointA..pointB that
+    /// is inside all planes. Returns true if an interval survived.
+    /// Ported from: ConvexClipPlaneSet.announceClippedSegmentIntervals
+    /// (ConvexClipPlaneSet.ts:372-409)
+    bool announceClippedSegmentIntervals(
+        double f0, double f1, Point3d const& pointA, Point3d const& pointB,
+        AnnounceNumberNumber const& announce = nullptr) const noexcept {
+        if (f1 < f0)
+            return false;
+        for (ClipPlane const& plane : planes) {
+            double const hA = -plane.altitude(pointA);
+            double const hB = -plane.altitude(pointB);
+            std::optional<double> fraction = conditionalDivideFraction(-hA, (hB - hA));
+            if (!fraction.has_value()) {
+                // Line parallel to the plane. If positive, it is all OUT
+                if (hA > 0.0)
+                    return false;
+            } else if (hB > hA) {  // STRICTLY moving outward
+                if (*fraction < f0)
+                    return false;
+                if (*fraction < f1)
+                    f1 = *fraction;
+            } else if (hA > hB) {  // STRICTLY moving inward
+                if (*fraction > f1)
+                    return false;
+                if (*fraction > f0)
+                    f0 = *fraction;
+            } else {
+                // Strictly equal evaluations
+                if (hA > 0.0)
+                    return false;
+            }
+        }
+        if (f1 >= f0) {
+            if (announce)
+                announce(f0, f1);
+            return true;
+        }
+        return false;
+    }
+
+    /// Clip a polygon to the inside of the convex set (output-array form with
+    /// optional plane to skip).
+    /// Ported from: ConvexClipPlaneSet.polygonClip (ConvexClipPlaneSet.ts:623-643)
+    // §3.4 适配：GrowableXYZArray → std::vector<Point3d>（clip 族先例）；
+    /// planeToSkip 的对象同一性 → ClipPlane const*（指向集合内成员的指针）。
+    void polygonClip(std::vector<Point3d> const& input, std::vector<Point3d>& output,
+                     std::vector<Point3d>& work, ClipPlane const* planeToSkip = nullptr,
+                     double tolerance = 1.0e-6) const noexcept {
+        output = input;
+        for (ClipPlane const& plane : planes) {
+            if (planeToSkip == &plane)
+                continue;
+            if (output.empty())
+                break;
+            PolygonOps::clipConvexPolygonInPlace(plane.getNormalRef(),
+                                                 -plane.getDistanceFromOrigin(), output, true, tolerance);
+        }
+        (void)work;
+    }
+
+    /// Set the invisible property on each plane.
+    /// Ported from: ConvexClipPlaneSet.setInvisible (ConvexClipPlaneSet.ts:748-752)
+    void setInvisible(bool invisible) noexcept {
+        for (ClipPlane& plane : planes)
+            plane.setInvisible(invisible);
+    }
+
+    /// Add planes for z-direction clip between low and high z levels.
+    /// Ported from: ConvexClipPlaneSet.addZClipPlanes (ConvexClipPlaneSet.ts:759-764)
+    void addZClipPlanes(bool invisible, std::optional<double> zLow = std::nullopt,
+                        std::optional<double> zHigh = std::nullopt) noexcept {
+        if (zLow.has_value())
+            if (auto p = ClipPlane::createNormalAndDistance(Vector3d::From(0, 0, 1), *zLow, invisible))
+                planes.push_back(*p);
+        if (zHigh.has_value())
+            if (auto p = ClipPlane::createNormalAndDistance(Vector3d::From(0, 0, -1), -*zHigh, invisible))
+                planes.push_back(*p);
+    }
+
+    /// Compute intersections among all combinations of 3 planes in the convex
+    /// set; optionally collect points / extend a range; testContainment drops
+    /// points outside the set. Returns number of accepted points.
+    /// Ported from: ConvexClipPlaneSet.computePlanePlanePlaneIntersections
+    /// (ConvexClipPlaneSet.ts:709-743)
+    size_t computePlanePlanePlaneIntersections(
+        std::vector<Point3d>* points, Range3d* rangeToExtend,
+        Transform const* transform = nullptr, bool testContainment = true) const noexcept {
+        size_t numPoints = 0;
+        size_t const n = planes.size();
+        for (size_t i = 0; i < n; ++i) {
+            for (size_t j = i + 1; j < n; ++j)
+                for (size_t k = j + 1; k < n; ++k) {
+                    Matrix3d const normalRows = Matrix3d::CreateRowValues(
+                        planes[i].inwardNormal.x, planes[i].inwardNormal.y, planes[i].inwardNormal.z,
+                        planes[j].inwardNormal.x, planes[j].inwardNormal.y, planes[j].inwardNormal.z,
+                        planes[k].inwardNormal.x, planes[k].inwardNormal.y, planes[k].inwardNormal.z);
+                    Matrix3d inverse;
+                    if (normalRows.Inverse(inverse)) {
+                        // §3.4 适配：computeCachedInverse + multiplyInverseXYZAsPoint3d
+                        // → Inverse + MultiplyVector（同一数学）。
+                        Point3d xyz = Point3d::From(0, 0, 0);
+                        Vector3d const sol = inverse.MultiplyVector(Vector3d::From(
+                            planes[i].getDistanceFromOrigin(),
+                            planes[j].getDistanceFromOrigin(),
+                            planes[k].getDistanceFromOrigin()));
+                        xyz = Point3d::From(sol.x, sol.y, sol.z);
+                        if (!testContainment || isPointOnOrInside(xyz, 1.0e-6)) {
+                            numPoints++;
+                            if (transform)
+                                xyz = transform->MultiplyPoint3d(xyz);
+                            if (points)
+                                points->push_back(xyz);
+                            if (rangeToExtend)
+                                rangeToExtend->ExtendPoint(xyz);
+                        }
+                    }
+                }
+        }
+        return numPoints;
+    }
 };
 
 END_DQ_GEOM_NAMESPACE

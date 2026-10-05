@@ -23,6 +23,9 @@ target_sources(dqGeom
         src/DqGeom.cpp
         src/Ellipsoid.cpp
         src/ClipPlane.cpp
+        src/ClipPrimitive.cpp
+        src/ClipVector.cpp
+        src/ClipUtilsLoops.cpp
         src/curve/GeometryQuery.cpp
         src/curve/CurvePrimitive.cpp
         src/curve/LineSegment3d.cpp
@@ -89,6 +92,9 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/Matrix3dRowColumnTest.cpp
         tests/AngleSweepPeriodicFractionTest.cpp
         tests/ClipPlanesTest.cpp
+        tests/ClipPrimitiveTest.cpp  # M-P P-A：ClipPrimitive/ClipShape（ClipPrimitives.test.ts 子集）
+        tests/ClipVectorTest.cpp     # M-P P-A：ClipVector/StringifiedClipVector（ClipVector.test.ts 子集）
+        tests/ClipUtilsLoopsTest.cpp # M-P P-A：loops/rangeOf/does 族（ClipUtilities.test.ts 子集）
         tests/YawPitchRollAnglesTest.cpp  # angles→rotation 链（M-H Task 3：ViewState3d 构造的 angles 应用面）
     )
     target_link_libraries(dqGeomTest

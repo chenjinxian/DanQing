@@ -184,6 +184,21 @@ struct DQ_GEOM_EXPORT Range3d {
         }};
     }
 
+    /// Return the 4 corner indices (into the corners() array) of face `index`
+    /// (0..5; index >= 5 yields the top face, 1:1 reference fallthrough).
+    /// Ported from: itwinjs-core Range3d.faceCornerIndices (Range.ts:644-655)
+    static std::array<size_t, 4> FaceCornerIndices(size_t index) noexcept
+    {
+        switch (index) {
+            case 0: return {{0, 4, 6, 2}};
+            case 1: return {{1, 3, 7, 5}};
+            case 2: return {{0, 1, 5, 4}};
+            case 3: return {{3, 2, 6, 7}};
+            case 4: return {{0, 2, 3, 1}};
+            default: return {{4, 5, 7, 6}};
+        }
+    }
+
     /// Return the diagonal vector (high - low).
     /// Ported from: itwinjs-core Range3d.diagonal
     Vector3d Diagonal() const

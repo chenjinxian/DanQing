@@ -28,6 +28,17 @@
 
 BEGIN_DQ_GEOM_NAMESPACE
 
+/// Wire format for one clip plane: { normal: [x,y,z], dist, invisible?, interior? }.
+/// Ported from: itwinjs-core ClipPlaneProps (ClipPlane.ts:213-223)
+// §3.4 适配：TS 的 optional 字段用 optional 表达；normal 的两形态（数组/分量）由宿主
+/// JSON 层归一为分量。
+struct ClipPlaneProps {
+    Vector3d normal = Vector3d::From(0.0, 0.0, 1.0);
+    double dist = 0.0;
+    std::optional<bool> invisible;
+    std::optional<bool> interior;
+};
+
 // Ported from: itwinjs-core ClipPlane (ClipPlane.ts:63-655)
 struct DQ_GEOM_EXPORT ClipPlane {
     Vector3d inwardNormal;        // unit length
@@ -242,6 +253,40 @@ struct DQ_GEOM_EXPORT ClipPlane {
             && inwardNormal.AlmostEqual(other.inwardNormal)
             && invisible == other.invisible
             && interior == other.interior;
+    }
+
+    /// Set the invisible flag.
+    /// Ported from: ClipPlane.setInvisible (ClipPlane.ts:237-239)
+    void setInvisible(bool invis) noexcept { invisible = invis; }
+    /// Set both the invisible and interior flags.
+    /// Ported from: ClipPlane.setFlags (ClipPlane.ts:247-250)
+    void setFlags(bool invis, bool intr) noexcept {
+        invisible = invis;
+        interior = intr;
+    }
+
+    /// Emit json object form. invisible/interior written only when true.
+    /// Ported from: ClipPlane.toJSON (ClipPlane.ts:225-228)
+    ClipPlaneProps toJSON() const noexcept {
+        ClipPlaneProps props;
+        props.normal = inwardNormal;
+        props.dist = distanceFromOrigin;
+        if (invisible)
+            props.invisible = true;
+        if (interior)
+            props.interior = true;
+        return props;
+    }
+    /// Parse json object form. Returns nullopt when normal/dist absent or dist
+    /// non-finite; a null json yields the default unit-z plane at distance 0
+    /// (1:1 reference fallback).
+    /// Ported from: ClipPlane.fromJSON (ClipPlane.ts:230-237)
+    static std::optional<ClipPlane> fromJSON(ClipPlaneProps const* json) noexcept {
+        if (json && std::isfinite(json->dist))
+            return createNormalAndDistance(json->normal, json->dist,
+                                           json->invisible.value_or(false),
+                                           json->interior.value_or(false));
+        return createNormalAndDistance(Vector3d::From(0.0, 0.0, 1.0), 0.0, false, false);
     }
 };
 

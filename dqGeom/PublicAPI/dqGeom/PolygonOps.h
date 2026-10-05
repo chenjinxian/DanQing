@@ -65,6 +65,54 @@ public:
         return out.Normalize() > 0.0;
     }
 
+    /// Signed area of the xy polygon (shoelace via cross products to p0).
+    /// Ported from: PolygonOps.areaXY (PolygonOps.ts) — Point3d[] 形态分支
+    static double areaXY(const std::vector<Point3d>& points) noexcept
+    {
+        double area = 0.0;
+        for (size_t i = 1; i + 1 < points.size(); ++i)
+            area += points[0].CrossProductToPointsXY(points[i], points[i + 1]);
+        return 0.5 * area;
+    }
+
+    /// Test convexity/orientation of the xy polygon: 1 = CCW convex, -1 = CW
+    /// convex, 0 = concave or degenerate. Trailing duplicates of the first
+    /// point are ignored.
+    /// Ported from: PolygonOps.testXYPolygonTurningDirections (PolygonOps.ts)
+    // §3.4 适配：Point2d[]|Point3d[] 联合 → Point3d 形态（消费方 ClipShape 均传 Point3d）。
+    static double testXYPolygonTurningDirections(const std::vector<Point3d>& points) noexcept
+    {
+        // Reduce count by trailing duplicates; leaves iLast at final index
+        size_t numPoint = points.size();
+        size_t iLast = numPoint - 1;
+        while (iLast > 1 && points[iLast].x == points[0].x && points[iLast].y == points[0].y) {
+            numPoint = iLast--;
+        }
+        if (numPoint > 2) {
+            // vector0 = P[iLast-1] -> P[iLast], vector1 = P[iLast] -> P[0]（xy only）
+            double v0x = points[iLast].x - points[iLast - 1].x;
+            double v0y = points[iLast].y - points[iLast - 1].y;
+            double v1x = points[0].x - points[iLast].x;
+            double v1y = points[0].y - points[iLast].y;
+            double const baseArea = v0x * v1y - v0y * v1x;
+            // In a convex polygon, all successive-vector cross products have
+            // the same sign as the base area, hence all products are positive.
+            for (size_t i1 = 1; i1 < numPoint; ++i1) {
+                double const v0xPrev = v1x, v0yPrev = v1y;
+                v1x = points[i1].x - points[i1 - 1].x;
+                v1y = points[i1].y - points[i1 - 1].y;
+                double const currArea = v0xPrev * v1y - v0yPrev * v1x;
+                if (currArea * baseArea <= 0.0)
+                    return 0;
+                v0x = v0xPrev;
+                v0y = v0yPrev;
+            }
+            // Fall out with all signs same as base area
+            return baseArea > 0.0 ? 1 : -1;
+        }
+        return 0;
+    }
+
     /// Clip convex polygon `xyz` in place by the halfspace {p : planeAbc·p + planeD >= 0}
     /// (keepPositive=true) or its complement. planeAbc/planeD are the Point4d-style plane
     /// coefficients (a,b,c,d) with altitude a*x+b*y+c*z+d. Returns numSimpleCrossings +
