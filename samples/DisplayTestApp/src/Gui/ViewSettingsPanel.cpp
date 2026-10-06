@@ -2,6 +2,8 @@
 // 组 + Camera + Monochrome + renderMode 下拉）+ Viewer.ts:327-335（下拉入口）。
 #include "ViewSettingsPanel.h"
 
+#include "RenderingStyles.h"  // M-Q Q-c：Rendering Style 14 预设下拉
+
 #include <QCheckBox>
 #include <QColor>
 #include <QColorDialog>
@@ -111,6 +113,22 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
         // 单条目域内无切换面（选中即当前样式——no-op；通道面在引擎锁覆盖）。
     });
     layout->addWidget(dsCombo);
+
+    // Rendering Style 下拉（ViewAttributes.ts addRenderingStyles:261-281——
+    // "Rendering Style: " 14 项、value=index、handler=applyRenderingStyle；
+    // 3d only 显隐——DanQing 面板即 3d 视口场景，门随视图态）。
+    auto* rsCombo = new QComboBox(this);
+    rsCombo->setObjectName(QStringLiteral("RenderingStyle"));
+    for (RenderingStyle const& style : renderingStyles())
+        rsCombo->addItem(QString::fromStdString(style.name));
+    connect(rsCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [](int index) {
+                auto* vp = activeViewport();
+                if (!vp || index < 0)
+                    return;
+                applyRenderingStyle(*vp, static_cast<size_t>(index));
+            });
+    layout->addWidget(rsCombo);
 
     // Render Mode 下拉（真）。
     m_renderMode = new QComboBox(this);

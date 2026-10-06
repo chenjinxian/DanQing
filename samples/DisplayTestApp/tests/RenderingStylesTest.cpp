@@ -19,9 +19,15 @@
 //    Atmosphere[sky+ground display]；Default[env 四色 + solar dir]。
 //  - applyRenderingStyle：None no-op（不触 viewport）；越界 false。
 #include <gtest/gtest.h>
+#include <QApplication>
+#include <QComboBox>
+// 保证 QApplication 存在（DtaToolBarsTest 同款；进程级只建一次）
+namespace { struct QtEnvRS { QtEnvRS() { if (!qApp) { static int argc = 1; static char n[] = "t"; static char* av[] = {n, nullptr}; new QApplication(argc, av); } } }; }
 
 #include "Gui/RenderingStyles.h"
+#include "Gui/ViewSettingsPanel.h"
 
+#include <dqApp/Application.h>
 #include <dqApp/BlankConnection.h>
 #include <dqApp/Viewport.h>
 #include <dqApp/ViewState.h>
@@ -269,4 +275,38 @@ TEST(RenderingStylesTest, ApplyRenderingStyleNoneNoOpAndApplies)
     // 越界：false。
     EXPECT_FALSE(applyRenderingStyle(*f.vp, 14));
     EXPECT_FALSE(applyRenderingStyle(*f.vp, static_cast<size_t>(-1)));
+}
+
+// Authored（Q-c UI wiring——ViewAttributes.ts:261-281：14 项下拉 + handler）
+TEST(RenderingStylesTest, PanelComboAppliesSelectedStyle)
+{
+    static QtEnvRS s_qtEnvRS;
+    (void)s_qtEnvRS;
+    StyleFixture f;
+    // handler 经 activeViewport()（ViewManager 活动视口）——注册进 ViewManager。
+    dqApp::Application::Get().GetViewManager().AddViewport(f.vp.get());
+    Gui::ViewSettingsPanel panel;
+    QComboBox* combo = panel.findChild<QComboBox*>(QStringLiteral("RenderingStyle"));
+    ASSERT_NE(combo, nullptr);
+    ASSERT_EQ(combo->count(), 14);
+    EXPECT_EQ(combo->itemText(0), QStringLiteral("None"));
+    EXPECT_EQ(combo->itemText(13), QStringLiteral("Atmosphere"));
+
+    // 基态 grid 开（merge 保位判据）→ 选 Illustration（index 3）→ 应用。
+    {
+        auto p = f.view->GetDisplayStyle().getViewFlags().Properties();
+        p.grid = true;
+        f.view->GetDisplayStyle().setViewFlags(dqCommon::ViewFlags(p));
+    }
+    combo->setCurrentIndex(3);
+    auto const& settings = f.view->GetDisplayStyle().getSettings();
+    EXPECT_TRUE(settings.getViewFlags().visibleEdges());
+    EXPECT_TRUE(settings.getViewFlags().grid());  // 合并保位（E2E 判据的 UI 面）
+    EXPECT_DOUBLE_EQ(settings.getLights().solar.direction.x, -0.9833878378071199);
+
+    // 选 None（index 0）→ no-op（设置保持 Illustration 态）。
+    combo->setCurrentIndex(0);
+    EXPECT_TRUE(f.view->GetDisplayStyle().getSettings().getViewFlags().visibleEdges());
+
+    dqApp::Application::Get().GetViewManager().DropViewport(f.vp.get());
 }
