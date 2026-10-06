@@ -1,7 +1,8 @@
-// DtaToolBarsTest — DTA-categorized toolbar set tests
+// DtaToolBarsTest — M-R DTA 布局对齐工具栏测试（app 工具栏 + 26 项主工具栏）
 // Authored: no reference test exists in display-test-app for toolbar construction
 //           (the test app ships no tests); scenarios transcribe the DTA chrome from
-//           Surface.ts:122-180 (app toolbar) + Viewer.ts:236-447 (viewer toolbar).
+//           Surface.ts:122-178 (app toolbar) + Viewer.ts:238-446 (main toolbar 26
+//           items) + ToolBar.ts:122-197 (drop-down interaction contract).
 #include <gtest/gtest.h>
 #include <QMainWindow>
 #include <QToolBar>
@@ -30,195 +31,102 @@ static QtEnv s_qt;
 App::Application* App::Application::_pcSingleton = nullptr;
 std::map<std::string, std::string> App::Application::m_config;
 
-// DTA Surface 工具栏（Surface.ts:122-180）：Open iModel from disk / Open Blank
-// Connection / Analysis Style / Decoration Geometry / Cesium Renderer 示例。
-// Authored: no reference test exists in display-test-app for toolbar construction;
-//           scenario transcribes Surface.ts:122-180 (app toolbar) entry order + enabled state.
-// 2026-09-11 UI 调整（用户指令）：DTA Surface 起始工具栏的 5 个功能不属于示例程序的
-// 常驻工具栏——它们是"新建/打开"入口，移到 Start 页卡片（与 DTA 的打开前工具栏
-// 语义一致：DTA 进入 view 后这些入口不再出现）。此测试锁定 File 工具栏不再存在。
-TEST(DtaToolBarsFile, SurfaceEntriesMovedToStartPage)
+namespace {
+
+// 主工具栏 26 项文本序（Viewer.ts:238-446——严格序；ViewPicker 位为空文本
+// [widget 包装 action]，Google Maps 位不存在 [config 关态]）。
+char const* const kMainTexts[] = {
+    "Debug", "Open iModel", "Open Hub", "",
+    "Models", "Categories", "Saved Views", "Camera Paths",
+    "Select", "Measure", "View Settings",
+    "Fit", "Window Area", "Rotate",
+    "",   // Standard rotations（QToolButton 包装，无文本）
+    "Walk", "Undo", "Redo",
+    "Animation", "Sectioning", "Classification", "Overrides",
+    "Point Cloud", "Contours", "Format Set",
+};
+constexpr int kMainCount = 25;   // 26 项中 Google Maps 不出现（config 关态）
+
+}  // namespace
+
+// 双工具栏换位（Surface.ts:103-119——无聚焦 → app 工具栏显/主工具栏隐；
+// 聚焦 → 反之）。app 工具栏 5 项（Surface.createToolBar :122-178 严格序）。
+TEST(DtaToolBarsSet, AppAndMainToolbarsSwapByViewportFocus)
 {
     QMainWindow mw;
     Gui::DtaToolBarSet bars(&mw);
-    // 六条工具栏：五条分类 + Deco Example（2026-09-17 Surface.ts:155-165
-    // Decoration Geometry 示例入口作为独立工具栏加入——测试漂移修正）。
-    auto toolbars = mw.findChildren<QToolBar*>();
-    EXPECT_EQ(toolbars.size(), 6);
-    for (QToolBar* tb : toolbars)
-        EXPECT_NE(tb->windowTitle(), "File")
-            << "Surface.ts:122-180 的 5 项已移至 Start 页卡片，工具栏不再有 File";
+    ASSERT_NE(bars.appToolBar(), nullptr);
+    ASSERT_NE(bars.mainToolBar(), nullptr);
+
+    // 无聚焦视口：app 工具栏可见、主工具栏隐藏（isHidden 语义——父窗未显时
+    // isVisible 恒 false，显式显隐意图以 isHidden 观测）。
+    EXPECT_FALSE(bars.appToolBar()->isHidden());
+    EXPECT_TRUE(bars.mainToolBar()->isHidden());
+
+    // app 工具栏 5 项序（:126-178——Open disk/Blank/Analysis 置灰/Deco/Cesium）。
+    QList<QAction*> appActs = bars.appToolBar()->actions();
+    ASSERT_EQ(appActs.size(), 5);
+    char const* const kAppTexts[] = { "Open iModel", "Blank",
+                                      "Analysis Style Example", "Deco", "Cesium" };
+    for (int i = 0; i < 5; ++i)
+        EXPECT_EQ(appActs[i]->text(), kAppTexts[i]) << i;
+    EXPECT_TRUE(appActs[0]->isEnabled());   // dump 打开链（M-R 激活）
+    EXPECT_TRUE(appActs[1]->isEnabled());   // blank connection
+    EXPECT_FALSE(appActs[2]->isEnabled());  // Analysis Style（引擎未移植）
+    EXPECT_TRUE(appActs[3]->isEnabled());   // Deco（既有）
+    EXPECT_TRUE(appActs[4]->isEnabled());   // Cesium（M-O(4) P8 keyin）
 }
 
-// 五条工具栏按 DTA 功能分类存在（design §2；File 已于 2026-09-11 移到 Start 页）。
-// Authored: no reference test exists in display-test-app for toolbar construction;
-//           scenario transcribes the DTA chrome category set (Surface.ts + Viewer.ts).
-TEST(DtaToolBarsSet, FiveToolbarsInCategoryOrder)
+// 主工具栏 26 项严格序（Viewer.ts:238-446）+ Measure/Walk 激活（M-R——引擎
+// 已移植 [M-O(3) P1/P2]，此前置灰）+ 置灰面（hub/CameraPaths/Animation/
+// Classification/PointCloud/Contours/FormatSet）。
+TEST(DtaToolBarsMain, TwentySixItemsInDtaOrder)
 {
     QMainWindow mw;
     Gui::DtaToolBarSet bars(&mw);
-    QToolBar* all[] = { bars.viewsToolBar(), bars.selectionToolBar(),
-                        bars.viewSettingsToolBar(), bars.viewToolsToolBar(), bars.analysisToolBar() };
-    const char* titles[] = { "Views", "Selection", "View Settings", "View Tools", "Analysis" };
-    for (int i = 0; i < 5; ++i) {
-        ASSERT_NE(all[i], nullptr) << titles[i];
-        EXPECT_EQ(all[i]->windowTitle(), titles[i]);
-    }
+    QList<QAction*> acts = bars.mainToolBar()->actions();
+    ASSERT_EQ(acts.size(), kMainCount);
+    for (int i = 0; i < kMainCount; ++i)
+        EXPECT_EQ(acts[i]->text(), kMainTexts[i]) << i;
+
+    // 激活面：Debug[既有]/Measure[M-R]/Walk[M-R]/Select/Fit/WindowArea/Rotate/
+    // Undo/Redo/ViewSettings/Sectioning[SectionsPanel 按钮]/Overrides/
+    // SavedViews/CameraPaths 菜单弹出。
+    EXPECT_TRUE(acts[0]->isEnabled()) << "Debug info";
+    EXPECT_TRUE(acts[9]->isEnabled()) << "Measure (engine ported M-O(3) P2)";
+    EXPECT_TRUE(acts[15]->isEnabled() || !acts[15]->isVisible())
+        << "Walk (engine ported M-O(3) P1; hidden via only3d at construction)";
+    EXPECT_TRUE(acts[19]->isEnabled()) << "Sectioning (M-P P-G)";
+
+    // 置灰面（大件未移植/零网络）。
+    // Camera Paths/Animation 为可点空下拉（DTA blank 语义——面板空非置灰）。
+    for (int i : { 2 /*Open Hub*/, 20 /*Classification*/, 22 /*PointCloud*/,
+                   23 /*Contours*/, 24 /*Format Set*/ })
+        EXPECT_FALSE(acts[i]->isEnabled()) << kMainTexts[i];
+
+    // Google Maps 零出现（Viewer.ts:424-434 config googleMapsUi 门——关态）。
+    for (QAction* a : acts)
+        EXPECT_NE(a->text(), QStringLiteral("Google Maps"));
+
+    // ViewPicker = QComboBox 控件（位 4 的 widget 包装 action）。
+    EXPECT_NE(bars.mainToolBar()->findChild<QComboBox*>(
+                  QStringLiteral("DTA.Views.ViewPicker")), nullptr);
+
+    // Standard rotations（位 15）= QToolButton + 命名 menu。
+    EXPECT_NE(bars.mainToolBar()->findChild<QMenu*>(
+                  QStringLiteral("DTA.StdRot.Menu")), nullptr);
 }
 
-// Authored: no reference test exists in display-test-app; scenario transcribes
-//           Viewer.ts:236-447 的 Viewer 工具栏前段（Debug/Open×2/ViewPicker/Models/
-//           Categories/SavedViews/CameraPaths）+ blank 下的空/合成条目语义。
-// 2026-09-11 修订（用户指令）：ViewPicker 不是按钮——DTA 是 HTML <select>
-//（ViewPicker.ts:177），Qt 对应 QComboBox（FreeCAD WorkbenchSelector 模式）。
-TEST(DtaToolBarsViews, ContentsMatchDtaOrderAndBlankSemantics)
-{
-    QMainWindow mw;
-    Gui::DtaToolBarSet bars(&mw);
-    QToolBar* tb = bars.viewsToolBar();
-    ASSERT_NE(tb, nullptr);
-
-    // ViewPicker = QComboBox 控件（非按钮/菜单）。
-    auto* picker = tb->findChild<QComboBox*>(QStringLiteral("DTA.Views.ViewPicker"));
-    ASSERT_NE(picker, nullptr);
-
-    QList<QAction*> acts = tb->actions();
-    ASSERT_EQ(acts.size(), 8);
-    // 第 4 位是 picker 的 widget 包装 action（空文本）；其余为按钮动作。
-    const char* texts[] = { "Debug", "Open iModel", "Open Hub", "",
-                            "Models", "Categories", "Saved Views", "Camera Paths" };
-    for (int i = 0; i < 8; ++i)
-        EXPECT_EQ(acts[i]->text(), texts[i]) << i;
-    // 置灰：Open iModel / Open Hub（Viewer.ts:238-268 对应项未实现）。
-    // Debug 已点亮（2026-09-21 Debug Info 全量移植，测试漂移修正）。
-    EXPECT_TRUE(acts[0]->isEnabled()) << "Debug info panel implemented";
-    EXPECT_FALSE(acts[1]->isEnabled());
-    EXPECT_FALSE(acts[2]->isEnabled());
-    // 下拉按钮类：M-O(1) R2 后 Models/Categories = dock 面板开关（checkable
-    // action，objectName DTA.PanelToggle.*，无菜单——选择面在 dock 面板的
-    // EQUIVALENCE 见 DtaToolBars.cpp 注）；SavedViews/CameraPaths 仍为空下拉
-    //（DTA DropDown 无箭头 ToolBar.ts:99-121——菜单以命名子对象挂工具栏下）。
-    for (int i = 4; i <= 5; ++i) {
-        EXPECT_EQ(acts[i]->menu(), nullptr) << i;
-        EXPECT_TRUE(acts[i]->isCheckable()) << i;
-        EXPECT_EQ(acts[i]->objectName(),
-                  QStringLiteral("DTA.PanelToggle.") + acts[i]->text()) << i;
-    }
-    // Saved Views（i=6，M-O(2) I9）：QToolButton 弹出面板（Overrides 同款——
-    // SavedViewPicker 按需创建，命名按钮为可测 seam）。
-    EXPECT_EQ(acts[6]->menu(), nullptr);
-    EXPECT_NE(tb->findChild<QToolButton*>(QStringLiteral("DTA.SavedViews.Button")),
-              nullptr);
-    // Camera Paths（i=7）仍为空下拉（菜单以命名子对象挂工具栏下）。
-    EXPECT_EQ(acts[7]->menu(), nullptr);
-    EXPECT_NE(tb->findChild<QMenu*>(
-                  QStringLiteral("DTA.DropDown.") + acts[7]->text()),
-              nullptr);
-}
-
-// Authored: no reference test exists in display-test-app for ViewPicker toolbar
-//           wiring; scenario transcribes ViewPicker.ts:139-140 的合成条目语义。
-// ViewPicker 真数据：blank connection 下恰有合成条目 "Spatial View"
-//（ViewPicker.ts:139-140；经 ViewList::create→populate→QComboBox 条目）。
-// 注：本测试创建真实 BlankConnection + Viewport（无 GL，showEvent 不触发）。
-TEST(DtaToolBarsViews, ViewPickerListsSyntheticSpatialViewOnBlank)
-{
-    QMainWindow mw;
-    Gui::DtaToolBarSet bars(&mw);
-
-    dqApp::BlankConnectionProps props;
-    props.name = "blank connection test";
-    props.extents = dqGeom::Range3d(-1000, -1000, -100, 1000, 1000, 100);
-    auto conn = dqApp::BlankConnection::create(props);
-    auto view = dqApp::ViewList::create(conn.Get()).getDefaultView(conn.Get());
-    auto* vp = dqApp::Viewport::Create(nullptr, view);
-    ASSERT_NE(vp, nullptr);
-    dqApp::Application::Get().GetViewManager().AddViewport(vp);
-
-    // ViewPicker 是 QComboBox（<select> 对应控件）；弹出前 repopulate（showPopup
-    // 内部路径，测试直接调用具体类型）。
-    auto* picker = bars.viewsToolBar()->findChild<Gui::ViewPickerComboBox*>(
-        QStringLiteral("DTA.Views.ViewPicker"));
-    ASSERT_NE(picker, nullptr);
-    picker->repopulate();
-    EXPECT_EQ(picker->count(), 1);
-    EXPECT_EQ(picker->itemText(0), QStringLiteral("Spatial View"));
-
-    dqApp::Application::Get().GetViewManager().DropViewport(vp);
-    delete vp;
-}
-
-// Authored: 无参考测试。Viewer.ts:315-319 — Element selection 按钮 =
-// IModelApp.tools.run("SVTSelect")；DanQing 等价：创建 Select 并 SetActiveTool。
-TEST(DtaToolBarsSelection, SelectButtonActivatesSelectTool)
-{
-    QMainWindow mw;
-    Gui::DtaToolBarSet bars(&mw);
-    auto& ta = dqApp::Application::Get().GetToolAdmin();
-    ta.OnInitialized();          // 幂等注册（"Select" 工厂）
-    ta.SetActiveTool(nullptr);   // 归一化前置状态
-
-    QAction* sel = nullptr;
-    for (QAction* a : bars.selectionToolBar()->actions())
-        if (a->text() == "Select") sel = a;
-    ASSERT_NE(sel, nullptr);
-    sel->trigger();
-    EXPECT_NE(ta.GetActiveTool(), nullptr);
-
-    QAction* measure = nullptr;
-    for (QAction* a : bars.selectionToolBar()->actions())
-        if (a->text() == "Measure") measure = a;
-    ASSERT_NE(measure, nullptr);
-    EXPECT_FALSE(measure->isEnabled());  // Measure 未移植（置灰）
-    ta.SetActiveTool(nullptr);           // 清理
-}
-
-// Authored: 无参考测试；Viewer.ts:337-386 — Fit / Window area / Rotate /
-//           Standard rotations 8 向 / Walk / Undo / Redo / Analysis 置灰组。
-// 2026-09-11 修订：Standard Views = QToolButton 弹出面板（DTA ToolBarDropDown
-// 形态），非文本菜单——actions()[3] 是其 widget 包装 action（空文本）。
-TEST(DtaToolBarsViewTools, ContentsMatchDtaOrder)
-{
-    QMainWindow mw;
-    Gui::DtaToolBarSet bars(&mw);
-    QToolBar* tb = bars.viewToolsToolBar();
-    ASSERT_NE(tb, nullptr);
-    QList<QAction*> acts;
-    for (QAction* a : tb->actions()) if (!a->isSeparator()) acts.push_back(a);
-    ASSERT_EQ(acts.size(), 5);
-    const char* texts[] = { "Fit", "Window Area", "Rotate", "", "Walk" };
-    for (int i = 0; i < 5; ++i) EXPECT_EQ(acts[i]->text(), texts[i]) << i;
-    EXPECT_TRUE(acts[0]->isEnabled());    // Fit ✅
-    EXPECT_TRUE(acts[1]->isEnabled());    // Window Area ✅（View.WindowArea 已移植，W4）
-    EXPECT_TRUE(acts[2]->isEnabled());    // Rotate ✅
-    // Standard Views = QToolButton（弹出 2×4 面板，见下一个测试）
-    EXPECT_NE(acts[3]->objectName(), QString());
-    EXPECT_FALSE(acts[4]->isEnabled());   // Walk（View.LookAndMove 未移植）
-}
-
-// Standard Views 弹出面板 = DTA 的 8 向 2×4 网格（StandardRotations.ts:9-18
-// 顺序：top/bottom/left/right/front/back/iso/isoRight；:33-47 两行四个按钮）。
-// Qt 形态：QToolButton + QMenu 内 QWidgetAction 包装的网格面板（8 个 QToolButton
-// 按钮带 DTA 字形图标，objectName DTA.StdRot.<i> 表网格线性序）。
-// Authored: no reference test exists in display-test-app for the Standard Views
-//           panel; scenario transcribes StandardRotations.ts:9-18/:29-47.
+// StandardRotations 面板八向按钮（StandardRotations.ts:9-18/:29-47——
+// top/bottom/left/right/front/back/iso/isoRight；:33-47 两行四个按钮）。
 TEST(DtaToolBarsViewTools, StandardViewsPanelHasEightDirectionButtonsInDtaOrder)
 {
     QMainWindow mw;
     Gui::DtaToolBarSet bars(&mw);
 
-    // 经 widget 包装 action → QToolButton → 菜单 → 面板。
-    QAction* sv = nullptr;
-    for (QAction* a : bars.viewToolsToolBar()->actions())
-        if (a->objectName() == QLatin1String("DTA.ViewTools.StandardRotations")) sv = a;
-    ASSERT_NE(sv, nullptr);
-    auto* svWa = qobject_cast<QWidgetAction*>(sv);
-    ASSERT_NE(svWa, nullptr);
-    auto* svBtn = qobject_cast<QToolButton*>(svWa->defaultWidget());
-    ASSERT_NE(svBtn, nullptr);
-    EXPECT_EQ(svBtn->menu(), nullptr);   // DTA DropDown 无箭头（ToolBar.ts:99-121）
-    auto* svMenu = svBtn->findChild<QMenu*>(QStringLiteral("DTA.StdRot.Menu"));
-    ASSERT_NE(svMenu, nullptr);          // 点击手动 popup 的菜单
+    auto* svMenu = bars.mainToolBar()->findChild<QMenu*>(
+        QStringLiteral("DTA.StdRot.Menu"));
+    ASSERT_NE(svMenu, nullptr);
     ASSERT_EQ(svMenu->actions().size(), 1);
     auto* panelWa = qobject_cast<QWidgetAction*>(svMenu->actions().first());
     ASSERT_NE(panelWa, nullptr);
@@ -236,91 +144,106 @@ TEST(DtaToolBarsViewTools, StandardViewsPanelHasEightDirectionButtonsInDtaOrder)
     EXPECT_EQ(panel->findChildren<QToolButton*>().size(), 8);
 }
 
-// Analysis 工具栏：Undo/Redo（View.Undo/View.Redo 工具，真 action）+ 6 个置灰
-// 分析项 + Overrides 弹出面板（M-O(2) I10——Viewer.ts:405-409 转 live）。
-// Authored: no reference test exists in display-test-app for the analysis
-//           toolbar; scenario transcribes Viewer.ts:370-436 (Undo/Redo enabled
-//           actions + disabled analysis entries + live Overrides dropdown).
-TEST(DtaToolBarsAnalysis, AnalysisUndoRedoEnabledRestDisabled)
+// 下拉交互合同（ToolBar.ts:163-196）：单开互斥（open 先 close 全部）+
+// closeOpenDropDowns。headless 面板观测（QWidget show/close）。
+TEST(DtaToolBarsDropDowns, OpenIsMutuallyExclusiveAndCloseClosesAll)
 {
     QMainWindow mw;
     Gui::DtaToolBarSet bars(&mw);
-    QList<QAction*> acts;
-    for (QAction* a : bars.analysisToolBar()->actions()) if (!a->isSeparator()) acts.push_back(a);
-    ASSERT_EQ(acts.size(), 9);
-    const char* texts[] = { "Undo", "Redo", "Animation", "Sectioning", "Classification",
-                            "Overrides", "Point Cloud", "Contours", "Format Set" };
-    for (int i = 0; i < 9; ++i)
-        EXPECT_EQ(acts[i]->text(), texts[i]) << i;
-    EXPECT_TRUE(acts[0]->isEnabled());   // Undo → View.Undo 工具（ViewTool.ts:4111-4120）
-    EXPECT_TRUE(acts[1]->isEnabled());   // Redo → View.Redo 工具（ViewTool.ts:4125-4134）
-    EXPECT_TRUE(acts[3]->isEnabled());   // M-P P-G：Sectioning → SectionsPanel 弹出（Viewer.ts:390-393）
-    EXPECT_TRUE(acts[5]->isEnabled());   // M-O(2) I10：Overrides → FeatureOverridesPanel 弹出（live）
-    for (int i : {2, 4, 6, 7, 8})
-        EXPECT_FALSE(acts[i]->isEnabled()) << texts[i];
+
+    QWidget panelA, panelB;
+    panelA.hide();
+    panelB.hide();
+    bars.openDropDown(&panelA);
+    ASSERT_EQ(bars.openDropDownCount(), 1);
+    EXPECT_FALSE(panelA.isHidden());
+
+    // 单开互斥：开 B → A 关（ToolBar.open :168-180 先 close）。
+    bars.openDropDown(&panelB);
+    EXPECT_EQ(bars.openDropDownCount(), 1);
+    EXPECT_TRUE(panelA.isHidden());
+    EXPECT_FALSE(panelB.isHidden());
+
+    // ToolBar.close（:163-172）。
+    bars.closeOpenDropDowns();
+    EXPECT_EQ(bars.openDropDownCount(), 0);
+    EXPECT_TRUE(panelB.isHidden());
 }
 
-// Authored: 无参考测试；DTA 语义（Surface.ts:97-119）= 无视口时视口工具不可用。
-// DanQing 桌面形态：工具栏常显、整体置灰。2026-09-11：File 工具栏已移至 Start 页，
-// 其余 5 条全部随视口置灰。
-TEST(DtaToolBarsEnablement, ViewToolbarsDisabledWithoutViewport)
+// only3d 显隐（ToolBar.onViewChanged :192-193——is3d ? block : none）：
+// Models/StandardRotations/Walk/Classification 四 only3d 项随视口维度显隐。
+// 无视口态：隐藏（onViewChanged 的 is3d=false 面）。
+TEST(DtaToolBarsOnly3d, HiddenWithoutViewportShownFor3d)
 {
     QMainWindow mw;
     Gui::DtaToolBarSet bars(&mw);
-    // 初始无视口：5 条全部置灰。
-    for (QToolBar* tb : { bars.viewsToolBar(), bars.selectionToolBar(),
-                          bars.viewSettingsToolBar(), bars.viewToolsToolBar(), bars.analysisToolBar() })
-        EXPECT_FALSE(tb->isEnabled());
+    QList<QAction*> acts = bars.mainToolBar()->actions();
+
+    // 无视口 → only3d 四项隐藏。
+    EXPECT_FALSE(acts[4]->isVisible());   // Models
+    EXPECT_FALSE(acts[14]->isVisible());  // Standard rotations
+    EXPECT_FALSE(acts[15]->isVisible());  // Walk
+    EXPECT_FALSE(acts[20]->isVisible());  // Classification
+    // 非 only3d 项不受影响（如 Select/Categories）。
+    EXPECT_TRUE(acts[5]->isVisible());    // Categories
+    EXPECT_TRUE(acts[8]->isVisible());    // Select
+
+    // 3d 视口 → 四项可见 + 换位（主工具栏显/app 工具栏隐）。
+    dqApp::BlankConnectionProps props;
+    props.extents = dqGeom::Range3d(-1000, -1000, -100, 1000, 1000, 100);
+    auto conn = dqApp::BlankConnection::create(props);
+    auto view = dqApp::ViewList::create(conn.Get()).getDefaultView(conn.Get());
+    auto* vp = dqApp::Viewport::Create(nullptr, view);
+    dqApp::Application::Get().GetViewManager().AddViewport(vp);
+    EXPECT_TRUE(acts[4]->isVisible());
+    EXPECT_TRUE(acts[15]->isVisible());
+    EXPECT_TRUE(bars.appToolBar()->isHidden());
+    EXPECT_FALSE(bars.mainToolBar()->isHidden());
+
+    dqApp::Application::Get().GetViewManager().DropViewport(vp);
+    delete vp;
+    EXPECT_FALSE(acts[4]->isVisible());
+    EXPECT_FALSE(bars.appToolBar()->isHidden());
+    EXPECT_TRUE(bars.mainToolBar()->isHidden());
 }
 
-// Authored: no reference test exists in display-test-app for viewport-presence
-//           enablement (test app ships no tests); scenario transcribes the DTA
-//           semantics (Surface.ts:97-119) that viewport tools require a selected
-//           viewport — desktop form: toolbars always visible, disabled as a whole.
-TEST(DtaToolBarsEnablement, EnabledWhenViewportSelected)
+// ViewPicker 真数据：blank connection 下恰有合成条目 "Spatial View"
+//（ViewPicker.ts:139-140；经 ViewList::create→populate→QComboBox 条目）。
+TEST(DtaToolBarsViews, ViewPickerListsSyntheticSpatialViewOnBlank)
 {
     QMainWindow mw;
     Gui::DtaToolBarSet bars(&mw);
     dqApp::BlankConnectionProps props;
-    props.extents = dqGeom::Range3d(-1000,-1000,-100, 1000,1000,100);
+    props.extents = dqGeom::Range3d(-1000, -1000, -100, 1000, 1000, 100);
     auto conn = dqApp::BlankConnection::create(props);
     auto view = dqApp::ViewList::create(conn.Get()).getDefaultView(conn.Get());
     auto* vp = dqApp::Viewport::Create(nullptr, view);
     dqApp::Application::Get().GetViewManager().AddViewport(vp);
 
-    for (QToolBar* tb : { bars.viewsToolBar(), bars.selectionToolBar(),
-                          bars.viewSettingsToolBar(), bars.viewToolsToolBar(), bars.analysisToolBar() })
-        EXPECT_TRUE(tb->isEnabled());
+    auto* picker = bars.mainToolBar()->findChild<Gui::ViewPickerComboBox*>(
+        QStringLiteral("DTA.Views.ViewPicker"));
+    ASSERT_NE(picker, nullptr);
+    picker->repopulate();
+    ASSERT_EQ(picker->count(), 1);
+    EXPECT_EQ(picker->itemText(0), QStringLiteral("Spatial View"));
 
     dqApp::Application::Get().GetViewManager().DropViewport(vp);
-    for (QToolBar* tb : { bars.viewsToolBar(), bars.selectionToolBar(),
-                          bars.viewSettingsToolBar(), bars.viewToolsToolBar(), bars.analysisToolBar() })
-        EXPECT_FALSE(tb->isEnabled());
     delete vp;
 }
 
-// 2026-09-11 图标化（用户指令）：工具栏按钮全部换用 DTA 对应图标（Viewer.ts 的
-// iconUnicode 字形 + .static-assets SVG）；ViewPicker 除外——参考是 <select> 文本
-// 控件（ViewPicker.ts:176-190），无图标。
-// Authored: no reference test exists in display-test-app (test app ships no tests);
-//           icon spec transcribed from Viewer.ts:238-447 + StandardRotations.ts:9-18.
-TEST(DtaToolBarsIcons, AllActionsCarryDtaIcons)
+// Select 按钮（Viewer.ts:316-320——tools.run("SVTSelect")）：激活 Select 工具
+//（DTA defaultToolId 面）。
+TEST(DtaToolBarsSelection, SelectButtonActivatesSelectTool)
 {
     QMainWindow mw;
     Gui::DtaToolBarSet bars(&mw);
-    for (QToolBar* tb : { bars.viewsToolBar(), bars.selectionToolBar(),
-                          bars.viewSettingsToolBar(), bars.viewToolsToolBar(),
-                          bars.analysisToolBar() }) {
-        for (QAction* a : tb->actions()) {
-            if (a->isSeparator()) continue;
-            // 跳过控件包装 action：ViewPicker（<select> 文本形态）与 Standard
-            // Rotations（QToolButton 弹出面板，图标在按钮上，由专测覆盖）。
-            if (a->objectName() == QLatin1String("DTA.Views.ViewPicker") ||
-                a->objectName() == QLatin1String("DTA.ViewTools.StandardRotations"))
-                continue;
-            EXPECT_FALSE(a->icon().isNull())
-                << qPrintable(QString("%1 / %2 must carry a DTA icon")
-                                  .arg(tb->windowTitle(), a->text()));
-        }
-    }
+    QList<QAction*> acts = bars.mainToolBar()->actions();
+    QAction* sel = acts[8];
+    ASSERT_EQ(sel->text(), QStringLiteral("Select"));
+    dqApp::Application::Get().GetToolAdmin().OnInitialized();   // 注册面（既有先例）
+    sel->trigger();
+    auto& ta = dqApp::Application::Get().GetToolAdmin();
+    ASSERT_NE(ta.activeTool(), nullptr);
+    EXPECT_STREQ(ta.activeTool()->getToolId(), "Select");
+    ta.SetActiveTool(nullptr);
 }

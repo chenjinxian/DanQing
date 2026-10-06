@@ -24,6 +24,8 @@
 #include <QLineEdit>
 #include <QShortcut>
 #include <QStatusBar>
+#include <QLabel>
+#include <QToolBar>
 #include <QCompleter>
 #include <QStringListModel>
 #include <QCheckBox>
@@ -164,14 +166,24 @@ TEST(DtaToolsWiring, StatusBarAssemblyMountsKeyinFpsTileIndicator)
     mw.show();
     qApp->processEvents();
 
-    auto* keyin = mw.statusBar()->findChild<Gui::KeyinField*>();
+    // M-R：DTA #status-bar 位于工具栏之上（index.html 顺序）——keyin/FPS/
+    // tile/snap 四件挂 DTA.StatusBar 顶条（QToolBar）而非底部状态栏。
+    auto* dtaStatus = mw.findChild<QToolBar*>(QStringLiteral("DTA.StatusBar"));
+    ASSERT_NE(dtaStatus, nullptr);
+    EXPECT_FALSE(dtaStatus->isMovable());   // DTA 固定行
+
+    auto* keyin = dtaStatus->findChild<Gui::KeyinField*>();
     ASSERT_NE(keyin, nullptr);
     EXPECT_NE(keyin->completer(), nullptr);  // KeyinField.ts 自动补全列表
 
-    auto* fps = mw.statusBar()->findChild<Gui::FpsMonitor*>();
+    auto* fps = dtaStatus->findChild<Gui::FpsMonitor*>();
     ASSERT_NE(fps, nullptr);
-    auto* tiles = mw.statusBar()->findChild<Gui::TileLoadIndicator*>();
+    auto* tiles = dtaStatus->findChild<Gui::TileLoadIndicator*>();
     ASSERT_NE(tiles, nullptr);
+    auto* snap = dtaStatus->findChild<QComboBox*>(QStringLiteral("snapModes"));
+    ASSERT_NE(snap, nullptr);
+    ASSERT_EQ(snap->count(), 8);   // SnapModes.ts:38-46 八项
+    EXPECT_EQ(snap->itemText(7), QStringLiteral("Multi-snap"));
 
     // 自动补全列表含已注册 keyin（"select elements"——CoreTools.json Select 键）。
     QStringListModel* model
@@ -192,7 +204,7 @@ TEST(DtaToolsWiring, KeyinFieldSubmitRunsRecordFpsThroughRegistry)
 
     Gui::MainWindow mw;
     Gui::setupDtaStatusBar(&mw);
-    auto* keyin = mw.statusBar()->findChild<Gui::KeyinField*>();
+    auto* keyin = mw.findChild<Gui::KeyinField*>();   // M-R 顶条（全树查找）
     ASSERT_NE(keyin, nullptr);
 
     keyin->setText(QStringLiteral("dta record fps 3"));
@@ -227,7 +239,7 @@ TEST(DtaToolsWiring, SnapModeKeyinSetsAccuSnapActiveMode)
 
     Gui::MainWindow mw;
     Gui::setupDtaStatusBar(&mw);
-    auto* keyin = mw.statusBar()->findChild<Gui::KeyinField*>();
+    auto* keyin = mw.findChild<Gui::KeyinField*>();   // M-R 顶条（全树查找）
     ASSERT_NE(keyin, nullptr);
 
     auto activeMode = []() -> int {
@@ -273,7 +285,7 @@ TEST(DtaToolsWiring, SnapModesComboBoxSwitchesAccuSnapActiveModes)
     mw.show();
     qApp->processEvents();
 
-    auto* combo = mw.statusBar()->findChild<QComboBox*>(QStringLiteral("snapModes"));
+    auto* combo = mw.findChild<QComboBox*>(QStringLiteral("snapModes"));   // M-R 顶条
     ASSERT_NE(combo, nullptr) << "snapModes combo not mounted in status bar";
 
     // 8 项参考名序（SnapModes.ts:38-46 entries 逐项）。
@@ -326,7 +338,7 @@ TEST(DtaToolsWiring, KeyinFieldUnknownKeyinReportsToolNotFound)
 
     Gui::MainWindow mw;
     Gui::setupDtaStatusBar(&mw);
-    auto* keyin = mw.statusBar()->findChild<Gui::KeyinField*>();
+    auto* keyin = mw.findChild<Gui::KeyinField*>();   // M-R 顶条（全树查找）
     ASSERT_NE(keyin, nullptr);
 
     keyin->setText(QStringLiteral("definitely not a keyin"));
@@ -611,7 +623,7 @@ TEST(DtaToolsWiring, GridSettingsKeyinChangesViewDetails)
 
     Gui::MainWindow mw;
     Gui::setupDtaStatusBar(&mw);
-    auto* keyin = mw.statusBar()->findChild<Gui::KeyinField*>();
+    auto* keyin = mw.findChild<Gui::KeyinField*>();   // M-R 顶条（全树查找）
     ASSERT_NE(keyin, nullptr);
 
     // 基线（ViewDetails.ts:24-31 默认：WorldXY/10/{1,1}）。
@@ -890,4 +902,27 @@ TEST(DtaToolsWiring, GltfDecorationInstancesRenderSeparatedClusters)
 
     // 清理（ViewManager 非拥有指针——销毁前 Drop）。
     dqApp::Application::Get().GetViewManager().DropDecorator(decoration.get());
+}
+
+// M-R：bottomdiv 双 span（index.html :66-69 showstatus/showerror——Utils.ts:8-15
+// 的 Qt 等价：installDtaOutputSpans 双 QLabel + showStatus 双写分流）。
+TEST(DtaToolsWiring, OutputSpansReceiveStatusAndError)
+{
+    ensureAppStubReady();
+    Gui::MainWindow mw;
+    Gui::setupDtaStatusBar(&mw);
+    mw.show();
+    qApp->processEvents();
+
+    auto* showstatus = mw.statusBar()->findChild<QLabel*>(QStringLiteral("showstatus"));
+    ASSERT_NE(showstatus, nullptr);
+    auto* showerror = mw.statusBar()->findChild<QLabel*>(QStringLiteral("showerror"));
+    ASSERT_NE(showerror, nullptr);
+
+    mw.showStatus(Gui::MainWindow::Pane, QStringLiteral("hello span"));
+    EXPECT_EQ(showstatus->text(), QStringLiteral("hello span"));
+    EXPECT_TRUE(showerror->text().isEmpty()) << "Pane 级不写 error span";
+
+    mw.showStatus(Gui::MainWindow::Err, QStringLiteral("boom"));
+    EXPECT_EQ(showerror->text(), QStringLiteral("boom")) << "Err 级双写 error span";
 }

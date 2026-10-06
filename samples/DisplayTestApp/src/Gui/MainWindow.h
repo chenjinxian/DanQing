@@ -102,6 +102,11 @@ public:
     /// Shows a status bar message.
     void showStatus(int type, const QString& message);
 
+    // M-R：bottomdiv 双 span 安装（index.html :66-69 showstatus/showerror——
+    // Utils.ts:8-15 showStatus/showError 的 Qt 承载；span 常驻底部状态栏，
+    // showStatus 双写）。
+    void installDtaOutputSpans();
+
     // Deviation: made public for testability (FreeCAD has these as private)
     // Ported from: FreeCAD src/Gui/MainWindow.h — status message types
     enum StatusType { None, Err, Wrn, Pane, Msg, Log, Tmp, Critical };

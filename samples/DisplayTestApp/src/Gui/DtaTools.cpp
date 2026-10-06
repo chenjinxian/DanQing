@@ -11,9 +11,11 @@
 #include <QKeySequence>
 #include <QLabel>
 #include <QMdiSubWindow>
+#include <QMainWindow>
 #include <QObject>
 #include <QPoint>
 #include <QShortcut>
+#include <QToolBar>
 #include <QToolTip>
 #include <QWidget>
 
@@ -109,30 +111,36 @@ void setupDtaStatusBar(MainWindow* mainWindow)
     if (!mainWindow)
         return;
 
-    // Ported from: index.html status-bar div children (Surface.ts:52-60 mounts
-    // them) — DOM order: keyin-entry, fps-container, tileLoadIndicatorContainer.
-    // The DTA container sits above the tool bar; DanQing's equivalent chrome
-    // surface is the MainWindow status bar (addStatusBarItem registry).
-    auto* keyin = new KeyinField(50);  // Surface.ts:58 — historyLength: 50
-    keyin->setWindowTitle(QObject::tr("Keyin"));
-    mainWindow->addStatusBarItem(
-        keyin, StatusBarItemSpec("Keyin", QString(), StatusBarSlot::Left, -5, true, 0));
+    // M-R：DTA #status-bar 位于工具栏之上（index.html 顺序：status-bar →
+    // toolBar）。Qt 形态 = 不可移动 QToolBar（objectName DTA.StatusBar），
+    // 经 addToolBar 后 insertToolBar 置于 DTA 工具栏之前（菜单栏正下方）。
+    // 子件序 1:1 index.html：keyin-entry | fps-container |
+    // tileLoadIndicatorContainer | snapModesContainer。
+    QMainWindow* mw = mainWindow;   // MainWindow 即 QMainWindow（继承）
+    QToolBar* dtaStatus = new QToolBar(mw);
+    dtaStatus->setObjectName(QStringLiteral("DTA.StatusBar"));
+    dtaStatus->setWindowTitle(QStringLiteral("DTA Status"));
+    dtaStatus->setMovable(false);
+    dtaStatus->setFloatable(false);
+    dtaStatus->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    mw->addToolBar(Qt::TopToolBarArea, dtaStatus);
+    mw->insertToolBar(dtaStatus, dtaStatus);   // 首位（后续工具栏 insertToolBar 其后）
 
-    auto* fps = new FpsMonitor;
-    fps->setWindowTitle(QObject::tr("FPS"));
-    mainWindow->addStatusBarItem(
-        fps, StatusBarItemSpec("FpsMonitor", QString(), StatusBarSlot::Left, -4, true, 0));
+    auto* keyin = new KeyinField(50, dtaStatus);  // Surface.ts:58 — historyLength: 50
+    dtaStatus->addWidget(keyin);
 
-    auto* tiles = new TileLoadIndicator;
-    mainWindow->addStatusBarItem(
-        tiles, StatusBarItemSpec("TileLoadIndicator", QString(), StatusBarSlot::Left, -3, true, 0));
+    auto* fps = new FpsMonitor(dtaStatus);
+    dtaStatus->addWidget(fps);
+
+    auto* tiles = new TileLoadIndicator(dtaStatus);
+    dtaStatus->addWidget(tiles);
 
     // Ported from: Surface.ts:53 addSnapModes(document.getElementById(
     // "snapModesContainer")) + SnapModes.ts:30-50 — the snap-mode combo box
     // ("Snap Mode: " label + 8 entries; Multi-snap = the 7-mode array of
     // SnapModes.ts:10-18).
     {
-        auto* snapBox = new QWidget(mainWindow);
+        auto* snapBox = new QWidget(dtaStatus);
         auto* snapLayout = new QHBoxLayout(snapBox);
         snapLayout->setContentsMargins(0, 0, 0, 0);
         snapLayout->addWidget(new QLabel(QObject::tr("Snap Mode: "), snapBox));
@@ -167,8 +175,16 @@ void setupDtaStatusBar(MainWindow* mainWindow)
                                  dqApp::Application::Get().GetAccuSnap().setActiveSnapModes(kMultiSnapModes);
                          });
         snapBox->setWindowTitle(QObject::tr("Snap Mode"));
-        mainWindow->addStatusBarItem(
-            snapBox, StatusBarItemSpec("SnapModes", QString(), StatusBarSlot::Left, -2, true, 0));
+        dtaStatus->addWidget(snapBox);
+    }
+
+    // M-R：bottomdiv 双 span（index.html :66-69 showstatus/showerror——
+    // Utils.ts:8-15 showStatus 写 #showstatus、showError 写 #showerror）。
+    // Qt 形态 = 底部状态栏两 QLabel（objectName 同 id）；showStatus 面 =
+    // MainWindow::showStatus 既有链（M-L(3) ⑦ NotificationManager→状态栏
+    // 消息），此处在底部加常驻 span 并让 showStatus 双写。
+    {
+        mainWindow->installDtaOutputSpans();
     }
 
     // Ported from: Surface.ts:229-291 keyboard shortcuts — "`" focuses the key-in

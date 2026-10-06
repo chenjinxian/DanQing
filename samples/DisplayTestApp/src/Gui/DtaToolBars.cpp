@@ -1,11 +1,13 @@
-// Ported from: itwinjs-core display-test-app Viewer.ts:236-436（Views/Selection/View Settings/View Tools/Analysis 工具栏内容/顺序）
-//              + Surface.ts:97-119（enablement 语义）,122-180（app 工具栏内容/顺序）
+// Ported from: itwinjs-core display-test-app Viewer.ts:238-446（主工具栏 26 项单行——M-R）
+//              + Surface.ts:103-119（焦点换位）/122-178（app 工具栏 5 项）
+//              + ToolBar.ts:122-197（下拉交互合同：单开互斥/onViewChanged/only3d）
 #include "DtaToolBars.h"
 
 #include <QAction>
 #include <QComboBox>
 #include <QCursor>
 #include <QDockWidget>
+#include <QFileDialog>
 #include <QFontDatabase>
 #include <QIcon>
 #include <QMainWindow>
@@ -37,6 +39,7 @@
 #include "MainWindow.h"               // M-O(1) R2 addPanelToggle（dock 面板开关）
 #include "View3DInventor.h"
 #include "ViewSettingsPanel.h"   // Task 4: View Settings 弹出面板
+#include "../DumpOpenHelper.h"   // M-R：Open iModel from disk（dump 打开链）
 
 namespace Gui {
 namespace {
@@ -255,312 +258,445 @@ public:
     }
 };
 
+// ---------------------------------------------------------------------------
+// DtaToolBarSet（M-R：app 工具栏 + 主工具栏 26 项 + 换位 + 交互合同）
+// ---------------------------------------------------------------------------
+
 DtaToolBarSet::DtaToolBarSet(QMainWindow* mw)
     : QObject(mw)
 {
-    buildViewsToolBar(mw);
-    buildSelectionToolBar(mw);
-    buildViewSettingsToolBar(mw);
-    buildViewToolsToolBar(mw);
-    buildAnalysisToolBar(mw);
+    buildAppToolBar(mw);
+    buildMainToolBar(mw);
 
-    // DTA 语义（Surface.ts:97-119）：无视口时视口工具不可用。桌面形态：工具栏
-    // 常显、整体置灰。初始按当前活动视口；选中变化事件驱动切换。
-    // （2026-09-11：Surface.ts:122-180 的 app 级入口移至 Start 页卡片，File
-    // 工具栏随之移除——DTA 中这些入口只在打开前出现。）
-    setViewToolbarsEnabled(dqApp::Application::Get().GetViewManager().GetActiveViewport() != nullptr);
+    // 焦点换位（Surface.ts:103-119：viewer 聚焦 → topdiv 换 viewer 工具栏；
+    // 无聚焦 → app 工具栏）+ 交互合同（ToolBar.onViewChanged :186-196：
+    // 关全部下拉 + only3d 显隐）。
+    swapToolBarsForViewport(dqApp::Application::Get().GetViewManager().GetActiveViewport());
     m_scope.add(dqApp::Application::Get().GetViewManager().OnSelectedViewportChanged.AddListener(
         [this](dqApp::SelectedViewportChangedArgs const& args) {
-            setViewToolbarsEnabled(args.current != nullptr);
+            swapToolBarsForViewport(args.current);
         }));
 }
 
-// Ported from: itwinjs-core Viewer.ts:236-313 — Debug info / Open iModel from disk /
-// Open from hub / ViewPicker / Models / Categories / Saved views / Camera paths。
-// 图标：Viewer.ts:239 / 245 / 253 / 275 / 286 / 296 / 306 的 iconUnicode 字形；
-//       ViewPicker（ViewPicker.ts:176-190）是 <select> 文本控件，无图标——
-//       IconOnly 下 Qt 回退显示其文本。
-void DtaToolBarSet::buildViewsToolBar(QMainWindow* mw)
+// ToolBar.close（ToolBar.ts:163-172）——关闭全部打开的下拉面板。
+void DtaToolBarSet::closeOpenDropDowns()
 {
-    m_viewsToolBar = makeBar(mw, QStringLiteral("Views"));
+    for (auto& panel : m_openPanels) {
+        if (panel)
+            panel->close();
+    }
+    m_openPanels.clear();
+}
 
-    // Viewer.ts:238-242 — "Debug info": first click lazily creates the
-    // DebugWindow for the active viewport, then toggles it (toggleDebugWindow
-    // :630-635). The window floats over the view (debugPanel).
-    QAction* debugInfo = m_viewsToolBar->addAction(QStringLiteral("Debug"));
-    debugInfo->setToolTip(QStringLiteral("Debug info"));
-    setGlyphIcon(debugInfo, 0xe90c);   // Viewer.ts:239 iconUnicode
-    {
-        // Per-view window cache (Viewer.ts:180 _debugWindow member equivalent),
-        // keyed by the toolbar's lifetime.
-        static QPointer<Gui::DebugWindow> s_debugWindow;
-        QObject::connect(debugInfo, &QAction::triggered, m_viewsToolBar, [mw] {
-            if (s_debugWindow) {
-                s_debugWindow->toggle();
+// ToolBar.open（:168-180）——单开互斥：先 close 全部再开。
+void DtaToolBarSet::openDropDown(QPointer<QWidget> panel)
+{
+    closeOpenDropDowns();
+    if (!panel)
+        return;
+    m_openPanels.push_back(panel);
+    // 面板销毁自动摘除（WA_DeleteOnClose 面板）。
+    QPointer<QWidget> const stable = panel;
+    QObject::connect(panel, &QObject::destroyed, this, [this, stable]() {
+        for (int i = 0; i < m_openPanels.size(); ++i) {
+            if (m_openPanels[i] == stable || m_openPanels[i].isNull()) {
+                m_openPanels.removeAt(i);
                 return;
             }
-            auto* view3d = qobject_cast<Gui::View3DInventor*>(Gui::Application::Instance()->activeView());
-            if (!view3d || !view3d->getUeViewport())
-                return;
-            s_debugWindow = new Gui::DebugWindow(view3d->getUeViewport(), view3d);
-            s_debugWindow->setGeometry(8, 8, 330, 200);
-            s_debugWindow->showPanel();
-        });
-    }
-    addDisabled(m_viewsToolBar, QStringLiteral("Open iModel"), 0xe9cc);
-    addDisabled(m_viewsToolBar, QStringLiteral("Open Hub"), 0xe9e0);
-
-    // ViewPicker（Viewer.ts:270-272 + ViewPicker.ts:172-203）：<select> 控件——
-    // QComboBox（FreeCAD WorkbenchSelector 模式）。选中 → getView(id)→clone→
-    // ChangeView（Viewer.ts:492-497 changeView）。
-    auto* picker = new ViewPickerComboBox(m_viewsToolBar);
-    QObject::connect(picker, qOverload<int>(&QComboBox::activated),
-                     m_viewsToolBar, [picker](int index) {
-        auto* vp = activeViewport();
-        if (!vp || !vp->GetIModel() || index < 0)
-            return;
-        auto list = dqApp::ViewList::create(vp->GetIModel());
-        if (auto const* spec = list.get(index)) {
-            dqBase::DqId const id = spec->id;
-            auto view = dqApp::ViewList::create(vp->GetIModel()).getView(id, vp->GetIModel());
-            if (view)
-                vp->ChangeView(view);
         }
     });
-    QAction* pickerAction = m_viewsToolBar->addWidget(picker);
-    pickerAction->setObjectName(QStringLiteral("DTA.Views.ViewPicker"));
+    panel->show();
+}
 
-    // M-O(1) R2（Viewer.ts:274-293 Models/Categories 按钮）：参考是下拉 picker
-    //（IdPicker.ts 的复选面板）；DanQing 的选择面在 dock 面板（TileTreePanel/
-    // CategoriesPanel——M-L(3)/M-N(1)），按钮语义 = 打开/收起对应面板。
-    // EQUIVALENCE: 参考源=Viewer.ts:274-283（ModelPicker 下拉）；发散=面板宿主
-    // 为 dock 而非下拉（承载同一数据面）；验证法=DtaToolsWiring 面板开关锁。
-    addPanelToggle(m_viewsToolBar, QStringLiteral("Models"), 0xe90b,
-                   QStringLiteral("Models"));
-    addPanelToggle(m_viewsToolBar, QStringLiteral("Categories"), 0xe901,
-                   QStringLiteral("Categories"));
-    // M-O(2) I9（SavedViews.ts:19-286 SavedViewPicker）：弹出面板
-    //（FeatureOverridesPanel 先例——DTA ToolBarDropDown 的 Qt 等价）。
+void DtaToolBarSet::registerDropDownPanel(QWidget* panel)
+{
+    // 登记面（无操作——openDropDown 经按钮 handler 调用）。
+    (void)panel;
+}
+
+// onViewChanged（ToolBar.ts:186-196）——only3d 项显隐（is3d ? block : none）。
+void DtaToolBarSet::updateOnly3dVisibility()
+{
+    auto* vp = dqApp::Application::Get().GetViewManager().GetActiveViewport();
+    bool const is3d = vp && vp->GetView() && vp->GetView()->AsViewState3d() != nullptr;
+    for (QAction* a : m_only3dActions)
+        a->setVisible(is3d);
+}
+
+// 焦点换位 + onViewChanged 合同（Surface.ts:103-119 + ToolBar.ts:186-196）。
+void DtaToolBarSet::swapToolBarsForViewport(void* activeViewport)
+{
+    bool const hasViewport = activeViewport != nullptr;
+    // DTA appendChild 换位 = Qt 显隐换位（同一 topdiv 槽位）。
+    if (m_appToolBar)
+        m_appToolBar->setVisible(!hasViewport);
+    if (m_mainToolBar)
+        m_mainToolBar->setVisible(hasViewport);
+    // onViewChanged：关全部打开下拉 + only3d 显隐。
+    closeOpenDropDowns();
+    updateOnly3dVisibility();
+}
+
+// ---------------------------------------------------------------------------
+// app 工具栏（Surface.createToolBar :122-178——无聚焦视口时显示）
+// ---------------------------------------------------------------------------
+
+void DtaToolBarSet::buildAppToolBar(QMainWindow* mw)
+{
+    m_appToolBar = makeBar(mw, QStringLiteral("DTA App"));
+    m_appToolBar->setObjectName(QStringLiteral("DTA.App"));
+
+    // Surface.ts:126-131 — Open iModel from disk：QFileDialog 选 dump 包根
+    // 目录（imodel.json 所在目录）→ openDumpIModel 既有链。
+    QAction* openDisk = m_appToolBar->addAction(QStringLiteral("Open iModel"));
+    openDisk->setToolTip(QStringLiteral("Open iModel from disk"));
+    setGlyphIcon(openDisk, 0xe9cc);
+    QObject::connect(openDisk, &QAction::triggered, m_appToolBar, [] {
+        QString const dir = QFileDialog::getExistingDirectory(
+            nullptr, QStringLiteral("Select dump package root (contains imodel.json)"),
+            QString(), QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+        if (dir.isEmpty())
+            return;
+        dta::DumpOpenPackage pkg;
+        pkg.imodelRoot = dir.toStdString();
+        pkg.tileRoots = {dir.toStdString()};
+        auto* mdView = Gui::Application::Instance()->newDocument();
+        auto* view3d = qobject_cast<Gui::View3DInventor*>(mdView);
+        if (view3d == nullptr)
+            return;
+        auto opened = dta::openDumpIModel(*view3d, pkg);
+        if (!opened.has_value() && MainWindow::getInstance())
+            MainWindow::getInstance()->showStatus(
+                1, QStringLiteral("Open failed: dump package unreadable (%1)").arg(dir));
+    });
+
+    // Surface.ts:133-139 — Open Blank Connection（新 blank 文档视图）。
+    QAction* openBlank = m_appToolBar->addAction(QStringLiteral("Blank"));
+    openBlank->setToolTip(QStringLiteral("Open Blank Connection"));
+    setGlyphIcon(openBlank, 0xe9d8);
+    QObject::connect(openBlank, &QAction::triggered, m_appToolBar, [] {
+        Gui::Application::Instance()->newDocument();
+    });
+
+    // Surface.ts:141-152 — Analysis Style Example（引擎未移植——置灰）。
+    addDisabled(m_appToolBar, QStringLiteral("Analysis Style Example"), 0xea32);
+
+    // Surface.ts:154-165 — Decoration Geometry Example。
+    QAction* deco = m_appToolBar->addAction(QStringLiteral("Deco"));
+    deco->setToolTip(QStringLiteral("Decoration Geometry Example"));
+    setGlyphIcon(deco, 0xe9d8);
+    QObject::connect(deco, &QAction::triggered, m_appToolBar, [] {
+        auto* view3d = qobject_cast<Gui::View3DInventor*>(
+            Gui::Application::Instance()->activeView());
+        if (!view3d)
+            view3d = qobject_cast<Gui::View3DInventor*>(
+                Gui::Application::Instance()->newDocument());
+        if (view3d)
+            Gui::openDecorationGeometryExample(*view3d);
+    });
+
+    // Surface.ts:167-178 — Cesium Renderer Example（keyin dta cesium example
+    // 既有——M-O(4) P8 陈列馆）。
+    QAction* cesium = m_appToolBar->addAction(QStringLiteral("Cesium"));
+    cesium->setToolTip(QStringLiteral("Cesium Renderer Example"));
+    setGlyphIcon(cesium, 0xe9f4);
+    QObject::connect(cesium, &QAction::triggered, m_appToolBar, [] {
+        auto& ta = dqApp::Application::Get().GetToolAdmin();
+        if (auto* tool = ta.GetRegistry().Create("CesiumExampleTool"))
+            ta.SetActiveTool(tool);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// 主工具栏（Viewer.ts:238-446 的 26 项严格序）
+// ---------------------------------------------------------------------------
+
+void DtaToolBarSet::buildMainToolBar(QMainWindow* mw)
+{
+    m_mainToolBar = makeBar(mw, QStringLiteral("DTA Main"));
+    m_mainToolBar->setObjectName(QStringLiteral("DTA.Main"));
+    QToolBar* tb = m_mainToolBar;
+
+    // ── 1. Debug info（Viewer.ts:238-242 —— toggleDebugWindow）──
+    QAction* debugInfo = tb->addAction(QStringLiteral("Debug"));
+    debugInfo->setObjectName(QStringLiteral("DTA.Main.DebugInfo"));
+    debugInfo->setToolTip(QStringLiteral("Debug info"));
+    setGlyphIcon(debugInfo, 0xe90c);
     {
-        auto* btn = new QToolButton(m_viewsToolBar);
+        static QPointer<Gui::DebugWindow> s_debugWindow;
+        QObject::connect(debugInfo, &QAction::triggered, tb, [] {
+            if (s_debugWindow) {
+                s_debugWindow->close();
+                return;
+            }
+            auto* vp = activeViewport();
+            if (!vp)
+                return;
+            s_debugWindow = new Gui::DebugWindow(vp, MainWindow::getInstance());
+            s_debugWindow->setAttribute(Qt::WA_DeleteOnClose);
+            s_debugWindow->show();
+        });
+    }
+
+    // ── 2. Open iModel from disk（:244-249——与 app 工具栏同链）──
+    {
+        QAction* a = tb->addAction(QStringLiteral("Open iModel"));
+        a->setToolTip(QStringLiteral("Open iModel from disk"));
+        setGlyphIcon(a, 0xe9cc);
+        QObject::connect(a, &QAction::triggered, tb, [this]() {
+            if (m_appToolBar && !m_appToolBar->actions().isEmpty())
+                m_appToolBar->actions().constFirst()->trigger();
+        });
+    }
+
+    // ── 3. Open iModel from hub（:252-268——➖ 零网络置灰）──
+    addDisabled(tb, QStringLiteral("Open Hub"), 0xe9e0);
+
+    // ── 4. ViewPicker（:270-272——<select> 控件）──
+    {
+        auto* picker = new ViewPickerComboBox(tb);
+        QObject::connect(picker, qOverload<int>(&QComboBox::activated),
+                         tb, [picker](int index) {
+            auto* vp = activeViewport();
+            if (!vp || !vp->GetIModel() || index < 0)
+                return;
+            auto list = dqApp::ViewList::create(vp->GetIModel());
+            if (auto const* spec = list.get(index)) {
+                dqBase::DqId const id = spec->id;
+                auto view = dqApp::ViewList::create(vp->GetIModel()).getView(id, vp->GetIModel());
+                if (view)
+                    vp->ChangeView(view);
+            }
+        });
+        QAction* pickerAction = tb->addWidget(picker);
+        pickerAction->setObjectName(QStringLiteral("DTA.Views.ViewPicker"));
+    }
+
+    // ── 5. Models（:274-283——only3d 下拉）──
+    {
+        QAction* a = addPanelToggle(tb, QStringLiteral("Models"), 0xe90b,
+                                    QStringLiteral("Models"));
+        m_only3dActions.push_back(a);
+    }
+
+    // ── 6. Categories（:286-295——下拉）──
+    addPanelToggle(tb, QStringLiteral("Categories"), 0xe901,
+                   QStringLiteral("Categories"));
+
+    // ── 7. External saved views（:296-305——下拉）──
+    {
+        auto* btn = new QToolButton(tb);
         btn->setObjectName(QStringLiteral("DTA.SavedViews.Button"));
         btn->setText(QStringLiteral("Saved Views"));
         btn->setIcon(dtaGlyphIcon(0xe90d));
-        btn->setToolTip(QStringLiteral("Saved Views"));
+        btn->setToolTip(QStringLiteral("External saved views"));
         btn->setPopupMode(QToolButton::InstantPopup);
-        QObject::connect(btn, &QToolButton::clicked, btn, [btn] {
+        DtaToolBarSet* self = this;
+        QObject::connect(btn, &QToolButton::clicked, btn, [btn, self]() {
             auto* vp = activeViewport();
             if (!vp)
                 return;
             auto* panel = new Gui::SavedViewPicker(vp, btn);
             panel->setAttribute(Qt::WA_DeleteOnClose);
             panel->move(btn->mapToGlobal(QPoint(0, btn->height())));
-            panel->show();
+            self->openDropDown(panel);
         });
-        QAction* sva = m_viewsToolBar->addWidget(btn);
+        QAction* sva = tb->addWidget(btn);
         sva->setText(QStringLiteral("Saved Views"));
         sva->setIcon(dtaGlyphIcon(0xe90d));
     }
-    addEmptyDropDown(m_viewsToolBar, QStringLiteral("Camera Paths"), 0xe932);
-}
 
-// Ported from: itwinjs-core Viewer.ts:315-325 — Element selection / Measure distance。
-void DtaToolBarSet::buildSelectionToolBar(QMainWindow* mw)
-{
-    m_selectionToolBar = makeBar(mw, QStringLiteral("Selection"));
+    // ── 8. Saved camera paths（:306-315——大件未移植置灰）──
+    addEmptyDropDown(tb, QStringLiteral("Camera Paths"), 0xe932);
 
-    // Viewer.ts:317 — IModelApp.tools.run("SVTSelect")（DTA 的默认工具=SVTSelect，
-    // SelectionTool 子类）。DanQing：注册表创建 "Select" 并置为活动工具。
-    QAction* sel = m_selectionToolBar->addAction(QStringLiteral("Select"));
-    sel->setToolTip(QStringLiteral("Element selection"));
-    setSvgIcon(sel, ":/icons/dta/zoom.svg");   // Viewer.ts:317 zoom.svg
-    QObject::connect(sel, &QAction::triggered, m_selectionToolBar, [] {
-        auto& ta = dqApp::Application::Get().GetToolAdmin();
-        if (auto* tool = ta.GetRegistry().Create("Select"))
-            ta.SetActiveTool(tool);
-    });
-
-    addDisabled(m_selectionToolBar, QStringLiteral("Measure"), 0xeb08);
-}
-
-// Ported from: itwinjs-core Viewer.ts:327-335 — View settings 下拉（ViewAttributesPanel）。
-void DtaToolBarSet::buildViewSettingsToolBar(QMainWindow* mw)
-{
-    m_viewSettingsToolBar = makeBar(mw, QStringLiteral("View Settings"));
-    auto* btn = new QToolButton(m_viewSettingsToolBar);
-    btn->setText(QStringLiteral("View Settings"));
-    btn->setIcon(dtaGlyphIcon(0xe90e));   // Viewer.ts:328 字形
-    btn->setPopupMode(QToolButton::InstantPopup);
-    auto* panel = new ViewSettingsPanel(btn);
-    QObject::connect(btn, &QToolButton::clicked, btn, [btn, panel] {
-        panel->syncFromViewport();   // 弹出前回读当前视口状态
-        panel->show();
-        // 定位到按钮下方
-        panel->move(btn->mapToGlobal(QPoint(0, btn->height())));
-    });
-    // addWidget 包装 action 也携带图标/文本（工具栏 actions() 断言 + 菜单化时的呈现）。
-    QAction* wa = m_viewSettingsToolBar->addWidget(btn);
-    wa->setText(QStringLiteral("View Settings"));
-    wa->setIcon(dtaGlyphIcon(0xe90e));
-}
-
-// Ported from: itwinjs-core Viewer.ts:337-368 — Fit / Window area / Rotate /
-// Standard rotations / Walk。
-void DtaToolBarSet::buildViewToolsToolBar(QMainWindow* mw)
-{
-    m_viewToolsToolBar = makeBar(mw, QStringLiteral("View Tools"));
-
-    // "Decoration Geometry Example"（Surface.ts:155-165——应用顶层工具栏按钮，
-    // 点击新建 blank connection 装示例）：独立工具栏——不随 Views/View Tools
-    // 的视口可用性置灰（setViewToolbarsEnabled 不碰它）。
+    // ── 9. Element selection（:316-320——zoom.svg 图按钮）──
     {
-        m_decoToolBar = makeBar(mw, QStringLiteral("Deco Example"));
-        QAction* decoGeo = m_decoToolBar->addAction(QStringLiteral("Deco"));
-        decoGeo->setToolTip(QStringLiteral("Decoration Geometry Example"));
-        setSvgIcon(decoGeo, ":/icons/dta/zoom.svg");
-        QObject::connect(decoGeo, &QAction::triggered, m_decoToolBar, [] {
-            auto* view3d = qobject_cast<Gui::View3DInventor*>(Gui::Application::Instance()->activeView());
-            if (!view3d)
-                view3d = qobject_cast<Gui::View3DInventor*>(Gui::Application::Instance()->newDocument());
-            if (view3d)
-                Gui::openDecorationGeometryExample(*view3d);
+        QAction* sel = tb->addAction(QStringLiteral("Select"));
+        sel->setToolTip(QStringLiteral("Element selection"));
+        setSvgIcon(sel, ":/icons/dta/zoom.svg");
+        QObject::connect(sel, &QAction::triggered, tb, [] {
+            auto& ta = dqApp::Application::Get().GetToolAdmin();
+            if (auto* tool = ta.GetRegistry().Create("Select"))
+                ta.SetActiveTool(tool);
         });
     }
 
-    QAction* fit = m_viewToolsToolBar->addAction(QStringLiteral("Fit"));
-    fit->setToolTip(QStringLiteral("Fit view"));
-    setSvgIcon(fit, ":/icons/dta/fit-to-view.svg");   // Viewer.ts:340
-    QObject::connect(fit, &QAction::triggered, m_viewToolsToolBar, [] {
-        if (auto* vp = activeViewport())
-            runViewTool(new dqApp::FitViewTool(vp, /*oneShot=*/true));
-    });
-
-    // Viewer.ts:343-347 — Window area → IModelApp.tools.run("View.WindowArea", viewport)。
-    // DanQing 等价：直接构造 WindowAreaTool 并 run()（runViewTool 既有模式，见 Fit）。
-    QAction* windowArea = m_viewToolsToolBar->addAction(QStringLiteral("Window Area"));
-    windowArea->setToolTip(QStringLiteral("Window area"));   // Viewer.ts:346
-    setSvgIcon(windowArea, ":/icons/dta/window-area.svg");   // Viewer.ts:345
-    QObject::connect(windowArea, &QAction::triggered, m_viewToolsToolBar, [] {
-        if (auto* vp = activeViewport())
-            runViewTool(new dqApp::WindowAreaTool(vp));
-    });
-
-    QAction* rotate = m_viewToolsToolBar->addAction(QStringLiteral("Rotate"));
-    rotate->setToolTip(QStringLiteral("Rotate"));
-    setSvgIcon(rotate, ":/icons/dta/rotate-left.svg");   // Viewer.ts:351
-    QObject::connect(rotate, &QAction::triggered, m_viewToolsToolBar, [] {
-        if (auto* vp = activeViewport())
-            runViewTool(new dqApp::RotateViewTool(vp, /*oneShot=*/false));
-    });
-
-    // StandardRotations.ts:20-51 — 陀螺仪按钮点击弹出 2×4 字形按钮面板。
-    // Qt 映射：QToolButton（无菜单——DTA DropDown 无箭头，ToolBar.ts:107-109
-    // 点击即 toggle）+ QMenu 内 QWidgetAction 包装 StandardRotationsPanel
-    //（FreeCAD 工具栏小面板惯用法），点击手动 popup 到按钮下方。
-    auto* svBtn = new QToolButton(m_viewToolsToolBar);
-    svBtn->setIcon(dtaGlyphIcon(0xe909));   // Viewer.ts:356 "gyroscope"
-    svBtn->setToolTip(QStringLiteral("Standard rotations"));
-    auto* svMenu = new QMenu(svBtn);
-    svMenu->setObjectName(QStringLiteral("DTA.StdRot.Menu"));
-    auto* svPanelAction = new QWidgetAction(svMenu);
-    svPanelAction->setDefaultWidget(new StandardRotationsPanel(svMenu));
-    svMenu->addAction(svPanelAction);
-    QObject::connect(svBtn, &QToolButton::clicked, svBtn, [svBtn, svMenu] {
-        svMenu->popup(svBtn->mapToGlobal(QPoint(0, svBtn->height())));
-    });
-    QAction* svAction = m_viewToolsToolBar->addWidget(svBtn);
-    svAction->setObjectName(QStringLiteral("DTA.ViewTools.StandardRotations"));
-
+    // ── 10. Measure distance（:321-325——M-R 激活：Measure.Distance 引擎已
+    //     移植 [M-O(3) P2]——此前置灰）──
     {
-        QAction* walk = addDisabled(m_viewToolsToolBar, QStringLiteral("Walk"));
-        setSvgIcon(walk, ":/icons/dta/walk.svg");   // Viewer.ts:364
+        QAction* measure = tb->addAction(QStringLiteral("Measure"));
+        measure->setToolTip(QStringLiteral("Measure distance"));
+        setGlyphIcon(measure, 0xeb08);
+        QObject::connect(measure, &QAction::triggered, tb, [] {
+            auto& ta = dqApp::Application::Get().GetToolAdmin();
+            if (auto* tool = ta.GetRegistry().Create("Measure.Distance"))
+                ta.SetActiveTool(tool);
+        });
     }
-}
 
-// Ported from: itwinjs-core Viewer.ts:370-436 — Undo/Redo + 分析置灰组。
-void DtaToolBarSet::buildAnalysisToolBar(QMainWindow* mw)
-{
-    m_analysisToolBar = makeBar(mw, QStringLiteral("Analysis"));
-
-    // Viewer.ts:370-380 — View undo / redo（View.Undo/View.Redo 工具，one-shot；
-    // ViewTool.ts:4111-4134）。
-    QAction* undo = m_analysisToolBar->addAction(QStringLiteral("Undo"));
-    undo->setToolTip(QStringLiteral("View undo"));
-    setGlyphIcon(undo, 0xe982);   // Viewer.ts:372 "undo"
-    QObject::connect(undo, &QAction::triggered, m_analysisToolBar, [] {
-        if (auto* vp = activeViewport())
-            runViewTool(new dqApp::ViewUndoTool(vp));
-    });
-    QAction* redo = m_analysisToolBar->addAction(QStringLiteral("Redo"));
-    redo->setToolTip(QStringLiteral("View redo"));
-    setGlyphIcon(redo, 0xe983);   // Viewer.ts:378 "redo"
-    QObject::connect(redo, &QAction::triggered, m_analysisToolBar, [] {
-        if (auto* vp = activeViewport())
-            runViewTool(new dqApp::ViewRedoTool(vp));
-    });
-
-    m_analysisToolBar->addSeparator();
-    addDisabled(m_analysisToolBar, QStringLiteral("Animation"), 0xe931);
-
-    // M-P P-G（Viewer.ts:390-393 "Sectioning tools"）：SectionsPanel 弹出
-    // （FeatureOverridesPanel 先例——DTA ToolBarDropDown 的 Qt 等价）。
+    // ── 11. View settings（:326-334——下拉）──
     {
-        auto* btn = new QToolButton(m_analysisToolBar);
+        auto* btn = new QToolButton(tb);
+        btn->setText(QStringLiteral("View Settings"));
+        btn->setIcon(dtaGlyphIcon(0xe90e));
+        btn->setToolTip(QStringLiteral("View settings"));
+        btn->setPopupMode(QToolButton::InstantPopup);
+        auto* panel = new ViewSettingsPanel(btn);
+        DtaToolBarSet* self = this;
+        QObject::connect(btn, &QToolButton::clicked, btn, [btn, panel, self]() {
+            panel->syncFromViewport();
+            panel->move(btn->mapToGlobal(QPoint(0, btn->height())));
+            self->openDropDown(panel);
+        });
+        QAction* wa = tb->addWidget(btn);
+        wa->setText(QStringLiteral("View Settings"));
+        wa->setIcon(dtaGlyphIcon(0xe90e));
+    }
+
+    // ── 12. Fit view（:335-339）──
+    {
+        QAction* fit = tb->addAction(QStringLiteral("Fit"));
+        fit->setToolTip(QStringLiteral("Fit view"));
+        setSvgIcon(fit, ":/icons/dta/fit-to-view.svg");
+        QObject::connect(fit, &QAction::triggered, tb, [] {
+            if (auto* vp = activeViewport())
+                runViewTool(new dqApp::FitViewTool(vp, /*oneShot=*/true));
+        });
+    }
+
+    // ── 13. Window area（:340-344）──
+    {
+        QAction* windowArea = tb->addAction(QStringLiteral("Window Area"));
+        windowArea->setToolTip(QStringLiteral("Window area"));
+        setSvgIcon(windowArea, ":/icons/dta/window-area.svg");
+        QObject::connect(windowArea, &QAction::triggered, tb, [] {
+            if (auto* vp = activeViewport())
+                runViewTool(new dqApp::WindowAreaTool(vp));
+        });
+    }
+
+    // ── 14. Rotate（:345-349）──
+    {
+        QAction* rotate = tb->addAction(QStringLiteral("Rotate"));
+        rotate->setToolTip(QStringLiteral("Rotate"));
+        setSvgIcon(rotate, ":/icons/dta/rotate-left.svg");
+        QObject::connect(rotate, &QAction::triggered, tb, [] {
+            if (auto* vp = activeViewport())
+                runViewTool(new dqApp::RotateViewTool(vp, /*oneShot=*/false));
+        });
+    }
+
+    // ── 15. Standard rotations（:350-355——only3d 下拉）──
+    {
+        auto* svBtn = new QToolButton(tb);
+        svBtn->setIcon(dtaGlyphIcon(0xe909));
+        svBtn->setToolTip(QStringLiteral("Standard rotations"));
+        auto* svMenu = new QMenu(svBtn);
+        svMenu->setObjectName(QStringLiteral("DTA.StdRot.Menu"));
+        auto* svPanelAction = new QWidgetAction(svMenu);
+        svPanelAction->setDefaultWidget(new StandardRotationsPanel(svMenu));
+        svMenu->addAction(svPanelAction);
+        DtaToolBarSet* self = this;
+        QObject::connect(svBtn, &QToolButton::clicked, svBtn, [svBtn, svMenu, self]() {
+            self->closeOpenDropDowns();
+            svMenu->popup(svBtn->mapToGlobal(QPoint(0, svBtn->height())));
+        });
+        QAction* svAction = tb->addWidget(svBtn);
+        svAction->setObjectName(QStringLiteral("DTA.ViewTools.StandardRotations"));
+        m_only3dActions.push_back(svAction);
+    }
+
+    // ── 16. Walk（:356-362——only3d；M-R 激活：View.LookAndMove 引擎已移植
+    //     [M-O(3) P1]——此前置灰）──
+    {
+        QAction* walk = tb->addAction(QStringLiteral("Walk"));
+        walk->setToolTip(QStringLiteral("Walk"));
+        setSvgIcon(walk, ":/icons/dta/walk.svg");
+        QObject::connect(walk, &QAction::triggered, tb, [] {
+            if (auto* vp = activeViewport())
+                runViewTool(new dqApp::LookAndMoveTool(vp));
+        });
+        m_only3dActions.push_back(walk);
+    }
+
+    // ── 17/18. View undo / redo（:363-372）──
+    {
+        QAction* undo = tb->addAction(QStringLiteral("Undo"));
+        undo->setToolTip(QStringLiteral("View undo"));
+        setGlyphIcon(undo, 0xe982);
+        QObject::connect(undo, &QAction::triggered, tb, [] {
+            if (auto* vp = activeViewport())
+                runViewTool(new dqApp::ViewUndoTool(vp));
+        });
+        QAction* redo = tb->addAction(QStringLiteral("Redo"));
+        redo->setToolTip(QStringLiteral("View redo"));
+        setGlyphIcon(redo, 0xe983);
+        QObject::connect(redo, &QAction::triggered, tb, [] {
+            if (auto* vp = activeViewport())
+                runViewTool(new dqApp::ViewRedoTool(vp));
+        });
+    }
+
+    // ── 19. Animation（:373-377——大件未移植置灰）──
+    addEmptyDropDown(tb, QStringLiteral("Animation"), 0xe931);
+
+    // ── 20. Sectioning tools（:378-383——M-P P-G live）──
+    {
+        auto* btn = new QToolButton(tb);
         btn->setText(QStringLiteral("Sectioning"));
-        btn->setIcon(dtaGlyphIcon(0xe916));   // Viewer.ts:391 "viewtop" 字形
+        btn->setIcon(dtaGlyphIcon(0xe916));
         btn->setToolTip(QStringLiteral("Sectioning tools"));
         btn->setPopupMode(QToolButton::InstantPopup);
-        QObject::connect(btn, &QToolButton::clicked, btn, [btn] {
+        DtaToolBarSet* self = this;
+        QObject::connect(btn, &QToolButton::clicked, btn, [btn, self]() {
             auto* vp = activeViewport();
             if (!vp)
                 return;
-            auto* panel = new SectionsPanel(vp, btn);
+            auto* panel = new Gui::SectionsPanel(vp, btn);
             panel->setAttribute(Qt::WA_DeleteOnClose);
             panel->move(btn->mapToGlobal(QPoint(0, btn->height())));
-            panel->show();
+            self->openDropDown(panel);
         });
-        QAction* sa = m_analysisToolBar->addWidget(btn);
+        QAction* sa = tb->addWidget(btn);
         sa->setText(QStringLiteral("Sectioning"));
         sa->setIcon(dtaGlyphIcon(0xe916));
     }
 
-    addDisabled(m_analysisToolBar, QStringLiteral("Classification"), 0xe9d8);
-
-    // M-O(2) I10（Viewer.ts:405-409 "Override feature symbology"）：弹出面板
-    //（ViewSettingsPanel 先例——DTA ToolBarDropDown 的 Qt 等价）；Provider 经
-    // per-viewport 注册面作用于选择集（FeatureOverrides.ts:14-97）。
+    // ── 21. Spatial Classification（:384-393——only3d 大件未移植置灰）──
     {
-        auto* btn = new QToolButton(m_analysisToolBar);
+        QAction* a = addDisabled(tb, QStringLiteral("Classification"), 0xe9d8);
+        m_only3dActions.push_back(a);
+    }
+
+    // ── 22. Override feature symbology（:394-399——M-O(2) I10 live）──
+    {
+        auto* btn = new QToolButton(tb);
         btn->setText(QStringLiteral("Overrides"));
-        btn->setIcon(dtaGlyphIcon(0xe90a));   // Viewer.ts:406 "isolate" 字形
+        btn->setIcon(dtaGlyphIcon(0xe90a));
         btn->setToolTip(QStringLiteral("Override feature symbology"));
         btn->setPopupMode(QToolButton::InstantPopup);
-        QObject::connect(btn, &QToolButton::clicked, btn, [btn] {
+        DtaToolBarSet* self = this;
+        QObject::connect(btn, &QToolButton::clicked, btn, [btn, self]() {
             auto* vp = activeViewport();
             if (!vp)
                 return;
-            auto* panel = new FeatureOverridesPanel(vp, btn);
+            auto* panel = new Gui::FeatureOverridesPanel(vp, btn);
             panel->setAttribute(Qt::WA_DeleteOnClose);
             panel->move(btn->mapToGlobal(QPoint(0, btn->height())));
-            panel->show();
+            self->openDropDown(panel);
         });
-        QAction* oa = m_analysisToolBar->addWidget(btn);
+        QAction* oa = tb->addWidget(btn);
         oa->setText(QStringLiteral("Overrides"));
         oa->setIcon(dtaGlyphIcon(0xe90a));
     }
 
-    addDisabled(m_analysisToolBar, QStringLiteral("Point Cloud"), 0xe923);
-    addDisabled(m_analysisToolBar, QStringLiteral("Contours"), 0xe94b);
-    addDisabled(m_analysisToolBar, QStringLiteral("Format Set"), 0xe9cc);
-}
+    // ── 23/24/25. Point cloud / Contours / Format Set（:400-421——置灰）──
+    addDisabled(tb, QStringLiteral("Point Cloud"), 0xe923);
+    addDisabled(tb, QStringLiteral("Contours"), 0xe94b);
+    addDisabled(tb, QStringLiteral("Format Set"), 0xe9cc);
 
-void DtaToolBarSet::setViewToolbarsEnabled(bool enabled)
-{
-    // 全部 5 条工具栏随视口可用性整体置灰（File 已移至 Start 页）。
-    for (QToolBar* tb : { m_viewsToolBar, m_selectionToolBar, m_viewSettingsToolBar,
-                          m_viewToolsToolBar, m_analysisToolBar })
-        if (tb) tb->setEnabled(enabled);
-
+    // ── 26. Google Maps（:424-434——config googleMapsUi 门；DanQing 无该
+    //     config=关态 → 不出现（DTA 关态同形）──
 }
 
 }  // namespace Gui

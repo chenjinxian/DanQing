@@ -566,6 +566,25 @@ void MainWindow::statusMessageChanged()
     else { d->statusTimer->stop(); clearStatus(); }
 }
 
+// M-R：bottomdiv 双 span（index.html :66-69 showstatus/showerror——Utils.ts:8-15
+// 的 Qt 等价：两 QLabel 常驻底部状态栏右段；showStatus 双写 #showstatus span
+// [status 面]、Err 级双写 #showerror span [error 面]）。
+void MainWindow::installDtaOutputSpans()
+{
+    if (statusBar()->findChild<QLabel*>(QStringLiteral("showstatus")))
+        return;   // 幂等
+    // addStatusBarItem 以 spec.id 覆写 objectName——spec.id 即 DTA span id。
+    auto* showstatus = new QLabel(statusBar());
+    showstatus->setWindowTitle(tr("Output"));
+    addStatusBarItem(showstatus,
+                     StatusBarItemSpec("showstatus", QString(), StatusBarSlot::Left, 500, true, 0));
+    auto* showerror = new QLabel(statusBar());
+    showerror->setStyleSheet(QStringLiteral("color: #ff0000"));
+    showerror->setWindowTitle(tr("Error"));
+    addStatusBarItem(showerror,
+                     StatusBarItemSpec("showerror", QString(), StatusBarSlot::Left, 501, true, 0));
+}
+
 void MainWindow::showStatus(int type, const QString& message)
 {
     if (QApplication::instance()->thread() != QThread::currentThread()) {
@@ -585,6 +604,13 @@ void MainWindow::showStatus(int type, const QString& message)
     }
     d->currentStatusType = -type;
     statusBar()->showMessage(msg.simplified(), 5000);
+    // M-R 双写：DTA bottomdiv span 面（Utils.showStatus → #showstatus；
+    // Err 级 → #showerror）。
+    if (auto* span = statusBar()->findChild<QLabel*>(QStringLiteral("showstatus")))
+        span->setText(message);
+    if (type == MainWindow::Err)
+        if (auto* err = statusBar()->findChild<QLabel*>(QStringLiteral("showerror")))
+            err->setText(message);
 }
 
 void MainWindow::clearStatus()
