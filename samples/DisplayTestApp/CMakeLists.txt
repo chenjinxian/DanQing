@@ -60,6 +60,8 @@ add_executable(DisplayTestApp WIN32
     src/Gui/FeatureOverridesPanel.h    # MOC needs this for Q_OBJECT
     src/Gui/SectionsPanel.cpp          # Sectioning 面板（M-P P-G——SectionTools.ts SectionsPanel）
     src/Gui/SectionsPanel.h            # MOC needs this for Q_OBJECT
+    src/Gui/RenderingStyles.cpp        # Rendering Style 14 预设表（M-Q Q-b——ViewAttributes.ts:31-268）
+    src/Gui/RenderingStyles.h
     src/Gui/NamedViews.cpp            # NamedVSPS 持久化载体（M-O(2) I9 Saved Views）
     src/Gui/SavedViewsPanel.cpp       # SavedViewPicker 弹出面板（M-O(2) I9）
     src/Gui/SavedViewsPanel.h         # MOC needs this for Q_OBJECT
@@ -276,6 +278,7 @@ if(TARGET gtest_main AND TARGET dqApp)
         tests/MacroToolTest.cpp         # M-O(4) P9 Macro 播放器锁（文件读/分行/剔空/三分支/执行序）
         tests/CesiumGalleryTest.cpp     # M-O(4) P8 陈列馆像素锁（8 族上屏+WHERE 展布+弧几何回代）
         tests/SectionsPanelTest.cpp     # M-P P-G SectionsPanel wiring 锁（Define/Edit/Clear + instances60 工具入口 E2E）
+        tests/RenderingStylesTest.cpp   # M-Q Q-b 14 预设表完整性锁 + applyRenderingStyle
         tests/JoesHouseColorTest.cpp    # JoesHouse 管线蓝/红回归像素锁（M-I Task 3 色表顶点色——注册在 PickDumpSceneTest 之后：同因 fetcher 替换不回溢）
         tests/JoesHouseEdgeTest.cpp     # JoesHouse 面板黑边线回归像素锁（M-I Task 4 边线两段——注册在 JoesHouseColorTest 之后：同因 fetcher 替换不回溢）
         tests/JoesHouseHoverTest.cpp    # JoesHouse hover 高亮像素锁（M-J Task 2——注册在 JoesHouseEdgeTest 之后：同因 fetcher 替换不回溢）
@@ -299,6 +302,8 @@ if(TARGET gtest_main AND TARGET dqApp)
         src/Gui/FeatureOverridesPanel.h  # MOC needs this for Q_OBJECT
         src/Gui/SectionsPanel.cpp          # M-P P-G：Sectioning 面板（wiring 锁被测面）
         src/Gui/SectionsPanel.h            # MOC needs this for Q_OBJECT
+        src/Gui/RenderingStyles.cpp        # M-Q Q-b：14 预设表（表完整性锁被测面）
+        src/Gui/RenderingStyles.h
         src/Gui/NamedViews.cpp            # M-O(2) I9：NamedVSPS 载体（SavedViews 链锁被测面）
         src/Gui/SavedViewsPanel.cpp       # M-O(2) I9：SavedViewPicker（SavedViews 链锁被测面）
         src/Gui/SavedViewsPanel.h       # MOC needs this for Q_OBJECT
