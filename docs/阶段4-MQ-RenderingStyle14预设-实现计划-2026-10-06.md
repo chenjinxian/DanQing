@@ -170,4 +170,32 @@
 
 ## 完成实录（收口时回填）
 
-（待逐件完成后回填：每件提交哈希 + 锁清单 + 门禁数字 + 裁决落实情况。）
+四件全清（Q-a..Q-d，2026-10-06，提交 4 笔）：
+
+| 件 | 提交 | 锁 | 门禁 |
+|---|---|---|---|
+| Q-a 合并语义 + overrideDisplayStyle | d15962b44d | OverridesSelectedSettings[DisplayStyle.test.ts:554-588 直移——RED 实证 grid/weights 五断言红] + OverrideDisplayStyleMergesAndInvalidates[viewport 层] | dqCommonTest 476/476 + DisplayStyleSwitch 3/3 + 相邻族 |
+| Q-b 14 预设表 | 62b6ffafbd | RenderingStylesTest 6 锁（名称序/hline 族/Moonlit/灯光 rig/Thematic+Atmosphere+Default/apply） | 表 6/6 + AcsDisc 复绿 |
+| Q-c UI 下拉 | b18c85cbf4 | PanelComboAppliesSelectedStyle（14 项+应用+None no-op） | RenderingStylesTest 7/7 + ViewSettingsPanel 7/7 |
+| Q-d E2E + wantLighting 修复 | e3b2c8e5c9 | RenderingStylePresetsPixelLock（五判据） | dqRenderTest 740 + dqAppTest 445 + DtaTest 复跑 1 环境态 |
+
+**裁决落实**：E1 合并语义 1:1 补齐（Q-a 核心）；E2 AO/Thematic/Atmosphere 视觉
+面数据面写入+EQUIVALENCE 注（RenderingStylesTest 数据锁）；E3 solarShadows
+位数据面（Sun-dappled 表锁）；E4 3d 门按参考落（面板即 3d 场景）；E5 C++ 表
+承载（表完整性锁）。
+
+**引擎顺带修复**：①SurfaceGeometry ApplyLighting 视图级门（wantLighting =
+SmoothShade && vf.lighting——SurfaceGeometry.ts:35-37/331；此前仅几何级
+isLit，三灯全关不熄光照的移植缺口）；②toJSON3d lights 段接线。
+
+**收口门禁**（2026-10-06，Debug，全量 ctest）：**2687 项 = 2657 通过 + 27 跳过 +
+3 失败**——三分支全隔离复跑绿归因（MaximizeKeepsGridVisible=真窗口挂起被手杀
+[桌面态污染族]；MinimizeRestore=TD-29 族 ×2 绿；GltfDecorationTool=M-O(3) 已录
+flake）。
+
+**取证/插曲实录**：①内核态僵尸进程 saga（昨夜卡滞轮残留锁 exe——用户任务
+管理器手杀清障）；②**TD-26 归因直接实证**：同二进制 ghost 在→step-0 呈现
+分裂败、ghost 清→AcsDisc 通过——僵尸进程污染 CAPTUREBLT 屏幕捕获层实锤
+（CLAUDE.md TD-26 行随 M-Q 收口更新）；③E2E 判据三次订正实录（Illustration
+变亮=反照率语义非变暗/Moonlit 参考不置 monochrome 位/黑边=资产无边表——
+判据设计先核参考语义的再教训）。
