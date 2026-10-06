@@ -123,3 +123,59 @@ TEST(DisplayStyleSwitch, AttachedViewportInvalidatesRenderPlan)
 
     dqApp::Application::Get().GetViewManager().DropViewport(f.vp);
 }
+
+// M-Q Q-a：Viewport::overrideDisplayStyle——viewflags 合并 + 在场段等价失效。
+// Ported from: itwinjs-core Viewport.overrideDisplayStyle (Viewport.ts:657-659)
+//              + common DisplayStyleSettings._applyOverrides（合并语义面）。
+// Authored: viewport-level 面（参考 DisplayStyle.test.ts 只锁 settings 层；
+//           失效链无参考单测——行为锚 = ChangeFlags 监听面逐段）。
+TEST(DisplayStyleSwitch, OverrideDisplayStyleMergesAndInvalidates)
+{
+    SwitchFixture f;
+    dqApp::Application::Get().GetViewManager().AddViewport(f.vp);
+    f.vp->RenderFrame();
+
+    // 基态：grid 开（用户态偏离默认——merge 保位判据）。
+    {
+        dqApp::DisplayStyle& style = f.view->GetDisplayStyle();
+        auto p = style.getViewFlags().Properties();
+        p.grid = true;
+        style.setViewFlags(dqCommon::ViewFlags(p));
+    }
+    f.vp->RenderFrame();
+
+    dqCommon::DisplayStyle3dSettingsProps o;
+    dqCommon::ViewFlagProps vf;
+    vf.renderMode = dqCommon::RenderMode::SolidFill;
+    vf.monochrome = true;
+    o.viewflags = vf;
+    o.backgroundColor = 0xF0FFF0u;  // honeydew
+    dqCommon::LightSettingsProps lights;
+    lights.numCels = 2;
+    o.lights = lights;
+    dqCommon::EnvironmentProps env;
+    env.sky = dqCommon::SkyBoxProps{};
+    env.sky->display = true;
+    o.environment = env;
+
+    f.vp->overrideDisplayStyle(o);
+
+    // 合并面：renderMode/monochrome 应用，grid 保位。
+    auto const out = f.view->GetDisplayStyle().getViewFlags().Properties();
+    EXPECT_EQ(out.renderMode, dqCommon::RenderMode::SolidFill);
+    EXPECT_TRUE(out.monochrome);
+    EXPECT_TRUE(out.grid) << "absent viewflag bits must keep current values";
+    // 在场段应用：背景色 + 灯光 + 环境。
+    EXPECT_EQ(f.view->GetDisplayStyle().getSettings().getBackgroundColor().getTbgr(),
+              0xF0FFF0u);
+    EXPECT_EQ(f.view->GetDisplayStyle().GetLightSettings().numCels, 2);
+    EXPECT_TRUE(f.view->GetDisplayStyle().getEnvironment().displaySky);
+
+    // 失效链：RenderFrame 后渲染计划从新设置重建（P5 同判据——读取面即新值）
+    // + 装饰失效（环境段 → 天空指纹链可达）。
+    f.vp->RenderFrame();
+    EXPECT_EQ(f.view->GetDisplayStyle().getSettings().getBackgroundColor().getTbgr(),
+              0xF0FFF0u);
+
+    dqApp::Application::Get().GetViewManager().DropViewport(f.vp);
+}

@@ -309,3 +309,100 @@ TEST(HiddenLineSettings, Equality)
     const auto& b = HiddenLineSettings::defaults();
     EXPECT_TRUE(a.equals(b));
 }
+
+// M-Q Q-a：applyOverrides 的 viewflags 合并语义（缺席位保持现值）。
+// Ported from: itwinjs-core core/common/src/test/DisplayStyle.test.ts
+//              "overrides selected settings" (:554-588 ——
+//               应用键输出=overrides 值 + 缺席键=原值；参考以
+//               ViewFlags.fromJSON({...current.toJSON(), ...overrides.viewflags})
+//               承载。analysisStyle/scheduleScript 两例随消费面立项登记。）
+TEST(DisplayStyle3dSettings, OverridesSelectedSettings)
+{
+    auto makeBase = [] {
+        DisplayStyle3dSettings settings;
+        auto p = settings.getViewFlags().Properties();
+        p.grid = true;                          // 偏离默认（默认 false）
+        p.weights = false;                      // 偏离默认（默认 true）
+        p.renderMode = RenderMode::SmoothShade;
+        settings.setViewFlags(dqCommon::ViewFlags(p));
+        settings.setBackgroundColor(dqCommon::ColorDef::from(255, 0, 0));
+        settings.setMonochromeColor(dqCommon::ColorDef::from(1, 2, 3));
+        return settings;
+    };
+
+    // Case 1（:583）：viewflags 仅 renderMode=SolidFill —— grid/weights 保持现值。
+    {
+        DisplayStyle3dSettings settings = makeBase();
+        DisplayStyle3dSettingsProps o;
+        ViewFlagProps vf;
+        vf.renderMode = RenderMode::SolidFill;
+        o.viewflags = vf;
+        settings.applyOverrides3d(o);
+        auto const out = settings.getViewFlags().Properties();
+        EXPECT_EQ(out.renderMode, RenderMode::SolidFill);  // 应用键=override 值
+        EXPECT_TRUE(out.grid);                             // 缺席键=原值（合并）
+        EXPECT_FALSE(out.weights);                         // 缺席键=原值（合并）
+        EXPECT_EQ(settings.getBackgroundColor().getTbgr(),
+                  dqCommon::ColorDef::from(255, 0, 0).getTbgr());
+    }
+
+    // Case 2（:584）：viewflags + backgroundColor=honeydew。
+    {
+        DisplayStyle3dSettings settings = makeBase();
+        DisplayStyle3dSettingsProps o;
+        ViewFlagProps vf;
+        vf.renderMode = RenderMode::SolidFill;
+        o.viewflags = vf;
+        o.backgroundColor = 0xF0FFF0u;  // ColorByName.honeydew
+        settings.applyOverrides3d(o);
+        EXPECT_EQ(settings.getBackgroundColor().getTbgr(), 0xF0FFF0u);
+        EXPECT_TRUE(settings.getViewFlags().Properties().grid);  // 仍保持
+    }
+
+    // Case 3（:585）：viewflags + monochromeColor=hotPink。
+    {
+        DisplayStyle3dSettings settings = makeBase();
+        DisplayStyle3dSettingsProps o;
+        ViewFlagProps vf;
+        vf.monochrome = true;
+        o.viewflags = vf;
+        o.monochromeColor = 0xFF69B4u;  // ColorByName.hotPink
+        settings.applyOverrides3d(o);
+        EXPECT_EQ(settings.getMonochromeColor().getTbgr(), 0xFF69B4u);
+        EXPECT_TRUE(settings.getViewFlags().Properties().monochrome);
+        EXPECT_TRUE(settings.getViewFlags().Properties().grid);   // 仍保持
+        EXPECT_FALSE(settings.getViewFlags().Properties().weights);
+    }
+
+    // Case 4（:586）：viewflags + monochromeMode=Flat + timePoint（:587 段
+    // analysisFraction 的可移植面；analysisStyle 未移植登记）。
+    {
+        DisplayStyle3dSettings settings = makeBase();
+        DisplayStyle3dSettingsProps o;
+        ViewFlagProps vf;
+        vf.monochrome = true;
+        o.viewflags = vf;
+        o.monochromeMode = MonochromeMode::Flat;
+        o.timePoint = 87654321.0;
+        o.analysisFraction = 0.8;
+        settings.applyOverrides3d(o);
+        EXPECT_EQ(settings.getMonochromeMode(), MonochromeMode::Flat);
+        ASSERT_TRUE(settings.getTimePoint().has_value());
+        EXPECT_DOUBLE_EQ(*settings.getTimePoint(), 87654321.0);
+        EXPECT_DOUBLE_EQ(settings.getAnalysisFraction(), 0.8);
+        EXPECT_TRUE(settings.getViewFlags().Properties().grid);
+    }
+
+    // 3d 层缺席保持（:554-588 的 absent 键面——lights/hline/environment 原样）。
+    {
+        DisplayStyle3dSettings settings = makeBase();
+        DisplayStyle3dSettingsProps o;
+        ViewFlagProps vf;
+        vf.renderMode = RenderMode::SolidFill;
+        o.viewflags = vf;
+        settings.applyOverrides3d(o);
+        EXPECT_DOUBLE_EQ(settings.getLights().portraitIntensity, 0.3);  // 默认 rig 未动
+        EXPECT_DOUBLE_EQ(settings.getHiddenLineSettings().transparencyThreshold, 1.0);
+        EXPECT_FALSE(settings.getEnvironment().displaySky);
+    }
+}

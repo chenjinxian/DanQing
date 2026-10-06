@@ -2710,6 +2710,48 @@ void Viewport::SetClipStyle(dqCommon::ClipStyle const& style)
     GetView()->GetDisplayStyle().setClipStyle(style);
 }
 
+// Ported from: itwinjs-core Viewport.overrideDisplayStyle (Viewport.ts:657-659)。
+// M-Q Q-a。参考 _applyOverrides 经属性 setter 逐段赋值——每段自发
+// onXXXChanged → viewport ChangeFlags/失效；DanQing 的 applyOverrides3d 直改
+// 成员绕过事件，按 props 在场段在此发等价失效（观察契约一致）。
+void Viewport::overrideDisplayStyle(dqCommon::DisplayStyle3dSettingsProps const& overrides)
+{
+    // this.displayStyle.settings.applyOverrides(overrides)
+    GetView()->GetDisplayStyle().getSettings().applyOverrides3d(overrides);
+
+    if (overrides.viewflags) {
+        // OnViewFlagsChanged 监听面（Viewport.cpp:601-604 同款）。
+        m_changeFlags.SetDisplayStyle();
+        m_changeFlags.SetFeatureOverridesDirty();
+        InvalidateRenderPlan();
+    }
+    if (overrides.backgroundColor || overrides.monochromeColor || overrides.monochromeMode
+        || overrides.lights) {
+        // OnBackgroundColorChanged/OnMonochromeColorChanged/OnLightSettingsChanged
+        // 监听面（SetDisplayStyle + RequestRedraw/渲染计划 equals 失效）。
+        m_changeFlags.SetDisplayStyle();
+        InvalidateRenderPlan();
+    }
+    if (overrides.environment) {
+        // OnEnvironmentChanged 监听面 + 天空指纹重建链（CollectDecorations 的
+        // 参数指纹比对读当前 env——需装饰失效令 CollectDecorations 重跑）。
+        m_changeFlags.SetDisplayStyle();
+        InvalidateDecorations();
+    }
+    if (overrides.hline) {
+        // 边变体失效（P6 面：hline 变更经 synchWithView/InvalidateScene 的
+        // 等价——树 Id/变体键读当前 settings）。
+        m_changeFlags.SetDisplayStyle();
+        InvalidateScene();
+    }
+    if (overrides.thematic || overrides.ao) {
+        // 数据面写入（TD-8 族——视觉 pass 未移植，EQUIVALENCE 登记于计划文档）；
+        // 失效面与 viewflags 族同（thematicDisplay/ambientOcclusion 位在 viewflags）。
+        m_changeFlags.SetDisplayStyle();
+        InvalidateRenderPlan();
+    }
+}
+
 // Ported from: itwinjs-core Viewport.pickNearestVisibleGeometry (Viewport.ts:3404-3425)。
 std::optional<dqGeom::Point3d> Viewport::pickNearestVisibleGeometry(dqGeom::Point3d const& pickPoint,
                                                                     double radiusPixels)

@@ -80,7 +80,42 @@ DisplayStyleSettingsProps DisplayStyleSettings::toJSON() const
 
 void DisplayStyleSettings::applyOverrides(const DisplayStyleSettingsProps& props)
 {
-    if (props.viewflags) m_viewFlags = ViewFlags::fromJSON(&*props.viewflags);
+    if (props.viewflags) {
+        // 合并语义（1:1 _applyOverrides :1012-1016）：
+        //   ViewFlags.fromJSON({...this.viewFlags.toJSON(), ...overrides.viewflags})
+        // —— 现值 toJSON 只携带偏离位；覆写仅覆盖在场位，缺席位经偏离标记保持
+        //   现值（无偏离时 fromJSON 回落默认=现值）。M-Q Q-a：此前整替
+        //   fromJSON(&props) 使缺席位（grid/weights/…）回默认——真语义缺口。
+        ViewFlagProps merged = m_viewFlags.toJSON();
+        ViewFlagProps const& o = *props.viewflags;
+        if (o.noConstruct) merged.noConstruct = o.noConstruct;
+        if (o.noDim) merged.noDim = o.noDim;
+        if (o.noPattern) merged.noPattern = o.noPattern;
+        if (o.noWeight) merged.noWeight = o.noWeight;
+        if (o.noStyle) merged.noStyle = o.noStyle;
+        if (o.noTransp) merged.noTransp = o.noTransp;
+        if (o.noFill) merged.noFill = o.noFill;
+        if (o.grid) merged.grid = o.grid;
+        if (o.acs) merged.acs = o.acs;
+        if (o.noTexture) merged.noTexture = o.noTexture;
+        if (o.noMaterial) merged.noMaterial = o.noMaterial;
+        if (o.noCameraLights) merged.noCameraLights = o.noCameraLights;
+        if (o.noSourceLights) merged.noSourceLights = o.noSourceLights;
+        if (o.noSolarLight) merged.noSolarLight = o.noSolarLight;
+        if (o.visEdges) merged.visEdges = o.visEdges;
+        if (o.hidEdges) merged.hidEdges = o.hidEdges;
+        if (o.shadows) merged.shadows = o.shadows;
+        if (o.clipVol) merged.clipVol = o.clipVol;
+        if (o.monochrome) merged.monochrome = o.monochrome;
+        if (o.backgroundMap) merged.backgroundMap = o.backgroundMap;
+        if (o.ambientOcclusion) merged.ambientOcclusion = o.ambientOcclusion;
+        if (o.thematicDisplay) merged.thematicDisplay = o.thematicDisplay;
+        if (o.wiremesh) merged.wiremesh = o.wiremesh;
+        if (o.forceSurfaceDiscard) merged.forceSurfaceDiscard = o.forceSurfaceDiscard;
+        if (o.noWhiteOnWhiteReversal) merged.noWhiteOnWhiteReversal = o.noWhiteOnWhiteReversal;
+        if (o.renderMode) merged.renderMode = o.renderMode;
+        m_viewFlags = ViewFlags::fromJSON(&merged);
+    }
     if (props.backgroundColor) m_backgroundColor = ColorDef::fromTbgr(*props.backgroundColor);
     if (props.monochromeColor) m_monochromeColor = ColorDef::fromTbgr(*props.monochromeColor);
     if (props.monochromeMode) m_monochromeMode = *props.monochromeMode;
@@ -105,7 +140,7 @@ DisplayStyle3dSettingsProps DisplayStyle3dSettings::toJSON3d() const
     p.thematic = m_thematic.toJSON();
     p.hline = HiddenLineSettingsProps{m_hiddenLine.visible.toJSON(), m_hiddenLine.hidden.toJSON(), m_hiddenLine.transparencyThreshold};
     p.ao = m_ambientOcclusion.toJSON();
-    // TODO: lights.toJSON() when LightSettings gets toJSON
+    p.lights = m_lights.toJSON();  // M-Q Q-a：toJSON 接线（LightSettings::toJSON 已在）
     return p;
 }
 

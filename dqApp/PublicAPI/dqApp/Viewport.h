@@ -46,6 +46,7 @@
 #include <dqRender/tile/TileAdmin.h>
 
 #include <dqCommon/ClipStyle.h>  // GetClipStyle/SetClipStyle（M-P P-B）
+#include <dqCommon/DisplayStyleSettings.h>  // overrideDisplayStyle（M-Q Q-a）
 #include <dqCommon/FeatureOverrides.h>
 #include <dqCommon/Frustum.h>
 #include <dqCommon/PerModelCategoryVisibility.h>
@@ -299,6 +300,18 @@ public:
     //              Viewport 既有监听（Viewport.cpp:649）InvalidateRenderPlan）。
     dqCommon::ClipStyle const& GetClipStyle() const;
     void SetClipStyle(dqCommon::ClipStyle const& style);
+
+    // Apply a set of overrides to the display style's settings — viewflags are
+    // MERGED (absent bits keep current values); only present props sections are
+    // applied. Equivalent invalidations are raised per present section (the
+    // reference routes through property setters, each raising its own
+    // onChanged → viewport ChangeFlags; DanQing's applyOverrides3d mutates
+    // members directly, so the equivalent viewport-side effects fire here).
+    // Ported from: itwinjs-core Viewport.overrideDisplayStyle (Viewport.ts:657-659
+    //   —— this.displayStyle.settings.applyOverrides(overrides)) + common
+    //   DisplayStyleSettings._applyOverrides (:1009-1076/:1186-1215 presence faces)
+    // M-Q Q-a.
+    void overrideDisplayStyle(dqCommon::DisplayStyle3dSettingsProps const& overrides);
 
     // Ported from: itwinjs-core Viewport.pickNearestVisibleGeometry (Viewport.ts:3404-3425) —
     // pickDepthPoint 的有效性门（Geometry/Model/Map 直通；平面源 npc z∈[0,1]），
