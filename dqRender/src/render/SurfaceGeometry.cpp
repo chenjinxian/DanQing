@@ -118,7 +118,14 @@ int const* SurfaceGeometry::computeSurfaceFlags(CachedGeometry const& geom,
     bool const hasMaterialAtlas = wantMaterials && geom.hasMaterialAtlas();
 
     s_flags[static_cast<size_t>(SurfaceBitIndex::hasTexture)] = hasTexture ? 1 : 0;
-    s_flags[static_cast<size_t>(SurfaceBitIndex::ApplyLighting)] = applyLighting ? 1 : 0;
+    // wantLighting（SurfaceGeometry.ts:35-37——SmoothShade && vf.lighting）是
+    // ApplyLighting 的视图级门（:331 `if (wantLighting(vf)) flags[ApplyLighting]
+    // = 1`）；M-Q Q-d 补——此前仅几何级 isLit，Illustration 族预设的三灯全关
+    // （viewFlags.lighting=false）不熄光照。
+    bool const wantLighting = viewFlags.renderMode == RenderMode::SmoothShade
+                              && viewFlags.lighting;
+    s_flags[static_cast<size_t>(SurfaceBitIndex::ApplyLighting)] =
+        (applyLighting && wantLighting) ? 1 : 0;
     s_flags[static_cast<size_t>(SurfaceBitIndex::HasNormals)] = 1;          // SurfaceGeometry supplies a_normal
     s_flags[static_cast<size_t>(SurfaceBitIndex::IgnoreMaterial)] = ignoreMaterial ? 1 : 0;
     s_flags[static_cast<size_t>(SurfaceBitIndex::TransparencyThreshold)] = translucent ? 1 : 0;

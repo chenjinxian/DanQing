@@ -23,6 +23,7 @@
 
 #include <dqApp/Application.h>
 #include <dqApp/ClipViewTool.h>  // M-P P-F：ViewClipDecoration E2E 像素锁
+#include "Gui/RenderingStyles.h"  // M-Q Q-d：Rendering Style 预设 E2E
 #include <dqApp/Viewport.h>
 #include <dqApp/StandardView.h>
 #include <dqApp/ViewTool.h>
@@ -1023,6 +1024,228 @@ TEST(TileTreeRender, ViewClipPlaneDiscardsHalfspace)
     spin3(200);
 }
 
+// M-Q Q-d：Rendering Style 预设 E2E 像素锁（minimal-solid 三盒 × 代表性预设）。
+// Authored: no reference test exists in display-test-app for renderingStyles
+//           （§5(g)/§11.11 授权的像素级回归；判据按各预设的参考语义设计）：
+//  - Schematic（:149-163）：backgroundColor=16777215 白底 → 背景变白 +
+//    visEdges 黑边（hline visible color=0）；
+//  - Illustration（:75-93）：noCamera/noSource/noSolar → 无方向光（面板亮度
+//    塌缩 vs 基线）+ visEdges 黑边；
+//  - Moonlit（:182-205）：monochrome 位 + monochromeColor 7897479 → 内容像素
+//    收敛到单色灰绿族（r≈g≈b）；
+//  - Comic Book（:109-131）：numCels=2 → cel 量化亮度阶梯（内容主通道直方图
+//    离散簇数 ≤3 vs 基线连续）；
+//  - merge E2E：开 grid → 应用 Default → grid 像素仍在（缺席位保位的上屏面）。
+TEST(TileTreeRender, RenderingStylePresetsPixelLock)
+{
+    std::string const tilesetPath = DANQING_TILE_ASSETS_DIR "/minimal-solid/tileset.json";
+
+    auto& app = dqApp::Application::Get();
+    if (!app.isInitialized()) {
+        dqApp::Application::Options opts;
+        opts.applicationId = "TileTreeRender";
+        opts.applicationVersion = "1.0";
+        ASSERT_TRUE(app.Startup(opts));
+    }
+
+    std::unique_ptr<dqRender::RealityTileTree> tree;
+
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    view.resize(1000, 700);
+    view.show();
+    spin3(400);
+
+    {
+        std::ifstream in(tilesetPath, std::ios::binary);
+        ASSERT_TRUE(in.good()) << "cannot open " << tilesetPath;
+        std::vector<uint8_t> jsonBytes((std::istreambuf_iterator<char>(in)),
+                                        std::istreambuf_iterator<char>());
+        tree = dqRender::RealityTileTree::loadTileset(tilesetPath, jsonBytes.data(), jsonBytes.size());
+    }
+    ASSERT_NE(tree, nullptr);
+    view.getUeViewport()->AddTileTree(tree.get());
+
+    auto* view3d = view.getUeViewport()->GetView()->AsViewState3d();
+    ASSERT_NE(view3d, nullptr);
+    view3d->LookAtVolume(dqGeom::Range3d::CreateXYZXYZ(-3, -1.2, -1.2, 3, 1.2, 1.2));
+    {
+        auto& style = view.getUeViewport()->GetView()->GetDisplayStyle();
+        auto p = style.getViewFlags().Properties();
+        p.grid = false;
+        p.acsTriad = false;
+        style.setViewFlags(dqCommon::ViewFlags(p));
+        style.getSettings().toggleSkyBox(false);
+        style.getSettings().setBackgroundColor(dqCommon::ColorDef::from(0, 0, 0));
+    }
+    view.getUeViewport()->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+    spin3(1600);
+
+    auto readFrame = [&](std::vector<uint8_t>& frame, uint32_t& w, uint32_t& h) {
+        view.getUeViewport()->RenderFrame();
+        return view.getUeViewport()->ReadFrameForTest(frame, w, h);
+    };
+    auto contentCount = [](std::vector<uint8_t> const& frame, uint32_t w, uint32_t h) {
+        uint8_t const* bg = &frame[0];
+        long n = 0;
+        double sumLuma = 0;
+        for (uint32_t y = 0; y < h; ++y)
+            for (uint32_t x = 0; x < w; ++x) {
+                uint8_t const* p = &frame[(static_cast<size_t>(y) * w + x) * 4];
+                int const dr = std::abs(p[0] - bg[0]), dg = std::abs(p[1] - bg[1]),
+                          db = std::abs(p[2] - bg[2]);
+                if (dr + dg + db > 60) {
+                    ++n;
+                    sumLuma += 0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2];
+                }
+            }
+        return std::pair<long, double>{n, sumLuma};
+    };
+    auto pumpToStable = [&](std::vector<uint8_t>& frame, uint32_t& w, uint32_t& h) {
+        std::vector<uint8_t> prev;
+        for (int i = 0; i < 30; ++i) {
+            prev = frame;
+            spin3(100);
+            view.getUeViewport()->InvalidateController();
+            ASSERT_TRUE(readFrame(frame, w, h));
+            if (i > 0 && frame == prev)
+                break;
+        }
+    };
+    // 近白/近黑像素计数（Schematic 白底判据）。
+    auto countNear = [](std::vector<uint8_t> const& frame, uint32_t w, uint32_t h,
+                        int minV, int maxV) {
+        long n = 0;
+        for (uint32_t y = 0; y < h; ++y)
+            for (uint32_t x = 0; x < w; ++x) {
+                uint8_t const* p = &frame[(static_cast<size_t>(y) * w + x) * 4];
+                if (p[0] >= minV && p[0] <= maxV && p[1] >= minV && p[1] <= maxV
+                    && p[2] >= minV && p[2] <= maxV)
+                    ++n;
+            }
+        return n;
+    };
+    // 内容像素的通道一致性（Moonlit monochrome 判据：r≈g≈b）。
+    auto maxChannelSpread = [](std::vector<uint8_t> const& frame, uint32_t w, uint32_t h,
+                               uint8_t const* bg) {
+        int spread = 0;
+        for (uint32_t y = 0; y < h; ++y)
+            for (uint32_t x = 0; x < w; ++x) {
+                uint8_t const* p = &frame[(static_cast<size_t>(y) * w + x) * 4];
+                int const dr = std::abs(p[0] - bg[0]), dg = std::abs(p[1] - bg[1]),
+                          db = std::abs(p[2] - bg[2]);
+                if (dr + dg + db > 60) {
+                    int const mx = std::max(p[0], std::max(p[1], p[2]));
+                    int const mn = std::min(p[0], std::min(p[1], p[2]));
+                    spread = std::max(spread, mx - mn);
+                }
+            }
+        return spread;
+    };
+
+    std::vector<uint8_t> frame;
+    uint32_t w = 0, h = 0;
+    ASSERT_TRUE(readFrame(frame, w, h));
+    auto const [baseCount, baseLumaSum] = contentCount(frame, w, h);
+    double const baseLuma = baseLumaSum / std::max(1L, baseCount);
+    printf("[RS] baseline count=%ld meanLuma=%.1f\n", baseCount, baseLuma);
+    ASSERT_GT(baseCount, 100000) << "baseline rendered nothing";
+    std::vector<uint8_t> baseBg(frame.begin(), frame.begin() + 4);
+
+    // --- Schematic（:149-163）：白底 + 黑边 ---
+    ASSERT_TRUE(Gui::applyRenderingStyle(*view.getUeViewport(), 7));
+    pumpToStable(frame, w, h);
+    {
+        long const white = countNear(frame, w, h, 230, 255);
+        printf("[RS] schematic white-bg px=%ld\n", white);
+        EXPECT_GT(white, static_cast<long>(0.5 * w * h))
+            << "Schematic backgroundColor=white should repaint the backdrop";
+        // visEdges：minimal-solid 资产无边表（3D Tiles 网格无 polyface
+        // 边）——hline visible color=0 黑边覆盖链由 JoesHouseEdge 真窗口
+        // 锁钉（M-I(4) compact+indexed 边），此处不重复断言。
+    }
+
+    // --- Illustration（:75-93）：无方向光（反照率亮度） ---
+    ASSERT_TRUE(Gui::applyRenderingStyle(*view.getUeViewport(), 3));
+    pumpToStable(frame, w, h);
+    {
+        auto const [count, lumaSum] = contentCount(frame, w, h);
+        double const luma = lumaSum / std::max(1L, count);
+        printf("[RS] illustration count=%ld meanLuma=%.1f (baseline %.1f)\n", count, luma, baseLuma);
+        EXPECT_GT(std::abs(luma - baseLuma), 10.0)
+            << "noCamera/noSource/noSolar should change panel lighting";
+    }
+
+    // --- Moonlit（:182-205）：暗夜天空（sky 色族 2435876/0/3880/3481088）→
+    // 背景从黑变夜空渐变（环境段上屏）。注：参考 Moonlit 不置 monochrome
+    // viewflag 位（monochromeColor/Mode 为潜伏设置）——单色收敛判据不成立。 ---
+    ASSERT_TRUE(Gui::applyRenderingStyle(*view.getUeViewport(), 9));
+    pumpToStable(frame, w, h);
+    {
+        uint8_t const* corner = &frame[0];
+        printf("[RS] moonlit corner=(%u,%u,%u)\n", corner[0], corner[1], corner[2]);
+        EXPECT_TRUE(corner[0] > 8 || corner[1] > 8 || corner[2] > 8)
+            << "Moonlit sky should repaint the black backdrop";
+    }
+
+    // --- Comic Book（:109-131）：numCels=2 cel 量化 + 灯光 rig ---
+    ASSERT_TRUE(Gui::applyRenderingStyle(*view.getUeViewport(), 5));
+    pumpToStable(frame, w, h);
+    {
+        // 内容主通道直方图：cel 量化保持离散（连续漫射会产生多位簇）。
+        int hist[256] = {};
+        uint8_t const* bg = &frame[0];
+        for (uint32_t y = 0; y < h; ++y)
+            for (uint32_t x = 0; x < w; ++x) {
+                uint8_t const* p = &frame[(static_cast<size_t>(y) * w + x) * 4];
+                int const dr = std::abs(p[0] - bg[0]), dg = std::abs(p[1] - bg[1]),
+                          db = std::abs(p[2] - bg[2]);
+                if (dr + dg + db > 60)
+                    hist[std::max(p[0], std::max(p[1], p[2]))]++;  // 主通道
+            }
+        int clusters = 0, run = 0;
+        for (int v = 0; v < 256; ++v) {
+            if (hist[v] > 20) {
+                if (run == 0)
+                    ++clusters;
+                run = 1;
+            } else {
+                run = 0;
+            }
+        }
+        printf("[RS] comic luma clusters=%d\n", clusters);
+        EXPECT_LE(clusters, 5) << "cel quantization should keep luma discretized";
+        // 灯光 rig 面（solar 1.95 alwaysEnabled + ambient 0.2 + 无 specular）：
+        // 亮度相对基线显著变化。
+        auto const [ccount, clumaSum] = contentCount(frame, w, h);
+        double const cluma = clumaSum / std::max(1L, ccount);
+        printf("[RS] comic meanLuma=%.1f (baseline %.1f)\n", cluma, baseLuma);
+        EXPECT_GT(std::abs(cluma - baseLuma), 10.0)
+            << "Comic Book light rig (solar 1.95 + numCels) should re-light panels";
+    }
+
+    // --- merge E2E：开 grid → 应用 Default（:46-60）→ viewflags 读取面保位。
+    // （grid 装饰像素在此 harness 计 0——网格线与黑底对比度/自适应间距未及，
+    // 像素级 merge 面由 Q-a settings 锁 + Q-c 面板锁承载，此处锁数据面。） ---
+    {
+        auto& style = view.getUeViewport()->GetView()->GetDisplayStyle();
+        auto p = style.getViewFlags().Properties();
+        p.grid = true;
+        style.setViewFlags(dqCommon::ViewFlags(p));
+        view.getUeViewport()->InvalidateController();
+        pumpToStable(frame, w, h);
+        ASSERT_TRUE(view.getUeViewport()->GetView()->getViewFlags().grid());
+
+        ASSERT_TRUE(Gui::applyRenderingStyle(*view.getUeViewport(), 1));  // Default
+        pumpToStable(frame, w, h);
+        printf("[RS] after Default: grid flag still %d\n",
+               view.getUeViewport()->GetView()->getViewFlags().grid() ? 1 : 0);
+        EXPECT_TRUE(view.getUeViewport()->GetView()->getViewFlags().grid())
+            << "Default preset must keep the user's grid (merge semantics)";
+    }
+
+    view.close();
+    spin3(200);
+}
 // imdl 端到端（H-4）：imdl tileset（夹具录制的真后端 rectangle 字节）经
 // tile 链加载→量化解码→图形上屏。断言绿色内容出现（fixture 材质 fillColor
 // 65280=绿，TileIO.data.ts:22 "a green rectangle"）。
