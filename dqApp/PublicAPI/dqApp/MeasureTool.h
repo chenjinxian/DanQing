@@ -175,6 +175,14 @@ protected:
     // Ported from: createDecorations (:385-455 — 动态线/隐藏线 + 已收段线 +
     // 累计标签 + snap 点列；marker/选中面 EQUIVALENCE 见文件头)。
     void createDecorations(DecorateContext& context, bool isSuspended);
+
+    // Ported from: MeasureTool.decorate/decorateSuspended (MeasureTool.ts:458-460
+    // — `decorate → createDecorations(context, false)` /
+    // `decorateSuspended → createDecorations(context, true)`。2026-10-07 一致性
+    // 审计 B1 修复：原先无此二覆写——InteractiveTool::decorate 默认空体使测距
+    // 线/标签在产品路径永不绘制[ported-but-uncalled，§11.10]）。
+    void decorate(DecorateContext& context) override { createDecorations(context, false); }
+    void decorateSuspended(DecorateContext& context) override { createDecorations(context, true); }
     // Ported from: displayDynamicDistance (:319-332 — 动态段距离标签)。
     void displayDynamicDistance(DecorateContext& context,
                                 std::vector<dqGeom::Point3d> const& points,

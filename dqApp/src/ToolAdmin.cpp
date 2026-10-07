@@ -52,9 +52,14 @@ void ToolAdmin::Decorate(DecorateContext& context)
     // M-O(3) P3：decorate 虚面归位 InteractiveTool（Tool.ts:537-539）——
     // activeTool 全类（viewTool/primitiveTool/inputCollector）统一转发
     // （PrimitiveTool 覆写面 = SelectionTool 框选装饰等）。
-    if (InteractiveTool* tool = activeTool())
+    if (InteractiveTool* tool = activeTool()) {
         tool->decorate(context);
-    // TS L2054-2058：inputCollector/primitiveTool 的 decorateSuspended 未移植——不 forward。
+        // TS L2054-2058：inputCollector/primitiveTool 的 decorateSuspended 转发
+        // （2026-10-07 一致性审计 B2 修复——Measure 距离线在 ViewTool 活动期间
+        // 仍显示的面；DanQing 无 InputCollector，仅 primitiveTool 臂）。
+        if (m_primitiveTool && tool != m_primitiveTool)
+            m_primitiveTool->decorateSuspended(context);
+    }
 
     // TS L2061-2069：locate 光圈（Viewport.drawLocateCursor 的 isLocateCircleOn 分支，
     // Viewport.ts:3764-3778）——以最新 hover 点为圆心的光圈 canvas decoration。

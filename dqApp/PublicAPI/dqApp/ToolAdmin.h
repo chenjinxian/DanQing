@@ -625,6 +625,12 @@ public:
     // ViewTool 上[历史误置]——归位 InteractiveTool 使 PrimitiveTool
     // [SelectionTool 框选装饰等]可覆写)。
     virtual void decorate(class DecorateContext& /*context*/) {}
+
+    // Called to allow a suspended PrimitiveTool/InputCollector to display
+    // decorations while a ViewTool is active (ToolAdmin.decorate 的
+    // decorateSuspended 转发面). Ported from: itwinjs-core Tool.decorateSuspended
+    // (Tool.ts:546 — `public decorateSuspended(_context) {}` 默认空体).
+    virtual void decorateSuspended(class DecorateContext& /*context*/) {}
 };
 
 // The PrimitiveTool class can be used to implement tools to create or modify geometric elements.

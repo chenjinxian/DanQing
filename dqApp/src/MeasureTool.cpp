@@ -90,9 +90,9 @@ bool MeasureLabel::setPosition(Viewport& vp)
     m_position.y -= std::floor(vp.PixelsFromInches(0.44)) + 0.5;
     ViewRect const rect = vp.viewRect();
     return m_position.x >= static_cast<double>(rect.left)
-        && m_position.x <= static_cast<double>(rect.right)
+        && m_position.x < static_cast<double>(rect.right)
         && m_position.y >= static_cast<double>(rect.top)
-        && m_position.y <= static_cast<double>(rect.bottom);
+        && m_position.y < static_cast<double>(rect.bottom);
 }
 
 // Ported from: MeasureLabel.addDecoration (:99-102).
@@ -360,9 +360,9 @@ MeasureDistanceTool::getSnapPoints() const
     std::vector<dqGeom::Point3d> snapPoints;
     for (auto const& seg : m_acceptedSegments) {
         if (snapPoints.empty()
-            || !seg.start.AlmostEqual(snapPoints.back(), 1.0e-10))
+            || !seg.start.AlmostEqual(snapPoints.back(), 1.0e-6))
             snapPoints.push_back(seg.start);
-        if (!seg.end.AlmostEqual(snapPoints.front(), 1.0e-10))
+        if (!seg.end.AlmostEqual(snapPoints.front(), 1.0e-6))
             snapPoints.push_back(seg.end);
     }
     if (m_locationData.size() > 1)
@@ -403,10 +403,10 @@ void MeasureDistanceTool::createDecorations(DecorateContext& context,
         tmpPoints.push_back(m_lastMotionPt);
         tmpAdjustedPoints.push_back(m_lastMotionAdjustedPt);
 
-        // hilite 色（viewport.hilite.color —— DanQing 0x23bbfc[SelectionSet
-        // Hilite.ts:53 同源]）。
-        dqCommon::ColorDef const colorDynVis = dqCommon::ColorDef::from(
-            0x23, 0xbb, 0xfc);
+        // hilite 色（:400 context.viewport.hilite.color——2026-10-07 审计 B18
+        // 修复：动态读视口高亮色[原硬编码 0x23bbfc——与 Hilite.ts:53 默认值
+        // 恰同，定制高亮色时不随]）。
+        dqCommon::ColorDef const colorDynVis = vp.GetHiliteColorDef();
         Viewport& viewport = vp;
         dqRender::GraphicBuilderOptions optsVis;
         optsVis.type = dqRender::GraphicType::WorldDecoration;
@@ -431,8 +431,13 @@ void MeasureDistanceTool::createDecorations(DecorateContext& context,
             return worldPerPixel;
         };
         if (auto builder = viewport.createGraphicBuilder(optsHid)) {
-            builder->setSymbology(colorDynVis, dqCommon::ColorDef::from(0, 0, 0),
-                                  1);
+            // :407-409 —— hidden 段 = 同色 withAlpha(100) + 线宽 1 + LinePixels.
+            // Code2。Code2 线型被 TD-23 已登记缺口阻塞（u_lineCode 未上传——
+            // 恒实线）；withAlpha(100) = ColorDef transparency 155（alpha 100）。
+            auto const dynCol = colorDynVis.getColors();
+            builder->setSymbology(
+                dqCommon::ColorDef::from(dynCol.r, dynCol.g, dynCol.b, 155),
+                dqCommon::ColorDef::from(0, 0, 0), 1);
             builder->addLineString(tmpPoints.data(), tmpPoints.size());
             if (auto* g = builder->finish()) {
                 viewport.createGraphicOwner(g);
@@ -465,8 +470,12 @@ void MeasureDistanceTool::createDecorations(DecorateContext& context,
             }
         }
         if (auto builder = vp.createGraphicBuilder(optsAccHid)) {
-            builder->setSymbology(colorAccVis, dqCommon::ColorDef::from(0, 0, 0),
-                                  1);
+            // :419-424 —— hidden 段 = 同色 withAlpha(100) + 线宽 1 + LinePixels.
+            // Code2（Code2 被 TD-23 u_lineCode 缺口阻塞——恒实线）。
+            auto const accCol = colorAccVis.getColors();
+            builder->setSymbology(
+                dqCommon::ColorDef::from(accCol.r, accCol.g, accCol.b, 155),
+                dqCommon::ColorDef::from(0, 0, 0), 1);
             for (auto const& seg : m_acceptedSegments) {
                 dqGeom::Point3d const pts[2] = {seg.start, seg.end};
                 builder->addLineString(pts, 2);

@@ -104,10 +104,13 @@ public:
     // :371-391 收框（Line/Box 分流 + useOverlapSelection + process）。
     bool selectByPointsEnd(BeButtonEvent const& ev);
     // :329-357 候选拾取 + ctrl 分流（Replace/Invert）+ 空面 miss 清。
+    // presetContents：Line 跨线模式的沿线采样集（EST.ts:702-717——距线
+    // <1.5 device px 的像素集；非空时跳过 Box 全域读）。
     bool selectByPointsProcess(dqGeom::Point3d const& origin,
                                dqGeom::Point3d const& corner,
                                BeButtonEvent const& ev, SelectionMethod method,
-                               bool overlap);
+                               bool overlap,
+                               std::vector<uint32_t> const* presetContents = nullptr);
     // :278-285 overlap 判定（右→左拖 = overlap；Shift 反转）。
     bool useOverlapSelection(BeButtonEvent const& ev) const;
 
@@ -123,6 +126,10 @@ private:
     // :229 _isSelectByPoints / :230 _points。
     bool m_isSelectByPoints = false;
     std::vector<dqGeom::Point3d> m_points;
+    // 框选起拖键（decorate 的 crossingLine 判定——SelectTool.ts:298
+    // `Pick === method && Reset === ev.button`；fillEventFromCursorLocation
+    // 的 button 面以起拖键承载[2026-10-07 审计 B13]）。
+    BeButton m_pointsButton = BeButton::Data;
 };
 
 }  // namespace dqApp

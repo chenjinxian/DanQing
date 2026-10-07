@@ -161,14 +161,19 @@ EventHandled SelectionTool::onDataButtonUp(BeButtonEvent const& event)
             selSet.Replace(ids);
         }
     } else {
-        // Ported from: SelectTool.ts:465-466
-        //              if (!ev.isControlKey && this.wantSelectionClearOnMiss(ev)
-        //                  && this.processMiss(ev)) this.syncSelectionMode();
-        // wantSelectionClearOnMiss -> true in SelectionMode.Replace (SelectTool.ts:85)
-        // Step 3 default is Replace, so the clear-on-miss path applies.
+        // Ported from: SelectTool.ts:465-468
+        //   if (!ev.isControlKey && this.wantSelectionClearOnMiss(ev)
+        //       && this.processMiss(ev)) this.syncSelectionMode();
+        //   return EventHandled::Yes;
+        // wantSelectionClearOnMiss -> true in SelectionMode.Replace (SelectTool.ts:85).
+        // 2026-10-07 审计 B10 修复：ctrl+点空不清选集（原无条件 ProcessMiss）；
+        // 恒 return Yes（参考事件契约——原 ProcessMiss 假时返 No）。
         // syncSelectionMode is a UI TODO stub.
-        if (!ProcessMiss(event))
-            return EventHandled::No;
+        if ((event.keyModifiers & BeModifierKeys::Control)
+            == BeModifierKeys::None)
+            ProcessMiss(event);
+        // 落穿到函数尾的 return Yes（hilite 同步对 miss-清选路径必需——清空后
+        // SyncWith(selSet) 镜像空集）。
     }
 
     // Ported from: itwinjs-core ViewManager / Target.setHiliteSet
@@ -266,6 +271,7 @@ bool SelectionTool::selectByPointsStart(BeButtonEvent const& ev)
         return false;
     m_points.clear();
     m_points.push_back(ev.point);
+    m_pointsButton = ev.button;   // decorate crossingLine 判定（SelectTool.ts:298）
     m_isSelectByPoints = true;
     return true;
 }
@@ -275,7 +281,8 @@ bool SelectionTool::selectByPointsStart(BeButtonEvent const& ev)
 bool SelectionTool::selectByPointsProcess(dqGeom::Point3d const& origin,
                                           dqGeom::Point3d const& corner,
                                           BeButtonEvent const& ev,
-                                          SelectionMethod method, bool overlap)
+                                          SelectionMethod method, bool overlap,
+                                          std::vector<uint32_t> const* presetContents)
 {
     Viewport* vp = ev.viewport;
     if (vp == nullptr)
@@ -285,17 +292,23 @@ bool SelectionTool::selectByPointsProcess(dqGeom::Point3d const& origin,
     // 去重 + Box 非 overlap 的"完全在内"收缩带判定（:676-701 的 outline 带
     // ——border band = 边缘 2 设备像素内的像素；inside = contents - 有边缘
     // 像素的 id）。EQUIVALENCE：参考一次 readPixels 后逐像素分区；DanQing
-    // 经 PickAtRect 全域 + 四边缘带五读（band 换算 2/dpr CSS 像素）。
+    // 经 PickAtRect 全域 + 四边缘带五读。2026-10-07 审计 B11/B12 修复：
+    // band 端点含入后恰覆盖 2 device 行（原 ceil(2/dpr) 宽 1px）；参考无
+    // contents.size()>1 门（单候选同样收缩——全覆盖单元素落 outline 而空
+    // inside → miss 清选）。
     std::vector<uint32_t> contents;
-    vp->PickAtRect(static_cast<int32_t>(origin.x), static_cast<int32_t>(origin.y),
-                   static_cast<int32_t>(corner.x), static_cast<int32_t>(corner.y),
-                   contents);
-    if (SelectionMethod::Box == method && !overlap
-        && contents.size() > 1) {
+    if (presetContents != nullptr) {
+        contents = *presetContents;   // Line 跨线采样集（EST.ts:702-717）
+    } else {
+        vp->PickAtRect(static_cast<int32_t>(origin.x), static_cast<int32_t>(origin.y),
+                       static_cast<int32_t>(corner.x), static_cast<int32_t>(corner.y),
+                       contents);
+    }
+    if (SelectionMethod::Box == method && !overlap) {
         // 边缘带（2 device px）：四条带读出 outline 候选。
         double const dpr = vp->devicePixelRatioF() > 0.0
             ? vp->devicePixelRatioF() : 1.0;
-        int32_t const band = std::max(1, static_cast<int32_t>(std::ceil(2.0 / dpr)));
+        int32_t const band = std::max(1, static_cast<int32_t>(std::ceil(1.0 / dpr)));
         int32_t const x0 = static_cast<int32_t>(std::min(origin.x, corner.x));
         int32_t const y0 = static_cast<int32_t>(std::min(origin.y, corner.y));
         int32_t const x1 = static_cast<int32_t>(std::max(origin.x, corner.x));
@@ -392,13 +405,15 @@ bool SelectionTool::selectByPointsEnd(BeButtonEvent const& ev)
     // DanQing 缺省方法 Pick；Reset 起拖走 Line（参考同款）。
     if (BeButton::Reset == ev.button) {
         // Line 模式（:702-717——投影距离 <1.5 device px 的像素集）。
-        // EQUIVALENCE：DanQing PickAtRect 无逐像素位置面——跨线经沿线采样
-        // 段序列的矩形读近似（步长 1px，段半径 2px）。
+        // EQUIVALENCE：DanQing PickAtRect 无逐像素位置面——跨线经沿线 1px
+        // 步进 + ±1px 矩形读近似（覆盖距线 ~1.5px 带；2026-10-07 审计 B9
+        // 修复：采样集原先被 process 的全域 Box 读丢弃——Line 实为包围盒
+        // 全选）。去重 = 参考 Set 语义（ctrl-Invert 重复 id 双翻转）。
         double const dx = corner.x - origin.x;
         double const dy = corner.y - origin.y;
         int32_t const steps = std::max(
             1, static_cast<int32_t>(std::max(std::abs(dx), std::abs(dy))));
-        std::vector<uint32_t> contents;
+        std::vector<uint32_t> sampled;
         for (int32_t i = 0; i <= steps; ++i) {
             double const t = steps == 0 ? 0.0
                 : static_cast<double>(i) / static_cast<double>(steps);
@@ -406,12 +421,20 @@ bool SelectionTool::selectByPointsEnd(BeButtonEvent const& ev)
                 origin.x + t * dx));
             int32_t const py = static_cast<int32_t>(std::lround(
                 origin.y + t * dy));
-            vp->PickAtRect(px - 2, py - 2, px + 2, py + 2, contents);
+            vp->PickAtRect(px - 1, py - 1, px + 1, py + 1, sampled);
         }
-        // 复用 process 的 ctrl 分流（构造合成事件直驱）。
+        std::vector<uint32_t> contents;
+        {
+            std::set<uint32_t> seen;
+            for (uint32_t id : sampled)
+                if (id != 0)
+                    seen.insert(id);
+            contents.assign(seen.begin(), seen.end());
+        }
+        // 复用 process 的 ctrl 分流（构造合成事件直驱 + 预置采样集）。
         BeButtonEvent lineEv = ev;
         selectByPointsProcess(origin, corner, lineEv, SelectionMethod::Line,
-                              true);
+                              true, &contents);
         // Line 模式已直接处理——selectByPointsProcess 的 Box 收缩不适用。
         m_isSelectByPoints = false;
         m_points.clear();
@@ -462,8 +485,9 @@ void SelectionTool::decorate(DecorateContext& context)
     // 近似[EQUIVALENCE：InputState.lastMotion]）。
     auto& inputState = Application::Get().GetToolAdmin().currentInputState();
     dqGeom::Point2d const lastMotion2 = inputState.lastMotion;
-    bool const crossingLine = false;  // Pick 方法 + Data 键（Reset 起拖的
-                                      // Line 形态在 End 即清——装饰窗口内恒 Box）
+    // :298 —— crossingLine = (Pick 方法 && Reset 键)：起拖键承载
+    // （2026-10-07 审计 B13 修复——原恒 false，Reset 拖拽画盒而非跨线）。
+    bool const crossingLine = (BeButton::Reset == m_pointsButton);
     bool const overlapSelection =
         crossingLine || (lastMotion2.x < vp->WorldToView(m_points[0]).x);
 
@@ -474,14 +498,21 @@ void SelectionTool::decorate(DecorateContext& context)
     double const y2 = std::floor(lastMotion2.y) + 0.5;
     dqGeom::Point3d const offset(x2 - position.x, y2 - position.y, 0.0);
 
-    // bestContrastIsBlack（:297——黑底取黑框；DanQing 白底视图恒白框近似
-    // [EQUIVALENCE：getContrastToBackgroundColor 未移植]）。
+    // bestContrastIsBlack（:297——Viewport.getContrastToBackgroundColor，
+    // Viewport.ts:2511-2519：亮背景取黑。2026-10-07 审计 B14 修复：原恒白框
+    // ——白底上近不可见；getContrastToBackgroundColor 引擎面已在，接线即可）。
+    bool const bestContrastIsBlack =
+        (vp->getContrastToBackgroundColor().getTbgr()
+         == dqCommon::ColorDef::black.getTbgr());
     dqRender::CanvasDecoration decoration;
     decoration.position = dqGeom::Point2d::From(position.x, position.y);
-    decoration.drawDecoration = [offset, crossingLine, overlapSelection](
+    decoration.drawDecoration = [offset, crossingLine, overlapSelection,
+                                  bestContrastIsBlack](
                                     dqRender::CanvasContext& ctx) {
         ctx.setLineWidth(1);
-        ctx.setStrokeStyle(dqCommon::ColorDef::from(255, 255, 255));
+        ctx.setStrokeStyle(bestContrastIsBlack
+                               ? dqCommon::ColorDef::from(0, 0, 0)
+                               : dqCommon::ColorDef::from(255, 255, 255));
         // overlap 形态参考画虚线（setLineDash [5,5] :313）——CanvasContext
         // 无 dash 面，实线（EQUIVALENCE 见文件头）。
         (void)overlapSelection;
@@ -491,7 +522,8 @@ void SelectionTool::decorate(DecorateContext& context)
             ctx.lineTo(offset.x, offset.y);
             ctx.stroke();
         } else {
-            // strokeRect(0,0,offset) 经路径 + stroke；fillRect .06 fill。
+            // strokeRect(0,0,offset) 经路径 + stroke；fillRect .06 fill
+            //（:310/:322——fill 色随 bestContrastIsBlack 黑/白）。
             ctx.beginPath();
             ctx.moveTo(0, 0);
             ctx.lineTo(offset.x, 0);
@@ -500,7 +532,9 @@ void SelectionTool::decorate(DecorateContext& context)
             ctx.lineTo(0, 0);
             ctx.stroke();
             ctx.setGlobalAlpha(0.06);
-            ctx.setFillStyle(dqCommon::ColorDef::from(255, 255, 255));
+            ctx.setFillStyle(bestContrastIsBlack
+                                 ? dqCommon::ColorDef::from(0, 0, 0)
+                                 : dqCommon::ColorDef::from(255, 255, 255));
             ctx.fill();
         }
     };

@@ -1756,16 +1756,15 @@ TEST_F(SelectionToolDispatch, DataButtonUpReturnsNoWithoutViewport)
     EXPECT_TRUE(m_f.imodel->GetSelectionSet().isEmpty());
 }
 
-// Ported from: itwinjs-core SelectTool.onDataButtonUp (SelectTool.ts:465)
-//               wantSelectionClearOnMiss is true only in SelectionMode.Replace
-//               (SelectTool.ts:85). When the selection is already empty,
-//               processMiss returns false (SelectTool.ts:245-246), and the
-//               tool returns No per the reference's `if (!processMiss) return No`
-//               shape (paraphrased from SelectTool.ts:465-468 + the emptyAll
-//               guard at 245-246).
-TEST_F(SelectionToolDispatch, DataButtonUpProcessMissReturnsNoWhenSelectionEmpty)
+// Ported from: itwinjs-core SelectTool.onDataButtonUp (SelectTool.ts:465-468)
+//               `if (!ev.isControlKey && wantSelectionClearOnMiss && processMiss(ev))
+//                  syncSelectionMode(); return Yes`——恒 Yes（2026-10-07 审计 B10
+//               订正：原测试锁定自造的 `if (!processMiss) return No` 形——参考
+//               无此分支；wantSelectionClearOnMiss=true[Replace 模式，SelectTool.ts:85]，
+//               processMiss 空选集时 no-op[emptyAll 守卫 :245-246]）。
+TEST_F(SelectionToolDispatch, DataButtonUpMissReturnsYesAndCtrlMissKeepsSelection)
 {
-    // No pick override, no prior selection -> processMiss returns false.
+    // No pick override, no prior selection -> processMiss no-ops, returns Yes.
     ASSERT_TRUE(m_f.imodel->GetSelectionSet().isEmpty());
 
     BeButtonEvent ev;
@@ -1774,7 +1773,22 @@ TEST_F(SelectionToolDispatch, DataButtonUpProcessMissReturnsNoWhenSelectionEmpty
     ev.viewport = m_f.vp;
     ev.viewPoint = dqGeom::Point3d::From(5.0, 5.0, 0.0);
 
-    EXPECT_EQ(m_sel->onDataButtonUp(ev), EventHandled::No);
+    EXPECT_EQ(m_sel->onDataButtonUp(ev), EventHandled::Yes);
+    EXPECT_TRUE(m_f.imodel->GetSelectionSet().isEmpty());
+
+    // ctrl + miss：不清选集（:465 的 !ev.isControlKey 门）。
+    QSet<uint32_t> prior;
+    prior.insert(7u);
+    m_f.imodel->GetSelectionSet().Replace(prior);
+    BeButtonEvent ctrlEv = ev;
+    ctrlEv.keyModifiers = BeModifierKeys::Control;
+    EXPECT_EQ(m_sel->onDataButtonUp(ctrlEv), EventHandled::Yes);
+    EXPECT_EQ(m_f.imodel->GetSelectionSet().size(), 1)
+        << "ctrl+miss must not clear the selection";
+
+    // 非 ctrl + miss：清选（processMiss 的非空 emptyAll 路径）。
+    EXPECT_EQ(m_sel->onDataButtonUp(ev), EventHandled::Yes);
+    EXPECT_TRUE(m_f.imodel->GetSelectionSet().isEmpty());
 }
 
 // Ported from: itwinjs-core SelectTool.onResetButtonUp (SelectTool.ts:471-509).
