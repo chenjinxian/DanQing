@@ -251,6 +251,15 @@ public:
     // 键值 = ToolEvent.key（Qt::Key 域——ToolAdmin.cpp kKey* 先例同源登记）。
     virtual bool onKeyTransition(bool /*wentDown*/, uint32_t /*key*/) { return false; }
 
+    // Ported from: itwinjs-core ViewHandle.onModifierKeyTransition (ViewTool.ts:
+    // 76-79——修饰键转换的句柄面；ViewManip.onModifierKeyTransition :620-623
+    // 转发到这里。2026-10-07 审计 W-5 补面——当前无句柄覆写，惰性缺口闭合）。
+    virtual EventHandled onModifierKeyTransition(bool /*wentDown*/,
+                                                 BeModifierKeys /*modifier*/)
+    {
+        return EventHandled::No;
+    }
+
     // Ported from: itwinjs-core ViewingToolHandle.needDepthPoint (ViewTool.ts:158).
     virtual bool needDepthPoint(BeButtonEvent const&, bool /*isPreview*/) { return false; }
 
@@ -573,6 +582,11 @@ public:
     // Ported from: itwinjs-core ViewManip.onKeyTransition (ViewTool.ts:615-618
     // ——M-O(3) P1：路由到 focusHandle；键值 = ToolEvent.key Qt 域)。
     EventHandled onKeyTransition(bool wentDown, uint32_t key) override;
+
+    // Ported from: itwinjs-core ViewManip.onModifierKeyTransition
+    // (ViewTool.ts:620-623——focusHandle.onModifierKeyTransition ? Yes : No。
+    // 2026-10-07 审计 W-5：原先缺失，ToolAdmin 的修饰键派发不达焦点句柄)。
+    EventHandled onModifierKeyTransition(bool wentDown, BeModifierKeys modifier) override;
 
     // Override of ViewTool.getToolId — concrete subclasses (PanViewTool,
     // RotateViewTool, ...) override with their toolId. TestManip uses this default.
@@ -1544,6 +1558,27 @@ private:
     // CollectDecorations 已 clear 列表，旧图形不再被引用）。
     dqRender::RenderGraphic* m_boxGraphic = nullptr;
     dqRender::RenderGraphicOwner* m_boxGraphicOwner = nullptr;
+};
+
+// ---------------------------------------------------------------------------
+// ViewToggleCameraTool — toggles the camera on/off (one-shot).
+// Ported from: itwinjs-core ViewToggleCameraTool (ViewTool.ts:4139-4157).
+// 2026-10-07 审计 W-4：原先整类缺失且无登记。
+// ---------------------------------------------------------------------------
+class DQ_APP_EXPORT ViewToggleCameraTool : public ViewTool {
+public:
+    explicit ViewToggleCameraTool(Viewport* vp) noexcept : ViewTool(vp) {}
+
+    // Ported from: itwinjs-core ViewToggleCameraTool.toolId (ViewTool.ts:4141).
+    const char* getToolId() const noexcept override { return "View.ToggleCamera"; }
+
+    // Ported from: onInstall（:4143——viewport 在且 allow3dManipulations）。
+    bool onInstall() override;
+
+    // Ported from: onPostInstall（:4145-4154——开→turnCameraOff / 关→
+    // turnCameraOn + synchWithView + exitTool）。2026-10-07 审计 W-4：原先
+    // 整类缺失且无登记。
+    void onPostInstall() override;
 };
 
 // ---------------------------------------------------------------------------

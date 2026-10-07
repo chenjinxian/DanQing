@@ -134,7 +134,7 @@ for /F %%G in ('dir *FS.hlsl /ON/B') do (
 )
 goto :EOF
 rem to get preprocessor output (mainly indenting, and minus any defines) use something like this separately:
-rem %fxcshort% /nologo /E main /P listings\\%%~nG.hlsl %%~nG.hlsl
+rem %fxcshort% /nologo /E main /P listings\%%~nG.hlsl %%~nG.hlsl
 
 
 :CalcStats
@@ -175,17 +175,17 @@ echo:
 goto :EOF
 
 :GetWin10SdkDir
-  call :GetWin10SdkDirHelper HKLM\\SOFTWARE\\Wow6432Node > nul 2>&1
-  if errorlevel 1 call :GetWin10SdkDirHelper HKCU\\SOFTWARE\\Wow6432Node > nul 2>&1
-  if errorlevel 1 call :GetWin10SdkDirHelper HKLM\\SOFTWARE > nul 2>&1
-  if errorlevel 1 call :GetWin10SdkDirHelper HKCU\\SOFTWARE > nul 2>&1
-  if errorlevel 1 set fxcPath="c:\\Program Files (x86)\\Windows Kits\\10\\bin\\x64\\fxc.exe"
+  call :GetWin10SdkDirHelper HKLM\SOFTWARE\Wow6432Node > nul 2>&1
+  if errorlevel 1 call :GetWin10SdkDirHelper HKCU\SOFTWARE\Wow6432Node > nul 2>&1
+  if errorlevel 1 call :GetWin10SdkDirHelper HKLM\SOFTWARE > nul 2>&1
+  if errorlevel 1 call :GetWin10SdkDirHelper HKCU\SOFTWARE > nul 2>&1
+  if errorlevel 1 set fxcPath="c:\Program Files (x86)\Windows Kits\10\bin\x64\fxc.exe"
 goto :EOF
 
 :GetWin10SdkDirHelper
     setlocal enableDelayedExpansion
     rem Get Windows 10 SDK installed folder
-    for /F "tokens=1,2*" %%i in ('reg query "%1\\Microsoft\\Microsoft SDKs\\Windows\\v10.0" /v "InstallationFolder"') DO (
+    for /F "tokens=1,2*" %%i in ('reg query "%1\Microsoft\Microsoft SDKs\Windows\v10.0" /v "InstallationFolder"') DO (
         echo:   i [%%i] j [%%j]
         if "%%i"=="InstallationFolder" (
             set WindowsSdkDir=%%~k
@@ -194,12 +194,12 @@ goto :EOF
     rem Due to SDK installer changes beginning 10.0.15063.0 (RS2 SDK), the SDK installed may not have required stuff
     rem Check for the existence of fxc since that is what is needed here
     set __check_file=fxc.exe
-    if not "%WindowsSdkDir%"=="" for /f %%i IN ('dir "%WindowsSdkDir%bin\\" /b /ad-h /o-n') DO (
-      if EXIST "%WindowsSdkDir%bin\\%%i\\x64\\%__check_file%" (
+    if not "%WindowsSdkDir%"=="" for /f %%i IN ('dir "%WindowsSdkDir%bin\" /b /ad-h /o-n') DO (
+      if EXIST "%WindowsSdkDir%bin\%%i\x64\%__check_file%" (
         set result=%%i
         if "!result:~0,3!"=="10." (
           endlocal
-          set fxcPath="%WindowsSdkDir%bin\\%%i\\x64\\%__check_file%"
+          set fxcPath="%WindowsSdkDir%bin\%%i\x64\%__check_file%"
           goto :EOF
         )
       )
@@ -228,7 +228,7 @@ goto :EOF
     goto :RCP_break
   )
   :RCP_break
-  set "lock=%temp%\\lock%lock%_%random%_"
+  set "lock=%temp%\lock%lock%_%random%_"
 
 :: Initialize the counters
   set /a "startCount=0, endCount=0, cCnt=1"
@@ -406,9 +406,14 @@ bool OutputShadersTool::parseAndRun(std::vector<std::string> const& args)
             langFlag = lowerArgs.find('g') != std::string::npos
                 ? "g"
                 : (lowerArgs.find('h') != std::string::npos ? "h" : "");
-        } else if (eq == 1 && toLower(arg.substr(0, 1)) == "d") {
+        } else if (eq != std::string::npos
+                   && arg.find('=', eq + 1) == std::string::npos
+                   && toLower(arg.substr(0, eq)) == "d") {
+            // parts.length === 2（:355-356——恰一个 '=' 分两段；2026-10-07
+            // 审计 T-5：原 eq==1 对 "d=a=b" 误收[多 '=' 串参考拒绝、走
+            // 缺省目录]）。
             haveDir = true;
-            outputDir = arg.substr(2);
+            outputDir = arg.substr(eq + 1);
             if (outputDir.find('\\') != std::string::npos
                 && (outputDir.empty()
                     || outputDir.back() != '\\'))

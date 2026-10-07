@@ -763,7 +763,10 @@ void MemoryTracker::MemoryPanel::update(
     QVector<dqRender::RenderMemory::Consumers> const& stats, double total)
 {
     m_header->setText(QStringLiteral("%1: %2").arg(m_label, formatMemory(total)));
-    for (int i = 0; i < m_labels.size(); ++i) {
+    // MemoryTracker.ts:155-156 assert（labels/stats/elems 长度一致）的 C++ 承载：
+    // 静默越界是 UB——钳制到 min 长度（2026-10-07 审计 T-4）。
+    int const n = qMin(m_labels.size(), stats.size());
+    for (int i = 0; i < n; ++i) {
         auto const& stat = stats[i];
         if (stat.totalBytes == 0) {
             m_elems[i]->hide();

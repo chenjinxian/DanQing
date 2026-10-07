@@ -1398,10 +1398,14 @@ bool AnimatedHandle::doManipulation(BeButtonEvent const& ev, bool /*inDynamics*/
 // the unconditional `return true` with the cursorView gate.
 bool AnimatedHandle::animate()
 {
-    // TS L1438: refresh elapsed-time cache for this frame.
+    // TS L1436-1440 —— `if (undefined !== cursorView) return true; this.get-
+    // ElapsedTime(); return false;`（cursorView 引擎面已在[ViewTool.cpp:1001
+    // 同一访问器]——2026-10-07 审计 W-3：原 TODO 已陈旧，光标离开视图后
+    // 参考停帧、原先继续）。
+    if (Application::Get().GetToolAdmin().cursorView() != nullptr)
+        return true;
     (void)getElapsedTime();
-    // TODO: cursorView gate — `if (cursorView) return true; else return false;`.
-    return true;
+    return false;
 }
 
 // Ported from: itwinjs-core AnimatedHandle.firstPoint (ViewTool.ts:1442-1463).
@@ -2949,6 +2953,17 @@ EventHandled ViewManip::onKeyTransition(bool wentDown, uint32_t key)
         : EventHandled::No;
 }
 
+// Ported from: ViewManip.onModifierKeyTransition (ViewTool.ts:620-623).
+EventHandled ViewManip::onModifierKeyTransition(bool wentDown, BeModifierKeys modifier)
+{
+    ViewingToolHandle* handle = viewHandles.focusHandle();
+    return (handle != nullptr
+            && handle->onModifierKeyTransition(wentDown, modifier)
+                   == EventHandled::Yes)
+        ? EventHandled::Yes
+        : EventHandled::No;
+}
+
 // Ported from: ViewManip.setCameraLensAngle (:860-878).
 ViewStatus ViewManip::setCameraLensAngle(dqGeom::Angle const& lensAngle,
                                          bool retainEyePoint)
@@ -3718,6 +3733,38 @@ void WindowAreaTool::doManipulation(BeButtonEvent const& ev, bool inDynamics)
     ViewChangeOptions syncOptions;
     syncOptions.animateFrustumChange = true;
     vp->synchWithView(syncOptions);
+}
+
+// ---------------------------------------------------------------------------
+// ViewToggleCameraTool — Ported from: itwinjs-core ViewToggleCameraTool
+// (ViewTool.ts:4139-4157). 2026-10-07 审计 W-4：原先整类缺失且无登记。
+// ---------------------------------------------------------------------------
+
+// Ported from: onInstall (:4143 —— viewport 在且 allow3dManipulations).
+bool ViewToggleCameraTool::onInstall()
+{
+    if (viewport == nullptr || viewport->GetView() == nullptr)
+        return false;
+    auto* v3d = viewport->GetView()->AsViewState3d();
+    return v3d != nullptr && v3d->allow3dManipulations();
+}
+
+// Ported from: onPostInstall (:4145-4156 —— 开→turnCameraOff / 关→
+// turnCameraOn + synchWithView + exitTool).
+void ViewToggleCameraTool::onPostInstall()
+{
+    if (viewport) {
+        if (auto* v3d = viewport->GetView()
+                             ? viewport->GetView()->AsViewState3d()
+                             : nullptr) {
+            if (viewport->isCameraOn())
+                v3d->TurnCameraOff();   // :4148-4149
+            else
+                viewport->TurnCameraOn();   // :4151
+        }
+        viewport->synchWithView();   // :4153
+    }
+    exitTool();   // :4156
 }
 
 // ---------------------------------------------------------------------------

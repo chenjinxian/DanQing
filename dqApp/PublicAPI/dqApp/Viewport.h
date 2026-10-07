@@ -471,6 +471,14 @@ public:
     // 空场景语义等价；深度扫描随 readPixels 通道落地）。
     ViewStatus TurnCameraOn(std::optional<dqGeom::Angle> lensAngle = std::nullopt);
 
+    // 应用 ViewState 而不做 changeView 的 aspect 重适配/动画面。
+    // Ported from: Viewport.applyViewState (Viewport.ts:2362-2367 —
+    // updateChangeFlags + setView + viewingSpace.view + synchWithView({
+    // noSaveInUndo:true}；无 SetupFromView 重适配——ViewportSync 跨视口应用
+    // 的语义。2026-10-07 审计 S-3 配套面：原经 ChangeView 触发 refit，同步后
+    // 视域被改写）。
+    void applyViewState(dqBase::RefPtr<ViewState> view);
+
     // Ported from: itwinjs-core Viewport.pickDepthPoint (Viewport.ts:3394)
     // Step 4 stub: returns the input point unchanged. Real depth-pick
     // (readPixels against the pick buffer) is deferred until geometry is

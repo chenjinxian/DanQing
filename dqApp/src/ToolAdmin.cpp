@@ -771,6 +771,13 @@ void ToolAdmin::OnInitialized()
     //              ViewRedoTool——ViewTool.ts:4111-4134）。
     m_registry.RegisterView("View.Undo", CreateViewUndoTool);
     m_registry.RegisterView("View.Redo", CreateViewRedoTool);
+    // ViewToggleCameraTool（ViewTool.ts:4139-4157——2026-10-07 审计 W-4 补：
+    // 相机开/关切换工具，原先整类缺失）。
+    m_registry.RegisterView(
+        "View.ToggleCamera",
+        [](Viewport* vp, bool, bool) -> InteractiveTool* {
+            return new ViewToggleCameraTool(vp);
+        });
 
     // Create the idle tool.
     // Ported from: itwinjs-core ToolAdmin.onInitialized() (ToolAdmin.ts:514)

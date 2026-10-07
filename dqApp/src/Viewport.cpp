@@ -409,6 +409,21 @@ std::unique_ptr<dqRender::GraphicBuilder> Viewport::createGraphicBuilder(
     return sys ? sys->createGraphicBuilder(options) : nullptr;
 }
 
+// Ported from: Viewport.applyViewState (Viewport.ts:2362-2367).
+void Viewport::applyViewState(dqBase::RefPtr<ViewState> view)
+{
+    if (!view)
+        return;
+    // setView（监听器摘挂）+ viewingSpace.view 绑定 + synchWithView({
+    // noSaveInUndo:true})——无 ChangeView 的 aspect 重适配/undo 清栈面。
+    // updateChangeFlags（参考 :2363）的变更旗标面由 synchWithView 的失效链
+    // 承载（DanQing ChangeFlags 内部差异跟踪未按参考形分离）。
+    DetachFromView();
+    m_view = std::move(view);
+    AttachToView();
+    synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+}
+
 void Viewport::ChangeView(dqBase::RefPtr<ViewState> view, ViewChangeOptions const* opts)
 {
     if (!view) return;

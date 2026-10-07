@@ -4,6 +4,7 @@
 #include "dqApp/Application.h"
 #include "dqApp/GltfDecoration.h"
 #include "dqApp/Viewport.h"
+#include "dqApp/IModelConnection.h"
 #include "dqApp/ViewState.h"
 #include "dqApp/ViewManager.h"
 
@@ -24,6 +25,29 @@ std::unique_ptr<GltfDecoration> InstallGltfDecoration(
     // ← itwinjs-core GltfDecoration.ts:165-174 readGltfTemplate -> null guard
     if (!scene || scene->meshes.empty())
         return nullptr;
+
+    // ← itwinjs-core GltfDecoration.ts:197-201 —— "Transform the graphic to the
+    //   center of the project extents"：createGraphicBranch(branch, translation(
+    //   extents.center))。DanQing 承载 = 逐 mesh 世界变换前乘平移 + bounds 平移
+    //   （渲染网与取景域同移；2026-10-07 审计 T-2：原先簇围绕世界原点、
+    //   参考围绕项目中心——真实模型上落位分叉；blank 连接 center=0 时无差）。
+    if (auto* imodel = vp.GetIModel()) {
+        auto const& ext = imodel->GetProjectExtents();
+        dqGeom::Point3d const center = dqGeom::Point3d::From(
+            (ext.low.x + ext.high.x) / 2.0,
+            (ext.low.y + ext.high.y) / 2.0,
+            (ext.low.z + ext.high.z) / 2.0);
+        dqGeom::Transform const centerT = dqGeom::Transform::CreateTranslation(
+            dqGeom::Vector3d::From(center.x, center.y, center.z));
+        for (auto& mesh : scene->meshes)
+            mesh.transform = centerT.MultiplyTransform(mesh.transform);
+        scene->bounds.low.x += center.x;
+        scene->bounds.low.y += center.y;
+        scene->bounds.low.z += center.z;
+        scene->bounds.high.x += center.x;
+        scene->bounds.high.y += center.y;
+        scene->bounds.high.z += center.z;
+    }
 
     // ← itwinjs-core GltfDecoration.ts:162-164 pickableOptions { id, modelId }
     //   modelId must differ from id; GltfDecoration encodes that internally.

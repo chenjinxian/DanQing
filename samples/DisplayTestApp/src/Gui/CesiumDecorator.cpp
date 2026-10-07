@@ -381,6 +381,10 @@ void CesiumDecorator::createPathDecorations(dqApp::DecorateContext& context)
         P2.x + R / std::sqrt(2.0), P2.y + R / std::sqrt(2.0), z);
     dqGeom::Point3d const arcEnd = dqGeom::Point3d::From(P2.x + R, P2.y, z);
     auto const arc = arcFromStartMiddleEnd(P2, arcMid, arcEnd);
+    // EmptyExample.ts:293-294 —— `if (!arc) return;`（整族终止——2026-10-07
+    // 审计 T-6：原先仅跳过弧段继续画 zigzag；共线输入触发概率低但语义对齐）。
+    if (!arc.IsValid())
+        return;
     // Third segment: continue upward from arc end point
     dqGeom::Point3d const P3 =
         dqGeom::Point3d::From(arcEnd.x, arcEnd.y + 40000, z);
@@ -389,8 +393,7 @@ void CesiumDecorator::createPathDecorations(dqApp::DecorateContext& context)
         std::vector<dqGeom::CurvePrimitivePtr> curves;
         curves.push_back(dqGeom::LineString3d::create({P0, P1}));
         curves.push_back(dqGeom::LineString3d::create({P1, P2}));
-        if (arc.IsValid())
-            curves.push_back(arc);
+        curves.push_back(arc);
         curves.push_back(dqGeom::LineString3d::create({arcEnd, P3}));
         auto path1 = dqGeom::Path::Create(curves);
         if (path1.IsValid()) {

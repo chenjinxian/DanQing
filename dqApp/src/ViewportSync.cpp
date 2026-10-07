@@ -136,7 +136,7 @@ SynchronizeViewportsFn synchronizeViewportViews(Viewport& source)
             // iModel 重定向；2026-10-07 审计 S-3：原先不重定向）。
             auto clonedView = sourceView->Clone(target.GetIModel());
             if (clonedView) {
-                target.ChangeView(std::move(clonedView));
+                target.applyViewState(std::move(clonedView));   // :95-96
             }
         }
     };
@@ -226,7 +226,7 @@ void TwoWayViewportSync::syncViewports(Viewport& source, Viewport& target)
         // clone(target.iModel)（:163-165——同上跨 iModel 重定向）。
         auto clonedView = sourceView->Clone(target.GetIModel());
         if (clonedView) {
-            target.ChangeView(std::move(clonedView));
+            target.applyViewState(std::move(clonedView));   // :163-165
         }
     }
 }
