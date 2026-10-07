@@ -49,32 +49,30 @@ constexpr int kMainCount = 25;   // 26 项中 Google Maps 不出现（config 关
 
 }  // namespace
 
-// 双工具栏换位（Surface.ts:103-119——无聚焦 → app 工具栏显/主工具栏隐；
-// 聚焦 → 反之）。app 工具栏 5 项（Surface.createToolBar :122-178 严格序）。
-TEST(DtaToolBarsSet, AppAndMainToolbarsSwapByViewportFocus)
+// Start 态无工具栏（用户 2026-10-07 指令：初始页不显示工具栏——DTA app 级
+// 入口由 Start 页卡片承载，appToolBar 移除）；视口聚焦 → 主工具栏显示。
+TEST(DtaToolBarsSet, NoToolbarsUntilViewportFocused)
 {
     QMainWindow mw;
     Gui::DtaToolBarSet bars(&mw);
-    ASSERT_NE(bars.appToolBar(), nullptr);
     ASSERT_NE(bars.mainToolBar(), nullptr);
 
-    // 无聚焦视口：app 工具栏可见、主工具栏隐藏（isHidden 语义——父窗未显时
-    // isVisible 恒 false，显式显隐意图以 isHidden 观测）。
-    EXPECT_FALSE(bars.appToolBar()->isHidden());
+    // 无聚焦视口（Start 态）：主工具栏隐藏——初始页无任何工具栏。
     EXPECT_TRUE(bars.mainToolBar()->isHidden());
+    // appToolBar 已移除：全窗无 "DTA App" 工具栏。
+    EXPECT_EQ(mw.findChild<QToolBar*>(QStringLiteral("DTA.App")), nullptr);
 
-    // app 工具栏 5 项序（:126-178——Open disk/Blank/Analysis 置灰/Deco/Cesium）。
-    QList<QAction*> appActs = bars.appToolBar()->actions();
-    ASSERT_EQ(appActs.size(), 5);
-    char const* const kAppTexts[] = { "Open iModel", "Blank",
-                                      "Analysis Style Example", "Deco", "Cesium" };
-    for (int i = 0; i < 5; ++i)
-        EXPECT_EQ(appActs[i]->text(), kAppTexts[i]) << i;
-    EXPECT_TRUE(appActs[0]->isEnabled());   // dump 打开链（M-R 激活）
-    EXPECT_TRUE(appActs[1]->isEnabled());   // blank connection
-    EXPECT_FALSE(appActs[2]->isEnabled());  // Analysis Style（引擎未移植）
-    EXPECT_TRUE(appActs[3]->isEnabled());   // Deco（既有）
-    EXPECT_TRUE(appActs[4]->isEnabled());   // Cesium（M-O(4) P8 keyin）
+    // 聚焦视口 → 主工具栏显示 + 换位语义（DropViewport 后回隐藏）。
+    dqApp::BlankConnectionProps props;
+    props.extents = dqGeom::Range3d(-1000, -1000, -100, 1000, 1000, 100);
+    auto conn = dqApp::BlankConnection::create(props);
+    auto view = dqApp::ViewList::create(conn.Get()).getDefaultView(conn.Get());
+    auto* vp = dqApp::Viewport::Create(nullptr, view);
+    dqApp::Application::Get().GetViewManager().AddViewport(vp);
+    EXPECT_FALSE(bars.mainToolBar()->isHidden());
+    dqApp::Application::Get().GetViewManager().DropViewport(vp);
+    delete vp;
+    EXPECT_TRUE(bars.mainToolBar()->isHidden());
 }
 
 // 主工具栏 26 项严格序（Viewer.ts:238-446）+ Measure/Walk 激活（M-R——引擎
@@ -197,13 +195,11 @@ TEST(DtaToolBarsOnly3d, HiddenWithoutViewportShownFor3d)
     dqApp::Application::Get().GetViewManager().AddViewport(vp);
     EXPECT_TRUE(acts[4]->isVisible());
     EXPECT_TRUE(acts[15]->isVisible());
-    EXPECT_TRUE(bars.appToolBar()->isHidden());
     EXPECT_FALSE(bars.mainToolBar()->isHidden());
 
     dqApp::Application::Get().GetViewManager().DropViewport(vp);
     delete vp;
     EXPECT_FALSE(acts[4]->isVisible());
-    EXPECT_FALSE(bars.appToolBar()->isHidden());
     EXPECT_TRUE(bars.mainToolBar()->isHidden());
 }
 

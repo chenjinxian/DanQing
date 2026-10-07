@@ -37,12 +37,9 @@ protected:
     void showPopup() override;
 };
 
-// DtaToolBarSet — DTA 工具栏区。两条工具栏共享主窗顶部区域（DTA topdiv 的
-// appendChild 换位语义）：
-//  - appToolBar（Surface.createToolBar :122-178）：Open from disk / Open Blank /
-//    Analysis Style Example（置灰）/ Decoration Geometry Example / Cesium
-//    Renderer Example——无聚焦视口时显示。
-//  - mainToolBar（Viewer.ts:238-446 的 26 项严格序）：聚焦视口时显示。
+// DtaToolBarSet — DTA 主工具栏（Viewer.ts:238-446 的 26 项严格序——聚焦
+// 视口时显示）。用户 2026-10-07 指令：初始页（Start 态）不显示工具栏——
+// DTA 的 app 级打开/示例入口已由 Start 页卡片承载（appToolBar 移除）。
 // 交互合同（ToolBar.ts:122-197）：下拉单开互斥（open 先 close 全部）、
 // 视口切换关全部打开下拉 + only3d 项显隐（is3d）。
 // FreeCAD 壳不变（菜单栏/MDI/Start 页不动）；本类只依赖 QMainWindow::addToolBar，
@@ -52,7 +49,6 @@ class DtaToolBarSet : public QObject {
 public:
     explicit DtaToolBarSet(QMainWindow* mainWindow);
 
-    QToolBar* appToolBar() const { return m_appToolBar; }
     QToolBar* mainToolBar() const { return m_mainToolBar; }
 
     // ── 下拉交互合同（测试 seam；ToolBar.ts:163-196）──
@@ -64,7 +60,6 @@ public:
     void openDropDown(QPointer<QWidget> panel);
 
 private:
-    void buildAppToolBar(QMainWindow* mw);      // Surface.ts:122-178
     void buildMainToolBar(QMainWindow* mw);     // Viewer.ts:238-446（26 项）
     // 视口聚焦换位（Surface.ts:103-119 appendChild 换位 + 既有
     // setViewToolbarsEnabled 的置灰语义合并——DTA 是换位非置灰）。
@@ -75,7 +70,6 @@ private:
     // 下拉登记（openDropDown 经此保证互斥）；面板 destroyed 自动摘除。
     void registerDropDownPanel(QWidget* panel);
 
-    QToolBar* m_appToolBar = nullptr;
     QToolBar* m_mainToolBar = nullptr;
     QVector<QPointer<QWidget>> m_openPanels;
     QVector<QAction*> m_only3dActions;   // Viewer.ts only3d 项（Models/StdRot/

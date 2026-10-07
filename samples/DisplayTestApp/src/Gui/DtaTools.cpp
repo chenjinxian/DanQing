@@ -14,6 +14,7 @@
 #include <QMainWindow>
 #include <QObject>
 #include <QPoint>
+#include <QPointer>
 #include <QShortcut>
 #include <QToolBar>
 #include <QToolTip>
@@ -125,6 +126,21 @@ void setupDtaStatusBar(MainWindow* mainWindow)
     dtaStatus->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     mw->addToolBar(Qt::TopToolBarArea, dtaStatus);
     mw->insertToolBar(dtaStatus, dtaStatus);   // 首位（后续工具栏 insertToolBar 其后）
+
+    // 用户 2026-10-07 指令：初始页（Start 态）不显示 keyin/状态条——有聚焦
+    // 视口才显示（与主工具栏同一换位语义）。DqEvent 非 Qt 信号——AddListener
+    // + 函数静态 scope（app 单 MainWindow；QPointer 防测试多实例悬垂）。
+    {
+        static dqBase::DqEventScope s_statusScope;
+        QPointer<QToolBar> const bar = dtaStatus;
+        s_statusScope.add(dqApp::Application::Get().GetViewManager().OnSelectedViewportChanged.AddListener(
+            [bar](dqApp::SelectedViewportChangedArgs const& args) {
+                if (bar)
+                    bar->setVisible(args.current != nullptr);
+            }));
+        dtaStatus->setVisible(
+            dqApp::Application::Get().GetViewManager().GetActiveViewport() != nullptr);
+    }
 
     auto* keyin = new KeyinField(50, dtaStatus);  // Surface.ts:58 — historyLength: 50
     dtaStatus->addWidget(keyin);

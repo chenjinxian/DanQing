@@ -265,7 +265,6 @@ public:
 DtaToolBarSet::DtaToolBarSet(QMainWindow* mw)
     : QObject(mw)
 {
-    buildAppToolBar(mw);
     buildMainToolBar(mw);
 
     // 焦点换位（Surface.ts:103-119：viewer 聚焦 → topdiv 换 viewer 工具栏；
@@ -327,84 +326,13 @@ void DtaToolBarSet::updateOnly3dVisibility()
 void DtaToolBarSet::swapToolBarsForViewport(void* activeViewport)
 {
     bool const hasViewport = activeViewport != nullptr;
-    // DTA appendChild 换位 = Qt 显隐换位（同一 topdiv 槽位）。
-    if (m_appToolBar)
-        m_appToolBar->setVisible(!hasViewport);
+    // 用户 2026-10-07 指令：初始页（Start 态）不显示工具栏——DTA 的 app 级
+    // 打开/示例入口已由 Start 页卡片承载；有聚焦视口才显示主工具栏。
     if (m_mainToolBar)
         m_mainToolBar->setVisible(hasViewport);
     // onViewChanged：关全部打开下拉 + only3d 显隐。
     closeOpenDropDowns();
     updateOnly3dVisibility();
-}
-
-// ---------------------------------------------------------------------------
-// app 工具栏（Surface.createToolBar :122-178——无聚焦视口时显示）
-// ---------------------------------------------------------------------------
-
-void DtaToolBarSet::buildAppToolBar(QMainWindow* mw)
-{
-    m_appToolBar = makeBar(mw, QStringLiteral("DTA App"));
-    m_appToolBar->setObjectName(QStringLiteral("DTA.App"));
-
-    // Surface.ts:126-131 — Open iModel from disk：QFileDialog 选 dump 包根
-    // 目录（imodel.json 所在目录）→ openDumpIModel 既有链。
-    QAction* openDisk = m_appToolBar->addAction(QStringLiteral("Open iModel"));
-    openDisk->setToolTip(QStringLiteral("Open iModel from disk"));
-    setGlyphIcon(openDisk, 0xe9cc);
-    QObject::connect(openDisk, &QAction::triggered, m_appToolBar, [] {
-        QString const dir = QFileDialog::getExistingDirectory(
-            nullptr, QStringLiteral("Select dump package root (contains imodel.json)"),
-            QString(), QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
-        if (dir.isEmpty())
-            return;
-        dta::DumpOpenPackage pkg;
-        pkg.imodelRoot = dir.toStdString();
-        pkg.tileRoots = {dir.toStdString()};
-        auto* mdView = Gui::Application::Instance()->newDocument();
-        auto* view3d = qobject_cast<Gui::View3DInventor*>(mdView);
-        if (view3d == nullptr)
-            return;
-        auto opened = dta::openDumpIModel(*view3d, pkg);
-        if (!opened.has_value() && MainWindow::getInstance())
-            MainWindow::getInstance()->showStatus(
-                1, QStringLiteral("Open failed: dump package unreadable (%1)").arg(dir));
-    });
-
-    // Surface.ts:133-139 — Open Blank Connection（新 blank 文档视图）。
-    QAction* openBlank = m_appToolBar->addAction(QStringLiteral("Blank"));
-    openBlank->setToolTip(QStringLiteral("Open Blank Connection"));
-    setGlyphIcon(openBlank, 0xe9d8);
-    QObject::connect(openBlank, &QAction::triggered, m_appToolBar, [] {
-        Gui::Application::Instance()->newDocument();
-    });
-
-    // Surface.ts:141-152 — Analysis Style Example（引擎未移植——置灰）。
-    addDisabled(m_appToolBar, QStringLiteral("Analysis Style Example"), 0xea32);
-
-    // Surface.ts:154-165 — Decoration Geometry Example。
-    QAction* deco = m_appToolBar->addAction(QStringLiteral("Deco"));
-    deco->setToolTip(QStringLiteral("Decoration Geometry Example"));
-    setGlyphIcon(deco, 0xe9d8);
-    QObject::connect(deco, &QAction::triggered, m_appToolBar, [] {
-        auto* view3d = qobject_cast<Gui::View3DInventor*>(
-            Gui::Application::Instance()->activeView());
-        if (!view3d)
-            view3d = qobject_cast<Gui::View3DInventor*>(
-                Gui::Application::Instance()->newDocument());
-        if (view3d)
-            Gui::openDecorationGeometryExample(*view3d);
-    });
-
-    // Surface.ts:167-178 — Cesium Renderer Example（keyin dta cesium example
-    // 既有——M-O(4) P8 陈列馆）。
-    QAction* cesium = m_appToolBar->addAction(QStringLiteral("Cesium"));
-    cesium->setToolTip(QStringLiteral("Cesium Renderer Example"));
-    setGlyphIcon(cesium, 0xe9f4);
-    QObject::connect(cesium, &QAction::triggered, m_appToolBar, [] {
-        auto& ta = dqApp::Application::Get().GetToolAdmin();
-        if (auto* tool = ta.GetRegistry().Create("CesiumExampleTool"))
-            ta.SetActiveTool(tool);
-    });
 }
 
 // ---------------------------------------------------------------------------
@@ -443,9 +371,23 @@ void DtaToolBarSet::buildMainToolBar(QMainWindow* mw)
         QAction* a = tb->addAction(QStringLiteral("Open iModel"));
         a->setToolTip(QStringLiteral("Open iModel from disk"));
         setGlyphIcon(a, 0xe9cc);
-        QObject::connect(a, &QAction::triggered, tb, [this]() {
-            if (m_appToolBar && !m_appToolBar->actions().isEmpty())
-                m_appToolBar->actions().constFirst()->trigger();
+        QObject::connect(a, &QAction::triggered, tb, [] {
+            QString const dir = QFileDialog::getExistingDirectory(
+                nullptr, QStringLiteral("Select dump package root (contains imodel.json)"),
+                QString(), QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+            if (dir.isEmpty())
+                return;
+            dta::DumpOpenPackage pkg;
+            pkg.imodelRoot = dir.toStdString();
+            pkg.tileRoots = {dir.toStdString()};
+            auto* mdView = Gui::Application::Instance()->newDocument();
+            auto* view3d = qobject_cast<Gui::View3DInventor*>(mdView);
+            if (view3d == nullptr)
+                return;
+            auto opened = dta::openDumpIModel(*view3d, pkg);
+            if (!opened.has_value() && MainWindow::getInstance())
+                MainWindow::getInstance()->showStatus(
+                    1, QStringLiteral("Open failed: dump package unreadable (%1)").arg(dir));
         });
     }
 
