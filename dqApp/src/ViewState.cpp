@@ -918,6 +918,8 @@ void ViewState3d::LookAtVolume(dqGeom::Range3d const& volume,
     // aspect branch included); the clamp CALL SITE (ViewState.ts:1159) +
     // verifyFocusPlane remain unwired below.
 
+    // 旋转步（ViewState.ts:1083 → :1096-1177 的入段）——世界八角转视空间后
+    // 经 lookAtViewAlignedVolume 直入（fit 主体与参考同段）。
     dqGeom::Point3d corners[8] = {
         dqGeom::Point3d::From(volume.low.x, volume.low.y, volume.low.z),
         dqGeom::Point3d::From(volume.high.x, volume.low.y, volume.low.z),
@@ -936,6 +938,23 @@ void ViewState3d::LookAtVolume(dqGeom::Range3d const& volume,
         minVy = std::min(minVy, v.y); maxVy = std::max(maxVy, v.y);
         minVz = std::min(minVz, v.z); maxVz = std::max(maxVz, v.z);
     }
+    lookAtViewAlignedVolume(
+        dqGeom::Range3d(
+            dqGeom::Point3d::From(minVx, minVy, minVz),
+            dqGeom::Point3d::From(maxVx, maxVy, maxVz)),
+        aspect, options);
+}
+
+// Ported from: ViewState3d.lookAtViewAlignedVolume (ViewState.ts:1096-1177) —
+// volume 已视轴对齐（调用方负责世界→视空间的逐角变换——zoomToPlacements
+// 的 union(rotate) 语义。2026-10-07 审计 S-5：公共面新增，fit 主体自
+// LookAtVolume 平移）。
+void ViewState3d::lookAtViewAlignedVolume(dqGeom::Range3d const& volume,
+                                          double const* aspect,
+                                          MarginOptions const* options)
+{
+    double const minVx = volume.low.x, minVy = volume.low.y, minVz = volume.low.z;
+    double const maxVx = volume.high.x, maxVy = volume.high.y, maxVz = volume.high.z;
 
     // ViewState.ts:1046-1047
     dqGeom::Vector3d newDelta = dqGeom::Vector3d::From(maxVx - minVx, maxVy - minVy, maxVz - minVz);

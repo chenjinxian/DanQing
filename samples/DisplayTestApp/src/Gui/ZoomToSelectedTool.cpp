@@ -29,6 +29,7 @@ namespace {
 // 的 placement.getRange() 消费——八角展开是 ElementAlignedBox3d 变换的
 // 直接表达）。
 void extendWorldRange(dqApp::DumpIModelConnection::PlacementInfo const& p,
+                      dqGeom::Matrix3d const* viewRotation,   // zoomToPlacements 视空间变换（S-5）
                       dqGeom::Range3d& out)
 {
     // Placement.isValid（Placement.ts:87/:144——`!bbox.isNull &&
@@ -60,7 +61,7 @@ void extendWorldRange(dqApp::DumpIModelConnection::PlacementInfo const& p,
             (corner & 2) ? p.bboxHigh[1] : p.bboxLow[1],
             (corner & 4) ? p.bboxHigh[2] : p.bboxLow[2],
         };
-        double const world[3] = {
+        double world[3] = {
             rot.coffs[0] * local[0] + rot.coffs[1] * local[1] + rot.coffs[2] * local[2]
                 + p.origin[0],
             rot.coffs[3] * local[0] + rot.coffs[4] * local[1] + rot.coffs[5] * local[2]
@@ -68,6 +69,20 @@ void extendWorldRange(dqApp::DumpIModelConnection::PlacementInfo const& p,
             rot.coffs[6] * local[0] + rot.coffs[7] * local[1] + rot.coffs[8] * local[2]
                 + p.origin[2],
         };
+        // Viewport.ts:2267-2269 —— viewRange.extendArray(getWorldCorners,
+        // viewTransform[纯旋转])：每角点各自入视空间后并集（union(rotate)）。
+        // 2026-10-07 审计 S-5：原先世界空间并集后由 LookAtVolume 整盒旋转
+        // （AABB(rotate(union)) ≥ union(rotate)——斜旋转取景域偏大）。
+        if (viewRotation != nullptr) {
+            double const v[3] = {
+                viewRotation->coffs[0] * world[0] + viewRotation->coffs[1] * world[1] + viewRotation->coffs[2] * world[2],
+                viewRotation->coffs[3] * world[0] + viewRotation->coffs[4] * world[1] + viewRotation->coffs[5] * world[2],
+                viewRotation->coffs[6] * world[0] + viewRotation->coffs[7] * world[1] + viewRotation->coffs[8] * world[2],
+            };
+            world[0] = v[0];
+            world[1] = v[1];
+            world[2] = v[2];
+        }
         out.ExtendPoint(dqGeom::Point3d::From(world[0], world[1], world[2]));
     }
 }
@@ -76,7 +91,8 @@ void extendWorldRange(dqApp::DumpIModelConnection::PlacementInfo const& p,
 
 std::optional<dqGeom::Range3d> ZoomToSelectedElementsTool::computeSelectedVolume(
     dqApp::DumpIModelConnection& connection,
-    std::vector<uint64_t> const& selectedElementIds)
+    std::vector<uint64_t> const& selectedElementIds,
+    dqGeom::Matrix3d const* viewRotation)
 {
     if (selectedElementIds.empty())
         return std::nullopt;
@@ -85,7 +101,7 @@ std::optional<dqGeom::Range3d> ZoomToSelectedElementsTool::computeSelectedVolume
         auto const* placement =
             connection.findPlacement(dqBase::DqId(id));
         if (placement)
-            extendWorldRange(*placement, volume);
+            extendWorldRange(*placement, viewRotation, volume);
     }
     if (volume.isNull())
         return std::nullopt;
@@ -115,19 +131,20 @@ bool ZoomToSelectedElementsTool::run()
     std::vector<uint64_t> ids;
     for (uint32_t id : imodel->GetSelectionSet().GetElements())
         ids.push_back(id);
-    auto volume = computeSelectedVolume(*opened->connection, ids);
-    if (!volume)
-        return true;
-
-    // zoomToPlacements → lookAtVolume(volume, viewRect.aspect) +
-    // synchWithView（DumpOpenHelper frameToWorldContent 同款取景模式——
-    // LookAtVolume 在 ViewState3d）。
+    // Viewport.ts:2266-2274 —— 逐 placement 角点变换入视空间（union(rotate)，
+    // 视旋转取调用时视图）→ lookAtViewAlignedVolume 直入（2026-10-07 审计
+    // S-5：原世界并集 + LookAtVolume 整盒旋转）。
     auto* view3dState =
         vp->GetView() ? vp->GetView()->AsViewState3d() : nullptr;
     if (!view3dState)
         return true;
+    dqGeom::Matrix3d const viewRotation = view3dState->getRotation();
+    auto volume = computeSelectedVolume(*opened->connection, ids, &viewRotation);
+    if (!volume)
+        return true;
+
     double const aspect = vp->viewRect().aspect();
-    view3dState->LookAtVolume(*volume, &aspect);
+    view3dState->lookAtViewAlignedVolume(*volume, &aspect);
     // Viewport.ts:2274-2275 —— lookAtViewAlignedVolume 尾随 synchWithView：
     // ScreenViewport.synchWithView（:3591-3596）saveViewUndo + Invalidate-
     // Controller（2026-10-07 审计 B6：原裸 InvalidateController——不存 undo

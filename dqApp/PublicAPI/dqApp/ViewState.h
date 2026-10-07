@@ -535,6 +535,14 @@ public:
     //              ViewState.ts:889-920 — aspect branch included); the clamp CALL SITE in
     //              lookAtViewAlignedVolume (ViewState.ts:1159) + verifyFocusPlane remain
     //              unwired — see .cpp TODOs.
+    // 视对齐域直入（volume 已是视轴对齐——无 LookAtVolume 的八角旋转步）。
+    // Ported from: ViewState3d.lookAtViewAlignedVolume (ViewState.ts:1096-1177
+    // ——公共面；zoomToPlacements[Viewport.ts:2274] 逐 placement 角点变换到
+    // 视空间后并集、经此直入。2026-10-07 审计 S-5 配套）。
+    void lookAtViewAlignedVolume(dqGeom::Range3d const& volume,
+                                 double const* aspect = nullptr,
+                                 MarginOptions const* options = nullptr);
+
     void LookAtVolume(dqGeom::Range3d const& volume,
                       double const* aspect = nullptr,
                       MarginOptions const* options = nullptr);

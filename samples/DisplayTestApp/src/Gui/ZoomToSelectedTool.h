@@ -39,11 +39,14 @@ public:
     bool run() override;
     bool parseAndRun(std::vector<std::string> const& args) override;
 
-    // 核心：选中元素集 → 世界域并集（zoomToPlacements 的 placements→
-    // volume 步——静态化供测试直接驱动）。空选集/全无 placement → 空域。
+    // 核心：选中元素集 → 域并集（zoomToPlacements 的 placements→volume 步
+    // ——静态化供测试直接驱动）。空选集/全无 placement → 空域。
+    // viewRotation 非空 = Viewport.ts:2266-2269 的视空间逐角变换（union-
+    // (rotate)，返回视轴对齐域）；空 = 世界域（测试静态直驱语义，审计 S-5）。
     static std::optional<dqGeom::Range3d> computeSelectedVolume(
         dqApp::DumpIModelConnection& connection,
-        std::vector<uint64_t> const& selectedElementIds);
+        std::vector<uint64_t> const& selectedElementIds,
+        dqGeom::Matrix3d const* viewRotation = nullptr);
 };
 
 }  // namespace Gui

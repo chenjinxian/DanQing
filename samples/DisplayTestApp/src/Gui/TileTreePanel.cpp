@@ -252,17 +252,20 @@ void TileTreePanel::stepToIndex(int index)
     opened->provider->setAllVisible(false);
     opened->provider->setModelVisible(static_cast<std::size_t>(index), true);
 
-    // Ported from: IdPicker.ts:426 — ViewManip.fitView(vp, true)（隔离后场景仅剩
-    // 该 model → fit 的场景域 = 该 model 的域）。DanQing：LookAtVolume 到该树的
-    // 世界域（FitViewTool.doFit 的取景形态——LookAtVolume + synchWithView +
-    // RequestRedraw，ViewTool.cpp:2158-2166；aspect 必传——doFit 注释）。
+    // Ported from: IdPicker.ts:426 — ViewManip.fitView(vp, true)：computeFitRange
+    // （已装载树的并集——隔离后仅剩该 model 的树，含 ensureMinLengths 语义）
+    // + lookAtVolume + synchWithView。2026-10-07 审计 S-7：原先直取该树
+    // rootTile.range×location 的 worldRange（与 computeFitRange 的最小域/
+    // 并集面存在差异——FitViewTool::doFit 同款通道对齐）。
     if (auto* vp = activeViewport()) {
         vp->InvalidateScene();
-        auto const& range = entries[static_cast<std::size_t>(index)].worldRange;
         auto* view3d = vp->GetView() ? vp->GetView()->AsViewState3d() : nullptr;
-        if (view3d && !range.isNull()) {
-            double const aspect = vp->viewRect().aspect();
-            view3d->LookAtVolume(range, &aspect, nullptr);
+        if (auto* spatial = view3d ? view3d->AsSpatialViewState() : nullptr) {
+            dqGeom::Range3d const range = spatial->ComputeFitRange();
+            if (!range.isNull()) {
+                double const aspect = vp->viewRect().aspect();
+                spatial->LookAtVolume(range, &aspect, nullptr);
+            }
         }
         vp->synchWithView();
         vp->RequestRedraw();

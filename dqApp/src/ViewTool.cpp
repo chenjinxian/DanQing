@@ -2769,6 +2769,19 @@ NavigateMotion* ViewLookAndMove::getNavigateMotion(double seconds)
     if (0.0 == angularInput.Magnitude() && 0.0 == positionInput.Magnitude())
         return nullptr;
 
+    // TS L2476-2479 —— requestPointerLock(false)[无锁路径 no-op——C2 登记] +
+    // "data down → 导航键 → data up 视同 drag" 的 InputState 转换
+    // （2026-10-07 审计 W-7：原先缺——该序列后 isDragging 态不建立；
+    // !_havePointerLock 恒真[无锁路径]，isDragging(BeButton.Data) 以
+    // DanQing 单 bool isDragging 字段承载）。
+    {
+        InputState& current =
+            Application::Get().GetToolAdmin().currentInputState();
+        if (current.inputSource == InputSource::Mouse
+            && !current.isDragging(BeButton::Data))
+            current.onStartDrag(BeButton::Data);
+    }
+
     motion.moveAndLook(positionInput, angularInput.x, angularInput.y, true);
 
     int const prevCollision = m_lastCollision;
