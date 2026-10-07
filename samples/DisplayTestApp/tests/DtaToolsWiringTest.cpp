@@ -166,11 +166,14 @@ TEST(DtaToolsWiring, StatusBarAssemblyMountsKeyinFpsTileIndicator)
     mw.show();
     qApp->processEvents();
 
-    // M-R：DTA #status-bar 位于工具栏之上（index.html 顺序）——keyin/FPS/
-    // tile/snap 四件挂 DTA.StatusBar 顶条（QToolBar）而非底部状态栏。
-    auto* dtaStatus = mw.findChild<QToolBar*>(QStringLiteral("DTA.StatusBar"));
+    // 用户 2026-10-07 指令：keyin/FPS/tile/snap 四件挂底部状态栏的
+    // DTA.StatusBar 容器行（原 M-R 顶条 QToolBar 形态废弃）。
+    auto* dtaStatus = mw.findChild<QWidget*>(QStringLiteral("DTA.StatusBar"));
     ASSERT_NE(dtaStatus, nullptr);
-    EXPECT_FALSE(dtaStatus->isMovable());   // DTA 固定行
+    // 挂在底部状态栏（QStatusBar 为祖先）且 Start 态隐藏（无视口）。
+    ASSERT_NE(dtaStatus->parentWidget(), nullptr);
+    EXPECT_TRUE(mw.statusBar()->isAncestorOf(dtaStatus));   // 挂底部状态栏
+    EXPECT_FALSE(dtaStatus->isVisible());   // Start 态隐藏（换位语义）
 
     auto* keyin = dtaStatus->findChild<Gui::KeyinField*>();
     ASSERT_NE(keyin, nullptr);

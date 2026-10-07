@@ -112,44 +112,25 @@ void setupDtaStatusBar(MainWindow* mainWindow)
     if (!mainWindow)
         return;
 
-    // M-R：DTA #status-bar 位于工具栏之上（index.html 顺序：status-bar →
-    // toolBar）。Qt 形态 = 不可移动 QToolBar（objectName DTA.StatusBar），
-    // 经 addToolBar 后 insertToolBar 置于 DTA 工具栏之前（菜单栏正下方）。
-    // 子件序 1:1 index.html：keyin-entry | fps-container |
-    // tileLoadIndicatorContainer | snapModesContainer。
-    QMainWindow* mw = mainWindow;   // MainWindow 即 QMainWindow（继承）
-    QToolBar* dtaStatus = new QToolBar(mw);
+    // 用户 2026-10-07 指令：keyin/状态条四件放到底部状态栏（原先 M-R 顶条
+    // QToolBar 形态废弃）。子件序 1:1 index.html #status-bar：keyin-entry |
+    // fps-container | tileLoadIndicatorContainer | snapModesContainer——
+    // 打包为单个容器行经 addStatusBarItem 挂底栏（Left，Preselection 前）。
+    auto* dtaStatus = new QWidget(mainWindow);
     dtaStatus->setObjectName(QStringLiteral("DTA.StatusBar"));
-    dtaStatus->setWindowTitle(QStringLiteral("DTA Status"));
-    dtaStatus->setMovable(false);
-    dtaStatus->setFloatable(false);
-    dtaStatus->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    mw->addToolBar(Qt::TopToolBarArea, dtaStatus);
-    mw->insertToolBar(dtaStatus, dtaStatus);   // 首位（后续工具栏 insertToolBar 其后）
-
-    // 用户 2026-10-07 指令：初始页（Start 态）不显示 keyin/状态条——有聚焦
-    // 视口才显示（与主工具栏同一换位语义）。DqEvent 非 Qt 信号——AddListener
-    // + 函数静态 scope（app 单 MainWindow；QPointer 防测试多实例悬垂）。
-    {
-        static dqBase::DqEventScope s_statusScope;
-        QPointer<QToolBar> const bar = dtaStatus;
-        s_statusScope.add(dqApp::Application::Get().GetViewManager().OnSelectedViewportChanged.AddListener(
-            [bar](dqApp::SelectedViewportChangedArgs const& args) {
-                if (bar)
-                    bar->setVisible(args.current != nullptr);
-            }));
-        dtaStatus->setVisible(
-            dqApp::Application::Get().GetViewManager().GetActiveViewport() != nullptr);
-    }
+    dtaStatus->setWindowTitle(QObject::tr("DTA Status"));
+    auto* statusLayout = new QHBoxLayout(dtaStatus);
+    statusLayout->setContentsMargins(0, 0, 0, 0);
+    statusLayout->setSpacing(6);
 
     auto* keyin = new KeyinField(50, dtaStatus);  // Surface.ts:58 — historyLength: 50
-    dtaStatus->addWidget(keyin);
+    statusLayout->addWidget(keyin);
 
     auto* fps = new FpsMonitor(dtaStatus);
-    dtaStatus->addWidget(fps);
+    statusLayout->addWidget(fps);
 
     auto* tiles = new TileLoadIndicator(dtaStatus);
-    dtaStatus->addWidget(tiles);
+    statusLayout->addWidget(tiles);
 
     // Ported from: Surface.ts:53 addSnapModes(document.getElementById(
     // "snapModesContainer")) + SnapModes.ts:30-50 — the snap-mode combo box
@@ -157,6 +138,7 @@ void setupDtaStatusBar(MainWindow* mainWindow)
     // SnapModes.ts:10-18).
     {
         auto* snapBox = new QWidget(dtaStatus);
+        snapBox->setObjectName(QStringLiteral("snapModesContainer"));
         auto* snapLayout = new QHBoxLayout(snapBox);
         snapLayout->setContentsMargins(0, 0, 0, 0);
         snapLayout->addWidget(new QLabel(QObject::tr("Snap Mode: "), snapBox));
@@ -191,8 +173,11 @@ void setupDtaStatusBar(MainWindow* mainWindow)
                                  dqApp::Application::Get().GetAccuSnap().setActiveSnapModes(kMultiSnapModes);
                          });
         snapBox->setWindowTitle(QObject::tr("Snap Mode"));
-        dtaStatus->addWidget(snapBox);
+        statusLayout->addWidget(snapBox);
     }
+
+    mainWindow->addStatusBarItem(
+        dtaStatus, StatusBarItemSpec("DTA.StatusBar", QString(), StatusBarSlot::Left, -10, true, 0));
 
     // M-R：bottomdiv 双 span（index.html :66-69 showstatus/showerror——
     // Utils.ts:8-15 showStatus 写 #showstatus、showError 写 #showerror）。
@@ -201,6 +186,23 @@ void setupDtaStatusBar(MainWindow* mainWindow)
     // 消息），此处在底部加常驻 span 并让 showStatus 双写。
     {
         mainWindow->installDtaOutputSpans();
+    }
+
+    // 用户 2026-10-07 指令：初始页（Start 态）不显示 keyin/状态条——有聚焦
+    // 视口才显示（与主工具栏同一换位语义）。置于函数尾：installDtaOutputSpans
+    // 的 addStatusBarItem→relayoutStatusBar 会把各条目强制置显——门控必须在
+    // 全部条目装配之后。DqEvent 非 Qt 信号——AddListener + 函数静态 scope
+    //（app 单 MainWindow；QPointer 防测试多实例悬垂）。
+    {
+        static dqBase::DqEventScope s_statusScope;
+        QPointer<QWidget> const bar = dtaStatus;
+        s_statusScope.add(dqApp::Application::Get().GetViewManager().OnSelectedViewportChanged.AddListener(
+            [bar](dqApp::SelectedViewportChangedArgs const& args) {
+                if (bar)
+                    bar->setVisible(args.current != nullptr);
+            }));
+        dtaStatus->setVisible(
+            dqApp::Application::Get().GetViewManager().GetActiveViewport() != nullptr);
     }
 
     // Ported from: Surface.ts:229-291 keyboard shortcuts — "`" focuses the key-in
