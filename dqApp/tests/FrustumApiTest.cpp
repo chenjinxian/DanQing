@@ -126,7 +126,7 @@ TEST(FrustumApi, Is3dAndAllow3dManipulationsForSpatialView)
         dqGeom::Vector3d::From(100, 100, 100));
 
     EXPECT_TRUE(view->is3d());
-    EXPECT_TRUE(view->Allow3dManipulations());
+    EXPECT_TRUE(view->allow3dManipulations());
 }
 
 // Ported from: itwinjs-core ViewingSpace.getFrustum (sys=CoordSystem.View)

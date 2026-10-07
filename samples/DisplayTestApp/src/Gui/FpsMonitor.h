@@ -47,6 +47,7 @@ private:
     void update();
 
     QCheckBox* m_checkbox = nullptr;
+    QLabel* m_label = nullptr;   // "FPS"/"FPS:" 随启停切换（FpsMonitor.ts:48）
     QLabel* m_output = nullptr;
     bool m_enabled = false;
     int m_frameCount = 0;

@@ -81,7 +81,7 @@ void registerDtaTools()
                       []() -> dqApp::InteractiveTool* { return new ChangeGridSettingsTool(); },
                       "dta grid settings");
     // M-O(2) 3f：GltfDecorationTool（GltfDecoration.ts:103-228——keyin "dta gltf"
-    // [SVTTools.json 无该键——以工具类名注册面为准]；i>/s>/c>/r>/f> 实例化参数面）。
+    // [SVTTools.json:70-72 有该键；i>/s>/c>/r>/f> 实例化参数面]）。
     registry.Register("AddGltfDecoration",
                       []() -> dqApp::InteractiveTool* { return new GltfDecorationTool(); },
                       "dta gltf");
@@ -91,10 +91,11 @@ void registerDtaTools()
                       []() -> dqApp::InteractiveTool* { return new OutputShadersTool(); },
                       "dta output shaders");
     // M-O(2) I11：ToggleSecondaryIModelTool（TiledGraphics.ts:123-135——keyin
-    // "dta tiled graphics"；可选参 = 包根路径）。
+    // "dta imodel attach" [SVTTools.json:212-214 en 键——2026-10-07 审计 B10：
+    // 原自造 "dta tiled graphics" 与 locale 不一致]；可选参 = 包根路径）。
     registry.Register("ToggleSecondaryIModel",
                       []() -> dqApp::InteractiveTool* { return new ToggleSecondaryIModelTool(); },
-                      "dta tiled graphics");
+                      "dta imodel attach");
     // M-O(4) P9：MacroTool（MacroTools.ts:8-55——keyin "dta macro <file>"；
     // keyin 序列逐行播放 + 三分支告警）。
     registry.Register("Macro",

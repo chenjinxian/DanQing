@@ -125,6 +125,10 @@ struct DisplayStyleProps {
 // ---------------------------------------------------------------------------
 struct ViewDetailsProps {
     std::optional<dqGeom::ClipVectorProps> clip;  // ← viewDetails.clip（ClipVectorProps）
+    // ← viewDetails.disable3dManipulations（ViewDetails.ts:198 asBool——
+    //   allow3dManipulations = !asBool(disable3dManipulations, false) 反转存储；
+    //   仅 true 写出 = 参考 setter allow 分支置 undefined 的语义）
+    std::optional<bool> disable3dManipulations;
 };
 
 // ---------------------------------------------------------------------------

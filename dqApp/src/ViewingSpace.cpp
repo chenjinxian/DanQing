@@ -91,7 +91,7 @@ void ViewingSpace::update(ViewState3d const& view, ViewRect const& rect)
     // adjustZPlanes: extend delta.z so the frustum brackets the grid plane at every
     // camera tilt (ViewingSpace.ts:328). Only for 3d views that allow 3d manipulations
     // (ViewingSpace.ts:303-321) — the path that makes the planar grid fill the viewport.
-    if (view.is3d() && view.Allow3dManipulations()) {
+    if (view.is3d() && view.allow3dManipulations()) {
         dqGeom::Point3d origin = m_viewOrigin;
         dqGeom::Vector3d delta = m_viewDelta;
         adjustZPlanes(origin, delta, view);

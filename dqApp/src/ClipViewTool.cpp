@@ -51,10 +51,15 @@ EventHandled ViewClipTool::onResetButtonUp(BeButtonEvent const& /*ev*/)
 }
 
 // Ported from: isCompatibleViewport (:102 —— super 门 + allow3dManipulations).
-// DanQing 的 allow3dManipulations = is3d() 简化面（ViewState3d.h :494 登记）。
+// 2026-10-07 一致性审计：allow3dManipulations 已按 ViewDetails.ts:196-201 落地
+// （viewDetails.disable3dManipulations 反转存储，缺省 false）——原 is3d() 简化面
+// 升级为真实门。
 bool ViewClipTool::isCompatibleViewport(Viewport* vp) const
 {
-    return vp != nullptr && vp->GetView() != nullptr && vp->GetView()->AsViewState3d() != nullptr;
+    if (vp == nullptr || vp->GetView() == nullptr)
+        return false;
+    auto* vs3d = vp->GetView()->AsViewState3d();
+    return vs3d != nullptr && vs3d->allow3dManipulations();
 }
 
 // Ported from: getPlaneInwardNormal (:131-136 —— 上下文旋转矩阵列 2 取负).

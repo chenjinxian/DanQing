@@ -337,6 +337,11 @@ public:
     void EnableCamera() { m_cameraOn = true; }
     void TurnCameraOff() { m_cameraOn = false; }
 
+    // --- allow3dManipulations（ViewDetails.ts:196-201——jsonProperties.viewDetails
+    //     的 disable3dManipulations 键反转存储，缺省 false ⇒ 允许 3d 操作）---
+    bool allow3dManipulations() const { return !m_disable3dManipulations; }
+    void setAllow3dManipulations(bool allow) { m_disable3dManipulations = !allow; }
+
     void setEyePoint(dqGeom::Point3d const& eye) { m_camera.setEyePoint(eye); }
     dqGeom::Point3d getEyePoint() const { return m_camera.getEyePoint(); }
     void setFocusDistance(double dist) { m_camera.setFocusDistance(dist); }
@@ -510,11 +515,9 @@ public:
     // Ported from: itwinjs-core ViewState3d.is3d() (ViewState.ts:1505)
     bool is3d() const noexcept { return true; }
 
-    // Ported from: itwinjs-core ViewState3d.allow3dManipulations()
-    // (ViewState.ts:1433-1435). Step 3 simplification returns is3d(); the full
-    // globe/ViewDetails.allow3dManipulations check is deferred.
-    // TODO: globe/allow3dManipulations full check — out of scope Step 3
-    bool Allow3dManipulations() const noexcept { return is3d(); }
+    // 2026-10-07 一致性审计：原 Step 3 简化面（恒 is3d()）升级为真实门——
+    // allow3dManipulations()/setAllow3dManipulations() 见相机方法族（字段
+    // m_disable3dManipulations ← viewDetails.disable3dManipulations）。
 
     // Ported from: itwinjs-core ViewState3d.setupView()
     // Set eye, target, and up to configure the view.
@@ -592,6 +595,7 @@ protected:
     dqGeom::Matrix3d m_rotation = dqGeom::Matrix3d::CreateIdentity();
     dqCommon::Camera m_camera;
     bool m_cameraOn = false;
+    bool m_disable3dManipulations = false;   // ← viewDetails.disable3dManipulations（反转存储，ViewDetails.ts:198）
     // Grid settings (← itwinjs ViewDetails; defaults ViewDetails.ts:24-31)
     dqCommon::GridOrientationType m_gridOrientation = dqCommon::GridOrientationType::WorldXY;
     dqGeom::Point2d m_gridSpacing{1.0, 1.0};

@@ -32,7 +32,6 @@
 
 #include "Application.h"   // Gui::Application::Instance()->newDocument()
 #include "DebugWindow.h"              // Viewer.ts:238-242 Debug info panel
-#include "DecorationGeometryExample.h"   // Surface.ts:155-165 entry
 #include "FeatureOverridesPanel.h"   // M-O(2) I10 Overrides 弹出面板
 #include "SectionsPanel.h"           // M-P P-G Sectioning 弹出面板
 #include "SavedViewsPanel.h"         // M-O(2) I9 Saved Views 弹出面板
@@ -93,11 +92,14 @@ void setGlyphIcon(QAction* a, ushort codepoint) { a->setIcon(dtaGlyphIcon(codepo
 void setSvgIcon(QAction* a, const char* rcPath) { a->setIcon(QIcon(QLatin1String(rcPath))); }
 
 // 置灰工具：未实现项统一 enabled=false + tooltip 注明；dtaGlyph≠0 时设 DTA 字形图标。
-QAction* addDisabled(QToolBar* tb, const QString& text, ushort dtaGlyph = 0)
+QAction* addDisabled(QToolBar* tb, const QString& text, ushort dtaGlyph = 0,
+                     QString tooltip = QString())
 {
     QAction* a = tb->addAction(text);
     a->setEnabled(false);
-    a->setToolTip(text + " (not yet implemented)");
+    // tooltip = 参考 tooltip 原文（Viewer.ts 各按钮的 tooltip 串——2026-10-07
+    // 审计 B15：置灰项此前用自造文案）。
+    a->setToolTip(tooltip.isEmpty() ? text : std::move(tooltip));
     if (dtaGlyph)
         setGlyphIcon(a, dtaGlyph);
     return a;
@@ -132,9 +134,12 @@ dqApp::Viewport* activeViewport()
 // blank 下 populate 为空）；dtaGlyph≠0 时设 DTA 字形图标。
 // 不设 action 菜单（DTA 的 DropDown 无箭头，ToolBar.ts:99-121 点击即 toggle）——
 // 点击经 triggered 手动 popup。
-QAction* addEmptyDropDown(QToolBar* tb, const QString& text, ushort dtaGlyph = 0)
+QAction* addEmptyDropDown(QToolBar* tb, const QString& text, ushort dtaGlyph = 0,
+                          QString tooltip = QString())
 {
     QAction* a = tb->addAction(text);
+    if (!tooltip.isEmpty())
+        a->setToolTip(std::move(tooltip));   // 参考 tooltip 原文（审计 B15）
     if (dtaGlyph)
         setGlyphIcon(a, dtaGlyph);
     QMenu* m = new QMenu(tb);
@@ -203,17 +208,27 @@ void ViewPickerComboBox::repopulate()
     clear();
     auto* vp = activeViewport();
     if (vp && vp->GetIModel()) {
-        auto list = dqApp::ViewList::create(vp->GetIModel());
-        for (int i = 0; i < list.length(); ++i) {
-            if (auto const* spec = list.get(i))
+        m_list = dqApp::ViewList::create(vp->GetIModel());
+        int defaultIndex = 0;
+        for (int i = 0; i < m_list->length(); ++i) {
+            if (auto const* spec = m_list->get(i)) {
                 addItem(QString::fromStdString(spec->name));
+                // ViewPicker.ts:198-199——spec.id === views.defaultViewId 时预选该项。
+                if (spec->id == m_list->defaultViewId())
+                    defaultIndex = i;
+            }
         }
+        setCurrentIndex(defaultIndex);
+    } else {
+        m_list.reset();
     }
     blockSignals(false);
 }
 
 void ViewPickerComboBox::showPopup()
 {
+    if (onAboutToOpen)
+        onAboutToOpen();   // Viewer.ts:272——picker click → toolBar.close()
     repopulate();   // 每次弹出重建（原 aboutToShow 菜单语义；FreeCAD showPopup 重载同位）
     QComboBox::showPopup();
 }
@@ -221,7 +236,9 @@ void ViewPickerComboBox::showPopup()
 // StandardRotationsPanel — DTA StandardRotations 的弹出面板：div.toolMenu 内
 // 两行四个纯字形按钮（StandardRotations.ts:29-47）。Qt 映射 = QMenu 内单个
 // QWidgetAction 包装的网格面板（FreeCAD 工具栏小面板的惯用法——菜单承载控件
-// 而非菜单项）；点击后关面板（参考 Viewer.ts:273 点击即 toolBar.close()）。
+// 而非菜单项）。2026-10-07 一致性审计 B3 修复：参考点击仅 run 工具、面板保持
+// 打开（StandardRotations.ts:44-47——Viewer.ts:272 的 close 是 ViewPicker 专属，
+// 原注释误标）。
 class StandardRotationsPanel : public QWidget {
 public:
     explicit StandardRotationsPanel(QWidget* parent) : QWidget(parent)
@@ -246,12 +263,7 @@ public:
             QObject::connect(b, &QToolButton::clicked, this, [this, id] {
                 if (auto* vp = activeViewport())
                     runViewTool(new dqApp::StandardViewTool(vp, id));
-                // 点击后关闭弹出面板（Viewer.ts:273 this.toolBar.close()）。
-                for (QWidget* w = this; w != nullptr; w = w->parentWidget())
-                    if (auto* m = qobject_cast<QMenu*>(w)) {
-                        m->close();
-                        break;
-                    }
+                // StandardRotations.ts:44-47——点击仅 run，面板保持打开。
             });
             grid->addWidget(b, i / 4, i % 4);   // 2 行 × 4 列
         }
@@ -317,9 +329,14 @@ void DtaToolBarSet::registerDropDownPanel(QWidget* panel)
 void DtaToolBarSet::updateOnly3dVisibility()
 {
     auto* vp = dqApp::Application::Get().GetViewManager().GetActiveViewport();
-    bool const is3d = vp && vp->GetView() && vp->GetView()->AsViewState3d() != nullptr;
+    auto* vs3d = vp && vp->GetView() ? vp->GetView()->AsViewState3d() : nullptr;
+    bool const is3d = vs3d != nullptr;
     for (QAction* a : m_only3dActions)
         a->setVisible(is3d);
+    // StandardRotations.ts:57-60——onViewChanged 二重门：allow3dManipulations
+    // （viewDetails.disable3dManipulations 反转，缺省允许）。
+    if (m_stdRotAction)
+        m_stdRotAction->setVisible(is3d && vs3d->allow3dManipulations());
 }
 
 // 焦点换位 + onViewChanged 合同（Surface.ts:103-119 + ToolBar.ts:186-196）。
@@ -333,6 +350,16 @@ void DtaToolBarSet::swapToolBarsForViewport(void* activeViewport)
     // onViewChanged：关全部打开下拉 + only3d 显隐。
     closeOpenDropDowns();
     updateOnly3dVisibility();
+    // Viewer.setView（:499-506）→ toolBar.onViewChanged——同视口内换视图（如
+    // ViewPicker 选择）也要关全部下拉 + 刷新 only3d/StdRot 门（2026-10-07
+    // 一致性审计 B1 修复：原先只在视口切换时执行）。订阅跟随活动视口换位
+    // 重订（令牌不跨越视口生命周期）。
+    m_changeViewScope.DisconnectAll();
+    if (auto* vp = static_cast<dqApp::Viewport*>(activeViewport))
+        m_changeViewScope.add(vp->OnChangeView.AddListener([this](dqApp::ViewState*) {
+            closeOpenDropDowns();
+            updateOnly3dVisibility();
+        }));
 }
 
 // ---------------------------------------------------------------------------
@@ -392,23 +419,25 @@ void DtaToolBarSet::buildMainToolBar(QMainWindow* mw)
     }
 
     // ── 3. Open iModel from hub（:252-268——➖ 零网络置灰）──
-    addDisabled(tb, QStringLiteral("Open Hub"), 0xe9e0);
+    addDisabled(tb, QStringLiteral("Open Hub"), 0xe9e0, QStringLiteral("Open iModel from hub"));
 
     // ── 4. ViewPicker（:270-272——<select> 控件）──
     {
         auto* picker = new ViewPickerComboBox(tb);
+        DtaToolBarSet* self = this;
+        picker->onAboutToOpen = [self]() { self->closeOpenDropDowns(); };
         QObject::connect(picker, qOverload<int>(&QComboBox::activated),
-                         tb, [picker](int index) {
+                         tb, [picker, self](int index) {
             auto* vp = activeViewport();
-            if (!vp || !vp->GetIModel() || index < 0)
+            if (!vp || !vp->GetIModel() || index < 0 || !picker->m_list.has_value())
                 return;
-            auto list = dqApp::ViewList::create(vp->GetIModel());
-            if (auto const* spec = list.get(index)) {
-                dqBase::DqId const id = spec->id;
-                auto view = dqApp::ViewList::create(vp->GetIModel()).getView(id, vp->GetIModel());
+            // 经 repopulate 缓存的同一 ViewList 取视图（排序一致性——审计 D4）。
+            if (auto const* spec = picker->m_list->get(index)) {
+                auto view = picker->m_list->getView(spec->id, vp->GetIModel());
                 if (view)
                     vp->ChangeView(view);
             }
+            self->closeOpenDropDowns();   // Viewer.ts:272——click → toolBar.close()
         });
         QAction* pickerAction = tb->addWidget(picker);
         pickerAction->setObjectName(QStringLiteral("DTA.Views.ViewPicker"));
@@ -449,7 +478,7 @@ void DtaToolBarSet::buildMainToolBar(QMainWindow* mw)
     }
 
     // ── 8. Saved camera paths（:306-315——大件未移植置灰）──
-    addEmptyDropDown(tb, QStringLiteral("Camera Paths"), 0xe932);
+    addEmptyDropDown(tb, QStringLiteral("Camera Paths"), 0xe932, QStringLiteral("Saved camera paths"));
 
     // ── 9. Element selection（:316-320——zoom.svg 图按钮）──
     {
@@ -486,6 +515,12 @@ void DtaToolBarSet::buildMainToolBar(QMainWindow* mw)
         auto* panel = new ViewSettingsPanel(btn);
         DtaToolBarSet* self = this;
         QObject::connect(btn, &QToolButton::clicked, btn, [btn, panel, self]() {
+            // ToolBar.ts:173-178 toggle：已开 → close（2026-10-07 审计 B5 修复：
+            // 持久面板原先二次点击先 close 后 show 复开，无法关闭）。
+            if (panel->isVisible()) {
+                self->closeOpenDropDowns();
+                return;
+            }
             panel->syncFromViewport();
             panel->move(btn->mapToGlobal(QPoint(0, btn->height())));
             self->openDropDown(panel);
@@ -546,6 +581,7 @@ void DtaToolBarSet::buildMainToolBar(QMainWindow* mw)
         QAction* svAction = tb->addWidget(svBtn);
         svAction->setObjectName(QStringLiteral("DTA.ViewTools.StandardRotations"));
         m_only3dActions.push_back(svAction);
+        m_stdRotAction = svAction;   // allow3dManipulations 二重门（updateOnly3dVisibility）
     }
 
     // ── 16. Walk（:356-362——only3d；M-R 激活：View.LookAndMove 引擎已移植
@@ -580,7 +616,7 @@ void DtaToolBarSet::buildMainToolBar(QMainWindow* mw)
     }
 
     // ── 19. Animation（:373-377——大件未移植置灰）──
-    addEmptyDropDown(tb, QStringLiteral("Animation"), 0xe931);
+    addEmptyDropDown(tb, QStringLiteral("Animation"), 0xe931, QStringLiteral("Animation / solar time"));
 
     // ── 20. Sectioning tools（:378-383——M-P P-G live）──
     {
@@ -606,7 +642,7 @@ void DtaToolBarSet::buildMainToolBar(QMainWindow* mw)
 
     // ── 21. Spatial Classification（:384-393——only3d 大件未移植置灰）──
     {
-        QAction* a = addDisabled(tb, QStringLiteral("Classification"), 0xe9d8);
+        QAction* a = addDisabled(tb, QStringLiteral("Classification"), 0xe9d8, QStringLiteral("Spatial Classification"));
         m_only3dActions.push_back(a);
     }
 
@@ -633,9 +669,9 @@ void DtaToolBarSet::buildMainToolBar(QMainWindow* mw)
     }
 
     // ── 23/24/25. Point cloud / Contours / Format Set（:400-421——置灰）──
-    addDisabled(tb, QStringLiteral("Point Cloud"), 0xe923);
-    addDisabled(tb, QStringLiteral("Contours"), 0xe94b);
-    addDisabled(tb, QStringLiteral("Format Set"), 0xe9cc);
+    addDisabled(tb, QStringLiteral("Point Cloud"), 0xe923, QStringLiteral("Point cloud settings"));
+    addDisabled(tb, QStringLiteral("Contours"), 0xe94b, QStringLiteral("Contour display"));
+    addDisabled(tb, QStringLiteral("Format Set"), 0xe9cc, QStringLiteral("Load Format Set from JSON file"));
 
     // ── 26. Google Maps（:424-434——config googleMapsUi 门；DanQing 无该
     //     config=关态 → 不出现（DTA 关态同形）──

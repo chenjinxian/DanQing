@@ -362,6 +362,109 @@ dqGeom::ClipVectorProps parseClipVectorProps(dumpjson::JsonValue const& json)
     return out;
 }
 
+// parseClipVectorProps 的序列化对偶——viewDetails.clip 线格式
+// （2026-10-07 一致性审计修复：SavedViews 保存面原先不写 jsonProperties，
+// clip 在 round-trip 中丢失——参考 EntityState.toJSON :57-64 保留该段）。
+void appendJsonNumber(std::string& out, double v);   // 定义于本文件后部
+
+std::string jsonClipVectorProps(dqGeom::ClipVectorProps const& props)
+{
+    std::string out = "[";
+    bool firstPrim = true;
+    for (auto const& prim : props) {
+        if (!firstPrim)
+            out.push_back(',');
+        firstPrim = false;
+        out.push_back('{');
+        if (prim.shape.has_value()) {
+            auto const& s = *prim.shape;
+            out += "\"shape\":{\"points\":[";
+            bool first = true;
+            for (auto const& p : s.points) {
+                if (!first)
+                    out.push_back(',');
+                first = false;
+                out.push_back('[');
+                appendJsonNumber(out, p.x);
+                out.push_back(',');
+                appendJsonNumber(out, p.y);
+                out.push_back(',');
+                appendJsonNumber(out, p.z);
+                out.push_back(']');
+            }
+            out.push_back(']');
+            if (s.trans.has_value()) {
+                out += ",\"trans\":[";
+                for (int r = 0; r < 3; ++r) {
+                    if (r)
+                        out.push_back(',');
+                    out.push_back('[');
+                    for (int c = 0; c < 4; ++c) {
+                        if (c)
+                            out.push_back(',');
+                        appendJsonNumber(out, s.trans->rows[r][c]);
+                    }
+                    out.push_back(']');
+                }
+                out.push_back(']');
+            }
+            if (s.zlow.has_value()) {
+                out += ",\"zlow\":";
+                appendJsonNumber(out, *s.zlow);
+            }
+            if (s.zhigh.has_value()) {
+                out += ",\"zhigh\":";
+                appendJsonNumber(out, *s.zhigh);
+            }
+            if (s.mask.has_value())
+                out += *s.mask ? ",\"mask\":true" : ",\"mask\":false";
+            if (s.invisible.has_value())
+                out += *s.invisible ? ",\"invisible\":true" : ",\"invisible\":false";
+            out.push_back('}');
+        } else if (prim.planes.has_value()) {
+            auto const& pl = *prim.planes;
+            out += "\"planes\":{";
+            if (pl.clips.has_value()) {
+                out += "\"clips\":[";
+                bool firstSet = true;
+                for (auto const& set : *pl.clips) {
+                    if (!firstSet)
+                        out.push_back(',');
+                    firstSet = false;
+                    out.push_back('[');
+                    bool first = true;
+                    for (auto const& plane : set) {
+                        if (!first)
+                            out.push_back(',');
+                        first = false;
+                        out += "{\"normal\":[";
+                        appendJsonNumber(out, plane.normal.x);
+                        out.push_back(',');
+                        appendJsonNumber(out, plane.normal.y);
+                        out.push_back(',');
+                        appendJsonNumber(out, plane.normal.z);
+                        out += "],\"dist\":";
+                        appendJsonNumber(out, plane.dist);
+                        if (plane.invisible.has_value())
+                            out += *plane.invisible ? ",\"invisible\":true" : ",\"invisible\":false";
+                        if (plane.interior.has_value())
+                            out += *plane.interior ? ",\"interior\":true" : ",\"interior\":false";
+                        out.push_back('}');
+                    }
+                    out.push_back(']');
+                }
+                out.push_back(']');
+            }
+            if (pl.invisible.has_value())
+                out += *pl.invisible ? ",\"invisible\":true" : ",\"invisible\":false";
+            out.push_back('}');
+        }
+        out.push_back('}');
+    }
+    out.push_back(']');
+    return out;
+}
+
 // views.defaultViewState JSON（getViewStateData RPC 载荷原样）→ ViewStateProps。
 // 参考锚 = convertViewStatePropsToViewState 的 props 形态（IModelConnection.ts
 // :1548-1561）+ ViewState3d ctor 的消费面（ViewState.ts:1497-1515）。
@@ -432,6 +535,10 @@ std::optional<ViewStateProps> parseViewStateProps(dumpjson::JsonValue const& jso
         if (dumpjson::JsonValue const* vd = jp->find("viewDetails")) {
             if (dumpjson::JsonValue const* clip = vd->find("clip"))
                 out.viewDetailsProps.clip = parseClipVectorProps(*clip);
+            // disable3dManipulations（ViewDetails.ts:198——反转存储，缺省 false）。
+            if (dumpjson::JsonValue const* d3d = vd->find("disable3dManipulations"))
+                if (d3d->type == dumpjson::JsonValue::Type::Bool)
+                    out.viewDetailsProps.disable3dManipulations = d3d->boolean;
         }
     }
 
@@ -805,6 +912,23 @@ std::string serializeViewStatePropsJson(ViewStateProps const& props)
         camera.num("lens", vd.camera.lensDegrees);
         camera.out.push_back('}');
         vdp.raw("camera", std::move(camera.out));
+    }
+    // jsonProperties.viewDetails（2026-10-07 一致性审计修复：原先保存面不写
+    // jsonProperties——clip 在 SavedViews round-trip 中丢失；参考 EntityState.
+    // toJSON :57-64 保留该段。clip 在场写线格式；disable3dManipulations 仅
+    // true 写出 = 参考 setter allow 分支置 undefined 的语义）。
+    if (props.viewDetailsProps.clip.has_value()
+        || props.viewDetailsProps.disable3dManipulations.value_or(false)) {
+        JsonObjWriter viewDetails;
+        if (props.viewDetailsProps.clip.has_value())
+            viewDetails.raw("clip", jsonClipVectorProps(*props.viewDetailsProps.clip));
+        if (props.viewDetailsProps.disable3dManipulations.value_or(false))
+            viewDetails.boolean("disable3dManipulations", true);
+        viewDetails.out.push_back('}');
+        JsonObjWriter jp;
+        jp.raw("viewDetails", std::move(viewDetails.out));
+        jp.out.push_back('}');
+        vdp.raw("jsonProperties", std::move(jp.out));
     }
     vdp.out.push_back('}');
 

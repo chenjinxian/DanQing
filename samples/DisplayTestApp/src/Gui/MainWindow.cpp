@@ -540,13 +540,17 @@ void MainWindow::showStatus(int type, const QString& message)
     }
     // 2026-10-07 删除侧：FreeCAD 瞬态消息面（QStatusBar::showMessage 5s 覆盖 +
     // 类型优先级 currentStatusType/statusTimer/clearStatus 机具 + 级别着色
-    // stylesheet）随 Preselection 死 chrome 删除——本函数收敛为 DTA Utils.ts:8-26
-    // 的 1:1 语义：status 面 → #showstatus span 常驻；Err 级 → #showerror span。
-    if (auto* span = statusBar()->findChild<QLabel*>(QStringLiteral("showstatus")))
-        span->setText(message);
-    if (type == MainWindow::Err)
+    // stylesheet）随 Preselection 死 chrome 删除——本函数收敛为 DTA Utils.ts:8-40
+    // 的 1:1 语义：status 面 → #showstatus span（Utils.showStatus :9-16 只写此
+    // span）；Err 级 → #showerror span（Utils.showError :18-40——错误只进 error
+    // span，不双写 status——审计 B17 修正）。
+    if (type == MainWindow::Err) {
         if (auto* err = statusBar()->findChild<QLabel*>(QStringLiteral("showerror")))
             err->setText(message);
+    } else {
+        if (auto* span = statusBar()->findChild<QLabel*>(QStringLiteral("showstatus")))
+            span->setText(message);
+    }
 }
 
 // ─── Qt event override stubs ───────────────────────────────────────────

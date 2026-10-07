@@ -12,6 +12,10 @@
 #include <QObject>
 #include <QPointer>
 #include <dqBase/DqEvent.h>
+#include <dqApp/ViewPicker.h>   // ViewPickerComboBox::m_list（ViewList 缓存）
+
+#include <functional>
+#include <optional>
 
 #include <QVector>
 
@@ -30,8 +34,19 @@ class ViewPickerComboBox : public QComboBox {
 public:
     explicit ViewPickerComboBox(QWidget* parent);
 
-    // ← ViewPicker.populate（ViewPicker.ts:187-203）：清空后按 ViewList 重建。
+    // ← ViewPicker.populate（ViewPicker.ts:187-203）：清空后按 ViewList 重建
+    //   （预选 defaultViewId 项——:198-199 spec.id === views.defaultViewId 时
+    //   selectedIndex 指向该项；2026-10-07 一致性审计 B7 修复：原先恒选 0）。
     void repopulate();
+
+    // 弹出前回调（Viewer.ts:272——picker 元素 click → toolBar.close() 的 Qt
+    // 承载：打开列表即关其它下拉）。
+    std::function<void()> onAboutToOpen;
+
+    // repopulate 时缓存的 ViewList——activated 经同一列表取视图（原先二次
+    // create 的排序若与首次不一致会取错 spec；ViewPicker.ts:194-199 的
+    // option.value=viewId 经 id 取，不受排序漂移影响——2026-10-07 审计 D4）。
+    std::optional<dqApp::ViewList> m_list;
 
 protected:
     void showPopup() override;
@@ -74,7 +89,9 @@ private:
     QVector<QPointer<QWidget>> m_openPanels;
     QVector<QAction*> m_only3dActions;   // Viewer.ts only3d 项（Models/StdRot/
                                          // Walk/Classification）
+    QAction* m_stdRotAction = nullptr;   // StandardRotations 二重门（allow3dManipulations）
     dqBase::DqEventScope m_scope;
+    dqBase::DqEventScope m_changeViewScope;  // 活动视口 OnChangeView 订阅（换位重订）
 };
 
 }  // namespace Gui

@@ -507,7 +507,7 @@ void ViewState3d::enableCamera()
 // Ported from: itwinjs-core ViewState3d.supportsCamera (:1833-1835)。
 bool ViewState3d::supportsCamera() const
 {
-    return Allow3dManipulations();
+    return allow3dManipulations();
 }
 
 // Ported from: itwinjs-core ViewState3d.calcLensAngle (:1871-1873)
@@ -1733,6 +1733,10 @@ ViewStateProps SpatialViewState::ToProps() const
     } else if (m_clipVectorJson.has_value()) {
         props.viewDetailsProps.clip = m_clipVectorJson;
     }
+    // disable3dManipulations（ViewDetails.ts:200-202——allow 时置 undefined =
+    // 不写出；仅 true 落盘）。
+    if (m_disable3dManipulations)
+        props.viewDetailsProps.disable3dManipulations = true;
 
     // --- CategorySelectorProps（toProps :329）---
     for (auto const& id : GetCategorySelector().getCategories())
@@ -1843,6 +1847,8 @@ dqBase::RefPtr<SpatialViewState> SpatialViewState::CreateFromProps(
     //   clipVector 惰性物化——M-P P-B；成员内应用 protected 双态）。
     view->m_clipVectorJson = props.viewDetailsProps.clip;
     view->m_clipVector = nullptr;
+    view->m_disable3dManipulations =
+        props.viewDetailsProps.disable3dManipulations.value_or(false);
     return view;
 }
 
@@ -1862,6 +1868,8 @@ dqBase::RefPtr<OrthographicViewState> OrthographicViewState::CreateFromProps(
     //   clipVector 惰性物化——M-P P-B；成员内应用 protected 双态）。
     view->m_clipVectorJson = props.viewDetailsProps.clip;
     view->m_clipVector = nullptr;
+    view->m_disable3dManipulations =
+        props.viewDetailsProps.disable3dManipulations.value_or(false);
     return view;
 }
 

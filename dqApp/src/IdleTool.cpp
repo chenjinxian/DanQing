@@ -88,7 +88,7 @@ EventHandled IdleTool::onMouseStartDrag(BeButtonEvent const& ev)
                 // or 2d view takes the Scroll branch — faithful to the reference.
                 ViewState* viewBase = ev.viewport->GetView();
                 ViewState3d* view3d = viewBase ? viewBase->AsViewState3d() : nullptr;
-                bool const allow3d = (view3d != nullptr) && view3d->Allow3dManipulations();
+                bool const allow3d = (view3d != nullptr) && view3d->allow3dManipulations();
                 toolId = allow3d ? "View.Look" : "View.Scroll";
                 handleId = allow3d ? ViewHandleType::Look : ViewHandleType::Scroll;
             } else if ((ev.keyModifiers & BeModifierKeys::Shift) != BeModifierKeys::None) {

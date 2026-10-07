@@ -873,7 +873,7 @@ void ViewManip::setTargetCenterWorld(dqGeom::Point3d const& pt, bool lockTarget,
     //                 this.targetCenterWorld.z = 0.0;
     ViewState* viewBase = viewport->GetView();
     ViewState3d* view = viewBase ? viewBase->AsViewState3d() : nullptr;
-    if (view && !view->Allow3dManipulations())
+    if (view && !view->allow3dManipulations())
         targetCenterWorld.z = 0.0;
 
     // TS L700: this.viewport.viewCmdTargetCenter = (saveTarget ? pt : undefined);
@@ -1214,7 +1214,7 @@ dqGeom::Point3d ViewManip::getDefaultTargetPointWorld(Viewport const& vp)
     ViewState3d* view = viewBase ? viewBase->AsViewState3d() : nullptr;
     // NpcCenter = (0.5, 0.5, 0.5) — Ported from @itwin/core-common NpcCenter.
     dqGeom::Point3d const kNpcCenter = dqGeom::Point3d::From(0.5, 0.5, 0.5);
-    if (!view || !view->Allow3dManipulations())
+    if (!view || !view->allow3dManipulations())
         return vp.NpcToWorld(kNpcCenter);
 
     // TS L789-790: const targetPoint = vp.view.getTargetPoint();
@@ -1679,7 +1679,7 @@ bool ViewRotate::perform(dqGeom::Point3d ptNpc)
     dqGeom::Vector3d worldAxis = dqGeom::Vector3d::UnitZ();
     dqGeom::Point3d const worldPt = tool->targetCenterWorld;
 
-    if (!view->Allow3dManipulations()) {
+    if (!view->allow3dManipulations()) {
         // TS L1242-1247: 2d branch — rotate about Z by the planar angle from
         // center→firstPt vs center→currPt.
         dqGeom::Point3d const centerPt = vp->WorldToView(worldPt);
@@ -1817,7 +1817,7 @@ bool ViewRotate::needDepthPoint(BeButtonEvent const& ev, bool /*isPreview*/)
     ViewState* viewBase = vp->GetView();
     ViewState3d* view = viewBase ? viewBase->AsViewState3d() : nullptr;
     // TS L1303: !targetCenterLocked && view.allow3dManipulations().
-    return view && !viewTool->targetCenterLocked && view->Allow3dManipulations();
+    return view && !viewTool->targetCenterLocked && view->allow3dManipulations();
 }
 
 // Ported from: itwinjs-core ViewRotate.adjustDepthPoint (ViewTool.ts:1307-1318).
@@ -2000,7 +2000,7 @@ bool ViewLook::firstPoint(BeButtonEvent const& ev)
     // or 2d view takes the false branch exactly like the reference.
     ViewState* viewBase = vp->GetView();
     ViewState3d* view = viewBase ? viewBase->AsViewState3d() : nullptr;
-    if (!view || !view->Allow3dManipulations())
+    if (!view || !view->allow3dManipulations())
         return false;
 
     // TS L1348-1350: snapshot firstPt (view px) / eyePoint / rotation.
@@ -2491,7 +2491,7 @@ void ViewNavigate::onReinitialize()
         return;
     ViewState* view = vp->GetView();
     if (view->AsViewState3d() == nullptr
-        || !view->AsViewState3d()->Allow3dManipulations())
+        || !view->AsViewState3d()->allow3dManipulations())
         return;
 
     dqGeom::Angle const walkAngle = ToolSettings::walkCameraAngle;
@@ -2940,7 +2940,7 @@ ViewStatus ViewManip::setCameraLensAngle(dqGeom::Angle const& lensAngle,
 
     ViewState* view = viewport->GetView();
     if (view == nullptr || view->AsViewState3d() == nullptr
-        || !view->AsViewState3d()->Allow3dManipulations())
+        || !view->AsViewState3d()->allow3dManipulations())
         return ViewStatus::InvalidViewport;
 
     ViewStatus result;
@@ -3295,7 +3295,7 @@ void StandardViewTool::onPostInstall()
         ViewState3d* view = viewBase ? viewBase->AsViewState3d() : nullptr;
         if (view) {
             // TS L3506: id = vp.view.allow3dManipulations() ? _standardViewId : Top
-            auto const id = view->Allow3dManipulations() ? m_standardViewId : StandardViewId::Top;
+            auto const id = view->allow3dManipulations() ? m_standardViewId : StandardViewId::Top;
             // TS L3507: rMatrix = AccuDraw.getStandardRotation(id, vp, vp.isContextRotationRequired)
             // DanQing has no AccuDraw context-rotation (not ported); use the plain standard rotation.
             // TODO(faithful): AccuDraw.getStandardRotation ACS-context path.

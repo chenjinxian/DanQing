@@ -110,10 +110,13 @@ TEST(StatusBarTest, ShowStatusWritesDtaSpans)
     ASSERT_NE(err, nullptr);
     EXPECT_TRUE(err->text().isEmpty()) << "non-Err level must not touch #showerror";
 
-    // Err level routes to #showerror (Utils.showError)
+    // Err level routes to #showerror ONLY (Utils.showError :18-40——不双写
+    // #showstatus；审计 B17 语义)。
     mw.showStatus(MainWindow::Err, QStringLiteral("Boom"));
     qApp->processEvents();
     EXPECT_EQ(err->text().toStdString(), std::string("Boom"));
+    EXPECT_EQ(span->text().toStdString(), std::string("All good"))
+        << "Err level must not overwrite #showstatus";
 
     // No transient overlay: QStatusBar's own message area stays empty (DTA has
     // no such transient message; the FreeCAD form was deleted with Preselection).

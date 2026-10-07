@@ -41,6 +41,7 @@ FpsMonitor::FpsMonitor(QWidget* parent)
     m_checkbox = new QCheckBox(this);
     m_checkbox->setObjectName(QStringLiteral("DTA.FpsMonitor.Checkbox"));
     auto* label = new QLabel(QStringLiteral("FPS"), this);
+    m_label = label;
     m_output = new QLabel(this);
     m_output->setObjectName(QStringLiteral("DTA.FpsMonitor.Output"));
     layout->addWidget(m_checkbox);
@@ -80,6 +81,10 @@ void FpsMonitor::setEnabled(bool enabled)
         if (auto* vp = viewMgr.GetViewport(i))
             vp->setContinuousRendering(enabled);
 
+    // FpsMonitor.ts:48 —— `FPS${enabled ? ":" : ""}`（2026-10-07 审计 B8：标签
+    // 原先恒 "FPS"）。
+    if (m_label)
+        m_label->setText(QStringLiteral("FPS") + (enabled ? QStringLiteral(":") : QString()));
     m_output->setText(QString());
     if (enabled)
         m_prevTime = std::chrono::steady_clock::now();
