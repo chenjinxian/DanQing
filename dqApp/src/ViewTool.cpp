@@ -178,7 +178,7 @@ AxisAndAngle getAxisAndAngleOfRotation(dqGeom::Matrix3d const& m)
 
 // Ported from: itwinjs-core ViewingToolHandle.adjustDepthPoint (ViewTool.ts:159-171).
 bool ViewingToolHandle::adjustDepthPoint(bool isValid, Viewport* /*vp*/,
-                                          Plane3dByOriginAndUnitNormal /*plane*/,
+                                          Plane3dByOriginAndUnitNormal& /*plane*/,
                                           DepthPointSource source)
 {
     // TS L160-170: sources with visible geometry/graphics are considered valid
@@ -1105,8 +1105,11 @@ std::optional<dqGeom::Point3d> ViewManip::pickDepthPoint(BeButtonEvent const& ev
 
     // TS L405-406: pickRadiusPixels = vp.pixelsFromInches(ToolSettings.viewToolPickRadiusInches=0.20,
     // ToolSettings.ts:38)；vp.pickDepthPoint(ev.rawPoint, pickRadiusPixels)
-    double const pickRadiusPixels = vp->PixelsFromInches(0.20);
-    Viewport::DepthPointResult const result = vp->pickDepthPoint(ev.rawPoint, pickRadiusPixels);
+    // TS L405: ToolSettings.viewToolPickRadiusInches（2026-10-07 审计 B6：原
+    // 硬编码 0.20——运行时不可调）。
+    double const pickRadiusPixels =
+        vp->PixelsFromInches(ToolSettings::viewToolPickRadiusInches);
+    Viewport::DepthPointResult result = vp->pickDepthPoint(ev.rawPoint, pickRadiusPixels);
 
     // TS L407-419: isValidDepth —— 几何/模型/地图直接有效；平面来源看 npc z∈[0,1]
     bool isValidDepth = false;
@@ -1123,10 +1126,15 @@ std::optional<dqGeom::Point3d> ViewManip::pickDepthPoint(BeButtonEvent const& ev
         }
     }
 
-    // TS L422: 手柄可否决/改写（adjustDepthPoint 默认 isValid 直通——ViewTool.ts:159-171）
+    // TS L422: 手柄可否决/改写（adjustDepthPoint 默认 isValid 直通——ViewTool.ts
+    // :159-171）。result.plane 同一对象语义：非 const 平面经 adjustDepthPoint
+    // 原地突变（ViewRotate 写 targetCenterWorld），预览与返回都取突变后 origin
+    // [2026-10-07 审计 B5 修复：原先构造按值副本、突变丢失]。
     {
-        dqGeom::Plane3dByOriginAndUnitNormal const plane(result.origin, result.normal);
+        dqGeom::Plane3dByOriginAndUnitNormal plane(result.origin, result.normal);
         isValidDepth = hitHandle->adjustDepthPoint(isValidDepth, vp, plane, result.source);
+        result.origin = plane.origin;
+        result.normal = plane.normal;
     }
 
     // TS L424-425: 预览态记录（previewDepthPoint 据此画圆+十字）
@@ -1425,13 +1433,13 @@ bool AnimatedHandle::firstPoint(BeButtonEvent const& ev)
     // TS L1459: this._lastMotionTime = Date.now();
     m_lastMotionTime = static_cast<double>(dqBase::DqTimePoint::Now().GetTicks()) / 1.0e6;
 
-    // TS L1460-1461: install this handle as the viewport animator.
-    // Same Animator-ownership deviation as HandleWithInertia::beginAnimation —
-    // the DanQing Viewport::setAnimator takes unique_ptr, which is incompatible
-    // with a handle owned by ViewHandleArray. The continuous-animation path
-    // therefore requires the future setAnimator(raw*) overload to drive; the
-    // animate() math itself is faithful and unit-testable in isolation.
-    // TODO: drive animate() from render loop once setAnimator takes a raw ptr.
+    // TS L1460-1461: install this handle as the viewport animator
+    // (`tool.viewport.setAnimator(this)`). 2026-10-07 审计 B3 修复：非拥有
+    // 引用槽 setAnimatorRef 已在（HandleWithInertia :1307 同款）——原注释称
+    // "requires future raw-ptr overload" 已过时，Scroll/Walk/Fly/LookAndMove
+    // 的逐帧 animate() 此前不会从 firstPoint 启动。
+    if (vp)
+        vp->setAnimatorRef(this);
     return true;
 }
 
@@ -1822,7 +1830,7 @@ bool ViewRotate::needDepthPoint(BeButtonEvent const& ev, bool /*isPreview*/)
 
 // Ported from: itwinjs-core ViewRotate.adjustDepthPoint (ViewTool.ts:1307-1318).
 bool ViewRotate::adjustDepthPoint(bool isValid, Viewport* vp,
-                                  Plane3dByOriginAndUnitNormal plane,
+                                  Plane3dByOriginAndUnitNormal& plane,
                                   DepthPointSource source)
 {
     // TS L1308-1312: viewingGlobe branch — not ported; with viewingGlobe=false
@@ -1831,8 +1839,9 @@ bool ViewRotate::adjustDepthPoint(bool isValid, Viewport* vp,
     if (ViewingToolHandle::adjustDepthPoint(isValid, vp, plane, source))
         return true;
     // TS L1316-1317: fall back to the target center; return false (the source
-    // is rejected but the plane origin is updated as a side effect in the TS
-    // reference — faithful C++ port of that mutation).
+    // is rejected but the plane origin is updated in place — 按引用传回调用方
+    // [2026-10-07 审计 B5 修复：原按值副本丢失该突变，被拒源的深度预览圆
+    // 画在原拾取点而非目标中心]).
     plane.origin = viewTool ? viewTool->targetCenterWorld : plane.origin;
     return false;
 }
@@ -2141,21 +2150,16 @@ bool ViewScroll::animate()
         // build translation; transform world frustum; setupViewFromFrustum.
         dqGeom::Point3d points[2] = {m_anchorPtView,
                                      plusScaled(m_anchorPtView, dist, 1.0)};
-        // DanQing Viewport has viewToNpc via the ViewingSpace — but no public
-        // array wrapper; convert each point individually through the inverse
-        // of npcToView (view.x / width, view.y / height).
-        ViewRect const rect = viewport->viewRect();
-        double const w = static_cast<double>(rect.width());
-        double const h = static_cast<double>(rect.height());
-        auto viewToNpc = [&](dqGeom::Point3d const& vp) {
-            return dqGeom::Point3d::From(vp.x / w, vp.y / h, vp.z);
-        };
-        dqGeom::Point3d npc0 = viewToNpc(points[0]);
-        dqGeom::Point3d npc1 = viewToNpc(points[1]);
-        npc1.z = npc0.z;
-        dqGeom::Point3d const w0 = viewport->NpcToWorld(npc0);
-        dqGeom::Point3d const w1 = viewport->NpcToWorld(npc1);
-        dqGeom::Vector3d const offset = minus(w1, w0);
+        // viewToNpcArray 的逐点承载（Viewport::ViewToNpc = ViewingSpace.viewToNpc
+        // :443-445——getViewCorners low=(0,H)/high=(W,0) 的 Y 翻转映射）。
+        // 2026-10-07 审计 B1 修复：原手工 (x/w, y/h) 缺 Y 翻转——相机开启时
+        // 竖直滚动方向与参考相反。
+        for (auto& p : points)
+            p = viewport->ViewToNpc(p);
+        points[1].z = points[0].z;
+        for (auto& p : points)
+            p = viewport->NpcToWorld(p);
+        dqGeom::Vector3d const offset = minus(points[1], points[0]);
         dqGeom::Transform const offsetTransform = dqGeom::Transform::CreateTranslation(offset);
         dqCommon::Frustum frustum = viewport->getWorldFrustum();
         frustum.transformBy(offsetTransform);
@@ -2336,24 +2340,28 @@ dqGeom::Transform NavigateMotion::generateTranslationTransform(
     if (m_viewport == nullptr)
         return dqGeom::Transform::CreateIdentity();
     Viewport* vp = m_viewport;
-    ViewRect const rect = vp->viewRect();
-    double const w = static_cast<double>(rect.width());
-    double const h = static_cast<double>(rect.height());
     dqGeom::Point3d points[3] = {
         dqGeom::Point3d::From(0.0, 0.0, 0.0),
         dqGeom::Point3d::From(1.0, 0.0, 0.0),
         dqGeom::Point3d::From(0.0, 1.0, 0.0)};
     if (vp->isCameraOn()) {
-        // viewToNpc（ViewScroll :2134 同款线性映射）→ z 钉焦平面 → npcToView。
+        // TS L1857-1862 —— viewToNpcArray → z 钉焦平面 → npcToViewArray →
+        // viewToWorldArray（逐点承载）。2026-10-07 审计 B2 修复：原手工
+        // (x/w, y/h)+(x*w, y*h) 缺 Y 翻转且以 NpcToWorld 收尾——yDir 与参考
+        // 反号（LookAndMove Q/PgDn 升降与 Walk/Fly Pan 竖直反向）。
         for (auto& p : points)
-            p = dqGeom::Point3d::From(p.x / w, p.y / h, p.z);
+            p = vp->ViewToNpc(p);
         double const focusZ = ViewManip::getFocusPlaneNpc(*vp);
         points[0].z = points[1].z = points[2].z = focusZ;  // use the focal plane for z coordinates
         for (auto& p : points)
-            p = dqGeom::Point3d::From(p.x * w, p.y * h, p.z);
+            p = vp->NpcToView(p);
+        for (auto& p : points)
+            p = vp->ViewToWorld(p);
+    } else {
+        // 参考 else 臂 = npcToWorldArray（三点即 NPC 坐标）。
+        for (auto& p : points)
+            p = vp->NpcToWorld(p);
     }
-    for (auto& p : points)
-        p = vp->NpcToWorld(p);
 
     dqGeom::Vector3d xDir = dqGeom::Vector3d::FromStartEnd(points[0], points[1]);
     xDir.Normalize();
@@ -2452,9 +2460,13 @@ NavigateMode ViewNavigate::getNavigateMode() const
 {
     InputState const& state =
         dqApp::Application::Get().GetToolAdmin().currentInputState();
-    if (viewTool == nullptr || viewTool->viewport == nullptr)
-        return NavigateMode::Pan;
-    return (state.isShiftDown() || !viewTool->viewport->isCameraOn())
+    // `false === this.viewTool.viewport?.isCameraOn`：空视口时 isCameraOn 为
+    // undefined → false === undefined 为 false（2026-10-07 审计 B9 修复：原
+    // 空视口强制 Pan——参考该臂为 false，仍走 ctrl/Travel 分流）。
+    bool const cameraOff = (viewTool != nullptr && viewTool->viewport != nullptr)
+        ? (false == viewTool->viewport->isCameraOn())
+        : false;
+    return (state.isShiftDown() || cameraOff)
         ? NavigateMode::Pan
         : (state.isControlDown() ? NavigateMode::Look : NavigateMode::Travel);
 }
@@ -2526,14 +2538,18 @@ void ViewNavigate::drawHandle(DecorateContext& context, bool hasFocus)
     dqRender::CanvasDecoration decoration;
     decoration.position = dqGeom::Point2d::From(position.x, position.y);
     decoration.drawDecoration = [](dqRender::CanvasContext& ctx) {
+        // :1992-1999 —— black strokeStyle + stroke() 先描 1px 黑边，再
+        // rgba(255,255,255,.3) fill（alpha 仅施于填充色——2026-10-07 审计
+        // B11 修复：原先无 stroke() 且 globalAlpha 波及描边）。
         ctx.beginPath();
         ctx.setStrokeStyle(dqCommon::ColorDef::from(0, 0, 0));
-        // fill rgba(255,255,255,.3) → 白 + globalAlpha 0.3。
-        ctx.setGlobalAlpha(0.3);
-        ctx.setFillStyle(dqCommon::ColorDef::from(255, 255, 255));
         ctx.setLineWidth(1);
         ctx.arc(0.0, 0.0, 5.0, 0.0, 2.0 * 3.14159265358979323846);
+        ctx.stroke();
+        ctx.setGlobalAlpha(0.3);
+        ctx.setFillStyle(dqCommon::ColorDef::from(255, 255, 255));
         ctx.fill();
+        ctx.setGlobalAlpha(1.0);
     };
     context.AddCanvasDecoration(std::move(decoration));
 }
@@ -2789,7 +2805,9 @@ bool ViewLookAndMove::enableKeyStart()
     ev.point = pt;
     ev.rawPoint = pt;
     dqGeom::Point3d const viewPt = vp->WorldToView(pt);
-    ev.viewPoint = dqGeom::Point3d::From(viewPt.x, viewPt.y, 0.0);
+    // :2578 viewPoint: vp.worldToView(pt)（z 保留——2026-10-07 审计 B16：原
+    // 强制清零）。
+    ev.viewPoint = viewPt;
     ev.isDown = true;
     viewTool->changeViewport(ev.viewport);
     if (!viewTool->processFirstPoint(ev))
@@ -3039,9 +3057,10 @@ void LookAndMoveTool::provideToolAssistance(
     mouseInstructions.push_back(ToolAssistance::createKeyboardInstruction(
         ToolAssistance::createKeyboardInfo({"Q", "E"}),
         ViewTool::translate("LookAndMove.Inputs.ElevateKeys")));
-    // :3137 ⭞⭟（⇞/⇟）。
+    // :3137 ⇞⇟（U+21DE/U+21DF——2026-10-07 审计 B17：原 ⭞⭟[U+2B5E/2B5F]
+    // 字形与参考 ⇞/⇟ 不一致）。
     mouseInstructions.push_back(ToolAssistance::createKeyboardInstruction(
-        ToolAssistance::createKeyboardInfo({"\xe2\xad\x9e", "\xe2\xad\x9f"}),
+        ToolAssistance::createKeyboardInfo({"\xe2\x87\x9e", "\xe2\x87\x9f"}),
         ViewTool::translate("LookAndMove.Inputs.ElevateKeys")));
     mouseInstructions.push_back(ToolAssistance::createKeyboardInstruction(
         ToolAssistance::createKeyboardInfo({"C", "Z"}),
@@ -3437,12 +3456,13 @@ void WindowAreaTool::provideToolAssistance() const
     std::vector<ToolAssistanceInstruction> mouseInstructions;
     std::vector<ToolAssistanceInstruction> touchInstructions;
 
-    // :3568-3574 —— Accept + 条件 Exit/Restart。
+    // :3568-3574 —— Accept + 条件 Exit/Restart（:3571 OneTouchDrag——2026-10-07
+    // 审计 B12：原 OneTouchTap 与参考 Accept 图标错配）。
     auto const acceptMsg = coreToolsTranslate("ElementSet.Inputs.AcceptPoint");
     auto const restartMsg = coreToolsTranslate("ElementSet.Inputs.Restart");
     auto const exitMsg = coreToolsTranslate("ElementSet.Inputs.Exit");
     touchInstructions.push_back(ToolAssistance::createInstruction(
-        ToolAssistanceImage::OneTouchTap, acceptMsg, false,
+        ToolAssistanceImage::OneTouchDrag, acceptMsg, false,
         ToolAssistanceInputMethod::Touch));
     mouseInstructions.push_back(ToolAssistance::createInstruction(
         ToolAssistanceImage::LeftClick, acceptMsg, false,

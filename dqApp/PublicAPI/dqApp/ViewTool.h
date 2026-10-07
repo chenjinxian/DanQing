@@ -62,6 +62,7 @@
 #include <dqGeom/Plane3dByOriginAndUnitNormal.h>  // adjustDepthPoint 的平面参数类型
 
 #include "dqApp/StandardView.h"  // StandardViewId (StandardViewTool ctor param).
+#include "dqApp/Application.h"  // Walk/Fly/LookAndMove ctor 的 selectedView 回退（B15）
 #include "dqApp/ToolAdmin.h"  // BeButton, BeButtonEvent, BeWheelEvent, EventHandled,
                               // InputSource, CoordSource, BeModifierKeys,
                               // InteractiveTool, Tool.
@@ -254,8 +255,11 @@ public:
     virtual bool needDepthPoint(BeButtonEvent const&, bool /*isPreview*/) { return false; }
 
     // Ported from: itwinjs-core ViewingToolHandle.adjustDepthPoint (ViewTool.ts:159-171).
+    // plane 按引用（ViewTool.ts:426 result.plane 同一对象——adjustDepthPoint
+    // 的原地突变副作用[ViewRotate 写 targetCenterWorld]经引用传回调用方。
+    // 2026-10-07 审计 B5 修复：原按值副本丢失该突变）。
     virtual bool adjustDepthPoint(bool isValid, Viewport* /*vp*/,
-                                  Plane3dByOriginAndUnitNormal /*plane*/,
+                                  Plane3dByOriginAndUnitNormal& plane,
                                   DepthPointSource source);
 
 protected:
@@ -774,7 +778,7 @@ public:
     bool needDepthPoint(BeButtonEvent const& ev, bool isPreview) override;
     // Ported from: itwinjs-core ViewRotate.adjustDepthPoint (ViewTool.ts:1307-1318).
     bool adjustDepthPoint(bool isValid, Viewport* vp,
-                          Plane3dByOriginAndUnitNormal plane,
+                          Plane3dByOriginAndUnitNormal& plane,
                           DepthPointSource source) override;
 
 protected:
@@ -1292,9 +1296,9 @@ protected:
 class DQ_APP_EXPORT LookAndMoveTool : public ViewManip {
 public:
     // Ported from: LookAndMoveTool constructor (:3110-3113 — 空 vp 取
-    // selectedView；DanQing 工具面由宿主传入选中视口)。
+    // selectedView。2026-10-07 审计 B5 域补齐：原仅注释声明、实际直传)。
     LookAndMoveTool(Viewport* vp, bool oneShot = false, bool isDraggingRequired = false)
-        : ViewManip(vp,
+        : ViewManip(vp ? vp : Application::Get().GetViewManager().GetActiveViewport(),
                     static_cast<uint32_t>(ViewHandleType::LookAndMove |
                                           ViewHandleType::Pan),
                     oneShot, isDraggingRequired)
@@ -1325,8 +1329,9 @@ protected:
 // ---------------------------------------------------------------------------
 class DQ_APP_EXPORT WalkViewTool : public ViewManip {
 public:
+    // 空 vp 取 selectedView（:3165——2026-10-07 审计 B15）。
     WalkViewTool(Viewport* vp, bool oneShot = false, bool isDraggingRequired = false)
-        : ViewManip(vp,
+        : ViewManip(vp ? vp : Application::Get().GetViewManager().GetActiveViewport(),
                     static_cast<uint32_t>(ViewHandleType::Walk |
                                           ViewHandleType::Pan),
                     oneShot, isDraggingRequired)
@@ -1357,8 +1362,9 @@ protected:
 // ---------------------------------------------------------------------------
 class DQ_APP_EXPORT FlyViewTool : public ViewManip {
 public:
+    // 空 vp 取 selectedView（:3027 同 Walk——2026-10-07 审计 B15）。
     FlyViewTool(Viewport* vp, bool oneShot = false, bool isDraggingRequired = false)
-        : ViewManip(vp,
+        : ViewManip(vp ? vp : Application::Get().GetViewManager().GetActiveViewport(),
                     static_cast<uint32_t>(ViewHandleType::Fly |
                                           ViewHandleType::Pan),
                     oneShot, isDraggingRequired)

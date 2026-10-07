@@ -1390,16 +1390,15 @@ ViewStatus Viewport::TurnCameraOn(std::optional<dqGeom::Angle> lensAngle)
     dqGeom::Angle lens =
         lensAngle.has_value() ? *lensAngle
                               : dqGeom::Angle::FromRadians(v3->GetLensAngle());
-    // Camera.validateLensAngle（Camera.ts——[1°, 170°] clamp）。
+    // Camera.validateLensAngle（Camera.ts:31-38——有效域 (π/8, π) 开区间 =
+    // (22.5°, 180°)，越界置 π/2=90° 而非 clamp。2026-10-07 审计 B14 修复：
+    // 原 [1°, 170°] clamp 与参考域和处理方式均不符——10° 参考变 90°、
+    // 原保持 10°；200° 参考变 90°、原变 170°）。
     {
-        double radians = lens.Radians();
-        double const kMin = dqGeom::Angle::FromDegrees(1.0).Radians();
-        double const kMax = dqGeom::Angle::FromDegrees(170.0).Radians();
-        if (radians < kMin)
-            radians = kMin;
-        if (radians > kMax)
-            radians = kMax;
-        lens = dqGeom::Angle::FromRadians(radians);
+        double const radians = lens.Radians();
+        if (!(radians > (3.14159265358979323846 / 8.0)
+              && radians < 3.14159265358979323846))
+            lens = dqGeom::Angle::FromRadians(3.14159265358979323846 / 2.0);
     }
 
     ViewStatus status;
