@@ -361,7 +361,9 @@ public:
     /// 元素对齐盒 :1030-1036；多元素合并 range :992-994；XY 退化 → XZ/YZ 四点
     /// shape 回退 :1004-1027；1.001 padding :1000）
     /// §3.4：Id64Arg → std::vector<uint64_t>（findPlacement 数据面）。
-    static bool doClipToElements(Viewport& viewport, std::vector<uint64_t> const& ids,
+    // 实例方法（参考 :978 protected async——this._clipEventHandler/onReinitialize
+    // 收尾面需要；2026-10-07 审计 B3 由 static 归位——测试直驱经实例调用）。
+    bool doClipToElements(Viewport& viewport, std::vector<uint64_t> const& ids,
                                  bool alwaysUseRange = false);
 
     /// Ported from: onDataButtonDown (:1050-1058 —— doLocate 命中 → doClipToElements）

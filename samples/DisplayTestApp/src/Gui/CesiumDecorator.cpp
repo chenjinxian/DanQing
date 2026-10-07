@@ -123,7 +123,11 @@ static dqGeom::Point3d extentCenter(dqApp::IModelConnection* imodel)
 using BuilderPtr = std::unique_ptr<dqRender::GraphicBuilder>;
 static BuilderPtr beginDecoration(dqApp::DecorateContext& context,
                                   GraphicType type,
-                                  dqCommon::ColorDef const& color, int weight)
+                                  dqCommon::ColorDef const& color, int weight,
+                                  // 可选独立填充色（EmptyExample 的 polyface/solid
+                                  // 五处半透明填充——2026-10-07 审计 B2：原先
+                                  // fill=line 色全不透明，参考 alpha 100-150）。
+                                  dqCommon::ColorDef const* fillColor = nullptr)
 {
     dqApp::Viewport& vp = context.GetViewport();
     dqRender::GraphicBuilderOptions opts;
@@ -135,7 +139,7 @@ static BuilderPtr beginDecoration(dqApp::DecorateContext& context,
     auto builder = vp.createGraphicBuilder(opts);
     if (!builder)
         return nullptr;
-    builder->setSymbology(color, color, weight);
+    builder->setSymbology(color, fillColor ? *fillColor : color, weight);
     return builder;
 }
 
@@ -258,6 +262,7 @@ void CesiumDecorator::createShapeDecorations(dqApp::DecorateContext& context)
              dqGeom::Point3d::From(center.x - 60000, center.y + 40000, center.z + 25000),
              dqGeom::Point3d::From(center.x - 20000, center.y + 40000, center.z + 25000),
              dqGeom::Point3d::From(center.x - 20000, center.y + 80000, center.z + 25000),
+             dqGeom::Point3d::From(center.x - 60000, center.y + 80000, center.z + 25000),  // ← :171 第 4 角点（2026-10-07 审计 B1：原缺——退化为三角形）
              dqGeom::Point3d::From(center.x - 60000, center.y + 40000, center.z + 25000),
          },
          GraphicType::WorldDecoration,
@@ -523,9 +528,10 @@ void CesiumDecorator::createPolyfaceDecorations(
         40000  // Base size
     );
     if (pyramidPolyface.IsValid()) {
+        dqCommon::ColorDef const pyrFill = dqCommon::ColorDef::from(255, 165, 0, 127);  // :366 alpha 128
         auto b = beginDecoration(context, GraphicType::WorldDecoration,
                                  dqCommon::ColorDef::from(255, 165, 0),  // Orange with transparent fill
-                                 2);
+                                 2, &pyrFill);
         if (b) {
             b->addPolyface(*pyramidPolyface, true);
             endDecoration(context, GraphicType::WorldDecoration, std::move(b));
@@ -538,9 +544,10 @@ void CesiumDecorator::createPolyfaceDecorations(
         30000,   // Depth
         40000);  // Height
     if (boxPolyface.IsValid()) {
+        dqCommon::ColorDef const cyanFill = dqCommon::ColorDef::from(100, 255, 255, 155);  // :381 alpha 100
         auto b = beginDecoration(context, GraphicType::WorldOverlay,
                                  dqCommon::ColorDef::from(100, 255, 255),  // Cyan with transparent fill
-                                 2);
+                                 2, &cyanFill);
         if (b) {
             b->addPolyface(*boxPolyface, true);
             endDecoration(context, GraphicType::WorldOverlay, std::move(b));
@@ -569,10 +576,11 @@ void CesiumDecorator::createSolidPrimitiveDecorations(
                                   boxCenter.z + boxSize / 2));
         auto boxSolid = dqGeom::Box::CreateRange(boxRange, true);
         if (boxSolid.IsValid()) {
+            dqCommon::ColorDef const redFill = dqCommon::ColorDef::from(255, 100, 100, 105);  // :461 alpha 150
             auto b = beginDecoration(
                 context, GraphicType::WorldDecoration,
                 dqCommon::ColorDef::from(255, 100, 100),  // Red with transparent fill
-                2);
+                2, &redFill);
             if (b) {
                 b->addSolidPrimitive(*boxSolid);
                 endDecoration(context, GraphicType::WorldDecoration, std::move(b));
@@ -587,10 +595,11 @@ void CesiumDecorator::createSolidPrimitiveDecorations(
         auto sphereSolid = dqGeom::Sphere::CreateCenterRadius(
             sphereCenter, sphereRadius, dqGeom::Sphere::FullLatitudeSweep(), true);
         if (sphereSolid.IsValid()) {
+            dqCommon::ColorDef const blueFill = dqCommon::ColorDef::from(100, 100, 255, 135);  // :473 alpha 120
             auto b = beginDecoration(
                 context, GraphicType::WorldOverlay,
                 dqCommon::ColorDef::from(100, 100, 255),  // Blue with transparent fill
-                2);
+                2, &blueFill);
             if (b) {
                 b->addSolidPrimitive(*sphereSolid);
                 endDecoration(context, GraphicType::WorldOverlay, std::move(b));
@@ -609,10 +618,11 @@ void CesiumDecorator::createSolidPrimitiveDecorations(
             coneStart, coneEnd, dqGeom::Vector3d::From(1, 0, 0),
             dqGeom::Vector3d::From(0, 1, 0), coneRadius, 0.0, true);
         if (coneSolid.IsValid()) {
+            dqCommon::ColorDef const greenFill = dqCommon::ColorDef::from(100, 255, 100, 155);  // :487 alpha 100
             auto b = beginDecoration(
                 context, GraphicType::WorldDecoration,
                 dqCommon::ColorDef::from(100, 255, 100),  // Green with transparent fill
-                2);
+                2, &greenFill);
             if (b) {
                 b->addSolidPrimitive(*coneSolid);
                 endDecoration(context, GraphicType::WorldDecoration, std::move(b));

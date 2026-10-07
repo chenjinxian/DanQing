@@ -70,12 +70,11 @@ bool SaveImageTool::run()
             QStringLiteral("PNG image (*.png)"));
         if (path.isEmpty())
             return true;  // user cancelled — not a failure
-        if (!writeFrameToFile(*vp, path)) {
-            dqApp::Application::Get().GetNotificationManager().OutputMessage(
-                dqApp::NotifyMessageDetails(dqApp::OutputMessagePriority::Error,
-                                            "Failed to read image"));
+        // 失败告警由 writeFrameToFile 内部单次发出（SaveImageTool.ts:39-41 单次
+        // alert——2026-10-07 审计 B7：原调用方再发一次 = "Failed to read image"
+        // 双告警）。
+        if (!writeFrameToFile(*vp, path))
             return true;
-        }
         return true;
     }
 

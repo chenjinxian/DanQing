@@ -82,34 +82,22 @@ bool ZoomToSelectedElementsTool::run()
 
     // Viewer.ts:43-45：`vp.iModel.selectionSet.elements` 空选集 → no-op。
     auto* imodel = vp->GetIModel();
-    if (!imodel || imodel->GetSelectionSet().isEmpty()) {
-        dqApp::NotifyMessageDetails details;
-        details.briefMessage = "[ZOOM] no selected elements";
-        dqApp::Application::Get().GetNotificationManager().OutputMessage(details);
-        return true;
-    }
+    if (!imodel || imodel->GetSelectionSet().isEmpty())
+        return true;   // Viewer.ts:43-45——空选集静默 no-op（2026-10-07 审计 B6：参考无通知面）
 
     // 数据源：placement 回放表（getPlacements 的离线对应物）。非 dump
     // 连接 / 表未采集 → 报告（参考 getPlacements RPC 失败语义的宿主面）。
     auto* opened = dta::findOpenedDump(view3d);
     if (!opened || !opened->connection
-        || opened->connection->getPlacements().empty()) {
-        dqApp::NotifyMessageDetails details;
-        details.briefMessage = "[ZOOM] placement data plane not captured for this model";
-        dqApp::Application::Get().GetNotificationManager().OutputMessage(details);
-        return true;
-    }
+        || opened->connection->getPlacements().empty())
+        return true;   // getPlacements RPC 失败/缺席 → 静默 no-op（Viewer.ts:42-46 同款）
 
     std::vector<uint64_t> ids;
     for (uint32_t id : imodel->GetSelectionSet().GetElements())
         ids.push_back(id);
     auto volume = computeSelectedVolume(*opened->connection, ids);
-    if (!volume) {
-        dqApp::NotifyMessageDetails details;
-        details.briefMessage = "[ZOOM] selected elements have no placements";
-        dqApp::Application::Get().GetNotificationManager().OutputMessage(details);
+    if (!volume)
         return true;
-    }
 
     // zoomToPlacements → lookAtVolume(volume, viewRect.aspect) +
     // synchWithView（DumpOpenHelper frameToWorldContent 同款取景模式——
@@ -120,16 +108,11 @@ bool ZoomToSelectedElementsTool::run()
         return true;
     double const aspect = vp->viewRect().aspect();
     view3dState->LookAtVolume(*volume, &aspect);
-    vp->InvalidateController();
-
-    char buf[160];
-    std::snprintf(buf, sizeof(buf),
-                  "[ZOOM] volume=(%.3f,%.3f,%.3f)-(%.3f,%.3f,%.3f) elements=%zu",
-                  volume->low.x, volume->low.y, volume->low.z,
-                  volume->high.x, volume->high.y, volume->high.z, ids.size());
-    dqApp::NotifyMessageDetails details;
-    details.briefMessage = buf;
-    dqApp::Application::Get().GetNotificationManager().OutputMessage(details);
+    // Viewport.ts:2274-2275 —— lookAtViewAlignedVolume 尾随 synchWithView：
+    // ScreenViewport.synchWithView（:3591-3596）saveViewUndo + Invalidate-
+    // Controller（2026-10-07 审计 B6：原裸 InvalidateController——不存 undo
+    // 条目；动画面 animateFrustumChange 未移植——终态 1:1）。
+    vp->synchWithView();
     return true;
 }
 

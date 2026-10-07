@@ -155,11 +155,11 @@ public:
     /// True if the point lies inside/on this clipper (mask semantics belong
     /// to the ClipShape override).
     /// Ported from: ClipPrimitive.pointInside (:189-195)
-    bool pointInside(Point3d const& point, double onTolerance = 1.0e-14) const;
+    bool pointInside(Point3d const& point, double onTolerance = 1.0e-12) const;   /// ← Geometry.smallMetricDistanceSquared（Geometry.ts:258——2026-10-07 审计 B1：原 1e-14 偏 100×）
 
     /// Method from the Clipper interface.
     /// Ported from: ClipPrimitive.isPointOnOrInside (:200-206)
-    bool isPointOnOrInside(Point3d const& point, double onTolerance = 1.0e-14) const;
+    bool isPointOnOrInside(Point3d const& point, double onTolerance = 1.0e-12) const;   /// 同上
 
     /// Announce the fractional interval of a segment inside this clipper.
     /// Ported from: ClipPrimitive.announceClippedSegmentIntervals (:211-219)

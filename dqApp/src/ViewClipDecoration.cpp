@@ -9,6 +9,7 @@
 #include <dqApp/ClipViewTool.h>
 
 #include <dqApp/DecorateContext.h>
+#include <dqApp/Application.h>
 #include <dqApp/EditManipulator.h>
 #include <dqApp/IModelConnection.h>
 #include <dqApp/SelectionSet.h>
@@ -850,14 +851,19 @@ void ViewClipDecoration::clear()
     s_clearing = false;
 }
 
-// Ported from: toggle (:1988-1994).
+// Ported from: toggle (:1988-1996).
 std::optional<uint32_t> ViewClipDecoration::toggle(Viewport& vp,
                                                   ViewClipEventHandler* clipEventHandler)
 {
+    std::optional<uint32_t> clipId;
     if (s_decorator == nullptr)
-        return ViewClipDecoration::create(vp, clipEventHandler);
-    ViewClipDecoration::clear();
-    return std::nullopt;
+        clipId = ViewClipDecoration::create(vp, clipEventHandler);
+    else
+        ViewClipDecoration::clear();
+    // :1995 —— `await IModelApp.toolAdmin.startDefaultTool()`（2026-10-07 审计
+    // B5 修复：Edit 按钮经 toggle 关闭装饰后参考切回默认工具——原先保持当前工具）。
+    Application::Get().GetToolAdmin().StartDefaultTool();
+    return clipId;
 }
 
 // ---------------------------------------------------------------------------

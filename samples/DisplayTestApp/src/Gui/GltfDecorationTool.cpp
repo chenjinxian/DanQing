@@ -225,7 +225,9 @@ bool GltfDecorationTool::run()
     if (!scene || scene->meshes.empty())
         return false;  // :176-177（无 template → return false）
 
-    auto name = QFileInfo(path).fileName().toStdString();
+    // GltfDecoration.ts:19-23/:207 —— tooltip = `url ?? "glTF model"`；本地
+    // 文件选择无 url → 恒 "glTF model"（2026-10-07 审计 B6：原先传文件名）。
+    std::string const name = "glTF model";
 
     if (m_numInstances <= 1 && !m_forceUninstanced) {
         // 单实例 + 非强制展开 = M-O(1) 已有面（InstallGltfDecoration 直装）。

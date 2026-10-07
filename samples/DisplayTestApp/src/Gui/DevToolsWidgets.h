@@ -128,7 +128,8 @@ private:
     QCheckBox* m_checkBox = nullptr;              // "Render Commands"
     QWidget* m_div = nullptr;
     QMap<QString, QLabel*> m_cells;               // per-command-name row
-    QLabel* m_total = nullptr;                    // "Total: N"
+    QLabel* m_total = nullptr;                    // "Total: N"（底部——:31-34 cellDiv 先）
+    bool m_totalInLayout = false;                 // 总行延后入列一次性门
     QTimer* m_interval = nullptr;
 };
 

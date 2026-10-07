@@ -602,10 +602,11 @@ RenderCommandBreakdown::RenderCommandBreakdown(QWidget* parent)
     auto* divLayout = new QVBoxLayout(m_div);
     divLayout->setContentsMargins(0, 0, 0, 0);
 
-    // :29 — _div textAlign:right.
+    // :29 — _div textAlign:right. :31-34 —— _cellDiv 先、_total 后（Total 在
+    // 底部——2026-10-07 审计 B3 修复：原先 m_total 先 addWidget 在顶部）。总
+    // 行延后至首批 cell 落位后入列（m_totalInLayout 一次性门）。
     m_total = makeStatLabel(m_div, Qt::AlignRight | Qt::AlignVCenter);
     m_total->setText(QStringLiteral("Total: 0"));
-    divLayout->addWidget(m_total);
 
     layout->addWidget(m_div);
 }
@@ -669,6 +670,10 @@ void RenderCommandBreakdown::update()
         }
         total += cmd.count;
         cell->setText(QStringLiteral("%1: %2").arg(QLatin1String(cmd.name)).arg(cmd.count));
+    }
+    if (!m_totalInLayout) {
+        m_div->layout()->addWidget(m_total);
+        m_totalInLayout = true;
     }
     m_total->setText(QStringLiteral("Total: %1").arg(total));
 }

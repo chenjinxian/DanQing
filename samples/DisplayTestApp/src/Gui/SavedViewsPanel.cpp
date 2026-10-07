@@ -67,7 +67,7 @@ void writeExternalSavedViews(std::string const& filename,
 }
 
 // --- _overrideElements 载荷（provider.toJSON/overrideElementsByArray 的
-//     字串化——[{ "id": …, "fsaJson": … }]；dumpjson 解析 + 手写发出） ---
+//     字串化——[{ "id": …, "fsa": … }]；dumpjson 解析 + 手写发出） ---
 namespace {
 
 void appendJsonEscapedLocal(std::string& out, std::string const& s)
@@ -97,7 +97,7 @@ std::string overrideElementsToJsonString(
         first = false;
         out += "{\"id\":";
         appendJsonEscapedLocal(out, o.id);
-        out += ",\"fsaJson\":";
+        out += ",\"fsa\":";   // ← FeatureOverrides.ts:52 键名 fsa（2026-10-07 审计 B2：原 fsaJson 自造）
         appendJsonEscapedLocal(out, o.fsaJson);
         out += "}";
     }
@@ -118,7 +118,7 @@ overrideElementsFromJsonString(std::string const& json)
         FeatureOverridesProvider::ElementOverride eo;
         if (dqApp::dumpjson::JsonValue const* v = obj.find("id"))
             eo.id = v->str;
-        if (dqApp::dumpjson::JsonValue const* v = obj.find("fsaJson"))
+        if (dqApp::dumpjson::JsonValue const* v = obj.find("fsa"))
             eo.fsaJson = v->str;
         out.push_back(std::move(eo));
     }

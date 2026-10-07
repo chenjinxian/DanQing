@@ -699,11 +699,21 @@ bool ViewClipByElementTool::doClipToElements(Viewport& viewport,
         enableClipVolume(viewport);
         if (!doClipToShape(viewport, points, &transform))
             return false;
+        // :1030-1034 —— handler 事件 + onReinitialize（工具重启。2026-10-07
+        // 审计 B3 修复：原先直接 return true——Provider 不创建装饰、工具
+        // 不重启仍处安装态）。
+        if (m_clipEventHandler)
+            m_clipEventHandler->onNewClip(viewport);
+        onReinitialize();
         return true;
     }
     enableClipVolume(viewport);
     if (!doClipToRange(viewport, range, &transform))
         return false;
+    // :1040-1043 —— 同上两步收尾。
+    if (m_clipEventHandler)
+        m_clipEventHandler->onNewClip(viewport);
+    onReinitialize();
     return true;
 }
 
