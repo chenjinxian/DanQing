@@ -98,8 +98,6 @@ add_executable(DisplayTestApp WIN32
     # + App/RecentFilesModel/App/DisplayedFilesModel 全清（裁决表见 commit
     # message）；保留 = StartView + NewFileButton（卡片控件）+ FlowLayout。
     src/Mod/Start/Gui/StartView.cpp
-    src/Mod/Start/Gui/ReadMeView.cpp     # M-L(3)：ReadMe 展示页（Start 第三分组卡片 → 滚动只读页）
-    src/Mod/Start/Gui/ReadMeView.h       # MOC needs this for Q_OBJECT
     src/Mod/Start/Gui/FlowLayout.cpp
     src/Mod/Start/Gui/NewFileButton.cpp
 )

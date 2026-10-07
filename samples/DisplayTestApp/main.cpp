@@ -58,7 +58,6 @@ static LONG WINAPI dtaCrashPrinter(EXCEPTION_POINTERS* ep)
 #include <dqApp/IModelConnection.h>  // DANQING_AUTO_OPEN_DECO refit 用 GetProjectExtents
 
 #include "src/Mod/Start/Gui/StartView.h"
-#include "src/Mod/Start/Gui/ReadMeView.h"
 #include "src/DumpOpenHelper.h"
 #include "src/Gui/MainWindow.h"
 #include "src/Gui/Application.h"
@@ -356,17 +355,6 @@ int main(int argc, char** argv)
                          mainWindow->showStatus(
                              0, QObject::tr("Opened %1 (%2 tile trees) — saved view rendered")
                                     .arg(modelId, treeSummary));
-                     });
-
-    // M-L(3) Task B：ReadMe 展示页入口（Start 页第三分组卡片 → 滚动只读页）。
-    // 新建 MDI 视口（addWindow 与 StartView 同位——TabbedView 顶栏新 tab）。
-    QObject::connect(startView, &StartGui::StartView::requestReadMe, mainWindow,
-                     [mainWindow]() {
-                         auto* readme = new StartGui::ReadMeView(mainWindow);
-                         readme->setWindowTitle(QObject::tr("ReadMe"));
-                         readme->resize(720, 640);
-                         mainWindow->addWindow(readme);
-                         mainWindow->showStatus(0, QObject::tr("ReadMe opened"));
                      });
 
     // DTA 功能分类工具栏区（替代原 FreeCAD 6 条 + 临时 2 条）。
