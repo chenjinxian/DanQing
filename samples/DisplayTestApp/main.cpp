@@ -62,6 +62,8 @@ static LONG WINAPI dtaCrashPrinter(EXCEPTION_POINTERS* ep)
 #include "src/Gui/MainWindow.h"
 #include "src/Gui/Application.h"
 #include "src/Gui/DtaToolBars.h"
+#include "src/Gui/RenderingStyles.h"  // DANQING_AUTO_STYLE 截图辅助
+#include <dqApp/ClipViewTool.h>  // DANQING_AUTO_CLIP 截图辅助（M-P 剖切）
 #include "src/Gui/DtaTools.h"
 #include "src/Gui/TileTreePanel.h"
 #include "src/Gui/CategoriesPanel.h"
@@ -395,6 +397,54 @@ int main(int argc, char** argv)
     // Decoration Geometry Example；=2 → 再自动激活 Rotate 工具（深度预览取证）。
     // 用途：真实 app 的桌面注入取证（合成点击在 Start 页卡片上不生效——
     // 2026-09-19 leave 取证 saga），绕开卡片点击直接进入用户复现场景。
+    // README 截图辅助（默认关）：DANQING_AUTO_OPEN_MODEL=<modelId> → 启动 2.5s
+    // 后自动打开指定 dump 模型（DANQING_AUTO_OPEN_DECO 同族——合成点击在
+    // Start 卡片不生效的绕路；模型打开后主工具栏换位+saved 视图渲染即成）。
+    if (char const* modelIdEnv = std::getenv("DANQING_AUTO_OPEN_MODEL")) {
+        QString const modelId = QString::fromUtf8(modelIdEnv);
+        // 可选后续动作（截图/取证辅助）：DANQING_AUTO_STYLE=<preset name> → 打开
+        // 12s 后应用 Rendering Style 预设；DANQING_AUTO_CLIP=1 → 应用居中水平
+        // 剖切 + 装饰（M-P）。均默认关。
+        QString const autoStyle =
+            std::getenv("DANQING_AUTO_STYLE")
+                ? QString::fromUtf8(std::getenv("DANQING_AUTO_STYLE")) : QString();
+        bool const autoClip = std::getenv("DANQING_AUTO_CLIP") != nullptr;
+        QTimer::singleShot(2500, mainWindow, [mainWindow, modelId]() {
+            // 经既有信号面打开（与 Start 卡片点击同一链）。
+            for (auto* w : mainWindow->findChildren<StartGui::StartView*>())
+                if (w) { emit w->requestOpenDumpModel(modelId); break; }
+        });
+        QTimer::singleShot(14000, mainWindow, [mainWindow, autoStyle, autoClip]() {
+            auto* mdView = qobject_cast<Gui::View3DInventor*>(
+                Gui::Application::Instance()->activeView());
+            if (!mdView)
+                return;
+            auto* vp = mdView->getUeViewport();
+            if (!vp)
+                return;
+            if (!autoStyle.isEmpty()) {
+                auto const& styles = Gui::renderingStyles();
+                for (size_t i = 0; i < styles.size(); ++i)
+                    if (styles[i].name == autoStyle) {
+                        Gui::applyRenderingStyle(*vp, i);
+                        break;
+                    }
+            }
+            if (autoClip) {
+                // 居中水平剖切（viewRange z 中位 + 内法向 +Z）+ 装饰。
+                auto* view3d = vp->GetView() ? vp->GetView()->AsViewState3d() : nullptr;
+                if (view3d) {
+                    dqGeom::Range3d const vr = vp->computeViewRange();
+                    double const zMid = 0.5 * (vr.low.z + vr.high.z);
+                    if (dqApp::ViewClipTool::doClipToPlane(
+                            *vp, dqGeom::Point3d::From(0, 0, zMid),
+                            dqGeom::Vector3d::From(0, 0, 1), true))
+                        dqApp::ViewClipDecorationProvider::create().onNewClipPlane(*vp);
+                }
+            }
+        });
+    }
+
     if (std::getenv("DANQING_AUTO_OPEN_DECO")) {
         int const mode = std::atoi(std::getenv("DANQING_AUTO_OPEN_DECO"));
         QTimer::singleShot(3500, mainWindow, [mainWindow, mode]() {

@@ -59,6 +59,21 @@ ctest --test-dir build -C Debug --output-on-failure
 - Other docs in `docs/` — alignment analyses and gap matrices for
   DisplayTestApp startup / BlankConnection / glTF / Tile loading
 
+### Screenshots
+
+The sample app (`samples/DisplayTestApp`) mirrors the display-test-app UI and
+interaction logic 1:1 — single 26-item main toolbar with viewport-focus
+swapping, drop-down mutual exclusion, top status bar (key-in / FPS / tile
+load / snap modes), bottom output spans.
+
+| Start page | Model rendering (Joe's House) |
+|---|---|
+| ![Start page](docs/screenshots/start-page.png) | ![Joe's House saved view](docs/screenshots/joeshouse-saved-view.png) |
+
+| 60 instanced spheres | Sectioning (M-P) | Rendering Style: Illustration (M-Q) |
+|---|---|---|
+| ![60 Instances](docs/screenshots/instances60-saved-view.png) | ![Sectioning](docs/screenshots/joeshouse-sectioning.png) | ![Illustration style](docs/screenshots/joeshouse-illustration-style.png) |
+
 ### License
 
 Apache License 2.0 — see [LICENSE](LICENSE). Portions derived from upstream
@@ -112,6 +127,20 @@ ctest --test-dir build -C Debug --output-on-failure
 - `docs/DanQing-C++代码规范.md` — C++ 格式规范（CLAUDE.md 的从属参考）
 - `docs/itwinjs-core-渲染系统执行流程分析.md` — 渲染管线全流程分析
 - `docs/` 其余各篇 — DisplayTestApp 启动/BlankConnection/glTF/Tile 加载的对齐分析与差距矩阵
+
+### 截图
+
+示例程序（`samples/DisplayTestApp`）与 display-test-app 的 UI 布局与交互逻辑
+1:1 对齐——26 项主工具栏 + 视口焦点换位、下拉单开互斥、顶部状态条
+（key-in / FPS / 瓦装载 / 捕捉模式）、底部输出区。
+
+| Start 页 | 模型渲染（Joe's House） |
+|---|---|
+| ![Start 页](docs/screenshots/start-page.png) | ![Joe's House saved 视图](docs/screenshots/joeshouse-saved-view.png) |
+
+| 60 实例球 | 剖切（M-P） | 渲染样式 Illustration（M-Q） |
+|---|---|---|
+| ![60 Instances](docs/screenshots/instances60-saved-view.png) | ![剖切](docs/screenshots/joeshouse-sectioning.png) | ![Illustration 样式](docs/screenshots/joeshouse-illustration-style.png) |
 
 ### 许可证
 
