@@ -11,18 +11,23 @@ using namespace Gui;
 // StdWorkbench menu tree tests
 // =====================================================================
 
-// Ported from: Authored — StdWorkbench menu bar has 4 top-level menus
-// (File, View, Tools, Windows) after the M-L(2) trim (Edit/Macro/Help menus
-// were all-stub/FreeCAD-ecosystem and are gone with their commands).
-TEST(StdWorkbenchTest, MenuBarHasFourTopMenus)
+// Ported from: Authored — StdWorkbench menu bar has 3 top-level menus
+// (File, View, Windows) after the M-L(2) trim (Edit/Macro/Help menus
+// were all-stub/FreeCAD-ecosystem and are gone with their commands) and the
+// 2026-10-07 deletion pass (Tools menu removed with Std_AboutQt — DTA has no
+// About dialog).
+TEST(StdWorkbenchTest, MenuBarHasThreeTopMenus)
 {
     qtApp();
     StdWorkbench wb;
     auto* mb = wb.setupMenuBar();
     ASSERT_NE(mb, nullptr);
 
-    // 4 top-level items: File, View, Tools, Windows
-    EXPECT_EQ(mb->getItems().size(), 4);
+    // 3 top-level items: File, View, Windows（Tools 已删——仅为 Std_AboutQt 存在）
+    EXPECT_EQ(mb->getItems().size(), 3);
+    EXPECT_EQ(mb->getItems().at(0)->command(), std::string("&File"));
+    EXPECT_EQ(mb->getItems().at(1)->command(), std::string("&View"));
+    EXPECT_EQ(mb->getItems().at(2)->command(), std::string("&Windows"));
 
     delete mb;
 }

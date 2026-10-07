@@ -159,32 +159,10 @@ bool StdCmdActivatePrevWindow::isActive()
 }
 
 //===========================================================================
-// Std_Windows — Ported from: FreeCAD src/Gui/CommandWindow.cpp:223-246
+// Std_Windows 已删（2026-10-07 删除侧）：activated 为 no-op 存根（FreeCAD 的
+// DlgActivateWindowImp 对话框从未移植），DTA 无"选择窗口"对话框（浮窗画布上
+// 直接可见）——窗口列表由 Std_WindowsMenu 承载。
 //===========================================================================
-DEF_STD_CMD(StdCmdWindows)
-
-// Ported from: FreeCAD src/Gui/CommandWindow.cpp:228-239
-StdCmdWindows::StdCmdWindows()
-    : Command("Std_Windows")
-{
-    sGroup = "Window";
-    sMenuText = QT_TR_NOOP("Choose Open &Window");
-
-    sToolTipText = QT_TR_NOOP("Displays the open windows");
-    sWhatsThis = "Std_Windows";
-    sStatusTip = sToolTipText;
-    sPixmap = "Std_Windows";
-    eType = 0;
-}
-
-// Ported from: FreeCAD src/Gui/CommandWindow.cpp:241-246
-void StdCmdWindows::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-    // FreeCAD opens Gui::Dialog::DlgActivateWindowImp. DTA has no such dialog;
-    // leave as a no-op until the dialog is ported.
-    // TODO: port DlgActivateWindowImp when region 4 brings up the Windows dialog.
-}
 
 //===========================================================================
 // Std_WindowsMenu — Ported from: FreeCAD src/Gui/CommandWindow.cpp:451-497
@@ -245,7 +223,6 @@ void createWindowCommands(CommandManager& mgr)
     mgr.addCommand(new StdCmdCascadeWindows);
     mgr.addCommand(new StdCmdActivateNextWindow);
     mgr.addCommand(new StdCmdActivatePrevWindow);
-    mgr.addCommand(new StdCmdWindows);
     mgr.addCommand(new StdCmdWindowsMenu);
 }
 

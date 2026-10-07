@@ -65,7 +65,9 @@ TEST(MDIChromeTest, WindowsCommandsRegistered)
     createStdCommands(mgr);
 
     EXPECT_NE(mgr.getCommandByName("Std_WindowsMenu"), nullptr);
-    EXPECT_NE(mgr.getCommandByName("Std_Windows"), nullptr);
+    // Std_Windows（"Choose Open Window" no-op 存根）2026-10-07 删除侧已删——
+    // DTA 无"选择窗口"对话框；窗口列表由 Std_WindowsMenu 承载。
+    EXPECT_EQ(mgr.getCommandByName("Std_Windows"), nullptr);
     EXPECT_NE(mgr.getCommandByName("Std_TileWindows"), nullptr);
     EXPECT_NE(mgr.getCommandByName("Std_CascadeWindows"), nullptr);
     EXPECT_NE(mgr.getCommandByName("Std_ActivateNextWindow"), nullptr);
@@ -143,21 +145,7 @@ TEST(MDIChromeTest, ActivatePrevWindowMetadata)
     EXPECT_EQ(std::string(cmd->getPixmap()), std::string("Std_WindowPrev"));
 }
 
-// Ported from: FreeCAD src/Gui/CommandWindow.cpp:226-239 (StdCmdWindows metadata)
-TEST(MDIChromeTest, WindowsDialogMetadata)
-{
-    ensureAppReady();
-    MainWindow mw;
-    CommandManager& mgr = mw.commandManager();
-    createStdCommands(mgr);
-
-    auto* cmd = mgr.getCommandByName("Std_Windows");
-    ASSERT_NE(cmd, nullptr);
-    EXPECT_EQ(std::string(cmd->getMenuText()), std::string("Choose Open &Window"));
-    EXPECT_EQ(std::string(cmd->getToolTipText()), std::string("Displays the open windows"));
-    EXPECT_EQ(std::string(cmd->getWhatsThis()), std::string("Std_Windows"));
-    EXPECT_EQ(std::string(cmd->getPixmap()), std::string("Std_Windows"));
-}
+// Std_Windows 元数据测试已删（2026-10-07 删除侧——命令本体随 no-op 存根删除）。
 
 // Ported from: FreeCAD src/Gui/CommandWindow.cpp:455-466 (StdCmdWindowsMenu metadata)
 TEST(MDIChromeTest, WindowsMenuMetadata)

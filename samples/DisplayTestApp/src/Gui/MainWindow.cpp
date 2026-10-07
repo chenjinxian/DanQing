@@ -57,7 +57,6 @@
 #include "DockWindowManager.h"
 #include "OverlayManager.h"
 #include "InputHintWidget.h"
-#include "StatusBarLabel.h"
 #include "Command.h"
 #include "MenuManager.h"
 #include "ToolBarManager.h"
@@ -138,30 +137,19 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags f)
     // Status bar — widgets registered via addStatusBarItem for context menu / persistence / ordering
     statusBar()->setObjectName(QStringLiteral("statusBar"));
 
-    // actionLabel — Left, order 0, stretch 1 (Preselection)
-    d->actionLabel = new StatusBarLabel(statusBar());
-    d->actionLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    d->actionLabel->setElideMode(Qt::ElideRight);
-    d->actionLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    d->actionLabel->setWindowTitle(tr("Preselection"));
-    addStatusBarItem(d->actionLabel, StatusBarItemSpec("Preselection", QString(), StatusBarSlot::Left, 0, true, 1));
-
     // hintLabel — Left, order 100 (Input Hints)
     d->hintLabel = new InputHintWidget(statusBar());
     d->hintLabel->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
     d->hintLabel->setWindowTitle(tr("Input Hints"));
     addStatusBarItem(d->hintLabel, StatusBarItemSpec("InputHints", QString(), StatusBarSlot::Left, 100, true, 0));
 
-    // sizeLabel — Right, order 1000 (Unit System)
-    d->sizeLabel = new DimensionWidget(statusBar());
-    d->sizeLabel->setWindowTitle(tr("Unit System"));
-    addStatusBarItem(d->sizeLabel, StatusBarItemSpec("UnitSystem", QString(), StatusBarSlot::Right, 1000, true, 0));
-
     // M-L(2)：Quick Measure rightSideLabel 已删（无调用方的死 chrome——分析报告 §3.1）。
     // M-O(1) D3/D4（2026-10-01）：SequencerBar（sequencerBar 进度条——FreeCAD
     // Sequencer 后端面，本仓零激活方；瓦装载进度走 DtaTools 的 TileLoadIndicator）
     // 与 NotificationArea（空 QWidget 占位——通知走 showStatus 状态栏消息，
     // M-L(3) ⑦ NotificationManager→showStatus）两块死 chrome 已删。
+    // 2026-10-07 删除侧：actionLabel（Preselection 瞬态消息条）与 sizeLabel
+    // （Unit System 单位 schema 选择器）已删——DTA 状态栏无对应面。
 
     // M-L(2)：toggleBottomPanelsButton 已删（TODO 死 chrome——无底部停靠面板；
     // 分析报告 §3.1）。
@@ -174,17 +162,7 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags f)
         menu.exec(statusBar()->mapToGlobal(pos));
     });
 
-    d->currentStatusType = 100;
-
     // Initialize timers (ported from: FreeCAD MainWindow constructor)
-    d->actionTimer = new QTimer(this);
-    d->actionTimer->setObjectName(QStringLiteral("actionTimer"));
-    connect(d->actionTimer, &QTimer::timeout, d->actionLabel, &QLabel::clear);
-
-    d->statusTimer = new QTimer(this);
-    d->statusTimer->setObjectName(QStringLiteral("statusTimer"));
-    connect(d->statusTimer, &QTimer::timeout, this, &MainWindow::clearStatus);
-
     d->activityTimer = new QTimer(this);
     d->activityTimer->setObjectName(QStringLiteral("activityTimer"));
     connect(d->activityTimer, &QTimer::timeout, this, &MainWindow::_updateActions);
@@ -196,9 +174,6 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags f)
     d->saveStateTimer.setSingleShot(true);
     connect(&d->saveStateTimer, &QTimer::timeout, this, [this] { saveWindowSettings(false); });
 
-    // Ported from: FreeCAD src/Gui/MainWindow.cpp:441
-    connect(statusBar(), &QStatusBar::messageChanged, this, &MainWindow::statusMessageChanged);
-
     // Command system managers — replace hand-written menus/toolbars with Command-driven system.
     // Menus/toolbars are built later by Workbench::activate() from command trees.
     // Ported from: FreeCAD MainWindow.cpp:2034-2042
@@ -208,8 +183,6 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags f)
     // ── Dock Panels (ported from: FreeCAD MainWindow::setupDockWindows) ──
     // Call setupDockWindows() to match FreeCAD's initialization sequence
     setupDockWindows();
-
-    statusBar()->showMessage(tr("Ready"), 2001);
 
     // NOTE: no restoreWindowState()/show() here. FreeCAD shows the main window
     // ONLY via loadWindowSettings() after the workbench (menus/toolbars) is
@@ -319,7 +292,8 @@ void MainWindow::addWindow(MDIView* view)
         d->mdiArea->addSubWindow(child);
     }
 
-    connect(view, &MDIView::message, this, &MainWindow::showMessage);
+    // MDIView::message → showMessage 连接已删（2026-10-07 删除侧）：信号零发射方
+    // （死信号，MDIView.h 同步删），接收端 showMessage（Preselection 瞬态条）同删。
     connect(this, &MainWindow::windowStateChanged, view, &MDIView::windowStateChanged);
 
     // listen to the incoming events of the view
@@ -360,7 +334,6 @@ void MainWindow::removeWindow(Gui::MDIView* view, bool close)
     }
 
     // free all connections
-    disconnect(view, &MDIView::message, this, &MainWindow::showMessage);
     disconnect(this, &MainWindow::windowStateChanged, view, &MDIView::windowStateChanged);
 
     view->removeEventFilter(this);
@@ -535,36 +508,10 @@ void MainWindow::setStatusBarItemEnabled(const QByteArray& id, bool enabled)
 void MainWindow::showHints(const std::list<InputHint>& hints) { d->hintLabel->showHints(hints); }
 void MainWindow::hideHints() { d->hintLabel->clearHints(); }
 
-// ─── Thread-safe message posting ───────────────────────────────────────
-
-void MainWindow::showMessage(const QString& message, int timeout)
-{
-    if (QApplication::instance()->thread() != QThread::currentThread()) {
-        QApplication::postEvent(this, new CustomMessageEvent(MainWindow::Tmp, message, timeout));
-        return;
-    }
-    d->actionLabel->setText(message.simplified());
-    if (timeout) { d->actionTimer->setSingleShot(true); d->actionTimer->start(timeout); }
-    else { d->actionTimer->stop(); }
-}
-
-// ─── Pane text and unit schema ─────────────────────────────────────────
-
-void MainWindow::setPaneText(int i, QString text)
-{
-    if (i == 1) showStatus(MainWindow::Pane, text);
-    else if (i == 2) d->sizeLabel->setText(text);
-}
-
-void MainWindow::setUserSchema(int userSchema) { d->sizeLabel->setUserSchema(userSchema); }
-
-// ─── Status bar message type tracking ──────────────────────────────────
-
-void MainWindow::statusMessageChanged()
-{
-    if (d->currentStatusType < 0) { d->currentStatusType = -d->currentStatusType; }
-    else { d->statusTimer->stop(); clearStatus(); }
-}
+// showMessage/setPaneText/setUserSchema 已删（2026-10-07 删除侧）：
+// - showMessage（Preselection 瞬态消息条 + actionTimer 超时清除）——DTA 状态栏
+//   无瞬态覆盖面，唯一调用方是零发射方的 MDIView::message 死信号；
+// - setPaneText/setUserSchema——FreeCAD UnitsApi/面板文本面，DTA 无对应。
 
 // M-R：bottomdiv 双 span（index.html :66-69 showstatus/showerror——Utils.ts:8-15
 // 的 Qt 等价：两 QLabel 常驻底部状态栏右段；showStatus 双写 #showstatus span
@@ -591,32 +538,15 @@ void MainWindow::showStatus(int type, const QString& message)
         QApplication::postEvent(this, new CustomMessageEvent(type, message));
         return;
     }
-    if (d->currentStatusType < type) return;
-    d->statusTimer->setSingleShot(true);
-    d->statusTimer->start(5000);
-    QFontMetrics fm(statusBar()->font());
-    QString msg = fm.elidedText(message, Qt::ElideMiddle, d->actionLabel->width());
-    switch (type) {
-        case MainWindow::Err: statusBar()->setStyleSheet(QStringLiteral("#statusBar{color: #ff0000}")); break;
-        case MainWindow::Wrn: statusBar()->setStyleSheet(QStringLiteral("#statusBar{color: #ffaa00}")); break;
-        case MainWindow::Pane: statusBar()->setStyleSheet(QStringLiteral("#statusBar{}")); break;
-        default: statusBar()->setStyleSheet(QStringLiteral("#statusBar{color: #000000}")); break;
-    }
-    d->currentStatusType = -type;
-    statusBar()->showMessage(msg.simplified(), 5000);
-    // M-R 双写：DTA bottomdiv span 面（Utils.showStatus → #showstatus；
-    // Err 级 → #showerror）。
+    // 2026-10-07 删除侧：FreeCAD 瞬态消息面（QStatusBar::showMessage 5s 覆盖 +
+    // 类型优先级 currentStatusType/statusTimer/clearStatus 机具 + 级别着色
+    // stylesheet）随 Preselection 死 chrome 删除——本函数收敛为 DTA Utils.ts:8-26
+    // 的 1:1 语义：status 面 → #showstatus span 常驻；Err 级 → #showerror span。
     if (auto* span = statusBar()->findChild<QLabel*>(QStringLiteral("showstatus")))
         span->setText(message);
     if (type == MainWindow::Err)
         if (auto* err = statusBar()->findChild<QLabel*>(QStringLiteral("showerror")))
             err->setText(message);
-}
-
-void MainWindow::clearStatus()
-{
-    d->currentStatusType = 100;
-    statusBar()->setStyleSheet(QStringLiteral("#statusBar{}"));
 }
 
 // ─── Qt event override stubs ───────────────────────────────────────────
@@ -661,10 +591,7 @@ void MainWindow::customEvent(QEvent* e)
 {
     if (e->type() == QEvent::User) {
         auto* msg = static_cast<CustomMessageEvent*>(e);
-        if (msg->type() == MainWindow::Tmp)
-            showMessage(msg->message(), msg->timeout());
-        else
-            showStatus(msg->type(), msg->message());
+        showStatus(msg->type(), msg->message());
     }
 }
 bool MainWindow::eventFilter(QObject*, QEvent*) { return false; }

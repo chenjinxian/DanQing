@@ -4,7 +4,6 @@
 #include "Command.h"
 #include "CommandDoc.h"        // createFileEditCommands (File: New/Import/Quit)
 #include "CommandView.h"       // createViewCommands (View: cameras/standard views/panels/status bar)
-#include "CommandStd.h"        // createStdDomainCommands (Tools: AboutQt)
 #include "CommandWindow.h"     // createWindowCommands (Window domain: Tile/Cascade/Activate/WindowsMenu)
 namespace Gui {
 
@@ -19,8 +18,8 @@ void createStdCommands(CommandManager& mgr)
     createFileEditCommands(mgr);    // from CommandDoc  — File domain (New/Import/Quit)
     createViewCommands(mgr);        // from CommandView — View domain (cameras, standard views, etc.)
     // M-L(2)：Structure/Tools/Macro 三域全删（注册 15、真功能 0——分析报告 §3.5
-    // 按域量化表）；Std 域仅存 Std_AboutQt（真功能，归 Tools）。
-    createStdDomainCommands(mgr);   // from CommandStd — Tools: AboutQt
+    // 按域量化表）。Std 域（Std_AboutQt）2026-10-07 删除侧再清：DTA 无 About
+    // 对话框——CommandStd.cpp/.h 整删（Tools 菜单随之消失）。
     createWindowCommands(mgr);      // from CommandWindow — Window domain (region 4 task 1)
 }
 

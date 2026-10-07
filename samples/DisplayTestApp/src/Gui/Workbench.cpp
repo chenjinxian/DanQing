@@ -106,19 +106,17 @@ MenuItem* StdWorkbench::setupMenuBar() const {
           << "Std_DockViewMenu"
           << "Std_ViewStatusBar";
 
-    // Tools  (Workbench.cpp:784-809)
-    auto tool = new MenuItem;
-    tool->setCommand("&Tools");
-    *tool << "Std_AboutQt";
+    // Tools 菜单（Std_AboutQt）已删（2026-10-07 删除侧：DTA 无 About 对话框——
+    // Tools 菜单仅为它存在，整菜单随删）。
 
     // Windows  (Workbench.cpp:822-826)
     auto wnd = new MenuItem;
     wnd->setCommand("&Windows");
     *wnd << "Std_ActivateNextWindow" << "Std_ActivatePrevWindow" << "Separator"
          << "Std_TileWindows" << "Std_CascadeWindows" << "Separator"
-         << "Std_WindowsMenu" << "Std_Windows";
+         << "Std_WindowsMenu";
 
-    *menuBar << file << view << tool << wnd;
+    *menuBar << file << view << wnd;
 
     return menuBar;
 }

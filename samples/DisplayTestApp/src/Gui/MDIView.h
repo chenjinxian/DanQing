@@ -58,7 +58,8 @@ public:
     virtual void setCurrentViewMode(ViewMode mode);
 
 Q_SIGNALS:
-    void message(const QString&, int);
+    // message(const QString&, int) 已删（2026-10-07 删除侧）：零发射方死信号，
+    // 接收端 MainWindow::showMessage（Preselection 瞬态条）同删。
 
 protected:
     void closeEvent(QCloseEvent* e) override;

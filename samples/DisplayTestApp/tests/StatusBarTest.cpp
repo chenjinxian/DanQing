@@ -1,9 +1,10 @@
 // Ported from: Authored — no reference test exists in FreeCAD for status bar registry
 // Tests for MainWindow status bar item registration, context menu, customEvent,
-// and messageChanged wiring.
+// and DTA output spans (Utils.ts showStatus/showError semantics).
 #include <gtest/gtest.h>
 
 #include <QApplication>
+#include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
 #include <QStatusBar>
@@ -13,7 +14,6 @@
 #include "QtTestFixtures.h"
 #include "Gui/MainWindow.h"
 #include "Gui/MainWindow_p.h"
-#include "Gui/StatusBarLabel.h"
 #include "Gui/InputHintWidget.h"
 
 // Application singleton — needed by MainWindow ctor (App::GetApplication())
@@ -40,21 +40,13 @@ TEST(StatusBarTest, WidgetsRegisteredInRegistry)
     ASSERT_NE(sb, nullptr);
 
     // Verify each widget is placed in the status bar by object name
-    auto* actionLabel = sb->findChild<QLabel*>(QStringLiteral("Preselection"));
-    ASSERT_NE(actionLabel, nullptr);
-    EXPECT_EQ(actionLabel->windowTitle().toStdString(), std::string("Preselection"));
-
     auto* hintLabel = sb->findChild<QWidget*>(QStringLiteral("InputHints"));
     ASSERT_NE(hintLabel, nullptr);
 
-    auto* sizeLabel = sb->findChild<QWidget*>(QStringLiteral("UnitSystem"));
-    ASSERT_NE(sizeLabel, nullptr);
-
-    // M-L(2)：QuickMeasure rightSideLabel 与 toggleBottomPanelsButton 死 chrome
-    // 已删（无调用方/TODO——分析报告 §3.1），相应断言随删。
-    // M-O(1) D3/D4：sequencerBar 进度条（零激活方）与 Notifications 空占位
-    // widget 已删，相应断言随删（瓦装载进度走 DtaTools 的 TileLoadIndicator；
-    // 通知走 showStatus 状态栏消息）。
+    // 2026-10-07 删除侧：Preselection（瞬态消息条）与 UnitSystem（单位 schema
+    // 选择器）死 chrome 已删——DTA 状态栏无对应面，断言其不再注册。
+    EXPECT_EQ(sb->findChild<QWidget*>(QStringLiteral("Preselection")), nullptr);
+    EXPECT_EQ(sb->findChild<QWidget*>(QStringLiteral("UnitSystem")), nullptr);
 }
 
 // =====================================================================
@@ -72,10 +64,11 @@ TEST(StatusBarTest, ContextMenuHasToggleActions)
     QMenu menu(&mw);
     mw.buildStatusBarContextMenu(menu);
 
-    // 3 registered widgets → 3 toggle actions（M-O(1) D3/D4 删 sequencerBar 与
-    // Notifications 空占位后余 Preselection/InputHints/UnitSystem 三项）
+    // 1 registered widget → 1 toggle action（2026-10-07 删除侧后余 InputHints
+    // 一项——DTA.StatusBar 行与 showstatus/showerror span 由 DtaTools 装配，
+    // 不入 MainWindow 级上下文菜单）
     auto actions = menu.actions();
-    EXPECT_EQ(actions.size(), 3u);
+    EXPECT_EQ(actions.size(), 1u);
 
     // Each action should be checkable and checked by default
     for (auto* action : actions) {
@@ -88,39 +81,67 @@ TEST(StatusBarTest, ContextMenuHasToggleActions)
     for (auto* action : actions) {
         titles.append(action->text());
     }
-    EXPECT_TRUE(titles.contains(QStringLiteral("Preselection")));
     EXPECT_TRUE(titles.contains(QStringLiteral("Input Hints")));
-    EXPECT_TRUE(titles.contains(QStringLiteral("Unit System")));
 }
 
 // =====================================================================
-// customEvent: dispatches Tmp message to actionLabel
+// showStatus: DTA Utils.ts span semantics (status → #showstatus, Err → #showerror)
 // =====================================================================
 
-// Ported from: Authored — no reference test exists in FreeCAD for customEvent dispatch
-TEST(StatusBarTest, CustomEventDispatchesTmpMessage)
+// Ported from: Authored — locks the 2026-10-07 simplified showStatus to
+// Utils.ts:8-26 (showStatus writes #showstatus; error-level writes #showerror;
+// no transient QStatusBar::showMessage overlay — DTA has none).
+TEST(StatusBarTest, ShowStatusWritesDtaSpans)
 {
     ensureAppReady();
     MainWindow mw;
+    mw.installDtaOutputSpans();
     mw.show();
     qApp->processEvents();
 
-    // Post a Tmp-type custom event and verify the label text changes
-    auto* event = new CustomMessageEvent(MainWindow::Tmp, QStringLiteral("EvtMsg"), 0);
+    mw.showStatus(MainWindow::None, QStringLiteral("All good"));
+    qApp->processEvents();
+
+    auto* span = mw.statusBar()->findChild<QLabel*>(QStringLiteral("showstatus"));
+    ASSERT_NE(span, nullptr);
+    EXPECT_EQ(span->text().toStdString(), std::string("All good"));
+
+    auto* err = mw.statusBar()->findChild<QLabel*>(QStringLiteral("showerror"));
+    ASSERT_NE(err, nullptr);
+    EXPECT_TRUE(err->text().isEmpty()) << "non-Err level must not touch #showerror";
+
+    // Err level routes to #showerror (Utils.showError)
+    mw.showStatus(MainWindow::Err, QStringLiteral("Boom"));
+    qApp->processEvents();
+    EXPECT_EQ(err->text().toStdString(), std::string("Boom"));
+
+    // No transient overlay: QStatusBar's own message area stays empty (DTA has
+    // no such transient message; the FreeCAD form was deleted with Preselection).
+    EXPECT_TRUE(mw.statusBar()->currentMessage().isEmpty());
+}
+
+// =====================================================================
+// customEvent: dispatches status message to the DTA span
+// =====================================================================
+
+// Ported from: Authored — no reference test exists in FreeCAD for customEvent dispatch
+TEST(StatusBarTest, CustomEventDispatchesStatusToSpan)
+{
+    ensureAppReady();
+    MainWindow mw;
+    mw.installDtaOutputSpans();
+    mw.show();
+    qApp->processEvents();
+
+    // Post a status-type custom event and verify the span text changes
+    auto* event = new CustomMessageEvent(MainWindow::None, QStringLiteral("EvtMsg"));
     QApplication::postEvent(&mw, event);
     qApp->processEvents();
 
-    // showMessage sets d->actionLabel text; verify via the label's text property
-    // Use findChildren<QLabel*> to handle any internal reparenting
-    auto labels = mw.statusBar()->findChildren<QLabel*>();
-    bool found = false;
-    for (auto* label : labels) {
-        if (label->text().contains(QStringLiteral("EvtMsg"))) {
-            found = true;
-            break;
-        }
-    }
-    EXPECT_TRUE(found) << "customEvent should dispatch Tmp message to showMessage";
+    auto* span = mw.statusBar()->findChild<QLabel*>(QStringLiteral("showstatus"));
+    ASSERT_NE(span, nullptr);
+    EXPECT_TRUE(span->text().contains(QStringLiteral("EvtMsg")))
+        << "customEvent should dispatch status message to showStatus";
 }
 
 // =====================================================================
@@ -150,57 +171,12 @@ TEST(StatusBarTest, CustomEventIsCalledOnPost)
     mw.show();
     qApp->processEvents();
 
-    auto* event = new CustomMessageEvent(MainWindow::Tmp, QStringLiteral("TestDispatch"), 0);
+    auto* event = new CustomMessageEvent(MainWindow::None, QStringLiteral("TestDispatch"));
     QApplication::postEvent(&mw, event);
     qApp->processEvents();
 
     EXPECT_TRUE(mw.customEventCalled) << "customEvent should be called when event is posted";
     EXPECT_EQ(mw.lastEventType, static_cast<int>(QEvent::User));
-}
-
-// =====================================================================
-// customEvent: dispatches Pane message to statusBar
-// =====================================================================
-
-// Ported from: Authored — no reference test exists in FreeCAD for customEvent Pane dispatch
-TEST(StatusBarTest, CustomEventDispatchesPaneMessage)
-{
-    ensureAppReady();
-    MainWindow mw;
-    mw.show();
-    qApp->processEvents();
-
-    // Post a Pane-type custom event
-    auto* event = new CustomMessageEvent(MainWindow::Pane, QStringLiteral("Pane text"), 0);
-    QApplication::postEvent(&mw, event);
-    qApp->processEvents();
-
-    // StatusBar should show the Pane message
-    auto* sb = mw.statusBar();
-    EXPECT_FALSE(sb->currentMessage().isEmpty());
-}
-
-// =====================================================================
-// messageChanged: clears status on empty message
-// =====================================================================
-
-// Ported from: Authored — no reference test exists in FreeCAD for messageChanged
-TEST(StatusBarTest, MessageChangedClearsStatus)
-{
-    ensureAppReady();
-    MainWindow mw;
-    mw.show();
-    qApp->processEvents();
-
-    // Show a message then clear it
-    mw.showMessage(QStringLiteral("Hello"), 0);
-    qApp->processEvents();
-    EXPECT_FALSE(mw.statusBar()->currentMessage().isEmpty());
-
-    // Clear the message — statusMessageChanged should handle cleanup
-    mw.statusBar()->clearMessage();
-    qApp->processEvents();
-    EXPECT_TRUE(mw.statusBar()->currentMessage().isEmpty());
 }
 
 // =====================================================================
@@ -224,10 +200,10 @@ TEST(StatusBarTest, AddStatusBarItemRegistersWidget)
     auto* found = sb->findChild<QLabel*>(QStringLiteral("CustomId"));
     ASSERT_NE(found, nullptr);
 
-    // Context menu should include the new item (3 original + 1 custom = 4)
+    // Context menu should include the new item (1 original + 1 custom = 2)
     QMenu menu(&mw);
     mw.buildStatusBarContextMenu(menu);
-    EXPECT_EQ(menu.actions().size(), 4u);  // 3 original (M-O(1) D3/D4 后) + 1 custom
+    EXPECT_EQ(menu.actions().size(), 2u);  // 1 original (2026-10-07 删除侧后) + 1 custom
     bool foundAction = false;
     for (auto* action : menu.actions()) {
         if (action->text() == QStringLiteral("Custom Widget")) {
@@ -254,10 +230,10 @@ TEST(StatusBarTest, RemoveStatusBarItemUnregistersWidget)
     mw.addStatusBarItem(label, StatusBarItemSpec("TempId", "Temp", StatusBarSlot::Left, 999, false, 0));
     qApp->processEvents();
 
-    // Verify it's there (3 original in menu + 1 new = 4)
+    // Verify it is there (1 original in menu + 1 new = 2)
     QMenu menu1(&mw);
     mw.buildStatusBarContextMenu(menu1);
-    EXPECT_EQ(menu1.actions().size(), 4u);  // 3 original (M-O(1) D3/D4 后) + 1 new
+    EXPECT_EQ(menu1.actions().size(), 2u);  // 1 original (2026-10-07 删除侧后) + 1 new
 
     // Remove it
     mw.removeStatusBarItem("TempId");
@@ -265,7 +241,7 @@ TEST(StatusBarTest, RemoveStatusBarItemUnregistersWidget)
 
     QMenu menu2(&mw);
     mw.buildStatusBarContextMenu(menu2);
-    EXPECT_EQ(menu2.actions().size(), 3u);  // back to 3 original
+    EXPECT_EQ(menu2.actions().size(), 1u);  // back to 1 original
 }
 
 // =====================================================================
@@ -296,100 +272,4 @@ TEST(StatusBarTest, SetStatusBarItemEnabledTogglesVisibility)
     mw.setStatusBarItemEnabled("ToggleId", true);
     qApp->processEvents();
     EXPECT_TRUE(label->isVisible());
-}
-
-// =====================================================================
-// DimensionWidget: initial schema checkmark after construction
-// =====================================================================
-
-// Ported from: FreeCAD src/Gui/MainWindow.cpp:195-234 (ctor) + :278-294 (unitChanged)
-TEST(StatusBarTest, DimensionWidgetInitialSchemaCheckmark)
-{
-    ensureAppReady();
-    MainWindow mw;
-    mw.show();
-    qApp->processEvents();
-
-    // Find DimensionWidget via objectName set by addStatusBarItem("UnitSystem")
-    auto* dimWidget = mw.statusBar()->findChild<QWidget*>(QStringLiteral("UnitSystem"));
-    ASSERT_NE(dimWidget, nullptr);
-
-    // DimensionWidget should be a QPushButton with a menu
-    auto* btn = qobject_cast<QPushButton*>(dimWidget);
-    ASSERT_NE(btn, nullptr);
-    ASSERT_NE(btn->menu(), nullptr);
-
-    // After construction, unitChanged() should have checked exactly one action
-    auto actions = btn->menu()->actions();
-    ASSERT_GT(actions.size(), 0);
-
-    int checkedCount = 0;
-    for (auto* action : actions) {
-        if (action->isChecked()) {
-            checkedCount++;
-        }
-    }
-    EXPECT_EQ(checkedCount, 1) << "unitChanged() should check exactly one action after construction";
-}
-
-// =====================================================================
-// DimensionWidget: setUserSchema checks the correct action
-// =====================================================================
-
-// Ported from: Authored — no reference test exists in FreeCAD for setUserSchema
-TEST(StatusBarTest, DimensionWidgetSetUserSchemaChecksAction)
-{
-    ensureAppReady();
-    MainWindow mw;
-    mw.show();
-    qApp->processEvents();
-
-    auto* dimWidget = mw.statusBar()->findChild<QWidget*>(QStringLiteral("UnitSystem"));
-    ASSERT_NE(dimWidget, nullptr);
-
-    auto* btn = qobject_cast<QPushButton*>(dimWidget);
-    ASSERT_NE(btn, nullptr);
-
-    auto actions = btn->menu()->actions();
-    ASSERT_GT(actions.size(), 2);
-
-    // Switch to schema index 2
-    mw.setUserSchema(2);
-    qApp->processEvents();
-
-    // Action at index 2 should be checked, others unchecked
-    EXPECT_TRUE(actions[2]->isChecked());
-    EXPECT_FALSE(actions[0]->isChecked());
-    EXPECT_FALSE(actions[1]->isChecked());
-}
-
-// =====================================================================
-// DimensionWidget: retranslateUi refreshes action texts
-// =====================================================================
-
-// Ported from: FreeCAD src/Gui/MainWindow.cpp:296-305 (retranslateUi)
-TEST(StatusBarTest, DimensionWidgetRetranslateUiUpdatesTexts)
-{
-    ensureAppReady();
-    MainWindow mw;
-    mw.show();
-    qApp->processEvents();
-
-    auto* dimWidget = mw.statusBar()->findChild<QWidget*>(QStringLiteral("UnitSystem"));
-    ASSERT_NE(dimWidget, nullptr);
-
-    auto* btn = qobject_cast<QPushButton*>(dimWidget);
-    ASSERT_NE(btn, nullptr);
-
-    auto actions = btn->menu()->actions();
-    ASSERT_GT(actions.size(), 0);
-
-    // Verify action texts match UnitsApi::getDescriptions()
-    auto descriptions = Base::UnitsApi::getDescriptions();
-    ASSERT_EQ(static_cast<int>(descriptions.size()), actions.size());
-
-    for (int i = 0; i < actions.size(); ++i) {
-        EXPECT_EQ(actions[i]->text().toStdString(), descriptions[i])
-            << "Action text at index " << i << " should match getDescriptions()";
-    }
 }

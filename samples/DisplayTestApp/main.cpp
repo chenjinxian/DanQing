@@ -289,6 +289,20 @@ int main(int argc, char** argv)
                              Gui::openDecorationGeometryExample(*view3d);
                          mainWindow->showStatus(0, QObject::tr("Decoration Geometry Example opened"));
                      });
+    // "Cesium Renderer Example"（Surface.ts:167-177）：新建 blank connection 后
+    // 激活 CesiumExampleTool（keyin "dta cesium example" 同一工具）——appToolBar
+    // 旧钮的 Create+SetActiveTool 语义（b87a96a960 删钮后经 Start 卡片恢复入口）。
+    QObject::connect(startView, &StartGui::StartView::requestCesiumExample,
+                     mainWindow, [mainWindow]() {
+                         auto* mdView = Gui::Application::Instance()->newDocument();
+                         if (auto* view3d = qobject_cast<Gui::View3DInventor*>(mdView)) {
+                             (void)view3d;
+                             auto& ta = dqApp::Application::Get().GetToolAdmin();
+                             if (auto* tool = ta.GetRegistry().Create("CesiumExampleTool"))
+                                 ta.SetActiveTool(tool);
+                         }
+                         mainWindow->showStatus(0, QObject::tr("Cesium Renderer Example opened"));
+                     });
     // M-H(4)：双模型打开入口（2026-09-28 用户指令——"点击直接进行渲染视图"）。
     // Start 页模型卡片 → 新建 MDI 视图（newDocument 工厂 = blank connection
     // View3DInventor）→ DumpOpenHelper 打开链（M-H Task 3：imodel.json →

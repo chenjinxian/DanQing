@@ -78,7 +78,6 @@ add_executable(DisplayTestApp WIN32
     src/Gui/Command.cpp         # Command + CommandManager
     src/Gui/CommandDoc.cpp      # File domain: New/Import/Quit (M-L(2) 清理后余量)
     src/Gui/CommandView.cpp     # View domain: cameras/standard views/panels/status bar
-    src/Gui/CommandStd.cpp      # Std domain: AboutQt（原 Help 域唯一真功能项）
     src/Gui/CommandWindow.cpp   # Window domain: Tile/Cascade/Activate/WindowsMenu (region 4 task 1)
     # M-L(2)：CommandStructure/CommandTools/CommandMacro 三域全删（真功能 0——
     # 分析报告 §3.5 按域量化表）。
@@ -202,7 +201,6 @@ if(TARGET gtest_main)
         src/Gui/Command.cpp
         src/Gui/CommandDoc.cpp
         src/Gui/CommandView.cpp
-        src/Gui/CommandStd.cpp
         src/Gui/CommandWindow.cpp
         src/Gui/CreateStdCommands.cpp
         src/Gui/Action.cpp

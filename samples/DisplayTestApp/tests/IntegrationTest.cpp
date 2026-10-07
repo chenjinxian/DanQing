@@ -28,7 +28,7 @@
 // Ported from: Authored — activate builds the surviving top-level menus
 // (File, View, Tools, Windows) from command trees. M-L(2)：Edit/Macro/Help
 // 菜单随其全存根命令族删除。
-TEST(IntegrationTest, ActivateBuildsFourTopMenus)
+TEST(IntegrationTest, ActivateBuildsThreeTopMenus)
 {
     ensureAppReady();
     QMainWindow mw;
@@ -43,7 +43,8 @@ TEST(IntegrationTest, ActivateBuildsFourTopMenus)
     wb.setManagers(&mgr, &mm);
     wb.activate();
 
-    EXPECT_EQ(mw.menuBar()->actions().size(), 4);
+    // 3 top-level menus（2026-10-07 删除侧：Tools 菜单随 Std_AboutQt 删除）
+    EXPECT_EQ(mw.menuBar()->actions().size(), 3);
 }
 
 // =====================================================================
@@ -74,14 +75,14 @@ TEST(IntegrationTest, MenuTitlesMatchFreeCADLabels)
     wb.activate();
 
     auto actions = mw.menuBar()->actions();
-    ASSERT_EQ(actions.size(), 4);
+    ASSERT_EQ(actions.size(), 3);
 
     // Surviving menu titles — M-L(2) trim of the FreeCAD StdWorkbench tree
-    // (Workbench.cpp:705-841 → File/View/Tools/Windows)
+    // (Workbench.cpp:705-841 → File/View/Windows；Tools 随 Std_AboutQt
+    // 2026-10-07 删除侧移除)
     EXPECT_EQ(actions[0]->text().toStdString(), std::string("&File"));
     EXPECT_EQ(actions[1]->text().toStdString(), std::string("&View"));
-    EXPECT_EQ(actions[2]->text().toStdString(), std::string("&Tools"));
-    EXPECT_EQ(actions[3]->text().toStdString(), std::string("&Windows"));
+    EXPECT_EQ(actions[2]->text().toStdString(), std::string("&Windows"));
 }
 
 // =====================================================================
@@ -132,9 +133,11 @@ TEST(IntegrationTest, CreateStdCommandsRegistersExpectedCommands)
     EXPECT_NE(mgr.getCommandByName("Std_Quit"), nullptr);
     EXPECT_NE(mgr.getCommandByName("Std_ViewFitAll"), nullptr);
     EXPECT_NE(mgr.getCommandByName("Std_ViewFront"), nullptr);
-    EXPECT_NE(mgr.getCommandByName("Std_AboutQt"), nullptr);
+    // Std_AboutQt 2026-10-07 删除侧已删（DTA 无 About 对话框——Tools 菜单整删）。
+    EXPECT_EQ(mgr.getCommandByName("Std_AboutQt"), nullptr);
     EXPECT_NE(mgr.getCommandByName("Std_TileWindows"), nullptr);
 
-    // Registration count: File 3 + View 14 + Std 1 + Window 6 = 24
-    EXPECT_EQ(mgr.getAllCommands().size(), 24u);
+    // Registration count: File 3 + View 14 + Window 5 = 22（Std 域 + Std_Windows
+    // 2026-10-07 删除侧清零）
+    EXPECT_EQ(mgr.getAllCommands().size(), 22u);
 }

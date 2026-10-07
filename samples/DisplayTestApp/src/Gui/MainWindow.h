@@ -109,7 +109,9 @@ public:
 
     // Deviation: made public for testability (FreeCAD has these as private)
     // Ported from: FreeCAD src/Gui/MainWindow.h — status message types
-    enum StatusType { None, Err, Wrn, Pane, Msg, Log, Tmp, Critical };
+    // 2026-10-07 删除侧：Msg/Log/Tmp/Critical 零使用面随瞬态消息机具删除；
+    // 保留 None/Err/Wrn/Pane（showStatus 调用方在用——Err 级路由 #showerror）。
+    enum StatusType { None, Err, Wrn, Pane };
 
     void showHints(const std::list<InputHint>& hints = {});
     void hideHints();
@@ -129,13 +131,9 @@ public:
     // Ported from: FreeCAD src/Gui/MainWindow.h:1708 — populates View→Panels menu
     void populateDockWindowMenu(QMenu* menu);
 
-public Q_SLOTS:
-    void setPaneText(int i, QString text);
-    void setUserSchema(int userSchema);
-
-    void statusMessageChanged();
-
-    void showMessage(const QString& message, int timeout = 0);
+    // 2026-10-07 删除侧：setPaneText/setUserSchema/statusMessageChanged/showMessage
+    // 四槽已删（FreeCAD UnitsApi 面与 Preselection 瞬态消息面——DTA 无对应；
+    // MDIView::message 死信号零发射方）。
 
     // Ported from: FreeCAD src/Gui/MainWindow.h:271-296 (MDI window slots)
     // Deviation: made public slots for testability (FreeCAD has these as private);
@@ -179,7 +177,6 @@ private:
 
 private Q_SLOTS:
     void _updateActions();
-    void clearStatus();
 
 Q_SIGNALS:
     void timeEvent();

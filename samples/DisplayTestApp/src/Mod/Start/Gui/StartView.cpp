@@ -163,9 +163,10 @@ void StartView::configureModelButtons(QLayout* layout)
 
 void StartView::configureExampleButtons(QLayout* layout)
 {
-    // --- DTA Surface 页保留 2 项（2026-09-11 自工具栏移至 Start 页；M-H(4) 裁决
+    // --- DTA Surface 页保留 3 项（2026-09-11 自工具栏移至 Start 页；M-H(4) 裁决
     //     保留——Blank Connection 与 Decoration Geometry Example 是 DtaTest 与
-    //     真实 app 配方依赖的 DTA 对齐入口）---
+    //     真实 app 配方依赖的 DTA 对齐入口；Cesium 陈列馆卡片 2026-10-07 补——
+    //     b87a96a960 删 appToolBar 时误失其 UI 入口，仅剩 keyin 可达）---
     // Ported from: itwinjs-core display-test-app Surface.ts:126-176（createToolBar
     //              的按钮：图标 codepoint + tooltip + 点击行为）。
     const QString dtaIcons = QStringLiteral(":/fonts/Display-Test-App-Icons.ttf");  // ToolBar.ts:18 字体
@@ -179,6 +180,11 @@ void StartView::configureExampleButtons(QLayout* layout)
          tr("Opens a blank connection with decoration geometry"),
          {}, dtaIcons, QChar(0xe9d8)}  // Surface.ts:156
     );
+    auto cesiumRenderer = new NewFileButton(
+        {tr("Cesium Renderer Example"),
+         tr("Opens a blank connection with the Cesium decorator gallery"),
+         {}, dtaIcons, QChar(0xe9f4)}  // Surface.ts:172 "gis"（appToolBar 旧钮同 glyph）
+    );
 
     // Open Blank Connection 是真功能（Surface.ts:137-139 → openBlankConnection()；
     // DanQing 对应 requestBlankConnection → Gui::Application::newDocument）。
@@ -189,9 +195,14 @@ void StartView::configureExampleButtons(QLayout* layout)
     // newDocument + openDecorationGeometryExample。
     connect(decorationGeometry, &QPushButton::clicked, this,
             &StartView::requestDecorationGeometryExample);
+    // "Cesium Renderer Example"（Surface.ts:167-177——EmptyExample.ts:50-496 的
+    // 陈列馆装饰入口；点击新建 blank connection 后激活 CesiumExampleTool——
+    // appToolBar 旧钮 Create+SetActiveTool 同一语义，b87a96a960 删钮后恢复）。
+    connect(cesiumRenderer, &QPushButton::clicked, this, &StartView::requestCesiumExample);
 
     layout->addWidget(openBlank);
     layout->addWidget(decorationGeometry);
+    layout->addWidget(cesiumRenderer);
 }
 
 bool StartView::onHasMsg(const char* pMsg) const
