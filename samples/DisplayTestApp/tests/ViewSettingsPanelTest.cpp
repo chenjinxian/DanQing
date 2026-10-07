@@ -9,6 +9,7 @@
 #include <QPixmap>
 #include <QImage>
 #include <QCheckBox>
+#include <QPushButton>
 #include <QComboBox>
 #include <QLabel>
 #include <QWidget>
@@ -208,14 +209,18 @@ TEST(ViewSettingsPanel, MonochromeColorAndScaledWriteDisplayStyle)
     ASSERT_NE(row, nullptr);
     ASSERT_NE(scaled, nullptr);
 
-    // blank 默认位关 → 子行隐藏（:415-416 else 分支 display:none）。
+    // blank 默认位关 → 子控件隐藏（:415-416 else 分支 display:none——参考
+    // 隐藏的是 color 输入控件。2026-10-07 审计 V-11：单行布局后行本身常显，
+    // 断言对象从行改为 Color 按钮/Scaled 复选）。
     EXPECT_FALSE(g.vp->GetView()->GetDisplayStyle().getViewFlags().monochrome());
-    EXPECT_FALSE(row->isVisibleTo(&panel));
+    EXPECT_FALSE(panel.findChild<QPushButton*>("MonochromeColor")->isVisibleTo(&panel));
+    EXPECT_FALSE(scaled->isVisibleTo(&panel));
 
-    // 位开 → flag 写 + 子行显示。
+    // 位开 → flag 写 + 子控件显示。
     mono->setChecked(true);
     EXPECT_TRUE(g.vp->GetView()->GetDisplayStyle().getViewFlags().monochrome());
-    EXPECT_TRUE(row->isVisibleTo(&panel));
+    EXPECT_TRUE(panel.findChild<QPushButton*>("MonochromeColor")->isVisibleTo(&panel));
+    EXPECT_TRUE(scaled->isVisibleTo(&panel));
 
     // Scaled 复选（:400-402——monochromeMode = enabled ? Scaled : Flat）。
     EXPECT_FALSE(scaled->isChecked());   // DisplayStyleSettings 默认 Flat（:154）
