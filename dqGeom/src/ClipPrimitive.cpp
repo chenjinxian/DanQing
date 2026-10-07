@@ -37,10 +37,14 @@ struct PolyEdge {
         Vector3d candidate = Vector3d::From(edgeB.normal.x - edgeA.normal.x,
                                             edgeB.normal.y - edgeA.normal.y,
                                             edgeB.normal.z - edgeA.normal.z);
-        if (candidate.Normalize() <= kSmallFloatingPoint) {
+        // Vector3d.normalize 失败 = mag < Geometry.smallFraction（1e-10——经
+        // correctSmallFraction→safeDivideOrNull；2026-10-07 审计 E-1：原
+        // kSmallFloatingPoint[1e-15] 比参考松 5 个量级——长度 1e-15..1e-10 的
+        // 噪声法向被接受）。
+        if (candidate.Normalize() < kSmallFraction) {
             // adjacent edges are parallel: try chord as bisector normal
             candidate = Vector3d::FromStartEnd(edgeA.pointA, edgeB.pointB);
-            if (candidate.Normalize() <= kSmallFloatingPoint)
+            if (candidate.Normalize() < kSmallFraction)
                 return std::nullopt;  // no chord => backtracking edge => fail
         }
         if (reverse)
@@ -363,7 +367,7 @@ bool ClipShape::parseLinearPlanes(UnionOfConvexClipPlaneSets& set, Point3d const
     double nx = end.x - start.x;
     double ny = end.y - start.y;
     double const mag = std::sqrt(nx * nx + ny * ny);
-    if (mag <= kSmallFloatingPoint)  // filter out trivial edge (Vector2d.normalize failure)
+    if (mag < kSmallFraction)  // Vector2d.normalize 失败 = mag < smallFraction（审计 E-1）
         return false;
     nx /= mag;
     ny /= mag;
@@ -423,7 +427,7 @@ bool ClipShape::parseConvexPolygonPlanes(UnionOfConvexClipPlaneSets& set, std::v
         double const dx = polygon[i + 1].x - polygon[i].x;
         double const dy = polygon[i + 1].y - polygon[i].y;
         double const mag = std::sqrt(dx * dx + dy * dy);
-        if (mag > kSmallFloatingPoint) {  // filter out trivial edges
+        if (mag >= kSmallFraction) {  // normalize 成立项（mag >= smallFraction——审计 E-1）
             double const ux = dx / mag;
             double const uy = dy / mag;
             Vector3d const normal = Vector3d::From(reverse ? uy : -uy, reverse ? -ux : ux, 0.0);

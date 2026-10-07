@@ -216,7 +216,7 @@ ViewStatus ViewState::adjustViewDelta(dqGeom::Vector3d& delta, dqGeom::Point3d& 
 // Ported from: itwinjs-core ViewState.clone()
 // Events and attached viewports are NOT cloned.
 // ---------------------------------------------------------------------------
-dqBase::RefPtr<ViewState> ViewState::Clone() const
+dqBase::RefPtr<ViewState> ViewState::Clone(IModelConnection* iModel) const
 {
     auto* raw = new ViewState();
     raw->m_iModel = m_iModel;  // shallow copy (not owned)
@@ -238,6 +238,8 @@ dqBase::RefPtr<ViewState> ViewState::Clone() const
     // ← ViewDetails clip 双态随克隆（json 线形态复制，物化态重置惰性——参考
     //   clone 经 toProps 携带 _json.clip 的等价面）。
     raw->m_clipVectorJson = m_clipVectorJson;
+    if (iModel != nullptr && iModel != m_iModel)   // clone(iModel?) redirect 面（审计 S-3）
+        raw->SetIModel(iModel);
     return dqBase::RefPtr<ViewState>(raw);
 }
 
@@ -316,7 +318,7 @@ void ViewState3d::applyPose(const ViewPose& val)
 }
 
 // Clone — deep copy including rotation and camera.
-dqBase::RefPtr<ViewState> ViewState3d::Clone() const
+dqBase::RefPtr<ViewState> ViewState3d::Clone(IModelConnection* iModel) const
 {
     auto* raw = new ViewState3d();
     raw->m_iModel = m_iModel;
@@ -338,6 +340,9 @@ dqBase::RefPtr<ViewState> ViewState3d::Clone() const
     raw->m_cameraOn = m_cameraOn;
     // ← ViewDetails clip 双态随克隆（同 ViewState::Clone 注）。
     raw->m_clipVectorJson = m_clipVectorJson;
+    raw->m_disable3dManipulations = m_disable3dManipulations;
+    if (iModel != nullptr && iModel != m_iModel)   // clone(iModel?) redirect 面（审计 S-3）
+        raw->SetIModel(iModel);
     return dqBase::RefPtr<ViewState>(raw);
 }
 
@@ -1658,10 +1663,13 @@ void SpatialViewState::cloneSpatialInto(SpatialViewState* raw) const
     }
 }
 
-dqBase::RefPtr<ViewState> SpatialViewState::Clone() const
+dqBase::RefPtr<ViewState> SpatialViewState::Clone(IModelConnection* iModel) const
 {
     auto* raw = new SpatialViewState();
     cloneSpatialInto(raw);
+    // clone(iModel?) 的 redirect 面（2026-10-07 审计 S-3）。
+    if (iModel != nullptr && iModel != m_iModel)
+        raw->SetIModel(iModel);
     return dqBase::RefPtr<ViewState>(raw);
 }
 
@@ -1873,10 +1881,12 @@ dqBase::RefPtr<OrthographicViewState> OrthographicViewState::CreateFromProps(
     return view;
 }
 
-dqBase::RefPtr<ViewState> OrthographicViewState::Clone() const
+dqBase::RefPtr<ViewState> OrthographicViewState::Clone(IModelConnection* iModel) const
 {
     auto* raw = new OrthographicViewState();
     cloneSpatialInto(raw);
+    if (iModel != nullptr && iModel != m_iModel)   // 同上 redirect 面
+        raw->SetIModel(iModel);
     return dqBase::RefPtr<ViewState>(raw);
 }
 

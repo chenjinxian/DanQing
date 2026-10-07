@@ -242,7 +242,9 @@ public:
     // Clone — create a deep copy of this ViewState.
     // Ported from: itwinjs-core ViewState.clone()
     // Events and attached viewports are NOT cloned.
-    virtual dqBase::RefPtr<ViewState> Clone() const;
+    // iModel 非空且异于当前连接时重定向（参考 clone(iModel?) 的 redirect 面——
+    // ViewportSync.ts:94-96/:163-165 跨 iModel 视口同步用；2026-10-07 审计 S-3）。
+    virtual dqBase::RefPtr<ViewState> Clone(IModelConnection* iModel = nullptr) const;
 
     // Type guard for 3D views (avoids dynamic_cast, which requires RTTI)
     virtual ViewState3d* AsViewState3d() { return nullptr; }
@@ -589,7 +591,7 @@ public:
     virtual SpatialViewState* AsSpatialViewState() { return nullptr; }
 
     // Clone — deep copy including rotation and camera.
-    dqBase::RefPtr<ViewState> Clone() const override;
+    dqBase::RefPtr<ViewState> Clone(IModelConnection* iModel = nullptr) const override;
 
 protected:
     dqGeom::Matrix3d m_rotation = dqGeom::Matrix3d::CreateIdentity();
@@ -672,7 +674,7 @@ public:
     dqGeom::Range3d ComputeBaseExtents() const;
 
     // Clone — deep copy including model selector.
-    dqBase::RefPtr<ViewState> Clone() const override;
+    dqBase::RefPtr<ViewState> Clone(IModelConnection* iModel = nullptr) const override;
 
 protected:
     // Field-application half of Clone (shared with OrthographicViewState::Clone
@@ -708,7 +710,7 @@ public:
         ViewStateProps const& props, IModelConnection* iModel);
 
     // Clone preserves the class (the reference clones memberwise on `this`).
-    dqBase::RefPtr<ViewState> Clone() const override;
+    dqBase::RefPtr<ViewState> Clone(IModelConnection* iModel = nullptr) const override;
 };
 
 }  // namespace dqApp

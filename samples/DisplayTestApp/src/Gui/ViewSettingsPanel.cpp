@@ -10,6 +10,10 @@
 #include <QComboBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMessageBox>
+#include <QRadioButton>
+#include <QSlider>
+#include <cmath>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSignalBlocker>
@@ -114,6 +118,20 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
     });
     layout->addWidget(dsCombo);
 
+    // Render Mode 下拉（真）。序 = 参考 ViewAttributes.ts:275-276 构造序
+    // （addRenderMode 先于 addRenderingStyles——2026-10-07 审计 V-1：原颠倒）。
+    m_renderMode = new QComboBox(this);
+    m_renderMode->setObjectName(QStringLiteral("RenderMode"));
+    for (auto const& m : kModes)
+        m_renderMode->addItem(QString::fromLatin1(m.name));
+    connect(m_renderMode, &QComboBox::currentTextChanged, this, [this](QString const& text) {
+        for (auto const& m : kModes)
+            if (text == QLatin1String(m.name)) {
+                applyFlags([mode = m.mode](dqCommon::ViewFlagsProperties& p) { p.renderMode = mode; });
+            }
+    });
+    layout->addWidget(m_renderMode);
+
     // Rendering Style 下拉（ViewAttributes.ts addRenderingStyles:261-281——
     // "Rendering Style: " 14 项、value=index、handler=applyRenderingStyle；
     // 3d only 显隐——DanQing 面板即 3d 视口场景，门随视图态）。
@@ -129,19 +147,6 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
                 applyRenderingStyle(*vp, static_cast<size_t>(index));
             });
     layout->addWidget(rsCombo);
-
-    // Render Mode 下拉（真）。
-    m_renderMode = new QComboBox(this);
-    m_renderMode->setObjectName(QStringLiteral("RenderMode"));
-    for (auto const& m : kModes)
-        m_renderMode->addItem(QString::fromLatin1(m.name));
-    connect(m_renderMode, &QComboBox::currentTextChanged, this, [this](QString const& text) {
-        for (auto const& m : kModes)
-            if (text == QLatin1String(m.name)) {
-                applyFlags([mode = m.mode](dqCommon::ViewFlagsProperties& p) { p.renderMode = mode; });
-            }
-    });
-    layout->addWidget(m_renderMode);
 
     // View Flags 复选组（ViewAttributes.ts:302-313 顺序，12 项；
     // Camera→Monochrome 按参考 :315-316 顺序在循环后追加）。
@@ -185,17 +190,27 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
     });
     layout->addWidget(cam);
 
-    // Monochrome（ViewAttributes.ts addMonochrome:386-419——monochrome viewFlag 位
-    // + Color 输入 + "Scaled" 复选；M-O(1) I1 补齐后两个子项，行可见性随
-    // viewFlags.monochrome——参考 _updates push :410-418）。
+    // Monochrome（ViewAttributes.ts addMonochrome:386-419——位开关 + Color
+    // 取色 + "Scaled" 复选）。行内布局 = 参考 :387-407（Color/Scaled 与开关
+    // 同行右浮——2026-10-07 审计 V-11：原独立行在开关之上）。
     m_monochromeRow = new QWidget(this);
     m_monochromeRow->setObjectName(QStringLiteral("MonochromeRow"));
     auto* monoLayout = new QHBoxLayout(m_monochromeRow);
     monoLayout->setContentsMargins(0, 0, 0, 0);
+    auto* mono = new QCheckBox(QStringLiteral("Monochrome"), m_monochromeRow);
+    mono->setObjectName(QStringLiteral("Monochrome"));
+    connect(mono, &QCheckBox::toggled, this, [this](bool on) {
+        applyFlags([on](dqCommon::ViewFlagsProperties& p) { p.monochrome = on; });
+        // 子控件可见性随位（ViewAttributes.ts:410-418 updates push）。
+        m_monochromeColorButton->setVisible(on);
+        m_scaledCheckbox->setVisible(on);
+    });
     auto* colorLabel = new QLabel(QStringLiteral("Color"), m_monochromeRow);
+    colorLabel->setObjectName(QStringLiteral("MonochromeColorLabel"));
     m_monochromeColorButton = new QPushButton(m_monochromeRow);
     m_monochromeColorButton->setObjectName(QStringLiteral("MonochromeColor"));
     m_monochromeColorButton->setFixedWidth(40);
+    m_monochromeColorButton->setVisible(false);   // 默认关（syncFromViewport 按位回显）
     connect(m_monochromeColorButton, &QPushButton::clicked, this, [this]() {
         // createColorInput 的取色对话框等价物（frontend-devtools 组件——
         // 浏览器 <input type=color>；Qt 对应物 QColorDialog::getColor）。
@@ -208,79 +223,46 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
     });
     m_scaledCheckbox = new QCheckBox(QStringLiteral("Scaled"), m_monochromeRow);
     m_scaledCheckbox->setObjectName(QStringLiteral("MonochromeScaled"));
+    m_scaledCheckbox->setVisible(false);
     connect(m_scaledCheckbox, &QCheckBox::toggled, this, [](bool on) {
         // ViewAttributes.ts:400-402 — monochromeMode = Scaled : Flat。
         auto* vp = activeViewport();
         if (!vp || !vp->GetView()) return;
         vp->GetView()->GetDisplayStyle().setMonochromeMode(
             on ? dqCommon::MonochromeMode::Scaled : dqCommon::MonochromeMode::Flat);
-        vp->SetupFromView();
+        vp->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});  // 同 V-12
     });
+    monoLayout->addWidget(mono);
+    monoLayout->addStretch(1);
     monoLayout->addWidget(colorLabel);
     monoLayout->addWidget(m_monochromeColorButton);
     monoLayout->addWidget(m_scaledCheckbox);
-    monoLayout->addStretch(1);
     layout->addWidget(m_monochromeRow);
-    m_monochromeRow->setVisible(false);   // 默认关（syncFromViewport 按位回显）
 
-    auto* mono = new QCheckBox(QStringLiteral("Monochrome"), this);
-    mono->setObjectName(QStringLiteral("Monochrome"));
-    connect(mono, &QCheckBox::toggled, this, [this](bool on) {
-        applyFlags([on](dqCommon::ViewFlagsProperties& p) { p.monochrome = on; });
-        // 子行可见性随位（ViewAttributes.ts:410-418 updates push）。
-        m_monochromeRow->setVisible(on);
-    });
-    layout->addWidget(mono);
-
-    // Edge Display 开关（M-L(3) 接线级 #4——渲染侧 M-I(4) 已通，只差开关）。
-    // Ported from: ViewAttributes.addEdgeDisplay (:835-1008) — "Visible Edges" →
-    // viewFlags.visibleEdges (:863-869)、"Hidden Edges" → viewFlags.hiddenEdges
-    // (:878-884)（参考的 hline 色宽样式覆写编辑器 addHiddenLineEditor :906-1008
-    // 仍为移植级——登记）。参考切换后 this.sync() 同步面板；本面板的回读在
-    // syncFromViewport（弹出时）。
+    // 分区内序 = 参考 :852-889：Threshold → Smooth → Visible Edges → vis
+    // 编辑器 → Hidden Edges → hid 编辑器（2026-10-07 审计 V-2：原开关在前）。
     auto* visEdges = new QCheckBox(QStringLiteral("Visible Edges"), this);
     visEdges->setObjectName(QStringLiteral("Visible Edges"));
     connect(visEdges, &QCheckBox::toggled, this, [this](bool on) {
         applyFlags([on](dqCommon::ViewFlagsProperties& p) { p.visibleEdges = on; });
+        // :873 —— Visible 关 → Hidden 置灰；:874/:884 —— 两编辑器随开关显隐
+        //（2026-10-07 审计 V-3/V-4：原先无门控）。
+        if (auto* hid = findChild<QCheckBox*>("Hidden Edges"))
+            hid->setEnabled(on);
+        if (auto* ed = findChild<QWidget*>("VisibleEdgeEditor"))
+            ed->setVisible(on);
     });
     layout->addWidget(visEdges);
     auto* hidEdges = new QCheckBox(QStringLiteral("Hidden Edges"), this);
     hidEdges->setObjectName(QStringLiteral("Hidden Edges"));
     connect(hidEdges, &QCheckBox::toggled, this, [this](bool on) {
         applyFlags([on](dqCommon::ViewFlagsProperties& p) { p.hiddenEdges = on; });
+        // :884/:907 —— hidden 编辑器随开关显隐（审计 V-4）。
+        if (auto* ed = findChild<QWidget*>("HiddenEdgeEditor"))
+            ed->setVisible(on);
     });
     layout->addWidget(hidEdges);
 
-    // ── Edge Display 分区（ViewAttributes.ts:835-1008——M-O(4) P6）──
-    // Transparency Threshold slider（:852-862——0.0-1.0 step 0.05）。
-    {
-        auto* tt = new QSlider(Qt::Horizontal, this);
-        tt->setObjectName(QStringLiteral("TransparencyThreshold"));
-        tt->setRange(0, 20);  // 0.0-1.0 step 0.05 ×100
-        tt->setValue(20);     // 缺省 1.0
-        connect(tt, &QSlider::valueChanged, this, [this, tt](int value) {
-            double const t = value / 20.0;
-            dqCommon::HiddenLineSettingsProps props;
-            props.transThreshold = t;
-            overrideEdgeSettings(props);
-        });
-        m_transThreshold = tt;
-        auto* row = new QWidget(this);
-        auto* rl = new QHBoxLayout(row);
-        rl->setContentsMargins(0, 0, 0, 0);
-        rl->addWidget(new QLabel(QStringLiteral("Transparency Threshold"), row));
-        rl->addWidget(tt);
-        layout->addWidget(row);
-    }
-    // Smooth Polyface Edges 复选（:865-869——tileAdmin.edgeOptions.smooth）。
-    {
-        auto* cb = new QCheckBox(QStringLiteral("Smooth Polyface Edges"), this);
-        cb->setObjectName(QStringLiteral("SmoothEdges"));
-        connect(cb, &QCheckBox::toggled, this,
-                [this](bool on) { setSmoothPolyfaceEdges(on); });
-        m_smoothEdges = cb;
-        layout->addWidget(cb);
-    }
     // Visible 边编辑器（:879 + :914-1008 addHiddenLineEditor(false)——Color
     // [visible 专属 :927-949]/Weight 1-31 [:951-976]/Pattern [:978-981]）。
     {
@@ -391,10 +373,19 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
 
         m_visPattern = new QComboBox(visBox);
         m_visPattern->setObjectName(QStringLiteral("VisibleEdgePattern"));
-        m_visPattern->addItem(QStringLiteral("Invalid"));  // LinePixels::Invalid 显示名
+        // 11 项序 = FeatureOverrides.addStyle :298-310（2026-10-07 审计 V-5：
+        // 原 4 项自造序）。index → LinePixels 同序映射。
+        m_visPattern->addItem(QStringLiteral("Not overridden"));
         m_visPattern->addItem(QStringLiteral("Solid"));
+        m_visPattern->addItem(QStringLiteral("Hidden Line"));
+        m_visPattern->addItem(QStringLiteral("Invisible"));
         m_visPattern->addItem(QStringLiteral("Code1"));
-        m_visPattern->addItem(QStringLiteral("HiddenLine"));
+        m_visPattern->addItem(QStringLiteral("Code2"));
+        m_visPattern->addItem(QStringLiteral("Code3"));
+        m_visPattern->addItem(QStringLiteral("Code4"));
+        m_visPattern->addItem(QStringLiteral("Code5"));
+        m_visPattern->addItem(QStringLiteral("Code6"));
+        m_visPattern->addItem(QStringLiteral("Code7"));
         connect(m_visPattern, &QComboBox::currentIndexChanged, this,
                 [this](int index) {
                     auto* vp = activeViewport();
@@ -404,8 +395,15 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
                     dqCommon::LinePixels const pix[] = {
                         dqCommon::LinePixels::Invalid,
                         dqCommon::LinePixels::Solid,
-                        dqCommon::LinePixels::Code1,
                         dqCommon::LinePixels::HiddenLine,
+                        dqCommon::LinePixels::Invisible,
+                        dqCommon::LinePixels::Code1,
+                        dqCommon::LinePixels::Code2,
+                        dqCommon::LinePixels::Code3,
+                        dqCommon::LinePixels::Code4,
+                        dqCommon::LinePixels::Code5,
+                        dqCommon::LinePixels::Code6,
+                        dqCommon::LinePixels::Code7,
                     };
                     auto const& style = vp->GetView()->GetDisplayStyle()
                                             .getSettings()
@@ -468,10 +466,18 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
 
         m_hidPattern = new QComboBox(hidBox);
         m_hidPattern->setObjectName(QStringLiteral("HiddenEdgePattern"));
-        m_hidPattern->addItem(QStringLiteral("Invalid"));
+        // 11 项序 = FeatureOverrides.addStyle :298-310（审计 V-5）。
+        m_hidPattern->addItem(QStringLiteral("Not overridden"));
         m_hidPattern->addItem(QStringLiteral("Solid"));
+        m_hidPattern->addItem(QStringLiteral("Hidden Line"));
+        m_hidPattern->addItem(QStringLiteral("Invisible"));
         m_hidPattern->addItem(QStringLiteral("Code1"));
-        m_hidPattern->addItem(QStringLiteral("HiddenLine"));
+        m_hidPattern->addItem(QStringLiteral("Code2"));
+        m_hidPattern->addItem(QStringLiteral("Code3"));
+        m_hidPattern->addItem(QStringLiteral("Code4"));
+        m_hidPattern->addItem(QStringLiteral("Code5"));
+        m_hidPattern->addItem(QStringLiteral("Code6"));
+        m_hidPattern->addItem(QStringLiteral("Code7"));
         connect(m_hidPattern, &QComboBox::currentIndexChanged, this,
                 [this](int index) {
                     auto* vp = activeViewport();
@@ -480,8 +486,15 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
                     dqCommon::LinePixels const pix[] = {
                         dqCommon::LinePixels::Invalid,
                         dqCommon::LinePixels::Solid,
-                        dqCommon::LinePixels::Code1,
                         dqCommon::LinePixels::HiddenLine,
+                        dqCommon::LinePixels::Invisible,
+                        dqCommon::LinePixels::Code1,
+                        dqCommon::LinePixels::Code2,
+                        dqCommon::LinePixels::Code3,
+                        dqCommon::LinePixels::Code4,
+                        dqCommon::LinePixels::Code5,
+                        dqCommon::LinePixels::Code6,
+                        dqCommon::LinePixels::Code7,
                     };
                     auto const& style = vp->GetView()->GetDisplayStyle()
                                             .getSettings()
@@ -496,23 +509,39 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
         layout->addWidget(hidBox);
     }
 
-    // ── Environment 分区（EnvironmentEditor.ts:69-329——M-O(4) P7）──
+    // ── Environment 分区（EnvironmentEditor.ts:69-329——M-O(4) P7。
+    // 2026-10-07 审计 V-8/V-9/V-10 对齐：序 = SkyBox → Background Color →
+    // 渐变组[2/4 radio → 四色 → 双指数 → Export/Reset] → Ground Plane（:220
+    // 末位）；showSkyboxControls 门（:88-93——skybox 开 → 渐变组显 + 背景
+    // 色隐 / 关 → 反相）；2 Colors 隐 Sky/Ground 色钮 + 双指数（:108-113，
+    // Zenith/Nadir 保留）；Export 按钮（:193-205）。──
     {
-        // Sky Box / Ground Plane 复选（:306-329 addEnvAttribute——withDisplay）。
+        // 渐变组容器（eeDiv——displaySky 门控整体显隐）。
+        auto* gradGroup = new QWidget(this);
+        gradGroup->setObjectName(QStringLiteral("EnvGradientGroup"));
+        auto* gl = new QVBoxLayout(gradGroup);
+        gl->setContentsMargins(0, 0, 0, 0);
+
+        // showSkyboxControls（:88-93——skybox 开 → 渐变组显 + 背景色隐）。
+        auto showSkyboxControls = [this, gradGroup](bool enabled) {
+            gradGroup->setVisible(enabled);
+            if (auto* bg = findChild<QWidget*>("EnvBackgroundColorRow"))
+                bg->setVisible(!enabled);
+        };
+
         auto* skyCb = new QCheckBox(QStringLiteral("Sky Box"), this);
         skyCb->setObjectName(QStringLiteral("SkyBox"));
         connect(skyCb, &QCheckBox::toggled, this,
-                [this](bool on) { setEnvironmentDisplay(/*sky=*/true, on); });
+                [this, showSkyboxControls](bool on) {
+                    setEnvironmentDisplay(/*sky=*/true, on);
+                    showSkyboxControls(on);
+                });
         layout->addWidget(skyCb);
-        auto* groundCb = new QCheckBox(QStringLiteral("Ground Plane"), this);
-        groundCb->setObjectName(QStringLiteral("GroundPlane"));
-        connect(groundCb, &QCheckBox::toggled, this,
-                [this](bool on) { setEnvironmentDisplay(/*sky=*/false, on); });
-        layout->addWidget(groundCb);
 
         // Background Color（:69-80——displayStyle.backgroundColor + sync）。
         {
             auto* row = new QWidget(this);
+            row->setObjectName(QStringLiteral("EnvBackgroundColorRow"));
             auto* rl = new QHBoxLayout(row);
             rl->setContentsMargins(0, 0, 0, 0);
             rl->addWidget(new QLabel(QStringLiteral("Background Color"), row));
@@ -530,39 +559,53 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
                     return;
                 vp->GetView()->GetDisplayStyle().setBackgroundColor(
                     QColorToTbgr(picked));
-                vp->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+                // :77-78 handler → sync()（:331-333 synchWithView 无参——入
+                // 撤销栈；审计 V-7：原 noSaveInUndo=true）。
+                vp->synchWithView();
             });
             rl->addWidget(btn);
             layout->addWidget(row);
         }
 
-        // 2/4 色 radio（:99-117——twoColor 位；2 色态隐 sky/ground 色与
-        // 双 exponent[参考 :108-113 显隐门——恒显简化，位值语义不变]）。
-        auto* colorMode = new QWidget(this);
-        auto* cml = new QHBoxLayout(colorMode);
-        cml->setContentsMargins(0, 0, 0, 0);
-        auto* two = new QRadioButton(QStringLiteral("2 Colors"), colorMode);
-        two->setObjectName(QStringLiteral("SkyTwoColors"));
-        auto* four = new QRadioButton(QStringLiteral("4 Colors"), colorMode);
-        four->setObjectName(QStringLiteral("SkyFourColors"));
-        four->setChecked(true);  // 缺省 twoColor=false
-        connect(two, &QRadioButton::toggled, this, [this](bool on) {
-            if (!on)
-                return;
-            dqCommon::SkyBoxProps env;
-            env.twoColor = true;
-            updateSkyEnvironment(env);
-        });
-        connect(four, &QRadioButton::toggled, this, [this](bool on) {
-            if (!on)
-                return;
-            dqCommon::SkyBoxProps env;
-            env.twoColor = false;
-            updateSkyEnvironment(env);
-        });
-        cml->addWidget(two);
-        cml->addWidget(four);
-        layout->addWidget(colorMode);
+        // 2/4 色 radio（:99-117——twoColor 位 + 相关控件显隐门）。
+        {
+            auto* colorMode = new QWidget(gradGroup);
+            auto* cml = new QHBoxLayout(colorMode);
+            cml->setContentsMargins(0, 0, 0, 0);
+            auto* two = new QRadioButton(QStringLiteral("2 Colors"), colorMode);
+            two->setObjectName(QStringLiteral("SkyTwoColors"));
+            auto* four = new QRadioButton(QStringLiteral("4 Colors"), colorMode);
+            four->setObjectName(QStringLiteral("SkyFourColors"));
+            four->setChecked(true);  // 缺省 twoColor=false
+            auto applyTwoColorVisibility = [this](bool twoColors) {
+                // :108-113 —— 2 色隐 Sky/Ground 色钮 + 双指数（Zenith/Nadir 保留）。
+                for (char const* name : { "EnvSkyColorRow", "EnvGroundColorRow",
+                                          "EnvSkyExponentRow", "EnvGroundExponentRow" })
+                    if (auto* w = findChild<QWidget*>(name))
+                        w->setVisible(!twoColors);
+            };
+            connect(two, &QRadioButton::toggled, this,
+                    [this, applyTwoColorVisibility](bool on) {
+                if (!on)
+                    return;
+                dqCommon::SkyBoxProps env;
+                env.twoColor = true;
+                updateSkyEnvironment(env);
+                applyTwoColorVisibility(true);
+            });
+            connect(four, &QRadioButton::toggled, this,
+                    [this, applyTwoColorVisibility](bool on) {
+                if (!on)
+                    return;
+                dqCommon::SkyBoxProps env;
+                env.twoColor = false;
+                updateSkyEnvironment(env);
+                applyTwoColorVisibility(false);
+            });
+            cml->addWidget(two);
+            cml->addWidget(four);
+            gl->addWidget(colorMode);
+        }
 
         // 四色（:124-157——Zenith/Nadir 行 + Sky/Ground 行）。
         struct SkyColorEntry {
@@ -577,7 +620,9 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
             {"Ground Color", "EnvGroundColor", &dqCommon::SkyBoxProps::groundColor},
         };
         for (auto const& e : skyColors) {
-            auto* row = new QWidget(this);
+            auto* row = new QWidget(gradGroup);
+            // 行 objectName（Sky/Ground 两行受 2 色门）。
+            row->setObjectName(QString::fromLatin1(e.objectName) + QStringLiteral("Row"));
             auto* rl = new QHBoxLayout(row);
             rl->setContentsMargins(0, 0, 0, 0);
             rl->addWidget(new QLabel(QString::fromLatin1(e.label), row));
@@ -595,7 +640,7 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
                         updateSkyEnvironment(env);
                     });
             rl->addWidget(btn);
-            layout->addWidget(row);
+            gl->addWidget(row);
         }
 
         // Sky/Ground Exponent 双 slider（:159-181——0-20 step 0.25 ×4）。
@@ -610,7 +655,8 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
              &dqCommon::SkyBoxProps::groundExponent},
         };
         for (auto const& e : skyExps) {
-            auto* row = new QWidget(this);
+            auto* row = new QWidget(gradGroup);
+            row->setObjectName(QString::fromLatin1(e.objectName) + QStringLiteral("Row"));
             auto* rl = new QHBoxLayout(row);
             rl->setContentsMargins(0, 0, 0, 0);
             rl->addWidget(new QLabel(QString::fromLatin1(e.label), row));
@@ -625,15 +671,54 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
                         updateSkyEnvironment(env);
                     });
             rl->addWidget(sl);
-            layout->addWidget(row);
+            gl->addWidget(row);
         }
 
-        // Reset（:296-304——Environment.defaults().withDisplay({sky:true})）。
-        auto* resetBtn = new QPushButton(QStringLiteral("Reset"), this);
-        resetBtn->setObjectName(QStringLiteral("EnvReset"));
-        connect(resetBtn, &QPushButton::clicked, this,
-                [this]() { resetEnvironment(); });
-        layout->addWidget(resetBtn);
+        // Export / Reset（:193-205 Export 在前；:296-304 Reset）。
+        {
+            auto* btnRow = new QWidget(gradGroup);
+            auto* bl = new QHBoxLayout(btnRow);
+            bl->setContentsMargins(0, 0, 0, 0);
+            auto* exportBtn = new QPushButton(QStringLiteral("Export"), btnRow);
+            exportBtn->setObjectName(QStringLiteral("EnvExport"));
+            connect(exportBtn, &QPushButton::clicked, this, [this]() {
+                // :193-205 —— alert(JSON.stringify(gradient))；Qt 对应物 =
+                // QMessageBox 模态（浏览器 alert 的最近形态）。
+                auto* vp = activeViewport();
+                if (!vp || !vp->GetView() || !vp->GetView()->AsViewState3d())
+                    return;
+                dqCommon::SkyBoxProps const props = vp->GetView()->AsViewState3d()
+                                       ->GetDisplayStyle()
+                                       .getEnvironment()
+                                       .sky.gradient.toJSON();
+                QString text = QStringLiteral(
+                    "{ groundColor: %1, nadirColor: %2, skyColor: %3, zenithColor: %4 }")
+                    .arg(props.groundColor.value_or(0))
+                    .arg(props.nadirColor.value_or(0))
+                    .arg(props.skyColor.value_or(0))
+                    .arg(props.zenithColor.value_or(0));
+                QMessageBox::information(this, QStringLiteral("Skybox gradient"), text);
+            });
+            auto* resetBtn = new QPushButton(QStringLiteral("Reset"), btnRow);
+            resetBtn->setObjectName(QStringLiteral("EnvReset"));
+            connect(resetBtn, &QPushButton::clicked, this,
+                    [this]() { resetEnvironment(); });
+            bl->addWidget(exportBtn);
+            bl->addWidget(resetBtn);
+            gl->addWidget(btnRow);
+        }
+
+        layout->addWidget(gradGroup);
+        // 3d 态初始：displaySky 缺省 true → 渐变组显 + 背景色隐（:82/:88-93
+        // ——is3d 时背景色 display:none；syncFromViewport 按现值刷新）。
+        showSkyboxControls(true);
+
+        // Ground Plane（:220——参考分区末位）。
+        auto* groundCb = new QCheckBox(QStringLiteral("Ground Plane"), this);
+        groundCb->setObjectName(QStringLiteral("GroundPlane"));
+        connect(groundCb, &QCheckBox::toggled, this,
+                [this](bool on) { setEnvironmentDisplay(/*sky=*/false, on); });
+        layout->addWidget(groundCb);
     }
 
     // 置灰分区标注（DTA 面板的其余分区：BackgroundMap/AO/Thematic）。
@@ -647,6 +732,30 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
     }
 }
 
+// 11 项 Pattern 序（FeatureOverrides.addStyle :298-310）的值→索引（审计 V-6）。
+static int linePixelsToPatternIndex(std::optional<dqCommon::LinePixels> pattern)
+{
+    if (!pattern.has_value())
+        return 0;   // Not overridden
+    dqCommon::LinePixels const kOrder[] = {
+        dqCommon::LinePixels::Invalid,
+        dqCommon::LinePixels::Solid,
+        dqCommon::LinePixels::HiddenLine,
+        dqCommon::LinePixels::Invisible,
+        dqCommon::LinePixels::Code1,
+        dqCommon::LinePixels::Code2,
+        dqCommon::LinePixels::Code3,
+        dqCommon::LinePixels::Code4,
+        dqCommon::LinePixels::Code5,
+        dqCommon::LinePixels::Code6,
+        dqCommon::LinePixels::Code7,
+    };
+    for (int i = 0; i < 11; ++i)
+        if (kOrder[i] == *pattern)
+            return i;
+    return 0;
+}
+
 void ViewSettingsPanel::applyFlags(std::function<void(dqCommon::ViewFlagsProperties&)> mod)
 {
     auto* vp = activeViewport();
@@ -655,7 +764,10 @@ void ViewSettingsPanel::applyFlags(std::function<void(dqCommon::ViewFlagsPropert
     auto props = style.getViewFlags().Properties();
     mod(props);
     style.setViewFlags(dqCommon::ViewFlags(props));
-    vp->SetupFromView();
+    // ViewAttributes.sync（:820-822——synchWithView({noSaveInUndo:true})，含
+    // invalidateController；审计 V-12：原 SetupFromView 跳过 controller 同步——
+    // 重绘由 OnViewFlagsChanged 监听兜底，此处对齐参考一步到位）。
+    vp->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
 }
 
 // Ported from: ViewAttributes.ts:829-833 overrideEdgeSettings（M-O(4) P6）。
@@ -719,7 +831,9 @@ void ViewSettingsPanel::updateSkyEnvironment(dqCommon::SkyBoxProps const& newEnv
         merged.groundExponent = newEnv.groundExponent;
     env.sky.gradient = dqCommon::SkyGradient::fromJSON(&merged);
     v3d->GetDisplayStyle().setEnvironment(env);
-    vp->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+    // EnvironmentEditor.sync（:331-333——synchWithView 无参 = 入撤销栈；
+    // 审计 V-7：原 noSaveInUndo=true 与参考 undo 语义相反）。
+    vp->synchWithView();
 }
 
 // Ported from: EnvironmentEditor.ts:296-304 resetEnvironmentEditor（M-O(4) P7
@@ -735,7 +849,7 @@ void ViewSettingsPanel::resetEnvironment()
     dqCommon::Environment env = dqCommon::Environment::defaults().clone();
     env.displaySky = true;  // withDisplay({ sky: true })
     v3d->GetDisplayStyle().setEnvironment(env);
-    vp->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+    vp->synchWithView();   // 同 V-7：入撤销栈
 }
 
 // Ported from: EnvironmentEditor.ts:306-316 addEnvAttribute 的 withDisplay
@@ -750,7 +864,7 @@ void ViewSettingsPanel::setEnvironmentDisplay(bool sky, bool enabled)
         style.toggleSkyBox(enabled);
     else
         style.toggleGroundPlane(enabled);
-    vp->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+    vp->synchWithView();   // 同 V-7：入撤销栈
 }
 
 void ViewSettingsPanel::applyMonochromeColor(QColor const& color)
@@ -762,7 +876,8 @@ void ViewSettingsPanel::applyMonochromeColor(QColor const& color)
     vp->GetView()->GetDisplayStyle().setMonochromeColor(QColorToTbgr(color));
     m_monochromeColorButton->setStyleSheet(QStringLiteral("background-color: %1; border: 1px solid #808080;")
                                               .arg(color.name()));
-    vp->SetupFromView();
+    // :393-396 sync → synchWithView({noSaveInUndo:true})（审计 V-12）。
+    vp->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
 }
 
 void ViewSettingsPanel::syncFromViewport()
@@ -798,8 +913,11 @@ void ViewSettingsPanel::syncFromViewport()
         else if (name == "White-on-white Reversal") cb->setChecked(props.whiteOnWhiteReversal);
         else if (name == "Monochrome") {
             cb->setChecked(props.monochrome);
-            // 子行可见性/色样/Scaled 回显（ViewAttributes.ts:410-418 updates push）。
-            m_monochromeRow->setVisible(props.monochrome);
+            // 子控件可见性/色样/Scaled 回显（ViewAttributes.ts:410-418 updates push）。
+            m_monochromeColorButton->setVisible(props.monochrome);
+            m_scaledCheckbox->setVisible(props.monochrome);
+            if (auto* cl = findChild<QLabel*>("MonochromeColorLabel"))
+                cl->setVisible(props.monochrome);
             QColor const mono = TbgrToQColor(vp->GetView()->GetDisplayStyle().getMonochromeColor());
             m_monochromeColorButton->setStyleSheet(
                 QStringLiteral("background-color: %1; border: 1px solid #808080;").arg(mono.name()));
@@ -812,6 +930,120 @@ void ViewSettingsPanel::syncFromViewport()
         }
         else if (name == "Visible Edges") cb->setChecked(props.visibleEdges);
         else if (name == "Hidden Edges") cb->setChecked(props.hiddenEdges);
+        else if (name == "Sky Box" || name == "Ground Plane") {
+            auto* v3d = vp->GetView() ? vp->GetView()->AsViewState3d() : nullptr;
+            if (!v3d)
+                continue;
+            auto const& env = v3d->GetDisplayStyle().getEnvironment();
+            if (name == "Sky Box") {
+                cb->setChecked(env.displaySky);
+                continue;
+            }
+            cb->setChecked(env.displayGround);
+            continue;
+        }
+        else if (name == "SmoothEdges") {
+            cb->setChecked(dqRender::TileAdmin::instance().edgeOptions().smooth);
+            continue;
+        }
+    }
+
+    // ── Edge Display 回读（2026-10-07 审计 V-6：原仅回两个开关）──
+    if (auto* v3d = vp->GetView()->AsViewState3d()) {
+        auto const& hline = v3d->GetDisplayStyle().getSettings().getHiddenLineSettings();
+        auto const hprops = hline.toJSON();
+        // Threshold（缺省 1.0）。
+        if (m_transThreshold) {
+            QSignalBlocker b(m_transThreshold);
+            double const t = hprops.transThreshold.value_or(1.0);
+            m_transThreshold->setValue(static_cast<int>(std::lround(t * 20.0)));
+        }
+        // 开关门（V-3/V-4 的回读半边：编辑器显隐 + Hidden 置灰随 Visible）。
+        bool const visOn = props.visibleEdges;
+        bool const hidOn = props.hiddenEdges;
+        if (auto* ed = findChild<QWidget*>("VisibleEdgeEditor"))
+            ed->setVisible(visOn);
+        if (auto* ed = findChild<QWidget*>("HiddenEdgeEditor"))
+            ed->setVisible(hidOn);
+        if (auto* hid = findChild<QCheckBox*>("Hidden Edges"))
+            hid->setEnabled(visOn);
+        // visible 编辑器（Color 复选+色样 / Weight 复选+值 / Pattern）。
+        {
+            auto const sp = hline.visible.toJSON();
+            if (m_visColorCb) {
+                QSignalBlocker b(m_visColorCb);
+                m_visColorCb->setChecked(sp.ovrColor.value_or(false));
+            }
+            if (m_visColorButton) {
+                m_visColorButton->setEnabled(sp.ovrColor.value_or(false));
+                QColor const c = TbgrToQColor(sp.color.value_or(0xFFFFFFFFu));
+                m_visColorButton->setStyleSheet(
+                    QStringLiteral("background-color: %1; border: 1px solid #808080;")
+                        .arg(c.name()));
+            }
+            if (m_visWidthCb) {
+                QSignalBlocker b(m_visWidthCb);
+                m_visWidthCb->setChecked(sp.width.has_value());
+            }
+            if (m_visWidth) {
+                QSignalBlocker b(m_visWidth);
+                m_visWidth->setEnabled(sp.width.has_value());
+                m_visWidth->setValue(sp.width.value_or(1));
+            }
+            if (m_visPattern) {
+                QSignalBlocker b(m_visPattern);
+                m_visPattern->setCurrentIndex(
+                    linePixelsToPatternIndex(sp.pattern));
+            }
+        }
+        // hidden 编辑器（Weight / Pattern——无 Color 段）。
+        {
+            auto const sp = hline.hidden.toJSON();
+            if (m_hidWidthCb) {
+                QSignalBlocker b(m_hidWidthCb);
+                m_hidWidthCb->setChecked(sp.width.has_value());
+            }
+            if (m_hidWidth) {
+                QSignalBlocker b(m_hidWidth);
+                m_hidWidth->setEnabled(sp.width.has_value());
+                m_hidWidth->setValue(sp.width.value_or(1));
+            }
+            if (m_hidPattern) {
+                QSignalBlocker b(m_hidPattern);
+                m_hidPattern->setCurrentIndex(
+                    linePixelsToPatternIndex(sp.pattern));
+            }
+        }
+
+        // ── Environment 回读（V-6：渐变组/背景色换显 + 2 色门 + 双指数现值）──
+        {
+            auto const& env = v3d->GetDisplayStyle().getEnvironment();
+            auto const grad = env.sky.gradient.toJSON();
+            bool const skyOn = env.displaySky;
+            if (auto* gg = findChild<QWidget*>("EnvGradientGroup"))
+                gg->setVisible(skyOn);
+            if (auto* bg = findChild<QWidget*>("EnvBackgroundColorRow"))
+                bg->setVisible(!skyOn);
+            bool const twoColor = grad.twoColor.value_or(false);
+            if (auto* two = findChild<QRadioButton*>("SkyTwoColors"))
+                two->setChecked(twoColor);
+            if (auto* four = findChild<QRadioButton*>("SkyFourColors"))
+                four->setChecked(!twoColor);
+            for (char const* nm : { "EnvSkyColorRow", "EnvGroundColorRow",
+                                    "EnvSkyExponentRow", "EnvGroundExponentRow" })
+                if (auto* w = findChild<QWidget*>(nm))
+                    w->setVisible(!twoColor);
+            if (auto* sl = findChild<QSlider*>("EnvSkyExponent")) {
+                QSignalBlocker b(sl);
+                sl->setValue(static_cast<int>(std::lround(
+                    grad.skyExponent.value_or(4.0) * 4.0)));
+            }
+            if (auto* sl = findChild<QSlider*>("EnvGroundExponent")) {
+                QSignalBlocker b(sl);
+                sl->setValue(static_cast<int>(std::lround(
+                    grad.groundExponent.value_or(4.0) * 4.0)));
+            }
+        }
     }
 }
 }  // namespace Gui

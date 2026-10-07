@@ -132,7 +132,9 @@ SynchronizeViewportsFn synchronizeViewportViews(Viewport& source)
     return [&source](Viewport& /*source*/, Viewport& target) {
         ViewState* sourceView = source.GetView();
         if (sourceView) {
-            auto clonedView = sourceView->Clone();
+            // source.view.clone(target.iModel)（ViewportSync.ts:94-96——跨
+            // iModel 重定向；2026-10-07 审计 S-3：原先不重定向）。
+            auto clonedView = sourceView->Clone(target.GetIModel());
             if (clonedView) {
                 target.ChangeView(std::move(clonedView));
             }
@@ -221,7 +223,8 @@ void TwoWayViewportSync::syncViewports(Viewport& source, Viewport& target)
 {
     ViewState* sourceView = source.GetView();
     if (sourceView) {
-        auto clonedView = sourceView->Clone();
+        // clone(target.iModel)（:163-165——同上跨 iModel 重定向）。
+        auto clonedView = sourceView->Clone(target.GetIModel());
         if (clonedView) {
             target.ChangeView(std::move(clonedView));
         }

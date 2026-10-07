@@ -22,6 +22,7 @@
 #include <dqGeom/Vector3d.h>
 
 #include <optional>
+#include <cmath>
 #include <vector>
 
 BEGIN_DQ_GEOM_NAMESPACE
@@ -227,15 +228,16 @@ public:
 
     /// Add convex sets that accept points below zLow and above zHigh.
     /// Ported from: UnionOfConvexClipPlaneSets.addOutsideZClipSets (:325-336)
-    // NOTE 参考怪癖 1:1：`if (zLow)` 对 0 值 zLow 同样跳过（truthiness）。
+    // NOTE 参考怪癖 1:1：`if (zLow)` truthiness——0/-0/NaN 均 falsy 跳过
+    //（C++ NaN != 0.0 为 true——显式 isnan 门对齐，审计 E-5）。
     void addOutsideZClipSets(bool invisible, std::optional<double> zLow = std::nullopt,
                              std::optional<double> zHigh = std::nullopt) noexcept {
-        if (zLow.has_value() && *zLow != 0.0) {
+        if (zLow.has_value() && *zLow != 0.0 && !std::isnan(*zLow)) {
             ConvexClipPlaneSet convexSet = ConvexClipPlaneSet::createEmpty();
             convexSet.addZClipPlanes(invisible, std::nullopt, *zLow);
             m_convexSets.push_back(convexSet);
         }
-        if (zHigh.has_value() && *zHigh != 0.0) {
+        if (zHigh.has_value() && *zHigh != 0.0 && !std::isnan(*zHigh)) {
             ConvexClipPlaneSet convexSet = ConvexClipPlaneSet::createEmpty();
             convexSet.addZClipPlanes(invisible, *zHigh);
             m_convexSets.push_back(convexSet);

@@ -65,7 +65,7 @@ struct DQ_GEOM_EXPORT ClipPlane {
     static std::optional<ClipPlane> createNormalAndDistance(
         Vector3d normal, double distance, bool invis = false, bool intr = false) noexcept {
         double const mag = normal.Normalize();  // by-value: normalizes the local copy
-        if (mag < 1.0e-15)
+        if (mag < 1.0e-10)  // normalize 失败 = mag < Geometry.smallFraction（审计 E-1：原 1e-15）
             return std::nullopt;
         return ClipPlane(normal, distance, invis, intr);
     }

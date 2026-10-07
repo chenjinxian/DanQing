@@ -288,9 +288,14 @@ std::optional<StringifiedClipVector> StringifiedClipVector::fromClipVector(ClipV
     if (!clip || !clip->isValid())
         return std::nullopt;
 
+    // ClipVector.ts:509-511 —— `if (undefined === ret.clipString)
+    // ret.clipString = clip.toCompactString()`（对象上缓存一次——审计 E-6）。
+    if (!clip->clipString.has_value())
+        clip->clipString = clip->toCompactString();
+
     StringifiedClipVector stringified;
     stringified.clip = clip;
-    stringified.clipString = clip->toCompactString();
+    stringified.clipString = *clip->clipString;
     return stringified;
 }
 

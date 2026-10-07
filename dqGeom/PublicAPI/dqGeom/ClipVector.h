@@ -46,6 +46,12 @@ public:
     /// Ported from: ClipVector.boundingRange (:50, public field)
     Range3d boundingRange;
 
+    /// StringifiedClipVector.fromClipVector 的缓存槽（ClipVector.ts:509-511
+    /// 在 clip 对象上 duck-typed 存 clipString——"computed once; the ClipVector
+    /// is assumed not to be subsequently modified"。2026-10-07 审计 E-6：原先
+    /// 每次重算——clip 修改后再调用与参考分叉）。
+    std::optional<std::string> clipString;
+
     /// Returns a reference to the array of ClipPrimitives.
     /// Ported from: ClipVector.clips (:52-54)
     std::vector<ClipPrimitive::Ptr> const& clips() const noexcept { return m_clips; }

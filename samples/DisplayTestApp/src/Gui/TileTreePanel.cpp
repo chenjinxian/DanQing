@@ -99,12 +99,14 @@ TileTreePanel::TileTreePanel(QWidget* parent)
                 case 0: stepToIndex(0); break;
                 case 1: stepToIndex(m_stepIndex - 1); break;
                 case 2: {
-                    // "Set first enabled as step index"（IdPicker.ts:368-379）。
+                    // "Set first enabled as step index"（IdPicker.ts:368-379——
+                    // 命中即 stepToIndex(i)：toggleAll(false)+enableById+fit 副作用
+                    // 2026-10-07 审计 S-1：原先只记 m_stepIndex 不隔离）。
                     if (auto* opened = openedDump()) {
                         auto const& entries = opened->provider->entries();
                         for (std::size_t k = 0; k < entries.size(); ++k)
                             if (entries[k].visible) {
-                                m_stepIndex = static_cast<int>(k);
+                                stepToIndex(static_cast<int>(k));
                                 break;
                             }
                     }
