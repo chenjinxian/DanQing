@@ -63,6 +63,7 @@
 
 #include "dqApp/StandardView.h"  // StandardViewId (StandardViewTool ctor param).
 #include "dqApp/Application.h"  // Walk/Fly/LookAndMove ctor 的 selectedView 回退（B15）
+#include "dqApp/ViewPose.h"  // m_startPose（savePose/applyPose——审计 W-1）
 #include "dqApp/ToolAdmin.h"  // BeButton, BeButtonEvent, BeWheelEvent, EventHandled,
                               // InputSource, CoordSource, BeModifierKeys,
                               // InteractiveTool, Tool.
@@ -394,6 +395,11 @@ class DQ_APP_EXPORT ViewTool : public InteractiveTool {
 public:
     // Ported from: itwinjs-core ViewTool.inDynamicUpdate (ViewTool.ts:95).
     bool inDynamicUpdate = false;
+
+    // _startPose（ViewTool.ts:230——动态更新起点的视图位姿，onCleanup 的
+    // restorePrevious 臂应用它回滚。2026-10-07 审计 W-1 三处接线：process-
+    // FirstPoint 存 / onReinitialize 清 / onCleanup-restorePrevious 应用）。
+    std::unique_ptr<ViewPose> m_startPose;
 
     // Ported from: itwinjs-core ViewTool.viewport (ViewTool.ts:113 ctor param).
     // Public field — subclasses, ToolAdmin and ToolAdmin dispatch reach in.

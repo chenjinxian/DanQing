@@ -177,8 +177,12 @@ void TwoWayViewportSync::connect(Viewport* viewport1, Viewport* viewport2)
     m_first = viewport1;
     m_second = viewport2;
 
+    // :171 —— this.connectViewports(viewport1, viewport2)（初始同步钩子——
+    // 2026-10-07 审计 S-4：原先直调 syncViewports，FrustumSync 的初始同步
+    // 与参考分叉[参考 Frustum 子类 override connectViewports→syncViewports，
+    // 基类为 clone+applyViewState]）。
     if (m_first && m_second)
-        syncViewports(*m_first, *m_second);
+        connectViewports(*m_first, *m_second);
 
     if (m_first) {
         dqBase::DqEventDisconnect token = m_first->onViewChanged.AddListener(
@@ -217,6 +221,14 @@ void TwoWayViewportSync::disconnect()
     m_second = nullptr;
 }
 
+// Ported from: TwoWayViewportSync.connectViewports (ViewportSync.ts:152-155):
+//   const viewState = source.view.clone(target.iModel);
+//   target.applyViewState(viewState);
+void TwoWayViewportSync::connectViewports(Viewport& source, Viewport& target)
+{
+    syncViewports(source, target);   // 基类体 = clone+applyViewState（与 syncViewports 同式）
+}
+
 // Ported from: itwinjs-core TwoWayViewportSync.syncViewports (ViewportSync.ts:159-165):
 // target.applyViewState(source.view.clone(target.iModel)).
 void TwoWayViewportSync::syncViewports(Viewport& source, Viewport& target)
@@ -237,6 +249,13 @@ void TwoWayViewportSync::syncViewports(Viewport& source, Viewport& target)
 //   syncViewports: pose = source.view.savePose(); view = target.view.applyPose(pose);
 //                  target.applyViewState(view).
 // ---------------------------------------------------------------------------
+// Ported from: TwoWayViewportFrustumSync.connectViewports (:203-205 override
+// —— connectViewports → syncViewports：初始同步应用 frustum 而非整视图)。
+void TwoWayViewportFrustumSync::connectViewports(Viewport& source, Viewport& target)
+{
+    syncViewports(source, target);
+}
+
 void TwoWayViewportFrustumSync::syncViewports(Viewport& source, Viewport& target)
 {
     ViewState3d* sourceView = source.GetView() ? source.GetView()->AsViewState3d() : nullptr;

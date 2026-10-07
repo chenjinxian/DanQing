@@ -370,6 +370,15 @@ public:
     /// EQUIVALENCE：locateManager 拾取链 → 拾取命中 id 直取（PickDumpScene 先例）。
     EventHandled onDataButtonDown(BeButtonEvent const& ev) override;
 
+    /// Ported from: onPostInstall (:953-970 —— 选集活跃且全有效 → 直接对
+    /// 选集剖切；否则进定位链。2026-10-07 审计 E-2：原缺预选路径——选集
+    /// 在手时仍要求逐点拾取）。
+    void onPostInstall() override;
+
+    /// Ported from: doClipToSelectedElements (:975-981 —— 成功 true；失败
+    /// exitTool + false）。
+    bool doClipToSelectedElements(Viewport& viewport);
+
 protected:
     bool m_alwaysUseRange = false;
 };

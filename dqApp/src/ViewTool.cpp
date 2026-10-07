@@ -573,7 +573,7 @@ void ViewManip::onReinitialize()
     nPts = 0;
     inHandleModify = false;
     inDynamicUpdate = false;
-    // _startPose reset omitted (TODO when ViewPose lands).
+    m_startPose.reset();   // TS L453: this._startPose = undefined（审计 W-1）
 
     // TS L454: this.viewHandles.onReinitialize();
     viewHandles.onReinitialize();
@@ -760,9 +760,12 @@ void ViewManip::onCleanup()
 
     // TS L668-678: viewport cleanup (applyPose / synchWithView / invalidateDecorations).
     if (viewport) {
-        if (restorePrevious /* && this._startPose */) {
-            // TS L671-672: vp.view.applyPose(this._startPose); vp.animateFrustumChange();
-            // TODO: ViewPose applyPose + animateFrustumChange — future task.
+        if (restorePrevious && m_startPose
+            && viewport->GetView() && viewport->GetView()->AsViewState3d()) {
+            // TS L671-672: vp.view.applyPose(this._startPose);
+            // vp.animateFrustumChange()（动画面未移植——终态 1:1，applyPose
+            // 即刻生效。2026-10-07 审计 W-1：原空体——退出工具视图不回滚）。
+            viewport->GetView()->AsViewState3d()->applyPose(*m_startPose);
         } else {
             // TS L674: vp.synchWithView();
             viewport->synchWithView();
@@ -934,7 +937,11 @@ bool ViewManip::processFirstPoint(BeButtonEvent const& ev)
             return false;
     }
     // TS L749: this._startPose = this.viewport ? this.viewport.view.savePose() : undefined;
-    // TODO: ViewState::savePose — port with the ViewPose API.
+    //（savePose 引擎面已在——2026-10-07 审计 W-1：原 TODO 陈旧未接，动态更新
+    // 中退出工具时视图不回滚）。
+    m_startPose = (viewport && viewport->GetView() && viewport->GetView()->AsViewState3d())
+        ? viewport->GetView()->AsViewState3d()->savePose()
+        : nullptr;
     return true;
 }
 

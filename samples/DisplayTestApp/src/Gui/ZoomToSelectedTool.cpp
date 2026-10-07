@@ -31,6 +31,26 @@ namespace {
 void extendWorldRange(dqApp::DumpIModelConnection::PlacementInfo const& p,
                       dqGeom::Range3d& out)
 {
+    // Placement.isValid（Placement.ts:87/:144——`!bbox.isNull &&
+    // max(origin.maxAbs(), bbox.maxAbs()) < Constant.circumferenceOfEarth`；
+    // Viewport.ts:2246-2248 的 filter(x => x.isValid) 面。2026-10-07 审计
+    // S-6：无效 placement 参与并集会撑大取景域——过滤。
+    constexpr double kCircumferenceOfEarth = 40075.0 * 1000.0;  // Constant.ts:26——40075 km
+    {
+        bool bboxNull = true;
+        double bboxMaxAbs = 0.0;
+        for (int i = 0; i < 3; ++i) {
+            if (p.bboxHigh[i] > p.bboxLow[i])
+                bboxNull = false;
+            bboxMaxAbs = std::max(bboxMaxAbs, std::max(std::abs(p.bboxLow[i]),
+                                                       std::abs(p.bboxHigh[i])));
+        }
+        double originMaxAbs = std::max({std::abs(p.origin[0]),
+                                        std::abs(p.origin[1]),
+                                        std::abs(p.origin[2])});
+        if (bboxNull || std::max(originMaxAbs, bboxMaxAbs) >= kCircumferenceOfEarth)
+            return;
+    }
     auto const rot = dqGeom::YawPitchRollAngles::CreateDegrees(
                          p.angles[0], p.angles[1], p.angles[2])
                          .ToMatrix3d();

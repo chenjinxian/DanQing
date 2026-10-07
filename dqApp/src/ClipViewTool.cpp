@@ -720,6 +720,45 @@ bool ViewClipByElementTool::doClipToElements(Viewport& viewport,
 // Ported from: onDataButtonDown (:1050-1058 —— doLocate 命中 → doClipToElements).
 // EQUIVALENCE：locateManager.doLocate 拾取链 → 拾取命中 id 直取
 // （PickAtPoint→SelectionSet 命中链，PickDumpScene 先例）。
+// Ported from: onPostInstall (:953-970 —— 选集预选路径).
+void ViewClipByElementTool::onPostInstall()
+{
+    ViewClipTool::onPostInstall();
+    if (targetView != nullptr && targetView->GetIModel() != nullptr) {
+        auto const& selSet = targetView->GetIModel()->GetSelectionSet();
+        if (!selSet.isEmpty()) {
+            // :960-965 useSelection 门——Id64.isInvalid(=0)/isTransient（高
+            // 位标志）逐 id 检查。DanQing id 域 uint32：invalid = 0 检查在；
+            // transient 标志位不存在（回放域不可达——EQUIVALENCE 注记）。
+            bool useSelection = true;
+            for (uint32_t id : selSet.GetElements()) {
+                if (0 == id) {
+                    useSelection = false;
+                    break;
+                }
+            }
+            if (useSelection) {
+                doClipToSelectedElements(*targetView);
+                return;
+            }
+        }
+    }
+    // initLocateElements(true, false, "default", All)（:969）：DanQing 拾取
+    // 链 = onDataButtonDown 的 PickAtPoint 直取（既有 EQUIVALENCE——无 init 面）。
+}
+
+// Ported from: doClipToSelectedElements (:975-981).
+bool ViewClipByElementTool::doClipToSelectedElements(Viewport& viewport)
+{
+    std::vector<uint64_t> ids;
+    for (uint32_t id : viewport.GetIModel()->GetSelectionSet().GetElements())
+        ids.push_back(id);
+    if (doClipToElements(viewport, ids, m_alwaysUseRange))
+        return true;
+    exitTool();
+    return false;
+}
+
 EventHandled ViewClipByElementTool::onDataButtonDown(BeButtonEvent const& ev)
 {
     Viewport* const targetViewport = ev.viewport;  // 参考 this.targetView（EQUIVALENCE：ev.viewport 承载）

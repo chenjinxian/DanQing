@@ -93,6 +93,14 @@ public:
     void disconnect();
 
 protected:
+    // Sets up the initial connection between two viewports by applying a clone
+    // of source's ViewState to target. Virtual so subclasses can customize the
+    // initial synchronization (TwoWayViewportFrustumSync overrides with
+    // syncViewports). Ported from: TwoWayViewportSync.connectViewports
+    // (ViewportSync.ts:152-155——2026-10-07 审计 S-4：原缺扩展点，初始同步
+    // 内联在 connect 里走 syncViewports）。
+    virtual void connectViewports(Viewport& source, Viewport& target);
+
     // Invoked each time source changes to update target to match. Default applies
     // a clone of the source's ViewState to the target.
     // Ported from: itwinjs-core TwoWayViewportSync.syncViewports (ViewportSync.ts:159-165).
@@ -121,6 +129,10 @@ protected:
     // Ported from: itwinjs-core TwoWayViewportFrustumSync.syncViewports
     //              (ViewportSync.ts:197-201).
     void syncViewports(Viewport& source, Viewport& target) override;
+
+    // Sets up the initial connection by applying source's frustum to target
+    //（:203-205 override —— connectViewports → syncViewports）。
+    void connectViewports(Viewport& source, Viewport& target) override;
 };
 
 }  // namespace dqApp
