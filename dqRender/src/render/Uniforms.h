@@ -17,6 +17,7 @@
 #include "Batch.h"  // Batch + BatchState (for setCurrentBatch)
 #include "InstancedGeometry.h"  // InstancedGeometry (for BranchUniforms.update instanced path)
 #include "ThematicSensors.h"  // ThematicSensors (for bindNumThematicSensors)
+#include "ThematicUniforms.h"  // ThematicUniforms（TargetUniforms.ts:133 成员归位，M-S S-c）
 #include "gl/RenderFlags.h"  // EmphasisFlags (for bindUniformSymbologyFlags)
 
 #include "UniformHandle.h"
@@ -500,10 +501,11 @@ private:
 // (Ported from: itwinjs-core TargetUniforms.ts)
 //
 // frustum/viewRect/hilite/lights/style are the faithful 1:1 implementations.
-// branch/batch remain stubs pending extraction.
+// thematic 归位（TargetUniforms.ts:133——M-S S-c）；branch/batch remain stubs
+// pending extraction.
 // TODO: PixelWidthFactor (needs branch.top.frustumScale); full updateRenderPlan
 // (needs plan.hiliteSettings/emphasisSettings/lights — absent from the public
-// RenderPlan stub); thematic/contours/shadow/realityModel/atmosphere members.
+// RenderPlan stub); contours/shadow/realityModel/atmosphere members.
 // ---------------------------------------------------------------------------
 class TargetUniforms {
 public:
@@ -514,6 +516,7 @@ public:
     HiliteUniforms hilite;
     BranchUniforms branch;
     BatchUniforms batch;
+    ThematicUniforms thematic;  // Ported from: TargetUniforms.ts:133
 
     /// Get the projection matrix (viewRect for view-coords, frustum otherwise).
     /// Ported from: itwinjs-core TargetUniforms.getProjectionMatrix()

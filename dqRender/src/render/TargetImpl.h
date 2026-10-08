@@ -259,8 +259,12 @@ public:
     /// Ported from: itwinjs-core Target.changeRenderPlan()
     ///（Target.ts:533——`uniforms.branch.changeRenderPlan(vf, plan.is3d,
     /// plan.hline, plan.contours)` 的 hline 段；contours 未移植）。
+    /// M-S S-c：thematic 形参承载 plan.thematic（Target.plan.thematic 的
+    /// 读取面——ThematicUniforms.update :91 / wantThematicSensors :407；
+    /// TargetImpl 不持整 plan，仅存管 thematic 段）。
     void changeRenderPlan(ViewFlags const& viewFlags, bool is3d,
-                          dqCommon::HiddenLineSettings const* hline = nullptr);
+                          dqCommon::HiddenLineSettings const* hline = nullptr,
+                          dqCommon::ThematicDisplay const* thematic = nullptr);
 
     /// Get the current view flags from the branch stack.
     /// Ported from: itwinjs-core Target.currentViewFlags
@@ -333,8 +337,33 @@ public:
     // Ported from: itwinjs-core Target.wantThematicDisplay/wantAtmosphere
 
     /// Whether thematic display is desired.
-    bool wantThematicDisplay() const noexcept { return m_wantThematicDisplay; }
-    void setWantThematicDisplay(bool v) noexcept { m_wantThematicDisplay = v; }
+    /// Ported from: itwinjs-core Target.wantThematicDisplay（Target.ts:398-400——
+    /// **计算 getter**：`currentViewFlags.thematicDisplay && is3d &&
+    /// undefined !== uniforms.thematic.thematicDisplay`；M-S S-c 归位——原为
+    /// 存储字段+setter 零调用[G2 断链]，非参考形）。
+    bool wantThematicDisplay() const noexcept {
+        // dqRender 面的 ViewFlags = dqCommon::ViewFlagsProperties（直字段——
+        // dqRender/src/render/ViewFlags.h 的 using 别名）。
+        return m_branchStack.getCurrentViewFlags().thematicDisplay && m_is3d &&
+               m_uniforms.thematic.getThematicDisplay() != nullptr;
+    }
+
+    /// Whether thematic sensors are wanted.
+    /// Ported from: itwinjs-core Target.wantThematicSensors（Target.ts:406-409——
+    /// wantThematicDisplay && plan.thematic 在 && mode==IDW && sensors 非空）。
+    bool wantThematicSensors() const noexcept {
+        return wantThematicDisplay() && m_planThematic &&
+               m_planThematic->displayMode == dqCommon::ThematicDisplayMode::InverseDistanceWeightedSensors &&
+               !m_planThematic->sensorSettings.sensors.empty();
+    }
+
+    /// The thematic display carried by the current render plan（nullptr=缺席）。
+    /// Ported from: itwinjs-core Target.plan.thematic 的读取面
+    ///（ThematicUniforms.update :91 / wantThematicSensors :407）。
+    dqCommon::ThematicDisplay const* getPlanThematic() const noexcept
+    {
+        return m_planThematic ? &*m_planThematic : nullptr;
+    }
 
     /// Whether atmosphere rendering is desired.
     bool wantAtmosphere() const noexcept { return m_wantAtmosphere; }
@@ -530,7 +559,10 @@ private:
     std::vector<uint32_t> m_animationBranches;
 
     // Display feature flags (Ported from: itwinjs-core Target members)
-    bool m_wantThematicDisplay = false;
+    // M-S S-c：m_wantThematicDisplay 存储字段删（wantThematicDisplay 归位
+    // 计算 getter——Target.ts:398-400）；plan 的 thematic 段由 changeRenderPlan
+    // 承载（Target.plan.thematic 的读取面）。
+    std::optional<dqCommon::ThematicDisplay> m_planThematic;
     bool m_wantAtmosphere = false;
     float m_devicePixelRatio = 1.0f;          // host-assigned window ratio
     float m_devicePixelRatioOverride = 0.0f;  // >0 forces a specific ratio

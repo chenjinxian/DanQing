@@ -140,8 +140,11 @@ void OpenGLRenderTarget::changeRenderPlan(RenderPlan const& plan)
     // View clip（M-P P-C）——Target.ts:519（updateViewClip 在 branch.
     // changeRenderPlan :533 之前）。
     m_impl->updateViewClip(plan.clip, plan.clipStyle);
+    // M-S S-c：plan.thematic 段透传（Target.plan.thematic 的读取面——
+    // TargetImpl 存管，uniforms.thematic.update 在本函数尾段消费）。
     m_impl->changeRenderPlan(vf, plan.is3d,
-                             plan.hline.has_value() ? &*plan.hline : nullptr);
+                             plan.hline.has_value() ? &*plan.hline : nullptr,
+                             plan.thematic.has_value() ? &*plan.thematic : nullptr);
 
     // Frustum uniforms FIRST — the projection/view pair (u_proj/u_mv) comes from
     // FrustumUniforms.changeFrustum (lookIn + ortho(0,depth) / frustum()), the
@@ -152,6 +155,12 @@ void OpenGLRenderTarget::changeRenderPlan(RenderPlan const& plan)
     // Ported from: itwinjs-core Target.changeRenderPlan (Target.ts:534):
     //   this.changeFrustum(plan.frustum, plan.fraction, plan.is3d);
     m_impl->getFrustumUniforms().changeFrustum(plan.frustum, plan.fraction, plan.is3d);
+
+    // Thematic uniforms — Ported from: itwinjs-core Target.changeRenderPlan
+    //（Target.ts:537——`uniforms.thematic.update(this)`；序：changeFrustum 之
+    // 后、updateRenderPlan 之前[参考同序——Slope 轴/HillShade 太阳向依赖新
+    // 视矩阵]）。M-S S-c。
+    m_impl->getUniforms().thematic.update(*m_impl);
 
     // Update target uniforms from the plan.
     // ← itwinjs-core Target.changeRenderPlan (Target.ts:543):

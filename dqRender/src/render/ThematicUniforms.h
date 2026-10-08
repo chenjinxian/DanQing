@@ -4,19 +4,17 @@
 //
 // Maintains state for uniforms related to thematic display (height maps, slopes, etc.).
 //
-// NOTE: The reference implementation uses ThematicSensors, TextureHandle.createForImageBuffer,
-// Gradient.Symb.createThematic, and target.plan.thematic. This is a simplified version that
-// stores the settings but defers texture creation and sensor management.
-//
-// Gradient texture creation is implemented via GradientSymb.produceImage.
-// ThematicSensors is available in ThematicSensors.h.
-// View matrix transforms for axis/sun direction are implemented.
+// M-S S-c 归位：update(target) 参考全语义（ThematicUniforms.ts:90-152——快路径
+// 视图相关刷新/clear 路径/渐变纹理重建）；渐变纹理经 GradientSymb.
+// getThematicImageForRenderer（1×N 列向 RGBA8，Gradient.ts:307-359）+ NEAREST/
+// ClampToEdge（Texture.ts:293-309 ThematicGradient 形态）。
 #pragma once
 
 #include "UniformHandle.h"
 #include "FloatRGBA.h"
 #include "TextureHandle.h"
 #include "ThematicSensors.h"
+#include "Sync.h"
 
 #include <dqCommon/ThematicDisplay.h>
 #include <dqCommon/Gradient.h>
@@ -34,33 +32,37 @@
 
 BEGIN_DQ_RENDER_NAMESPACE
 
+class TargetImpl;
+
 /// Default gradient dimension for thematic textures.
 /// Ported from: itwinjs-core ThematicUniforms._getGradientDimension()
+///（:209-213——min(8192, maxTextureSize)；DanQing 的 maxTextureSize 接线待
+/// 落地（TD-23 同族登记），恒 8192）。
 constexpr int kDefaultGradientDimension = 8192;
 
 // ---------------------------------------------------------------------------
 // ThematicUniforms — thematic display uniform handler
 // Ported from: itwinjs-core ThematicUniforms
 //
-// Handles thematic rendering settings: display mode, range, axis, sun direction,
-// margin color, gradient settings.
-//
-// Gradient texture creation is implemented.
-// ThematicSensors is available.
-// View matrix transforms are implemented.
+// EQUIVALENCE（§11.10）：参考 bind* 以 sync(this, uniform) 做逐程序上传去重
+//（UniformHandle.syncToken 面）；DanQing UniformHandle 无 syncToken 且 set*
+// 自带 dirty 检查直派 GL（TD-15）——bind* 恒上传（幂等写；去重为纯性能
+// 优化，语义无差）。验证法：ThematicUniformsTest 经 UniformHandle::getData
+// 读回值断言。
 // ---------------------------------------------------------------------------
-class ThematicUniforms {
+class ThematicUniforms : public SyncTarget {
 public:
     ThematicUniforms() = default;
 
-    /// Get the current thematic display settings.
+    /// Get the current thematic display settings (nullptr = 关闭/未设置).
+    /// Ported from: itwinjs-core ThematicUniforms.thematicDisplay getter
     dqCommon::ThematicDisplay const* getThematicDisplay() const noexcept
     {
         return m_thematicDisplay ? &m_thematicDisplay.value() : nullptr;
     }
 
     /// Check if iso lines are wanted.
-    /// Ported from: itwinjs-core ThematicUniforms.wantIsoLines
+    /// Ported from: itwinjs-core ThematicUniforms.wantIsoLines（:49-53）
     bool wantIsoLines() const noexcept
     {
         return m_thematicDisplay &&
@@ -69,7 +71,7 @@ public:
     }
 
     /// Check if slope mode is wanted.
-    /// Ported from: itwinjs-core ThematicUniforms.wantSlopeMode
+    /// Ported from: itwinjs-core ThematicUniforms.wantSlopeMode（:55-57）
     bool wantSlopeMode() const noexcept
     {
         return m_thematicDisplay &&
@@ -77,88 +79,24 @@ public:
     }
 
     /// Check if hill shade mode is wanted.
-    /// Ported from: itwinjs-core ThematicUniforms.wantHillShadeMode
+    /// Ported from: itwinjs-core ThematicUniforms.wantHillShadeMode（:59-61）
     bool wantHillShadeMode() const noexcept
     {
         return m_thematicDisplay &&
                m_thematicDisplay->displayMode == dqCommon::ThematicDisplayMode::HillShade;
     }
 
-    /// Update thematic uniforms from settings.
-    /// Ported from: itwinjs-core ThematicUniforms.update()
-    /// @param thematic The thematic display settings.
-    /// @param driver Optional driver for texture creation.
-    /// @param viewMatrix Optional 4x4 view matrix for transforming axis/sun direction.
-    void update(dqCommon::ThematicDisplay const& thematic,
-                rhi::Driver* driver = nullptr,
-                float const* viewMatrix = nullptr)
-    {
-        if (m_thematicDisplay && m_thematicDisplay->equals(thematic))
-            return;
+    /// Whether the global (shared) sensor texture is used (no distance cutoff).
+    /// Ported from: itwinjs-core ThematicUniforms.wantGlobalSensorTexture（:63-65）
+    bool wantGlobalSensorTexture() const noexcept { return !(m_fragSettings[1] > 0.0f); }
 
-        m_thematicDisplay = thematic;
+    /// Number of sensors（参考 :37 `_numSensors`）。
+    int getNumSensors() const noexcept { return m_numSensors; }
 
-        // Store settings for later use when full infrastructure is in place.
-        // （M-S S-c 重写 update(target) 时归位参考全语义；此处随 S-a 的
-        //  Range1d 化做编译适配——rangeMin/rangeMax → range.low/high。）
-        if (thematic.displayMode == dqCommon::ThematicDisplayMode::Slope) {
-            // Convert range to radians for slope mode.
-            m_range[0] = static_cast<float>(thematic.range.low * M_PI / 180.0);
-            m_range[1] = static_cast<float>(thematic.range.high * M_PI / 180.0);
-        } else {
-            m_range[0] = static_cast<float>(thematic.range.low);
-            m_range[1] = static_cast<float>(thematic.range.high);
-        }
-
-        m_colorMix = static_cast<float>(thematic.gradientSettings.colorMix);
-
-        // Transform axis by viewMatrix (rotate only, no translation).
-        // Ported from: itwinjs-core ThematicUniforms.update() axis transform
-        double ax = thematic.axis.x, ay = thematic.axis.y, az = thematic.axis.z;
-        if (viewMatrix) {
-            // Apply 3x3 rotation part of view matrix to axis
-            double nx = viewMatrix[0]*ax + viewMatrix[4]*ay + viewMatrix[8]*az;
-            double ny = viewMatrix[1]*ax + viewMatrix[5]*ay + viewMatrix[9]*az;
-            double nz = viewMatrix[2]*ax + viewMatrix[6]*ay + viewMatrix[10]*az;
-            ax = nx; ay = ny; az = nz;
-        }
-        m_axis[0] = static_cast<float>(ax);
-        m_axis[1] = static_cast<float>(ay);
-        m_axis[2] = static_cast<float>(az);
-
-        // Transform sun direction by viewMatrix (rotate only, no translation).
-        // Ported from: itwinjs-core ThematicUniforms.update() sunDirection transform
-        double sx = thematic.sunDirection.x, sy = thematic.sunDirection.y, sz = thematic.sunDirection.z;
-        if (viewMatrix) {
-            double nx = viewMatrix[0]*sx + viewMatrix[4]*sy + viewMatrix[8]*sz;
-            double ny = viewMatrix[1]*sx + viewMatrix[5]*sy + viewMatrix[9]*sz;
-            double nz = viewMatrix[2]*sx + viewMatrix[6]*sy + viewMatrix[10]*sz;
-            sx = nx; sy = ny; sz = nz;
-        }
-        m_sunDirection[0] = static_cast<float>(sx);
-        m_sunDirection[1] = static_cast<float>(sy);
-        m_sunDirection[2] = static_cast<float>(sz);
-
-        m_marginColor = FloatRgba::fromHex(
-            thematic.gradientSettings.marginColor.getRgb(),
-            static_cast<uint8_t>(thematic.gradientSettings.marginColor.getAlpha()));
-
-        m_displayMode[0] = static_cast<float>(thematic.displayMode);
-
-        m_fragSettings[0] = static_cast<float>(thematic.gradientSettings.mode);
-
-        m_fragSettings[1] = static_cast<float>(thematic.sensorSettings.distanceCutoff);
-
-        m_fragSettings[2] = static_cast<float>(
-            std::min(thematic.gradientSettings.stepCount, kDefaultGradientDimension));
-
-        m_fragSettings[3] = (thematic.gradientSettings.transparencyMode ==
-            dqCommon::ThematicGradientTransparencyMode::SurfaceOnly) ? 0.0f : 1.0f;
-
-        // Create gradient texture from thematic display settings.
-        // Ported from: itwinjs-core ThematicUniforms.update() line 150-151
-        if (driver) createGradientTexture(*driver);
-    }
+    /// Update thematic uniforms from the target's render plan.
+    /// Ported from: itwinjs-core ThematicUniforms.update(target)（:90-152）。
+    /// 实现入 .cpp（TargetImpl 完全体所需——头文件循环包含规避）。
+    void update(TargetImpl& target);
 
     /// Bind range uniform (vec2).
     /// Ported from: itwinjs-core ThematicUniforms.bindRange()
@@ -189,32 +127,39 @@ public:
         uniform.setUniform4fv(v);
     }
 
-    /// Bind display mode uniform (int).
+    /// Bind display mode uniform (float).
     /// Ported from: itwinjs-core ThematicUniforms.bindDisplayMode()
     void bindDisplayMode(UniformHandle& uniform) const
     {
         uniform.setUniform1fv(m_displayMode.data());
     }
 
-    /// Bind fragment settings uniform (vec4).
+    /// Bind fragment settings uniform (vec4 — gradientMode, distanceCutoff,
+    /// stepCount, multiplyGradientAlpha).
     /// Ported from: itwinjs-core ThematicUniforms.bindFragSettings()
     void bindFragSettings(UniformHandle& uniform) const
     {
         uniform.setUniform4fv(m_fragSettings.data());
     }
 
-    /// Check if the uniform is disposed (always true — no GPU resources in simplified version).
-    /// Ported from: itwinjs-core ThematicUniforms.isDisposed
-    bool isDisposed() const noexcept { return true; }
-
-    /// Dispose — release GPU resources.
-    /// Ported from: itwinjs-core ThematicUniforms.dispose()
-    void dispose() {
-        m_texture = {};
+    /// Bind the number of sensors.
+    /// Ported from: itwinjs-core ThematicUniforms.bindNumSensors()
+    void bindNumSensors(UniformHandle& uniform) const
+    {
+        uniform.setUniform1i(m_numSensors);
     }
 
-    /// Bind gradient texture to a texture unit.
-    /// Ported from: itwinjs-core ThematicUniforms.bindGradientTexture()
+    /// Check if disposed（参考 :199-201——纹理与传感器均释放）。
+    bool isDisposed() const noexcept { return !m_texture.isValid() && !m_sensors.has_value(); }
+
+    /// Dispose — release GPU resources（参考 :203-206）。
+    void dispose() {
+        m_texture = {};
+        m_sensors.reset();
+    }
+
+    /// Bind gradient texture to a texture unit（GL 级绑定——S-d 的着色器
+    /// s_texture 注册面消费；参考 bindTexture :184-187 的 sampler 绑单位移）。
     void bindGradientTexture(rhi::Driver& driver, uint32_t unit) const {
         if (m_texture.isValid()) {
             driver.bindTexture(unit, m_texture.getRhiHandle());
@@ -224,46 +169,20 @@ public:
     /// Get the gradient texture handle.
     rhi::TextureHandle getGradientTexture() const noexcept { return m_texture.getRhiHandle(); }
 
-    /// Get the number of sensors.
-    int getNumSensors() const noexcept { return m_numSensors; }
-
 private:
+    /// Ported from: itwinjs-core ThematicUniforms._updateAxis（:73-79——
+    /// 视矩阵旋转向量[可选] + 恒 normalize）。
+    void updateAxis(dqGeom::Vector3d const& axis, dqGeom::Transform const* viewMatrix);
+
+    /// Ported from: itwinjs-core ThematicUniforms._updateSunDirection（:81-88——
+    /// 视矩阵变换 + negate + normalize）。
+    void updateSunDirection(dqGeom::Vector3d const& sunDir, dqGeom::Transform const& viewMatrix);
+
     /// Create gradient texture from thematic display settings.
-    /// Ported from: itwinjs-core ThematicUniforms.update() line 150-151
-    void createGradientTexture(rhi::Driver& driver) {
-        if (!m_thematicDisplay.has_value()) return;
-
-        // Create gradient symb from thematic settings.
-        // Ported from: itwinjs-core GradientSymb.createThematic()
-        // This correctly sets GradientMode::Thematic and populates key colors
-        // from the color scheme. The ThematicGradientMode (Smooth/Stepped/IsoLines)
-        // is stored in m_fragSettings[0] for the shader, not in the GradientMode.
-        dqCommon::GradientSymb symb = dqCommon::GradientSymb::createThematic(
-            m_thematicDisplay->gradientSettings);
-
-        // Produce gradient image
-        dqCommon::ProduceImageArgs imgArgs;
-        imgArgs.width = m_gradientDimension;
-        imgArgs.height = 1;
-
-        auto image = symb.produceImage(imgArgs);
-        if (!image.has_value()) return;
-
-        // Create GPU texture from image buffer
-        // ImageBuffer: data is width * height * bytesPerPixel
-        auto const& imgBuffer = image.value();
-        int bytesPerPixel = (imgBuffer.format == dqCommon::ImageBufferFormat::Rgba) ? 4 : 3;
-        int height = static_cast<int>(imgBuffer.data.size() / (imgBuffer.width * bytesPerPixel));
-        if (height <= 0) height = 1;
-
-        m_texture = TextureHandle::create2D(
-            driver,
-            static_cast<uint32_t>(imgBuffer.width),
-            static_cast<uint32_t>(height),
-            rhi::TextureFormat::RGBA8,
-            imgBuffer.data.data(),
-            static_cast<uint32_t>(imgBuffer.data.size()));
-    }
+    /// Ported from: itwinjs-core ThematicUniforms.update() :149-151——
+    /// Gradient.Symb.createThematic + getThematicImageForRenderer +
+    /// createForImageBuffer(ThematicGradient 型：NEAREST/ClampToEdge/无 mipmap)。
+    void createGradientTexture(rhi::Driver& driver);
 
     std::optional<dqCommon::ThematicDisplay> m_thematicDisplay;
 
@@ -280,6 +199,10 @@ private:
     TextureHandle m_texture;
     int m_numSensors = 0;
     int m_gradientDimension = kDefaultGradientDimension;
+
+    // 全局共享传感器纹理的 CPU 数据面（GPU 上传随 S-e 接线——
+    // ThematicSensors GPU 化前 update 的 wantThematicSensors 臂仅持 CPU 态）。
+    std::optional<ThematicSensors> m_sensors;
 };
 
 END_DQ_RENDER_NAMESPACE

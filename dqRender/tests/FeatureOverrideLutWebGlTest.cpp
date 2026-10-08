@@ -260,14 +260,20 @@ TEST(FeatureOverrideLutWebGlTest, BatchUniformsSymbologyFlagsNoOverrides)
 // leaves the uniform untouched (no-op). Ported from BatchUniforms.bindNumThematicSensors.
 TEST(FeatureOverrideLutWebGlTest, BatchUniformsNumThematicSensors)
 {
-    // dqRender::ThematicDisplaySensor（ThematicSensors 的消费形态）——
-    // dqCommon 后起同名类（ThematicDisplay.h:184）令非限定名在双 using 下
-    // 歧义，限定到本意符号。
-    std::vector<dqRender::ThematicDisplaySensor> sensors = {
-        dqRender::ThematicDisplaySensor::fromJSON(0.0, 0.0, 0.0, 1.0),
-        dqRender::ThematicDisplaySensor::fromJSON(1.0, 1.0, 1.0, 2.0),
-        dqRender::ThematicDisplaySensor::fromJSON(2.0, 2.0, 2.0, 3.0),
-    };
+    // dqCommon::ThematicDisplaySensor（M-S 归位：dqRender 原地复刻的同名
+    // struct 删——参考 ThematicSensors.ts 自 core-common 导入同型）。
+    std::vector<dqCommon::ThematicDisplaySensor> sensors;
+    {
+        auto mk = [](double x, double y, double z, double v) {
+            dqCommon::ThematicDisplaySensor s;
+            s.position = dqGeom::Point3d::From(x, y, z);
+            s.value = v;
+            return s;
+        };
+        sensors.push_back(mk(0.0, 0.0, 0.0, 1.0));
+        sensors.push_back(mk(1.0, 1.0, 1.0, 2.0));
+        sensors.push_back(mk(2.0, 2.0, 2.0, 3.0));
+    }
     ThematicSensors ts = ThematicSensors::create(sensors, dqGeom::Transform::CreateIdentity());
     ASSERT_EQ(ts.numSensors(), 3u);
 

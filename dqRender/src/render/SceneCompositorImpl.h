@@ -28,7 +28,6 @@
 #include "BranchStack.h"
 #include "ClipStack.h"
 #include "ContourUniforms.h"
-#include "ThematicUniforms.h"
 #include "Uniforms.h"
 #include "CompositorTextures.h"
 #include "CompositorFrameBuffers.h"
@@ -230,7 +229,8 @@ private:
 
     // --- OIT composite shader (kept separate from textures/FBOs) ---
     bool m_oitInitialized = false;
-    ThematicUniforms m_thematicUniforms;  // gradient texture for thematic display
+    // M-S S-c：m_thematicUniforms 成员删——thematic 归位 TargetUniforms.
+    // thematic（TargetUniforms.ts:133），本处原系错位持有（参考 Target 面）。
     ContourUniforms m_contourUniforms;    // packed contour definitions
     bool m_readPickDataFromPingPong = false;  // pingPong: read pick data from pingPong FBO
     uint8_t m_antialiasSamples = 1;  // MSAA sample count (1 = no MSAA)

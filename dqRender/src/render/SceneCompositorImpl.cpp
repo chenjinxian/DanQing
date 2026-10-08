@@ -1566,13 +1566,12 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     }
 
                     // Set thematic uniforms when thematic display is active.
-                    // Ported from: itwinjs-core ThematicUniforms binding in draw pass
-                    if (flags.isThematic) {
-                        // Bind gradient texture to texture unit 1 for thematic color lookup.
-                        // Ported from: itwinjs-core ThematicUniforms.bindGradientTexture()
-                        m_thematicUniforms.bindGradientTexture(driver, 1);
-                        params.setInt("u_thematicEnabled", 1);
-                    }
+                    //（M-S S-c：原 m_thematicUniforms 死绑段[unit 1 绑 +
+                    //  u_thematicEnabled 自创 uniform——参考无此面，uniforms
+                    //  永空故恒 no-op]删除；thematic 的渐变纹理与 uniforms 绑
+                    //  定归 shader 注册面[glsl/Thematic.ts:214-336]，随 S-d
+                    //  落地——参考经 TextureUnit.SurfaceTexture=2 接管
+                    //  s_texture。）
 
                     // Set contour uniforms for contour line rendering.
                     // Ported from: itwinjs-core Contours.ts uniform binding

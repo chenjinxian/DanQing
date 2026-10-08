@@ -702,8 +702,15 @@ void TargetImpl::drawCanvasDecorations(std::vector<CanvasDecoration> const& canv
 // Ported from: itwinjs-core Target.changeRenderPlan() (line 495-544)
 // ---------------------------------------------------------------------------
 void TargetImpl::changeRenderPlan(ViewFlags const& viewFlags, bool is3d,
-                                  dqCommon::HiddenLineSettings const* hline)
+                                  dqCommon::HiddenLineSettings const* hline,
+                                  dqCommon::ThematicDisplay const* thematic)
 {
+    // M-S S-c：plan.thematic 存管（Target.plan.thematic 读取面的承载）。
+    if (thematic)
+        m_planThematic = *thematic;
+    else
+        m_planThematic.reset();
+
     // Update 3D flag
     if (m_is3d != is3d) {
         m_is3d = is3d;

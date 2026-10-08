@@ -17,6 +17,10 @@
 #include "dqGeom/Range3d.h"
 #include "dqGeom/Transform.h"
 
+#include <dqCommon/ThematicDisplay.h>  // ThematicDisplaySensor（参考 ThematicSensors.ts
+                                       //  自 core-common 导入——M-S 归位：本文件原
+                                       //  地复刻的同名 struct 删[重复类型源]）
+
 #ifndef BEGIN_DQ_RENDER_NAMESPACE
 #define BEGIN_DQ_RENDER_NAMESPACE namespace dqRender {
 #define END_DQ_RENDER_NAMESPACE }
@@ -27,22 +31,7 @@ BEGIN_DQ_RENDER_NAMESPACE
 using dqGeom::Point3d;
 using dqGeom::Range3d;
 using dqGeom::Transform;
-
-// ---------------------------------------------------------------------------
-// ThematicDisplaySensor — a single sensor position + value
-// ---------------------------------------------------------------------------
-// Ported from: itwinjs-core core-common ThematicDisplaySensor
-struct ThematicDisplaySensor {
-    Point3d position = Point3d::FromZero();
-    double value = 0.0;
-
-    static ThematicDisplaySensor fromJSON(double px, double py, double pz, double val) {
-        ThematicDisplaySensor s;
-        s.position = Point3d::From(px, py, pz);
-        s.value = val;
-        return s;
-    }
-};
+using dqCommon::ThematicDisplaySensor;
 
 // ---------------------------------------------------------------------------
 // ThematicSensors — floating-point texture of sensor data
