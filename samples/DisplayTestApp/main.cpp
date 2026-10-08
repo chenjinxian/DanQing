@@ -67,6 +67,7 @@ static LONG WINAPI dtaCrashPrinter(EXCEPTION_POINTERS* ep)
 #include "src/Gui/DtaTools.h"
 #include "src/Gui/TileTreePanel.h"
 #include "src/Gui/CategoriesPanel.h"
+#include "src/Gui/CesiumDecorator.h"   // Start 页 Cesium 卡片直装（D-1 裁决后，陈列馆保留）
 #include "src/Gui/View3DInventor.h"
 #include "src/Gui/DecorationGeometryExample.h"
 #include "src/Gui/Command.h"
@@ -290,16 +291,16 @@ int main(int argc, char** argv)
                          mainWindow->showStatus(0, QObject::tr("Decoration Geometry Example opened"));
                      });
     // "Cesium Renderer Example"（Surface.ts:167-177）：新建 blank connection 后
-    // 激活 CesiumExampleTool（keyin "dta cesium example" 同一工具）——appToolBar
-    // 旧钮的 Create+SetActiveTool 语义（b87a96a960 删钮后经 Start 卡片恢复入口）。
+    // 直装 CesiumDecorator（EmptyExample.ts:266-269 CesiumDecorator.start(vp.iModel)
+    // 的宿主面——用户 2026-10-07 裁决：dta cesium example keyin 工具随 D-1 删除，
+    // 陈列馆本体保留为 Start 卡片入口）。
     QObject::connect(startView, &StartGui::StartView::requestCesiumExample,
                      mainWindow, [mainWindow]() {
                          auto* mdView = Gui::Application::Instance()->newDocument();
                          if (auto* view3d = qobject_cast<Gui::View3DInventor*>(mdView)) {
-                             (void)view3d;
-                             auto& ta = dqApp::Application::Get().GetToolAdmin();
-                             if (auto* tool = ta.GetRegistry().Create("CesiumExampleTool"))
-                                 ta.SetActiveTool(tool);
+                             if (auto* vp = view3d->getUeViewport())
+                                 if (auto* imodel = vp->GetIModel())
+                                     Gui::CesiumDecorator::start(imodel);
                          }
                          mainWindow->showStatus(0, QObject::tr("Cesium Renderer Example opened"));
                      });

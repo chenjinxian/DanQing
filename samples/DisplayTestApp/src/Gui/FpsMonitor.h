@@ -58,7 +58,8 @@ private:
 // Key-in tool that records a number of frames and reports the average FPS.
 // Ported from: RecordFpsTool (FpsMonitor.ts:98-143) — toolId "RecordFps",
 // maxArgs 1, keyin "dta record fps" (SVTTools.json tools.RecordFps.keyin).
-class RecordFpsTool final : public dqApp::InteractiveTool
+class RecordFpsTool final : public dqApp::InteractiveTool,
+                            public std::enable_shared_from_this<RecordFpsTool>
 {
 public:
     // Ported from: RecordFpsTool.toolId (FpsMonitor.ts:99).
@@ -68,7 +69,10 @@ public:
     // Ported from: Tool.get englishKeyin — SVTTools.json "tools.RecordFps.keyin".
     std::string englishKeyin() const override { return "dta record fps"; }
 
-    // Ported from: RecordFpsTool.run (FpsMonitor.ts:110-124) — default 150 frames.
+    // Ported from: RecordFpsTool.run (FpsMonitor.ts:110-124) — default 150 frames。
+    // 2026-10-07 裁决 D-2：参考异步面（onRender 订阅 + 达到帧数自退）落地——
+    // run 订阅后立即返回、录制期间不阻塞 UI（原同步 processEvents 泵循环删除）。
+    // 工具活到录制完成：run 登记注册表防止即删，onUpdate 尾 exitTool() 自退。
     bool run() override;
     // Ported from: RecordFpsTool.parseAndRun (FpsMonitor.ts:126-138) — optional
     // frame count argument.
@@ -82,7 +86,12 @@ private:
     int m_numFramesToRecord = 0;
     int m_numFramesRecorded = 0;
     bool m_hadContinuousRendering = false;
-    bool m_recording = false;
+    dqBase::DqEventScope m_scope;      // onRender 订阅令牌（2026-10-07 D-2）
+    dqApp::Viewport* m_vp = nullptr;   // 录制视口（恢复 continuousRendering 用）
+    // 录制窗口内自持（C++ 对应 GC 语义——参考工具实例由 GC 托管至 update 完成；
+    // parseAndRun 的调用尾 delete tool 不应杀活跃录制）。run 起持、onUpdate
+    // 完成释放。
+    std::shared_ptr<RecordFpsTool> m_keepAlive;
     std::chrono::steady_clock::time_point m_startTime;
 };
 

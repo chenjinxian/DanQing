@@ -70,7 +70,10 @@ TEST(MacroTool, EmptyOrMissingFileReportsNoContent)
     EXPECT_TRUE(tool.run());
 }
 
-// \r\n 分行 + 空行剔除（:15-21）——合法 keyin 序列逐行执行（无告警）。
+// \r\n 分行 + 空行剔除（:15-21——参考 forEach+splice 的缺陷形态：相邻空行
+// 漏删一个，幸存空串进 parseAndRun 弹 ToolNotFound 告警。2026-10-07 裁决
+// D-3：严格对齐 = 复现缺陷形态——两行合法 keyin + 夹两空行 + CRLF 行尾，
+// 锁幸存空行触发的告警分流面）。
 TEST(MacroTool, ExecutesEachLineAndStripsBlankLines)
 {
     auto& admin = dqApp::Application::Get().GetToolAdmin();
@@ -83,7 +86,7 @@ TEST(MacroTool, ExecutesEachLineAndStripsBlankLines)
         "dta grid settings\r\n"
         "\r\n"
         "\r\n"
-        "dta snapmode\r\n");
+        "dta record fps 1\r\n");
     Gui::MacroTool tool;
     tool.m_macroFile = path;
     EXPECT_TRUE(tool.run());

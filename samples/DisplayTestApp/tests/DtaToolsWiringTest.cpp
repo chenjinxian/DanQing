@@ -38,7 +38,6 @@
 #include "Gui/KeyinField.h"
 #include "Gui/MainWindow.h"
 #include "Gui/SaveImageTool.h"
-#include "Gui/SnapModeTool.h"
 #include "Gui/ZoomToSelectedTool.h"
 #include "Gui/SyncViewportsTool.h"
 #include "Gui/TileLoadIndicator.h"
@@ -214,69 +213,19 @@ TEST(DtaToolsWiring, KeyinFieldSubmitRunsRecordFpsThroughRegistry)
     QKeyEvent submit(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
     QApplication::sendEvent(keyin, &submit);
 
-    // RecordFpsTool：Recording...（run 开头）+ FPS x.xx（update 收尾）。
+    // RecordFpsTool（2026-10-07 D-2 异步面）：run 订阅 OnFinishRender 后立即
+    // 返回（"Recording..."——原先同步泵循环同时出 "FPS x.xx"；D-2 后完成需
+    // 真帧驱动）。测试锁 = run 立即返回 + Recording 消息 + 注册表后续 keyin
+    // 不被阻塞（异步面成立的直接证据：完成等待帧渲染，不冻结 UI）。
     EXPECT_TRUE(capture.hasPrefix("Recording...")) << "keyin submit did not reach RecordFpsTool";
-    EXPECT_TRUE(capture.hasPrefix("FPS ")) << "record did not complete with an FPS report";
     // 历史推入（KeyinField.ts pushHistory——键入串在历史顶部）。
     // （历史是私有面——submit 后文本框清空即其可观测面。）
     EXPECT_TRUE(keyin->text().isEmpty());
 }
 
-// Authored: no reference test (DTA ships none — snap 模式面在 DTA 经 UI 设置
-// 与 DrawingAid 快捷键，无离线断言对应物）——M-M(6) 接线锁：keyin
-// `dta snapmode <mode>` → AccuSnap 活跃模式切换（App.ts:486-489
-// setActiveSnapMode 的引擎通道）+ 模式名解析面 + 无参恢复默认。
-TEST(DtaToolsWiring, SnapModeKeyinSetsAccuSnapActiveMode)
-{
-    ensureAppStubReady();
-    ensureEngineReady();
-    ViewGuardDtw guard;
-    MessageCapture capture;
+// DtaToolsWiring.SnapModeKeyinSetsAccuSnapActiveMode 已删（2026-10-07 裁决
+// D-1："dta snapmode" keyin 为参考所无——删除即被测件退役）。
 
-    // 模式名解析面（SnapMode 枚举名 1:1——HitDetail.ts:22-32）。
-    EXPECT_EQ(Gui::SetActiveSnapModeTool::parseMode("Intersection"),
-              dqApp::SnapMode::Intersection);
-    EXPECT_EQ(Gui::SetActiveSnapModeTool::parseMode("MidPoint"),
-              dqApp::SnapMode::MidPoint);
-    EXPECT_FALSE(Gui::SetActiveSnapModeTool::parseMode("Bogus").has_value());
-
-    Gui::MainWindow mw;
-    Gui::setupDtaStatusBar(&mw);
-    auto* keyin = mw.findChild<Gui::KeyinField*>();   // M-R 顶条（全树查找）
-    ASSERT_NE(keyin, nullptr);
-
-    auto activeMode = []() -> int {
-        int n = 0;
-        auto const* p = dqApp::Application::Get().GetAccuSnap().getActiveSnapModes(n);
-        return n > 0 ? static_cast<int>(*p) : -1;
-    };
-    int const before = activeMode();
-
-    // keyin 设 Intersection（位值 64）。
-    keyin->setText(QStringLiteral("dta snapmode Intersection"));
-    QKeyEvent submit(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
-    QApplication::sendEvent(keyin, &submit);
-    EXPECT_EQ(64, activeMode()) << "snapmode keyin did not reach AccuSnap";
-    EXPECT_TRUE(capture.hasPrefix("[SNAP] active snap mode = 0x40"));
-
-    // 无参 → 恢复默认 NearestKeypoint（App.ts:76 初值 2）。
-    keyin->setText(QStringLiteral("dta snapmode"));
-    QApplication::sendEvent(keyin, &submit);
-    EXPECT_EQ(2, activeMode()) << "bare snapmode keyin must restore NearestKeypoint";
-
-    // 未知名 → 报错不改变当前模式。
-    keyin->setText(QStringLiteral("dta snapmode Bogus"));
-    QApplication::sendEvent(keyin, &submit);
-    EXPECT_EQ(2, activeMode()) << "unknown mode must not change the active snap";
-    EXPECT_TRUE(capture.hasPrefix("[SNAP] unknown snap mode 'Bogus'"));
-
-    (void)before;
-}
-
-// Authored: no reference test (DTA ships none — UI 下拉在浏览器侧无离线断言) —
-// M-O(1) I2 接线锁：状态栏 Snap Mode 下拉（SnapModes.ts:30-50 addSnapModes 的
-// 宿主对应物）——8 项参考名序 + 默认 Keypoint + 单模式选择经 setActiveSnapMode、
-// Multi-snap 经 setActiveSnapModes(7 模式数组)（SnapModes.ts:10-28）。
 TEST(DtaToolsWiring, SnapModesComboBoxSwitchesAccuSnapActiveModes)
 {
     ensureAppStubReady();

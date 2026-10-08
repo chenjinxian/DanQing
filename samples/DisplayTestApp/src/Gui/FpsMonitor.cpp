@@ -14,6 +14,7 @@
 #include <dqApp/Viewport.h>
 
 #include <cmath>
+#include <cstdio>
 
 namespace Gui {
 
@@ -115,34 +116,31 @@ void FpsMonitor::update()
 
 bool RecordFpsTool::run()
 {
-    // Ported from: RecordFpsTool.run (FpsMonitor.ts:110-124).
+    // Ported from: RecordFpsTool.run (FpsMonitor.ts:110-124)——异步面：onRender
+    // 订阅 + 达到帧数经 update 自退（dispose + 恢复 continuousRendering +
+    // "FPS {value}" 消息），run 订阅后立即返回。2026-10-07 裁决 D-2：原同步
+    // processEvents+RenderLoop 泵循环删除（录制期 UI 冻结与参考不符）。
+    // 参考的 PerformanceMetrics 钩（metrics.spfTimes 每帧时长）未移植——DanQing
+    // 以 frames/elapsedSec 承载（既有 EQUIVALENCE 登记，见文件头）。
     dqApp::Viewport* vp = activeViewport();
     if (nullptr == vp || 0 >= m_numFramesToRecord)
         return true;
 
+    // 录制窗口内自持（C++ 对应 GC 语义——参考实例由 GC 托管至 update 完成；
+    // parseAndRun 的调用尾 delete tool 不应杀活跃录制——审计 D-2 取证实录）。
+    // 守卫：被归属所有权管理时（智能指针已接管）跳过 shared_from_this。
+    if (!weak_from_this().expired())
+        m_keepAlive = shared_from_this();
+    m_vp = vp;
     m_hadContinuousRendering = vp->continuousRendering();
-    vp->setContinuousRendering(true);
 
-    // The reference subscribes vp.onRender for the selected viewport and awaits
-    // frames across async run() microtasks (FpsMonitor.ts:118 + _dispose at :144).
-    // RecordFpsTool instances live only for the parseAndRun call here (the
-    // registry deletes them afterwards — GC in the reference), so the record
-    // window completes synchronously: pump the render loop until N frames have
-    // been observed.
-    m_recording = true;
+
     m_numFramesRecorded = 0;
     m_startTime = std::chrono::steady_clock::now();
     auto& viewMgr = dqApp::Application::Get().GetViewManager();
-    auto const token = viewMgr.OnFinishRender.AddListener([this]() { onUpdate(); });
+    m_scope.add(viewMgr.OnFinishRender.AddListener([this]() { onUpdate(); }));
     dqApp::Application::Get().GetNotificationManager().OutputMessage(
         dqApp::NotifyMessageDetails(dqApp::OutputMessagePriority::Info, "Recording..."));
-    while (m_recording) {
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
-        viewMgr.RenderLoop();
-    }
-    token();
-
-    vp->setContinuousRendering(m_hadContinuousRendering);
     return true;
 }
 
@@ -166,11 +164,15 @@ bool RecordFpsTool::parseAndRun(std::vector<std::string> const& args)
 
 void RecordFpsTool::onUpdate()
 {
-    // Ported from: RecordFpsTool.update (FpsMonitor.ts:140-160).
+    // Ported from: RecordFpsTool.update (FpsMonitor.ts:140-160)——达到帧数：
+    // dispose 订阅 + 恢复 continuousRendering + "FPS {value}" + 自退（exitTool）。
     if (++m_numFramesRecorded < m_numFramesToRecord)
         return;
 
-    m_recording = false;
+    m_scope.DisconnectAll();
+    if (m_vp)
+        m_vp->setContinuousRendering(m_hadContinuousRendering);
+    m_keepAlive.reset();   // 自持释放——参考 GC 托管的 C++ 对应（D-2）
 
     // Reference: fps = metrics.spfTimes.length / metrics.spfSum — frames over the
     // summed seconds-per-frame of the same frames. Elapsed wall time equals the
@@ -183,6 +185,7 @@ void RecordFpsTool::onUpdate()
     dqApp::Application::Get().GetNotificationManager().OutputMessage(
         dqApp::NotifyMessageDetails(dqApp::OutputMessagePriority::Info,
                                     QStringLiteral("FPS %1").arg(fps, 0, 'f', 2).toStdString()));
+    exitTool();   // 录制完成自退（参考工具完成后续驻留 GC——DanQing 显式面）。
 }
 
 }  // namespace Gui

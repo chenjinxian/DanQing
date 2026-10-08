@@ -38,12 +38,11 @@
 #include "OutputShadersTool.h"        // M-O(2) 3d OutputShaders 工具注册
 #include "TiledGraphics.h"            // M-O(2) I11 第二 iModel 叠加工具注册
 #include "MacroTool.h"                // M-O(4) P9 Macro 播放器注册
-#include "CesiumExampleTool.h"        // M-O(4) P8 Cesium 陈列馆注册
+
 #include "GridSettingsTool.h"
 #include "KeyinField.h"
 #include "MainWindow.h"
 #include "SaveImageTool.h"
-#include "SnapModeTool.h"
 #include "SyncViewportsTool.h"
 #include "ZoomToSelectedTool.h"
 #include "TileLoadIndicator.h"
@@ -68,10 +67,6 @@ void registerDtaTools()
     registry.Register("SyncFrusta",
                       []() -> dqApp::InteractiveTool* { return new SyncViewportFrustaTool(); },
                       "dta frustum sync");
-    // M-M(6)：Snap modes 接线（App.ts:486-489 setActiveSnapMode 的 keyin 形态）。
-    registry.Register("SetActiveSnapMode",
-                      []() -> dqApp::InteractiveTool* { return new SetActiveSnapModeTool(); },
-                      "dta snapmode");
     // M-N(2)：ZoomToSelectedElements（Viewer.ts:49-89——keyin "dta zoom selected"）。
     registry.Register("ZoomToSelectedElements",
                       []() -> dqApp::InteractiveTool* { return new ZoomToSelectedElementsTool(); },
@@ -101,11 +96,6 @@ void registerDtaTools()
     registry.Register("Macro",
                       []() -> dqApp::InteractiveTool* { return new MacroTool(); },
                       "dta macro");
-    // M-O(4) P8：CesiumExampleTool（EmptyExample.ts:14-48——keyin
-    // "dta cesium example"；8 族装饰形态陈列 toggle）。
-    registry.Register("CesiumExample",
-                      []() -> dqApp::InteractiveTool* { return new CesiumExampleTool(); },
-                      "dta cesium example");
 }
 
 void setupDtaStatusBar(MainWindow* mainWindow)

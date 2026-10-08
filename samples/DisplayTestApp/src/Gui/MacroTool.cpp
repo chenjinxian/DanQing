@@ -37,14 +37,22 @@ bool MacroTool::run()
         if (c != '\r')
             macroStr2.push_back(c);
 
-    // :17-21 \n 分行 + 空行剔除（参考 forEach+splice 的同语义——重建等价）。
+    // :17-21 \n 分行 + 空行剔除（参考 forEach+splice 的**原样语义**——遍历中
+    // 删除使相邻空行漏删一个（splice 前移跳检），幸存空串仍进 parseAndRun →
+    // ToolNotFound 告警框。2026-10-07 裁决 D-3：先前"修正版重建"（全剔）按
+    // 严格对齐指令回退为缺陷复现）。
     std::vector<std::string> commands;
     {
         std::istringstream stream(macroStr2);
         std::string line;
         while (std::getline(stream, line))
-            if (!line.empty())
-                commands.push_back(line);
+            commands.push_back(line);
+    }
+    for (size_t i = 0; i < commands.size();) {
+        if (commands[i].empty())
+            commands.erase(commands.begin() + static_cast<ptrdiff_t>(i));
+        else
+            ++i;   // splice 语义：删后同索引重检（i 不前移）——相邻空行漏删一个
     }
 
     auto& notify = dqApp::Application::Get().GetNotificationManager();

@@ -42,7 +42,6 @@ add_executable(DisplayTestApp WIN32
     src/Gui/TileLoadIndicator.h     # MOC needs this for Q_OBJECT
     src/Gui/SaveImageTool.cpp       # SaveImage（M-L(3) 诊断三小件——readImageBuffer 生产包装）
     src/Gui/SaveImageTool.h
-    src/Gui/SnapModeTool.cpp        # SetActiveSnapMode（M-M(6)——AccuSnap 活跃模式 keyin 接线）
     src/Gui/GridSettingsTool.cpp    # ChangeGridSettings（M-O(1) I5——grid 设置 keyin 接线）
     src/Gui/GltfDecorationTool.cpp  # AddGltfDecoration（M-O(2) 3f——glTF keyin + 实例化参数面）
     src/Gui/GltfDecorationTool.h
@@ -54,8 +53,6 @@ add_executable(DisplayTestApp WIN32
     src/Gui/MacroTool.h
     src/Gui/CesiumDecorator.cpp      # 装饰图元陈列馆（M-O(4) P8——EmptyExample.ts）
     src/Gui/CesiumDecorator.h
-    src/Gui/CesiumExampleTool.cpp    # 陈列馆入口 keyin（M-O(4) P8）
-    src/Gui/CesiumExampleTool.h
     src/Gui/FeatureOverridesPanel.cpp  # Overrides 面板（M-O(2) I10——选择集 appearance 覆盖）
     src/Gui/FeatureOverridesPanel.h    # MOC needs this for Q_OBJECT
     src/Gui/SectionsPanel.cpp          # Sectioning 面板（M-P P-G——SectionTools.ts SectionsPanel）
@@ -65,7 +62,6 @@ add_executable(DisplayTestApp WIN32
     src/Gui/NamedViews.cpp            # NamedVSPS 持久化载体（M-O(2) I9 Saved Views）
     src/Gui/SavedViewsPanel.cpp       # SavedViewPicker 弹出面板（M-O(2) I9）
     src/Gui/SavedViewsPanel.h         # MOC needs this for Q_OBJECT
-    src/Gui/SnapModeTool.h
     src/Gui/CategoriesPanel.cpp     # Categories 面板（M-N(1)——category 可见性引擎通道的 UI）
     src/Gui/CategoriesPanel.h
     src/Gui/ZoomToSelectedTool.cpp  # ZoomToSelectedElements（M-N(2)——placement 回放取景）
@@ -279,7 +275,6 @@ if(TARGET gtest_main AND TARGET dqApp)
         tests/JoesHouseEdgeTest.cpp     # JoesHouse 面板黑边线回归像素锁（M-I Task 4 边线两段——注册在 JoesHouseColorTest 之后：同因 fetcher 替换不回溢）
         tests/JoesHouseHoverTest.cpp    # JoesHouse hover 高亮像素锁（M-J Task 2——注册在 JoesHouseEdgeTest 之后：同因 fetcher 替换不回溢）
         tests/DtaToolsWiringTest.cpp    # M-L(3) 接线级回归：Keyin 字段/诊断三小件/视口同步/ToolAssistance 提示表
-        src/Gui/SnapModeTool.cpp        # M-M(6)：SetActiveSnapMode（snap 锁被测面）
         src/Gui/ZoomToSelectedTool.cpp  # M-N(2)：ZoomToSelectedElements（zoom 锁被测面）
         src/Gui/GridSettingsTool.cpp  # M-O(1) I5：ChangeGridSettings（grid 设置锁被测面）
         src/Gui/GltfDecorationTool.cpp  # M-O(2) 3f：AddGltfDecoration（gltf keyin 锁被测面）
@@ -292,8 +287,6 @@ if(TARGET gtest_main AND TARGET dqApp)
         src/Gui/MacroTool.h
         src/Gui/CesiumDecorator.cpp      # M-O(4) P8：陈列馆（像素锁被测面）
         src/Gui/CesiumDecorator.h
-        src/Gui/CesiumExampleTool.cpp    # M-O(4) P8：入口 keyin
-        src/Gui/CesiumExampleTool.h
         src/Gui/FeatureOverridesPanel.cpp  # M-O(2) I10：Overrides 面板（像素锁被测面）
         src/Gui/FeatureOverridesPanel.h  # MOC needs this for Q_OBJECT
         src/Gui/SectionsPanel.cpp          # M-P P-G：Sectioning 面板（wiring 锁被测面）
