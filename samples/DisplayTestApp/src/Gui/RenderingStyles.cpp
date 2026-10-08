@@ -437,8 +437,7 @@ std::vector<RenderingStyle> makeRenderingStyles()
         s.props.viewflags = vf;
         ThematicDisplayProps thematic;
         thematic.displayMode = dqCommon::ThematicDisplayMode::Slope;
-        thematic.rangeMin = 0.0;
-        thematic.rangeMax = 90.0;
+        thematic.range = dqGeom::Range1d(0.0, 90.0);
         thematic.axis = dqGeom::Vector3d::From(0.0, 0.0, 1.0);
         ThematicGradientSettingsProps grad;
         grad.mode = dqCommon::ThematicGradientMode::Smooth;

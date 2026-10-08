@@ -219,8 +219,9 @@ TEST(RenderingStylesTest, ThematicAndAtmosphereAndDefault)
     ASSERT_TRUE(slope.props.thematic.has_value());
     EXPECT_EQ(slope.props.thematic->displayMode.value_or(dqCommon::ThematicDisplayMode::Height),
               dqCommon::ThematicDisplayMode::Slope);
-    EXPECT_DOUBLE_EQ(slope.props.thematic->rangeMin.value_or(-1.0), 0.0);
-    EXPECT_DOUBLE_EQ(slope.props.thematic->rangeMax.value_or(-1.0), 90.0);
+    ASSERT_TRUE(slope.props.thematic->range.has_value());
+    EXPECT_DOUBLE_EQ(slope.props.thematic->range->low, 0.0);
+    EXPECT_DOUBLE_EQ(slope.props.thematic->range->high, 90.0);
     ASSERT_TRUE(slope.props.thematic->gradientSettings.has_value());
     EXPECT_EQ(slope.props.thematic->gradientSettings->colorScheme.value_or(dqCommon::ThematicGradientColorScheme::BlueRed),
               dqCommon::ThematicGradientColorScheme::Custom);

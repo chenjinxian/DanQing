@@ -88,6 +88,75 @@ TEST(GradientProduceImageTest, DoesNotConstrainThematicDimensions)
     EXPECT_EQ(img->getHeight(), 100);
 }
 
+namespace {
+// 参考 Gradient.test.ts 的 getPixel 打包形：(a<<24)|(r<<16)|(g<<8)|b。
+uint32_t GetPixelPacked(ImageBuffer const& img, int x, int y)
+{
+    const size_t idx = (static_cast<size_t>(y) * static_cast<size_t>(img.width) +
+                        static_cast<size_t>(x)) * 4;
+    return (static_cast<uint32_t>(img.data[idx + 3]) << 24) |
+           (static_cast<uint32_t>(img.data[idx + 0]) << 16) |
+           (static_cast<uint32_t>(img.data[idx + 1]) << 8) |
+           (static_cast<uint32_t>(img.data[idx + 2]));
+}
+}  // namespace
+
+// Ported from: itwinjs-core Gradient.test.ts
+//              it("includes thematic margin color")
+TEST(GradientGetImageTest, IncludesThematicMarginColor)
+{
+    GradientSymbProps props;
+    props.mode = GradientMode::Thematic;
+    props.keys = {KeyColor(0.65, 100), KeyColor(0.12, 100)};
+    ThematicGradientSettingsProps ts;
+    ts.marginColor = 0x00ff00;
+    props.thematicSettings = ts;
+    const auto symb = GradientSymb::fromJSON(props);
+
+    const auto img = symb.getImage(1, 8192);
+    ASSERT_TRUE(img.has_value());
+    EXPECT_EQ(GetPixelPacked(*img, 0, 8191), 0xff00ff00u);
+    EXPECT_NE(GetPixelPacked(*img, 0, 127), 0xff00ff00u);
+    EXPECT_EQ(GetPixelPacked(*img, 0, 0), 0xff00ff00u);
+}
+
+// Ported from: itwinjs-core Gradient.test.ts
+//              it("allows thematic margin color to be included or omitted")
+TEST(GradientProduceImageTest, ThematicMarginColorIncludedOrOmitted)
+{
+    GradientSymbProps props;
+    props.mode = GradientMode::Thematic;
+    props.keys = {KeyColor(0.65, 100), KeyColor(0.12, 100)};
+    ThematicGradientSettingsProps ts;
+    ts.marginColor = 0x00ff00;
+    props.thematicSettings = ts;
+    const auto symb = GradientSymb::fromJSON(props);
+
+    ProduceImageArgs args;
+    args.width = 1;
+    args.height = 8192;
+    args.includeThematicMargin = true;
+    auto img = symb.produceImage(args);
+    ASSERT_TRUE(img.has_value());
+    EXPECT_EQ(GetPixelPacked(*img, 0, 8191), 0xff00ff00u);
+    EXPECT_NE(GetPixelPacked(*img, 0, 127), 0xff00ff00u);
+    EXPECT_EQ(GetPixelPacked(*img, 0, 0), 0xff00ff00u);
+
+    args.includeThematicMargin = false;
+    img = symb.produceImage(args);
+    ASSERT_TRUE(img.has_value());
+    EXPECT_NE(GetPixelPacked(*img, 0, 8191), 0xff00ff00u);
+    EXPECT_NE(GetPixelPacked(*img, 0, 127), 0xff00ff00u);
+    EXPECT_NE(GetPixelPacked(*img, 0, 0), 0xff00ff00u);
+
+    args.includeThematicMargin = false;  // ProduceImageArgs 默认 false（缺席语义）
+    img = symb.produceImage(args);
+    ASSERT_TRUE(img.has_value());
+    EXPECT_NE(GetPixelPacked(*img, 0, 8191), 0xff00ff00u);
+    EXPECT_NE(GetPixelPacked(*img, 0, 127), 0xff00ff00u);
+    EXPECT_NE(GetPixelPacked(*img, 0, 0), 0xff00ff00u);
+}
+
 // Authored: createThematic produces a thematic-mode symb with fixed-scheme keys.
 // (ref Gradient.Symb.createThematic lines 140-158)
 TEST(GradientCreateThematicTest, CreateThematicWithFixedScheme)

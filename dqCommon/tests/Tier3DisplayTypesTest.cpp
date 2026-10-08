@@ -70,20 +70,20 @@ TEST(AnalysisStyleTest, WithDisplacement)
 }
 
 // Authored: no reference tests exist in itwinjs-core for these types
+// （M-S 随 AnalysisStyleThematic.range Range1d 化订正——AnalysisStyle.ts:92）。
 TEST(AnalysisStyleTest, WithThematic)
 {
     AnalysisStyleProps props;
     AnalysisStyleThematicProps scalar;
     scalar.channelName = "temperature";
-    scalar.rangeMin = -40.0;
-    scalar.rangeMax = 60.0;
+    scalar.range = dqGeom::Range1d(-40.0, 60.0);
     props.scalar = scalar;
 
     auto s = AnalysisStyle::fromJSON(&props);
     ASSERT_TRUE(s.scalar.has_value());
     EXPECT_EQ(s.scalar->channelName, "temperature");
-    EXPECT_NEAR(s.scalar->rangeMin, -40.0, 1e-10);
-    EXPECT_NEAR(s.scalar->rangeMax, 60.0, 1e-10);
+    EXPECT_NEAR(s.scalar->range.low, -40.0, 1e-10);
+    EXPECT_NEAR(s.scalar->range.high, 60.0, 1e-10);
 }
 
 // Authored: no reference tests exist in itwinjs-core for these types

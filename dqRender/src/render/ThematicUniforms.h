@@ -99,13 +99,15 @@ public:
         m_thematicDisplay = thematic;
 
         // Store settings for later use when full infrastructure is in place.
+        // （M-S S-c 重写 update(target) 时归位参考全语义；此处随 S-a 的
+        //  Range1d 化做编译适配——rangeMin/rangeMax → range.low/high。）
         if (thematic.displayMode == dqCommon::ThematicDisplayMode::Slope) {
             // Convert range to radians for slope mode.
-            m_range[0] = static_cast<float>(thematic.rangeMin * M_PI / 180.0);
-            m_range[1] = static_cast<float>(thematic.rangeMax * M_PI / 180.0);
+            m_range[0] = static_cast<float>(thematic.range.low * M_PI / 180.0);
+            m_range[1] = static_cast<float>(thematic.range.high * M_PI / 180.0);
         } else {
-            m_range[0] = static_cast<float>(thematic.rangeMin);
-            m_range[1] = static_cast<float>(thematic.rangeMax);
+            m_range[0] = static_cast<float>(thematic.range.low);
+            m_range[1] = static_cast<float>(thematic.range.high);
         }
 
         m_colorMix = static_cast<float>(thematic.gradientSettings.colorMix);

@@ -270,6 +270,8 @@ TEST(ThematicGradientSettingsTest, fromJSON)
 }
 
 // Authored: no reference tests exist in itwinjs-core for these types
+// （M-S 订正：value 越界钳 [0,1]——ThematicDisplay.ts:308-311；42.0→1.0。
+// 原断言 42.0 系发散形态，参考测试 ThematicDisplay.test.ts:75-77 同款钳制）。
 TEST(ThematicDisplaySensorTest, fromJSON)
 {
     ThematicDisplaySensorProps props;
@@ -277,29 +279,36 @@ TEST(ThematicDisplaySensorTest, fromJSON)
     props.value = 42.0;
     auto s = ThematicDisplaySensor::fromJSON(&props);
     EXPECT_TRUE(s.position.IsEqual(dqGeom::Point3d::From(1, 2, 3)));
-    EXPECT_NEAR(s.value, 42.0, 1e-10);
+    EXPECT_NEAR(s.value, 1.0, 1e-10);
 }
 
 // Authored: no reference tests exist in itwinjs-core for these types
+// （M-S 订正：range 默认归位参考 null range——ThematicDisplay.ts:505
+// `Range1d.fromJSON()` 无参=null；原 0/1 断言系发散形态）。
 TEST(ThematicDisplayTest, defaults)
 {
     const auto& d = ThematicDisplay::defaults();
     EXPECT_EQ(d.displayMode, ThematicDisplayMode::Height);
-    EXPECT_NEAR(d.rangeMin, 0.0, 1e-10);
-    EXPECT_NEAR(d.rangeMax, 1.0, 1e-10);
+    EXPECT_TRUE(d.range.isNull());
+    EXPECT_DOUBLE_EQ(d.axis.x, 0.0);
+    EXPECT_DOUBLE_EQ(d.axis.y, 0.0);
+    EXPECT_DOUBLE_EQ(d.axis.z, 0.0);
+    EXPECT_DOUBLE_EQ(d.sunDirection.x, 0.0);
+    EXPECT_DOUBLE_EQ(d.sunDirection.y, 0.0);
+    EXPECT_DOUBLE_EQ(d.sunDirection.z, 0.0);
 }
 
 // Authored: no reference tests exist in itwinjs-core for these types
+// （M-S 订正：Slope range 钳 [0,90]——ThematicDisplay.ts:524-527 构造校验）。
 TEST(ThematicDisplayTest, fromJSON)
 {
     ThematicDisplayProps props;
     props.displayMode = ThematicDisplayMode::Slope;
-    props.rangeMin = -100.0;
-    props.rangeMax = 100.0;
+    props.range = dqGeom::Range1d(-100.0, 100.0);
     auto td = ThematicDisplay::fromJSON(&props);
     EXPECT_EQ(td.displayMode, ThematicDisplayMode::Slope);
-    EXPECT_NEAR(td.rangeMin, -100.0, 1e-10);
-    EXPECT_NEAR(td.rangeMax, 100.0, 1e-10);
+    EXPECT_NEAR(td.range.low, 0.0, 1e-10);
+    EXPECT_NEAR(td.range.high, 90.0, 1e-10);
 }
 
 // Authored: no reference tests exist in itwinjs-core for these types

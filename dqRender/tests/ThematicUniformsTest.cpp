@@ -32,8 +32,7 @@ TEST(ThematicUniformsTest, UpdateSettings)
 
     ThematicDisplay display;
     display.displayMode = ThematicDisplayMode::Height;
-    display.rangeMin = 0.0;
-    display.rangeMax = 100.0;
+    display.range = dqGeom::Range1d(0.0, 100.0);
     display.gradientSettings.colorMix = 0.5;
     display.gradientSettings.mode = ThematicGradientMode::Smooth;
     display.gradientSettings.stepCount = 10;
@@ -44,8 +43,8 @@ TEST(ThematicUniformsTest, UpdateSettings)
     auto const* current = uniforms.getThematicDisplay();
     ASSERT_NE(current, nullptr);
     EXPECT_EQ(current->displayMode, ThematicDisplayMode::Height);
-    EXPECT_DOUBLE_EQ(current->rangeMin, 0.0);
-    EXPECT_DOUBLE_EQ(current->rangeMax, 100.0);
+    EXPECT_DOUBLE_EQ(current->range.low, 0.0);
+    EXPECT_DOUBLE_EQ(current->range.high, 100.0);
 }
 
 // Test ThematicUniforms update with same settings (no change).
@@ -138,8 +137,8 @@ TEST(ThematicUniformsTest, ThematicDisplayDefaults)
     auto const& defaults = ThematicDisplay::defaults();
 
     EXPECT_EQ(defaults.displayMode, ThematicDisplayMode::Height);
-    EXPECT_DOUBLE_EQ(defaults.rangeMin, 0.0);
-    EXPECT_DOUBLE_EQ(defaults.rangeMax, 1.0);
+    // M-S 归位：参考默认 range=null range（ThematicDisplay.ts:505）。
+    EXPECT_TRUE(defaults.range.isNull());
 }
 
 // Test ThematicDisplay from JSON.
@@ -149,14 +148,14 @@ TEST(ThematicUniformsTest, ThematicDisplayFromJSON)
 {
     ThematicDisplayProps props;
     props.displayMode = ThematicDisplayMode::Slope;
-    props.rangeMin = -10.0;
-    props.rangeMax = 10.0;
+    props.range = dqGeom::Range1d(-10.0, 10.0);
 
     auto display = ThematicDisplay::fromJSON(&props);
 
     EXPECT_EQ(display.displayMode, ThematicDisplayMode::Slope);
-    EXPECT_DOUBLE_EQ(display.rangeMin, -10.0);
-    EXPECT_DOUBLE_EQ(display.rangeMax, 10.0);
+    // M-S 归位：Slope range 钳 [0,90]（ThematicDisplay.ts:524-527——-10→0）。
+    EXPECT_DOUBLE_EQ(display.range.low, 0.0);
+    EXPECT_DOUBLE_EQ(display.range.high, 10.0);
 }
 
 // Test kDefaultGradientDimension constant.

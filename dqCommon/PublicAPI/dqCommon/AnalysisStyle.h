@@ -21,8 +21,10 @@ struct AnalysisStyleDisplacementProps {
 
 struct AnalysisStyleThematicProps {
     std::string channelName;
-    double rangeMin = 0.0;
-    double rangeMax = 1.0;
+    // Ported from: itwinjs-core AnalysisStyleThematicProps.range（Range1dProps
+    // ——JSON 文本形 [low,high]；M-S 随 ThematicDisplay.range 同族归位，
+    // 原 rangeMin/rangeMax 双 double 无参考对应面）。
+    dqGeom::Range1d range;
     std::optional<ThematicGradientSettingsProps> thematicSettings;
 };
 
@@ -66,16 +68,16 @@ public:
 class DQ_COMMON_EXPORT AnalysisStyleThematic {
 public:
     std::string channelName;
-    double rangeMin = 0.0;
-    double rangeMax = 1.0;
+    // Ported from: itwinjs-core AnalysisStyleThematic.range（AnalysisStyle.ts:92
+    // ——Range1d；fromJSON 经 Range1d.fromJSON(props.range) :99）。
+    dqGeom::Range1d range;
     ThematicGradientSettings thematicSettings;
 
     static AnalysisStyleThematic fromJSON(const AnalysisStyleThematicProps& props)
     {
         AnalysisStyleThematic t;
         t.channelName = props.channelName;
-        t.rangeMin = props.rangeMin;
-        t.rangeMax = props.rangeMax;
+        t.range = props.range;
         if (props.thematicSettings)
             t.thematicSettings = ThematicGradientSettings::fromJSON(&*props.thematicSettings);
         return t;
@@ -85,16 +87,17 @@ public:
     {
         AnalysisStyleThematicProps p;
         p.channelName = channelName;
-        p.rangeMin = rangeMin;
-        p.rangeMax = rangeMax;
+        p.range = range;
         p.thematicSettings = thematicSettings.toJSON();
         return p;
     }
 
+    // Ported from: itwinjs-core AnalysisStyleThematic.equals（AnalysisStyle.
+    // ts:131——range.isAlmostEqual）。
     bool equals(const AnalysisStyleThematic& rhs) const noexcept
     {
-        return channelName == rhs.channelName && rangeMin == rhs.rangeMin &&
-               rangeMax == rhs.rangeMax && thematicSettings.equals(rhs.thematicSettings);
+        return channelName == rhs.channelName && range.IsAlmostEqual(rhs.range) &&
+               thematicSettings.equals(rhs.thematicSettings);
     }
 };
 
