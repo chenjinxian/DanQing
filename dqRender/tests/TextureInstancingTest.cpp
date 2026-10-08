@@ -11,6 +11,7 @@
 
 #include <dqGeom/Transform.h>
 
+#include "NullTargetFixture.h"
 #include <gtest/gtest.h>
 #include <vector>
 #include <memory>
@@ -270,6 +271,7 @@ TEST(InstancedGeometryTest, DefaultState)
 // Ported from: itwinjs-core core/frontend/src/test/TextureInstancing.test.ts
 TEST(IndexedGeometryTest, InstancedDraw)
 {
+    NullTargetFixture fixture;  // M-S S-d getPass(target) 签名
     IndexedGeometryParams params(
         rhi::RenderPrimitiveHandle{},
         rhi::BufferObjectHandle{},
@@ -281,5 +283,5 @@ TEST(IndexedGeometryTest, InstancedDraw)
     geo.setPass(Pass::Opaque);
 
     EXPECT_EQ(geo.getTechniqueId(), TechniqueId::Surface);
-    EXPECT_EQ(geo.getPass(), Pass::Opaque);
+    EXPECT_EQ(geo.getPass(*fixture.target), Pass::Opaque);
 }

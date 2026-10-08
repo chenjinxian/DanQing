@@ -8,6 +8,7 @@
 #include "OpenGLRenderSystem.h"
 #include "RenderGraphicAdapter.h"
 #include "TargetImpl.h"
+#include <cmath>
 #include "SceneCompositorImpl.h"
 #include "dqRender/RenderPlan.h"
 
@@ -161,6 +162,16 @@ void OpenGLRenderTarget::changeRenderPlan(RenderPlan const& plan)
     // 后、updateRenderPlan 之前[参考同序——Slope 轴/HillShade 太阳向依赖新
     // 视矩阵]）。M-S S-c。
     m_impl->getUniforms().thematic.update(*m_impl);
+    // 取证探针（M-S S-d 断链定位所加——[THM]；§13.1 族登记保留）。
+    static bool const s_thmTrace = getenv("DANQING_THM_TRACE") != nullptr;
+    if (s_thmTrace) {
+        auto const* pt = m_impl->getPlanThematic();
+        printf("[THM] changeRenderPlan: plan.thematic=%s wantThematic=%d gradTex=%d vf.thematicDisplay=%d\n",
+               pt ? "set" : "null", (int)m_impl->wantThematicDisplay(),
+               (int)(m_impl->getUniforms().thematic.getGradientTexture() != rhi::TextureHandle{}),
+               (int)m_impl->getCurrentViewFlags().thematicDisplay);
+        fflush(stdout);
+    }
 
     // Update target uniforms from the plan.
     // ← itwinjs-core Target.changeRenderPlan (Target.ts:543):

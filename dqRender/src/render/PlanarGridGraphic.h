@@ -27,6 +27,8 @@
 
 BEGIN_DQ_RENDER_NAMESPACE
 
+class TargetImpl;  // M-S S-d getPass(target) 形参前向声明
+
 // ---------------------------------------------------------------------------
 // PlanarGridPolygon - pure geometry of the procedural grid (no GL).
 // Ported from: itwinjs-core PlanarGridGeometry.create (PlanarGrid.ts:52-111).
@@ -87,7 +89,7 @@ public:
     //   → "translucent"：网格是半透明面（plane/line/ref 三级 transparency），必须
     //   走半透明 pass 经混合/OIT 合成。此前误归 OpaquePlanar：不透明 pass 无混合，
     //   平面以不透明对比色铺满 → 线与面同色无对比（用户实测"看不到网格"根因）。
-    Pass getPass() const override { return Pass::Translucent; }
+    Pass getPass(TargetImpl const& /*target*/) const override { return Pass::Translucent; }
     // Ported from: itwinjs-core PlanarGridGeometry.renderOrder (PlanarGrid.ts:41)
     //   → RenderOrder.UnlitSurface（非 PlanarBit——pass 内排序键与 depthAndOrder
     //   编码均以参考值为准；网格在 translucent pass 与 UnlitSurface 同位）。

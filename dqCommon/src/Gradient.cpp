@@ -6,6 +6,7 @@
 #include "dqCommon/ThematicDisplay.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 BEGIN_DQ_COMMON_NAMESPACE
@@ -13,17 +14,19 @@ BEGIN_DQ_COMMON_NAMESPACE
 // ---------------------------------------------------------------------------
 // Fixed color-scheme tables (ref lines 129-137)
 // ---------------------------------------------------------------------------
-// NB: these color values are ordered as [value, R, B, G] in the ref (comment line 130).
-// We store them as [value, R, G, B] (standard RGB) and pass (R, G, B) to computeTbgrFromComponents
-// exactly as the ref does at line 147: computeTbgrFromComponents(keyValue[1], keyValue[3], keyValue[2]).
+// NB: these color values are ordered as [value, R, B, G] in the ref (comment line 130)
+// ——M-S S-d 归位：**逐字保留参考行**（rbg 序——[1]=R、[2]=B、[3]=G）+ 调用
+// 保持参考索引序 (kv[1], kv[3], kv[2])（Gradient.ts:147/156）。原移植把行归一
+// 成 [v,r,g,b] 存储却保留参考的 (1,3,2) 调用序 = 双重换位 → 非对称行 g/b 互
+// 换（BlueRed 0 值端产出绿而非蓝——渐变带内容错误，像素锁不可见直到 M-S）。
 namespace {
-struct FixedKey { double value; int r; int g; int b; };
+using FixedKey = std::array<double, 4>;  // [value, r, b, g]——参考 rbg 原序
 
 // Ported from: itwinjs-core Gradient.Symb._fixedSchemeKeys (lines 131-135)
 // Order of entries matches ThematicGradientColorScheme enum order (BlueRed, RedBlue, Monochrome, Topographic, SeaMountain).
 const std::vector<std::vector<FixedKey>> kFixedSchemeKeys = {
     { // BlueRed (index 0). Ref: [[0,0,255,0],[0.25,0,255,255],[0.5,0,0,255],[0.75,255,0,255],[1,255,0,0]]
-        {0.0,    0,   0,   255},
+        {0.0,    0,   255, 0},
         {0.25,   0,   255, 255},
         {0.5,    0,   0,   255},
         {0.75,   255, 0,   255},
@@ -45,7 +48,7 @@ const std::vector<std::vector<FixedKey>> kFixedSchemeKeys = {
         {0.5, 204, 160, 204},
         {1.0, 152, 72,  128},
     },
-    { // SeaMountain (index 4). Ref: [[0,0,255,0],[0.2,72,96,160],...,[1,240,240,240]]
+    { // SeaMountain (index 4). Ref: [[0,0,255,0],[0.2,72,96,160],[0.4,152,96,160],[0.6,128,32,104],[0.7,148,180,128],[1,240,240,240]]
         {0.0, 0,   255, 0},
         {0.2, 72,  96,  160},
         {0.4, 152, 96,  160},
@@ -217,9 +220,11 @@ GradientSymb GradientSymb::createThematic(const ThematicGradientSettings& settin
     if (static_cast<int>(settings.colorScheme) < static_cast<int>(ThematicGradientColorScheme::Custom)) {
         const auto& scheme = kFixedSchemeKeys[static_cast<size_t>(settings.colorScheme)];
         for (const auto& k : scheme) {
-            // ref line 147: computeTbgrFromComponents(keyValue[1]=R, keyValue[3]=G, keyValue[2]=B)
-            const ColorDefProps tbgr = ColorDef::computeTbgrFromComponents(k.r, k.b, k.g);
-            result.keys.emplace_back(k.value, ColorDef::fromTbgr(tbgr));
+            // ref line 147: computeTbgrFromComponents(keyValue[1]=R, keyValue[3]=G,
+            // keyValue[2]=B)——行=参考 rbg 原序逐字（M-S S-d 归位）。
+            const ColorDefProps tbgr = ColorDef::computeTbgrFromComponents(
+                static_cast<int>(k[1]), static_cast<int>(k[3]), static_cast<int>(k[2]));
+            result.keys.emplace_back(k[0], ColorDef::fromTbgr(tbgr));
         }
     } else {
         // Custom color scheme; must use customKeys (ref requires at least two).
@@ -227,10 +232,12 @@ GradientSymb GradientSymb::createThematic(const ThematicGradientSettings& settin
             for (const auto& keyColor : settings.customKeys)
                 result.keys.push_back(keyColor);
         } else {
-            // Revert to the basic fixed-custom key scheme.
+            // Revert to the basic fixed-custom key scheme（ref :154-156——
+            // ColorDef.from(kv[1], kv[3], kv[2])）。
             for (const auto& k : kFixedCustomKeys) {
-                const ColorDefProps tbgr = ColorDef::computeTbgrFromComponents(k.r, k.b, k.g);
-                result.keys.emplace_back(k.value, ColorDef::fromTbgr(tbgr));
+                const ColorDefProps tbgr = ColorDef::computeTbgrFromComponents(
+                    static_cast<int>(k[1]), static_cast<int>(k[3]), static_cast<int>(k[2]));
+                result.keys.emplace_back(k[0], ColorDef::fromTbgr(tbgr));
             }
         }
     }

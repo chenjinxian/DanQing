@@ -119,9 +119,10 @@ inline void addTexture(ProgramBuilder& builder, bool quantized = false)
     // Ported from: itwinjs-core Surface.ts (line 800-808)
     vert.addUniform("u_constantLodVParams", VariableType::Vec3, nullptr);
 
-    // u_modelToWorld — for computing world-space UVs in the constant-LOD path.
-    // Ported from: itwinjs-core Surface.ts (line 739-744)
-    vert.addUniform("u_modelToWorld", VariableType::Mat4, nullptr);
+    // （M-S S-d：u_modelToWorld 的注册自本函数移出——参考面在
+    //  createSurfaceBuilder 的非 thematic 臂[glsl/Surface.ts:739-745]，
+    //  thematic 时由 addThematicDisplay 以真绑定注册；本处原注册[nullptr]
+    //  与 addVariable 同名去重相冲，使 thematic 绑定永丢——掘出实证。）
 
     // u_constantLodFParams — fragment shader constant-LOD parameters.
     // Ported from: itwinjs-core Surface.ts (line 810-816)

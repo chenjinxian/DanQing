@@ -236,12 +236,20 @@ void BranchStack::pushState(BranchState const& state)
 // ---------------------------------------------------------------------------
 void BranchStack::push(std::array<float, 16> const& branchMv,
                         std::array<float, 16> const& branchMvp,
-                        ViewFlags const& flags)
+                        ViewFlags const& flags,
+                        dqGeom::Transform const* localToWorldDelta)
 {
     BranchState state;
     state.m_mv = multiplyMatrix(m_stack.back().getMv(), branchMv);
     state.m_mvp = multiplyMatrix(m_stack.back().getMvp(), branchMvp);
     state.setViewFlags(flags);
+    // M-S S-d：localToWorld 组合（参考 BranchState.fromBranch 的 transform
+    // 组合）——子态 localToWorld = 父 × delta（delta 缺席=恒等=纯继承）。
+    {
+        dqGeom::Transform const& parentLtw = m_stack.back().getLocalToWorld();
+        state.setLocalToWorld(localToWorldDelta
+            ? parentLtw.MultiplyTransform(*localToWorldDelta) : parentLtw);
+    }
     // Inherit other properties
     state.m_clipVolume = m_stack.back().m_clipVolume;
     state.m_planarClassifier = m_stack.back().m_planarClassifier;
@@ -257,12 +265,19 @@ void BranchStack::push(std::array<float, 16> const& branchMv,
 // pushTransform — push with transform only (view flags inherited)
 // ---------------------------------------------------------------------------
 void BranchStack::pushTransform(std::array<float, 16> const& branchMv,
-                                 std::array<float, 16> const& branchMvp)
+                                 std::array<float, 16> const& branchMvp,
+                                 dqGeom::Transform const* localToWorldDelta)
 {
     BranchState state;
     state.m_mv = multiplyMatrix(m_stack.back().getMv(), branchMv);
     state.m_mvp = multiplyMatrix(m_stack.back().getMvp(), branchMvp);
     state.setViewFlags(m_stack.back().getViewFlags());
+    // M-S S-d：localToWorld 组合（同 push 臂）。
+    {
+        dqGeom::Transform const& parentLtw = m_stack.back().getLocalToWorld();
+        state.setLocalToWorld(localToWorldDelta
+            ? parentLtw.MultiplyTransform(*localToWorldDelta) : parentLtw);
+    }
     // Inherit all other properties
     state.m_clipVolume = m_stack.back().m_clipVolume;
     state.m_planarClassifier = m_stack.back().m_planarClassifier;

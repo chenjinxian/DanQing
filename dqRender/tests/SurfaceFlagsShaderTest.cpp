@@ -110,9 +110,14 @@ TEST(SurfaceFlagsShaderTest, ComputeSurfaceFlagsDefaultMesh)
     rhi::NullDriver driver;
     SurfaceGeometry geom(driver, rhi::IndexBufferHandle{}, 6u, SurfaceType::Opaque, /*isPlanar*/false, /*hasTextures*/false);
     // Production gates (wantNormalMaps, SurfaceGeometry.ts :416-428): the
-    // blank-connection view sets renderMode=SmoothShade (ViewPicker.ts :161).
+    // blank-connection view sets renderMode=SmoothShade (ViewPicker.ts :161)
+    // 且生产默认样式光照开——M-Q Q-d 的 wantLighting 门（SmoothShade &&
+    // vf.lighting，SurfaceGeometry.ts:35-37/331）落地后须显式置位（参考
+    // ViewFlags.lighting 默认 false[ViewFlags.ts:256]——本测试原漏置位，
+    // M-Q 期被陈旧二进制掩盖[M-S S-d 重编显形实录]）。
     dqCommon::ViewFlagsProperties vp;
     vp.renderMode = dqCommon::RenderMode::SmoothShade;
+    vp.lighting = true;
     int const* f = SurfaceGeometry::computeSurfaceFlags(geom, /*displayNormalMaps*/true, vp);
     ASSERT_NE(f, nullptr);
     EXPECT_EQ(f[static_cast<int>(GL::SurfaceBitIndex::ApplyLighting)], 1);

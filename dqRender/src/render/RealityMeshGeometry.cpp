@@ -2,6 +2,7 @@
 // DanQing dqRender — RealityMeshGeometry implementation
 // Ported from: itwinjs-core core/frontend/src/internal/render/webgl/RealityMesh.ts
 #include "RealityMeshGeometry.h"
+#include "TargetImpl.h"  // M-S S-d：getPass(target) 的 wantThematicDisplay/uniforms 面
 #include "dqRender/RenderMemory.h"
 
 #include <algorithm>
@@ -24,12 +25,13 @@ RealityMeshGeometry::~RealityMeshGeometry() = default;
 // ---------------------------------------------------------------------------
 // getPass — pass depends on transparency
 // Ported from: itwinjs-core RealityMesh.ts line 308-313
+//（`_baseIsTransparent || (wantThematicDisplay && wantIsoLines)`——M-S S-d
+//  归位：签名 getPass(target) + thematic iso 臂[原仅 baseIsTransparent]）。
 // ---------------------------------------------------------------------------
-Pass RealityMeshGeometry::getPass() const noexcept
+Pass RealityMeshGeometry::getPass(TargetImpl const& target) const noexcept
 {
-    // Ported from: itwinjs-core RealityMesh.ts line 308-313
-    // If base is transparent or thematic iso-lines are active, use translucent pass.
-    if (m_baseIsTransparent)
+    if (m_baseIsTransparent ||
+        (target.wantThematicDisplay() && target.getUniforms().thematic.wantIsoLines()))
         return Pass::Translucent;
 
     return Pass::Opaque;

@@ -305,6 +305,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/RealityModelUniformsTest.cpp
         tests/AtmosphereUniformsTest.cpp
         tests/ThematicUniformsTest.cpp
+        tests/ThematicDisplayShaderTest.cpp
         tests/ShadowUniformsTest.cpp
         tests/ViewRectUniformsTest.cpp
         tests/HiliteUniformsTest.cpp

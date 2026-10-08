@@ -948,6 +948,12 @@ void TargetImpl::beginReadPixels()
     pickProps.monochrome = false;
     pickProps.materials = false;
     pickProps.ambientOcclusion = false;
+    // M-S S-d：thematicDisplay 拾取门——参考 Target.ts:898——
+    // `thematicDisplay: currentViewFlags.thematicDisplay &&
+    //  uniforms.thematic.wantIsoLines`（拾取时仅 IsoLines 保留 thematic：
+    // isoline 间片元 discard 会穿透拾取，其余模式的染色无拾取语义）。
+    pickProps.thematicDisplay = m_branchStack.getCurrentViewFlags().thematicDisplay
+                                && m_uniforms.thematic.wantIsoLines();
 
     ViewFlags pickFlags(pickProps);
 

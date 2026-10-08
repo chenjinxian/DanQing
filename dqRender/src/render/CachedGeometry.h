@@ -139,7 +139,7 @@ public:
 
     // --- Abstract render interface ---
     virtual TechniqueId getTechniqueId() const = 0;
-    virtual Pass getPass() const = 0;
+    virtual Pass getPass(TargetImpl const& target) const = 0;
     virtual RenderOrder getRenderOrder() const { return RenderOrder::None; }
 
     /// Line/point weight (symbology weight). Consumed by the PointString shader
@@ -414,7 +414,7 @@ public:
     void setRenderOrder(RenderOrder order) { m_renderOrder = order; }
 
     TechniqueId getTechniqueId() const override { return m_techniqueId; }
-    Pass getPass() const override { return m_pass; }
+    Pass getPass(TargetImpl const& /*target*/) const override { return m_pass; }
     RenderOrder getRenderOrder() const override { return m_renderOrder; }
 
     void collectStatistics(RenderMemory::Statistics& stats) const override {

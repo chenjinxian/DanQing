@@ -23,6 +23,8 @@
 
 BEGIN_DQ_RENDER_NAMESPACE
 
+class TargetImpl;  // M-S S-d getPass(target) 形参前向声明
+
 // ---------------------------------------------------------------------------
 // RealityMeshGeometry — reality mesh geometry
 // (Ported from: itwinjs-core RealityMesh.ts, line 93-321)
@@ -43,7 +45,7 @@ public:
 
     /// Pass depends on transparency and thematic display.
     /// Ported from: itwinjs-core RealityMesh.ts line 308-313
-    Pass getPass() const noexcept override;
+    Pass getPass(TargetImpl const& /*target*/) const noexcept override;
 
     /// Reality meshes render as unlit surfaces.
     /// Ported from: itwinjs-core RealityMesh.ts line 314

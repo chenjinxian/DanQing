@@ -204,8 +204,9 @@ private:
     // (draw-time) must see ONE shared registry, or batch-registered hilite/uniform state
     // never reaches the dispatch.
     BatchState& m_batchState;
-    BranchUniforms m_branchUniforms;  // per-geometry matrix computation
-    SyncObserver m_branchObserver;    // skip redundant BranchUniforms updates
+    // M-S S-d：m_branchUniforms + m_branchObserver 双成员删——归位
+    // TargetUniforms.branch（TargetUniforms.ts:133）+ 逐图元恒跑（参考 sync
+    // 是上传去重非跳过计算——observer 门在 thematic 切换帧恒跳过的实证在案）。
 
     // --- Shader cache ---
     TechniqueId m_cachedTechniqueId = TechniqueId::Surface;

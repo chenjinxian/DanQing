@@ -1367,6 +1367,23 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                 // 切变体（instances60 根瓦 prim0 非实例 + prim1 实例同帧）。
                 flags.isInstanced = (geometry->asInstanced() != nullptr);
 
+                // Thematic per-draw decision（M-S S-d——G21 清偿：
+                // PrimitiveCommand::execute 无调用方[ported-but-uncalled]，
+                // 本重建面此前丢 isThematic 维 → 变体永不选）。
+                // Ported from: itwinjs-core DrawCommand.ts:206-216——
+                //   thematic = geometry.supportsThematicDisplay &&
+                //              target.wantThematicDisplay；
+                //（thematic→shadowable 强制 No[:207]与点云 Slope/HillShade
+                //  关闭[:215-216]两臂——DanQing 阴影/点云面未移植，登记。）
+                // 门以**绘制栈**当前 vf 计算（Target.ts:398-400 的
+                // currentViewFlags 面——拾取期 drawStack 顶=pick 态
+                // [beginReadPixels 的 IsoLines-only thematic 门，Target.ts:898]
+                // 与帧态分歧，读帧栈会把非 IsoLines 的染色带进拾取）。
+                flags.isThematic = m_branchStack.getCurrentViewFlags().thematicDisplay
+                    && m_target.is3d()
+                    && m_target.getUniforms().thematic.getThematicDisplay() != nullptr
+                    && geometry->supportsThematicDisplay();
+
                 // isTranslucent from render pass
                 if (pass == RenderPass::Translucent || pass == RenderPass::TranslucentLayers) {
                     flags.isTranslucent = true;
@@ -2172,18 +2189,28 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
 
                     // Update BranchUniforms for this geometry (handles instanced/VIO/viewCoords).
                     // Ported from: itwinjs-core BranchUniforms.update() (line 181-257)
-                    // Skip recomputation if BranchUniforms hasn't changed since last sync.
-                    if (!m_branchObserver.isSynchronized(m_branchUniforms)) {
+                    // M-S S-d：①更新对象归位 **TargetUniforms.branch**
+                    //（TargetUniforms.ts:133——参考唯一面；原写 compositor 自持的
+                    //  第二副本 m_branchUniforms[写而不读=死计算]，thematic 的
+                    //  u_modelToWorld 绑定位读 target 侧 → 恒恒等——树 location
+                    //  变换不到位的实证根因）；②wantThematic 门接线（m32/v32 填
+                    //  充门，BranchUniforms.ts:240）；③**逐图元恒跑**（参考的
+                    //  sync 机制是逐程序 uniform 上传去重[bind 侧的
+                    //  sync(this,uniform)]，不是跳过计算——原 observer 门在
+                    //  基线帧同步后 thematic 帧恒跳过 → m_model 永为恒等的
+                    //  取证实录；且栈顶 localToWorld 逐瓦分支变化，单一
+                    //  syncKey 门无法表达——参考逐 draw 计算的语义忠实面）。
+                    {
                         BranchUniforms::UpdateParams branchParams;
                         branchParams.instancedGeom = geometry->asInstanced();
                         branchParams.viewIndependentOrigin = geometry->viewIndependentOrigin();
                         branchParams.isViewCoords = false;  // viewCoords not yet wired
-                        m_branchUniforms.update(
+                        branchParams.wantThematic = m_target.wantThematicDisplay();
+                        m_target.getUniforms().branch.update(
                             m_branchStack.getTop().getLocalToWorld(),
                             m_target.getViewMatrix(),
                             m_target.getFrustumUniforms().getProjectionMatrix(),
                             branchParams);
-                        m_branchObserver.sync(m_branchUniforms);
                     }
 
                     // DrawParams mv/mvp feed the GraphicUniform bindings (u_mv, u_mvp).
@@ -2255,8 +2282,23 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     // Ported from: itwinjs-core Surface.ts addTexture() (line 596-609) —
                     // routed via CachedGeometry::getSurfaceTexture() so both SurfaceGeometry
                     // and PolyfaceGraphic (glTF) paths reach the sampler.
+                    // M-S S-d：thematic 臂（Surface.ts:599-601——
+                    // `if (geometry.supportsThematicDisplay && target.wantThematicDisplay)
+                    //    thematic.bindTexture(s_texture 单元)`——渐变纹理接管
+                    // s_texture、表面纹理被忽略）。
+                    // EQUIVALENCE（§11.10）：参考绑定位=s_texture 的
+                    // GraphicUniform lambda；DanQing=绘制环绑定位（既有架构，
+                    // 同值同序）。发散=未发现；验证法=S-d E2E 像素锁（纹理面
+                    // housemodel 的 thematic 覆盖)。
                     rhi::TextureHandle const surfTex = geometry->getSurfaceTexture();
-                    if (surfTex != rhi::TextureHandle{}) {
+                    if (flags.isThematic) {
+                        rhi::TextureHandle const gradTex =
+                            m_target.getUniforms().thematic.getGradientTexture();
+                        if (gradTex) {
+                            driver.bindTexture(0, gradTex);
+                            params.setInt("s_texture", 0);
+                        }
+                    } else if (surfTex != rhi::TextureHandle{}) {
                         driver.bindTexture(0, surfTex);
                         params.setInt("s_texture", 0);
                         // TEMP-DIAG（U 翻转 saga）：绘制时纹理实际 wrap 状态。
@@ -2361,11 +2403,14 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
             }
             case DrawCommandType::PushBranch: {
                 auto* branchCmd = static_cast<PushBranchCommand*>(cmd.get());
+                // M-S S-d：携 localToWorld 进栈组合（参考 BranchState.fromBranch
+                // 的 transform 组合——BranchUniforms.update 的 model 入参源）。
                 if (branchCmd->hasViewFlags()) {
                     m_branchStack.push(branchCmd->getMv(), branchCmd->getMvp(),
-                                      branchCmd->getViewFlags());
+                                      branchCmd->getViewFlags(), &branchCmd->getLocalToWorld());
                 } else {
-                    m_branchStack.pushTransform(branchCmd->getMv(), branchCmd->getMvp());
+                    m_branchStack.pushTransform(branchCmd->getMv(), branchCmd->getMvp(),
+                                                &branchCmd->getLocalToWorld());
                 }
                 break;
             }

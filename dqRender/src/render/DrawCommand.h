@@ -9,6 +9,7 @@
 #include <cstdint>
 #include "ClipVolume.h"  // PushClipCommand 的 RefPtr<ClipVolume>（M-P P-C）
 #include "ViewFlags.h"  // Must be before namespace opening (includes dqCommon headers)
+#include "dqGeom/Transform.h"  // PushBranchCommand 的 localToWorld 载体（M-S S-d）
 
 #ifndef BEGIN_DQ_RENDER_NAMESPACE
 #define BEGIN_DQ_RENDER_NAMESPACE namespace dqRender {
@@ -97,6 +98,13 @@ public:
         }
     }
 
+    // M-S S-d：携带分支的 localToWorld（模型变换）——绘制侧 push 组合进
+    // BranchState.localToWorld（参考 PushBranchCommand 持 Branch +
+    // BranchState.fromBranch 组合语义[BranchState.ts:101-125]；DanQing 的
+    // mv/mvp 数组适配面原先丢此变换——thematic u_modelToWorld 无源根因）。
+    void setLocalToWorld(dqGeom::Transform const& t) noexcept { m_localToWorld = t; }
+    dqGeom::Transform const& getLocalToWorld() const noexcept { return m_localToWorld; }
+
     float const* getMv() const noexcept { return m_mv; }
     float const* getMvp() const noexcept { return m_mvp; }
 
@@ -110,6 +118,7 @@ public:
 private:
     float m_mv[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
     float m_mvp[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+    dqGeom::Transform m_localToWorld;  // 默认恒等（ctor 列）
     BranchViewFlags m_viewFlags;
     bool m_hasViewFlags = false;
 };

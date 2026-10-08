@@ -43,7 +43,7 @@ PlanarGridGraphic* InstancedGeometry::asPlanarGrid() { return m_repr ? m_repr->a
 // --- Forwarded render properties (Ported from: itwinjs-core line 365-376) ---
 
 TechniqueId InstancedGeometry::getTechniqueId() const { return m_repr ? m_repr->getTechniqueId() : TechniqueId::Surface; }
-Pass InstancedGeometry::getPass() const { return m_repr ? m_repr->getPass() : Pass::Opaque; }
+Pass InstancedGeometry::getPass(TargetImpl const& target) const { return m_repr ? m_repr->getPass(target) : Pass::Opaque; }
 RenderOrder InstancedGeometry::getRenderOrder() const { return m_repr ? m_repr->getRenderOrder() : RenderOrder::None; }
 bool InstancedGeometry::isLitSurface() const { return m_repr ? m_repr->isLitSurface() : false; }
 bool InstancedGeometry::hasBakedLighting() const { return m_repr ? m_repr->hasBakedLighting() : false; }

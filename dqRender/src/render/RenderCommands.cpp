@@ -114,7 +114,9 @@ void RenderCommands::addPrimitiveCommand(PrimitiveCommand& command,
     if (pass == GL::Pass::None) {
         auto const* geom = command.getGeometry();
         if (!geom) return;
-        pass = geom->getPass();
+        // M-S S-d：getPass(target)（CachedGeometry.ts:84——thematic/透明
+        // 路由需要 target 面；m_target 在 ctor/reset 恒赋）。
+        pass = geom->getPass(*m_target);
     }
 
     // "none" pass means edges not visible — skip entirely.
@@ -734,6 +736,7 @@ void RenderCommands::pushAndPopBranchForPass(RenderPass pass, Branch& branch,
 
     auto push = std::make_unique<PushBranchCommand>();
     push->setTransform(mv.data(), mvp.data());
+    push->setLocalToWorld(branch.getLocalToWorld());  // M-S S-d：携分支模型变换
     if (branch.hasViewFlags())
         push->setViewFlags(branch.getViewFlags());
     cmds.push_back(std::move(push));
@@ -791,6 +794,7 @@ void RenderCommands::pushAndPop(DrawCommand& push, DrawCommand& pop,
                     auto& src = static_cast<PushBranchCommand&>(push);
                     auto clone = std::make_unique<PushBranchCommand>();
                     clone->setTransform(src.getMv(), src.getMvp());
+                    clone->setLocalToWorld(src.getLocalToWorld());  // M-S S-d
                     if (src.hasViewFlags())
                         clone->setViewFlags(src.getViewFlags());
                     cmds.push_back(std::move(clone));
@@ -826,6 +830,7 @@ void RenderCommands::pushAndPop(DrawCommand& push, DrawCommand& pop,
                     auto& src = static_cast<PushBranchCommand&>(push);
                     auto clone = std::make_unique<PushBranchCommand>();
                     clone->setTransform(src.getMv(), src.getMvp());
+                    clone->setLocalToWorld(src.getLocalToWorld());  // M-S S-d
                     if (src.hasViewFlags())
                         clone->setViewFlags(src.getViewFlags());
                     cmds.push_back(std::move(clone));
@@ -965,6 +970,7 @@ void RenderCommands::pushAndPopBranchInternal(Branch& branch,
 
     auto push = std::make_unique<PushBranchCommand>();
     push->setTransform(mv.data(), mvp.data());
+    push->setLocalToWorld(branch.getLocalToWorld());  // M-S S-d：携分支模型变换
     if (branch.hasViewFlags())
         push->setViewFlags(branch.getViewFlags());
     auto pop = std::make_unique<PopBranchCommand>();

@@ -150,15 +150,17 @@ TEST(ThematicUniformsTest, SlopeRangeConvertsDegreesToRadians)
     EXPECT_FLOAT_EQ(h.getData()[1], static_cast<float>(dqGeom::Angle::kPi / 2.0));
 }
 
-// 轴恒 normalize；Height 不经视矩阵（ThematicUniforms.ts:73-79/125）。
-TEST(ThematicUniformsTest, AxisNormalizedAndViewTransformedOnlyForSlope)
+// 轴恒 normalize 且**不经视矩阵变换**（E1 世界帧 EQUIVALENCE——g_normal 为
+// 世界法线；DanQing 世界帧结构下 Slope/Height 同式）。
+TEST(ThematicUniformsTest, AxisNormalizedInWorldFrameForAllModes)
 {
     ThematicTargetFixture f;
     ThematicDisplay td;
     td.displayMode = ThematicDisplayMode::Height;
     td.axis = dqGeom::Vector3d::From(0, 0, 2);
 
-    // 视图旋转 90°（绕 X——+Z 世界向入视为 (0,-1,0)）。
+    // 视图旋转 90°（绕 X）——世界帧结构下轴不受视矩阵影响（E1 锁：若未来
+    // 回归视空间法线结构，本断言须同步翻回并复评 E1）。
     auto rot = dqGeom::Matrix3d::CreateRotationAroundAxis(
         dqGeom::Vector3d::From(1, 0, 0), dqGeom::Angle::kPi / 2.0);
     SetViewRotation(*f.target, rot);
@@ -166,52 +168,50 @@ TEST(ThematicUniformsTest, AxisNormalizedAndViewTransformedOnlyForSlope)
 
     UniformHandle h;
     f.target->getUniforms().thematic.bindAxis(h);
-    // Height：视矩阵不参与——归一化后的世界轴原样。
-    EXPECT_FLOAT_EQ(h.getData()[0], 0.0f);
-    EXPECT_FLOAT_EQ(h.getData()[1], 0.0f);
-    EXPECT_FLOAT_EQ(h.getData()[2], 1.0f);
+    EXPECT_NEAR(h.getData()[0], 0.0f, 1e-6f);
+    EXPECT_NEAR(h.getData()[1], 0.0f, 1e-6f);
+    EXPECT_NEAR(h.getData()[2], 1.0f, 1e-6f);
 
-    // Slope：轴经视矩阵变换（(0,0,2) → 视 (0,-1,0)，归一化；旋转残差
-    // cos(90°)~6e-17 以 1e-6 容差断言）。
+    // Slope 同式（世界轴——参考语义的旋转不变量面）。
     td.displayMode = ThematicDisplayMode::Slope;
-    td.gradientSettings.mode = ThematicGradientMode::Smooth;  // Slope 禁用 IsoLines 无涉
+    td.gradientSettings.mode = ThematicGradientMode::Smooth;
     PushThematic(*f.target, &td);
     f.target->getUniforms().thematic.bindAxis(h);
     EXPECT_NEAR(h.getData()[0], 0.0f, 1e-6f);
-    EXPECT_NEAR(h.getData()[1], -1.0f, 1e-6f);
-    EXPECT_NEAR(h.getData()[2], 0.0f, 1e-6f);
+    EXPECT_NEAR(h.getData()[1], 0.0f, 1e-6f);
+    EXPECT_NEAR(h.getData()[2], 1.0f, 1e-6f);
 }
 
-// HillShade 太阳向：视矩阵变换 + negate + normalize（ThematicUniforms.ts:81-88）。
-TEST(ThematicUniformsTest, HillShadeSunDirectionNegatedAndViewTransformed)
+// HillShade 太阳向：negate + normalize（世界帧——E1）。
+TEST(ThematicUniformsTest, HillShadeSunDirectionNegatedAndNormalized)
 {
     ThematicTargetFixture f;
     ThematicDisplay td;
     td.displayMode = ThematicDisplayMode::HillShade;
-    td.sunDirection = dqGeom::Vector3d::From(0, 0, 1);
+    td.sunDirection = dqGeom::Vector3d::From(0, 0, 2);
 
     PushThematic(*f.target, &td);
     UniformHandle h;
     f.target->getUniforms().thematic.bindSunDirection(h);
-    // 恒等视：世界 +Z → negate → (0,0,-1)。
-    EXPECT_FLOAT_EQ(h.getData()[0], 0.0f);
-    EXPECT_FLOAT_EQ(h.getData()[1], 0.0f);
-    EXPECT_FLOAT_EQ(h.getData()[2], -1.0f);
+    // 世界 +Z(2) → negate → normalize → (0,0,-1)。
+    EXPECT_NEAR(h.getData()[0], 0.0f, 1e-6f);
+    EXPECT_NEAR(h.getData()[1], 0.0f, 1e-6f);
+    EXPECT_NEAR(h.getData()[2], -1.0f, 1e-6f);
 
-    // 旋视 90°（绕 X）：(0,0,1)→视(0,-1,0)→negate→(0,1,0)。
+    // 视矩阵旋转不影响（E1）。
     auto rot = dqGeom::Matrix3d::CreateRotationAroundAxis(
         dqGeom::Vector3d::From(1, 0, 0), dqGeom::Angle::kPi / 2.0);
     SetViewRotation(*f.target, rot);
     PushThematic(*f.target, &td);
     f.target->getUniforms().thematic.bindSunDirection(h);
     EXPECT_NEAR(h.getData()[0], 0.0f, 1e-6f);
-    EXPECT_NEAR(h.getData()[1], 1.0f, 1e-6f);
-    EXPECT_NEAR(h.getData()[2], 0.0f, 1e-6f);
+    EXPECT_NEAR(h.getData()[1], 0.0f, 1e-6f);
+    EXPECT_NEAR(h.getData()[2], -1.0f, 1e-6f);
 }
 
-// 快路径（ThematicUniforms.ts:93-106）：设置等值+纹理在→不重建纹理；
-// Slope 轴随视矩阵逐帧刷新（desync 发生但 createTexture 不再调）。
-TEST(ThematicUniformsTest, FastPathRefreshesSlopeAxisWithoutTextureRebuild)
+// 快路径（ThematicUniforms.ts:93-106）：设置等值+纹理在→不重建纹理。
+//（E1 后 Slope/HillShade 无视图相关刷新——快路径仅传感器臂。）
+TEST(ThematicUniformsTest, FastPathSkipsTextureRebuild)
 {
     ThematicTargetFixture f;
     auto& thematic = f.target->getUniforms().thematic;
@@ -223,20 +223,20 @@ TEST(ThematicUniformsTest, FastPathRefreshesSlopeAxisWithoutTextureRebuild)
     ASSERT_EQ(f.driver->createTextureCalls, 1);
     const auto key0 = thematic.getSyncKey();
 
-    // 同设置 + 视矩阵变 → 快路径：纹理不重建、syncKey 翻（Slope 臂 desync）、
-    // 轴值刷新。
+    // 同设置 + 视矩阵变 → 快路径：纹理不重建、syncKey 不变（E1：轴/太阳向
+    // 恒世界空间，无逐帧刷新——参考的 Slope/HillShade desync 臂随 E1 舍去）。
     auto rot = dqGeom::Matrix3d::CreateRotationAroundAxis(
         dqGeom::Vector3d::From(1, 0, 0), dqGeom::Angle::kPi / 2.0);
     SetViewRotation(*f.target, rot);
     PushThematic(*f.target, &td);
 
     EXPECT_EQ(f.driver->createTextureCalls, 1);
-    EXPECT_NE(thematic.getSyncKey(), key0);
+    EXPECT_EQ(thematic.getSyncKey(), key0);
     UniformHandle h;
     thematic.bindAxis(h);
-    EXPECT_NEAR(h.getData()[1], -1.0f, 1e-6f);
+    EXPECT_NEAR(h.getData()[2], 1.0f, 1e-6f);
 
-    // Height 模式同设置 → 快路径但无视图相关刷新（无 desync）。
+    // Height 模式同设置 → 快路径同形。
     ThematicDisplay hd;
     hd.displayMode = ThematicDisplayMode::Height;
     hd.axis = dqGeom::Vector3d::From(0, 0, 1);
@@ -245,7 +245,7 @@ TEST(ThematicUniformsTest, FastPathRefreshesSlopeAxisWithoutTextureRebuild)
     const auto key1 = thematic.getSyncKey();
     PushThematic(*f.target, &hd);  // 同设置
     EXPECT_EQ(f.driver->createTextureCalls, 2);
-    EXPECT_EQ(thematic.getSyncKey(), key1);  // Height 快路径无 desync
+    EXPECT_EQ(thematic.getSyncKey(), key1);
 }
 
 // 渐变纹理形态（ThematicUniforms.ts:149-151 + Gradient.ts:307-359——1×N 列向：
@@ -360,3 +360,4 @@ TEST(ThematicUniformsTest, DefaultGradientDimension)
 {
     EXPECT_EQ(kDefaultGradientDimension, 8192);
 }
+

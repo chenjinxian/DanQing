@@ -25,6 +25,7 @@
 BEGIN_DQ_RENDER_NAMESPACE
 
 class LUTGeometry;
+class TargetImpl;  // M-S S-d getPass(target) 形参前向声明
 
 // ---------------------------------------------------------------------------
 // InstancedGeometry — geometry drawn with instanced draw calls
@@ -61,7 +62,7 @@ public:
 
     // --- Forwarded render properties (Ported from: itwinjs-core line 365-376) ---
     TechniqueId getTechniqueId() const override;
-    Pass getPass() const override;
+    Pass getPass(TargetImpl const& /*target*/) const override;
     RenderOrder getRenderOrder() const override;
     bool isLitSurface() const override;
     bool hasBakedLighting() const override;

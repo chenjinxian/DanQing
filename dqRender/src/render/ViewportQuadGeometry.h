@@ -32,6 +32,8 @@
 
 BEGIN_DQ_RENDER_NAMESPACE
 
+class TargetImpl;  // M-S S-d getPass(target) 形参前向声明
+
 // Forward declarations
 class PolylineBuffers;
 class TesselatedPolyline;
@@ -50,7 +52,7 @@ public:
 
     // --- CachedGeometry interface ---
     TechniqueId getTechniqueId() const noexcept override { return m_techniqueId; }
-    Pass getPass() const noexcept override { return Pass::Opaque; }
+    Pass getPass(TargetImpl const& /*target*/) const noexcept override { return Pass::Opaque; }
     RenderOrder getRenderOrder() const noexcept override { return RenderOrder::UnlitSurface; }
 
     void collectStatistics(RenderMemory::Statistics& /*stats*/) const override {
@@ -139,7 +141,7 @@ public:
 
     // Sky renders in the SkyBox pass (drawn behind all scene geometry).
     // ← itwinjs-core: skyBox graphics are classified into RenderPass.SkyBox.
-    Pass getPass() const noexcept override { return Pass::SkyBox; }
+    Pass getPass(TargetImpl const& /*target*/) const noexcept override { return Pass::SkyBox; }
 
     // Type guard so OpenGLRenderSystem::updateSkySphere can downcast safely.
     SkySphereViewportQuadGeometry* asSkySphere() override { return this; }
@@ -489,7 +491,7 @@ public:
 
     // --- CachedGeometry interface ---
     TechniqueId getTechniqueId() const noexcept override { return TechniqueId::VolClassCopyZ; }
-    Pass getPass() const noexcept override { return Pass::Classification; }
+    Pass getPass(TargetImpl const& /*target*/) const noexcept override { return Pass::Classification; }
     RenderOrder getRenderOrder() const noexcept override { return RenderOrder::None; }
     void draw(rhi::Driver& driver) override;
     void collectStatistics(RenderMemory::Statistics& stats) const override;
@@ -527,7 +529,7 @@ public:
 
     // --- CachedGeometry interface ---
     TechniqueId getTechniqueId() const noexcept override { return TechniqueId::SkyBox; }
-    Pass getPass() const noexcept override { return Pass::SkyBox; }
+    Pass getPass(TargetImpl const& /*target*/) const noexcept override { return Pass::SkyBox; }
     RenderOrder getRenderOrder() const noexcept override { return RenderOrder::UnlitSurface; }
     void draw(rhi::Driver& driver) override;
     void collectStatistics(RenderMemory::Statistics& /*stats*/) const override {}

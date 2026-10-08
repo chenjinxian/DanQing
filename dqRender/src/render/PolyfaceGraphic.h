@@ -26,6 +26,8 @@
 
 BEGIN_DQ_RENDER_NAMESPACE
 
+class TargetImpl;  // M-S S-d getPass(target) 形参前向声明
+
 // ---------------------------------------------------------------------------
 // PolyfaceGraphic — GPU geometry from IndexedPolyface
 // ---------------------------------------------------------------------------
@@ -50,7 +52,11 @@ public:
 
     // --- CachedGeometry interface ---
     TechniqueId getTechniqueId() const noexcept override { return TechniqueId::Surface; }
-    Pass getPass() const noexcept override { return Pass::Opaque; }
+    Pass getPass(TargetImpl const& /*target*/) const noexcept override { return Pass::Opaque; }
+    // M-S S-d：参考全部 mesh 表面经 SurfaceGeometry 继承 supportsThematicDisplay
+    //（=!isGlyph，SurfaceGeometry.ts:135-137）——DanQing 的 glTF 装饰表面在本类
+    //（glyph 未移植恒 false → true）。
+    bool supportsThematicDisplay() const override { return true; }
     RenderOrder getRenderOrder() const noexcept override { return RenderOrder::LitSurface; }
     /// PolyfaceGraphic uploads raw FLOAT3 a_position attributes (no VertexLUT, no
     /// u_qOrigin/u_qScale), so it must select the Unquantized Surface variant.

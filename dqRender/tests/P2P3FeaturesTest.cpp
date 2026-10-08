@@ -24,6 +24,7 @@
 #include "render/MockRender.h"
 #include "render/RemainingShaderModules.h"
 
+#include "NullTargetFixture.h"
 #include <gtest/gtest.h>
 #include <memory>
 
@@ -193,9 +194,10 @@ TEST(MonochromeModeTest, ColorFloat)
 // Ported from: itwinjs-core core/frontend/src/test/FeatureSymbology.test.ts
 TEST(RealityMeshGeometryTest, Properties)
 {
+    NullTargetFixture fixture;  // M-S S-d getPass(target) 签名
     RealityMeshGeometry mesh(1000, 500);
     EXPECT_EQ(mesh.getTechniqueId(), TechniqueId::RealityMesh);
-    EXPECT_EQ(mesh.getPass(), Pass::Opaque);
+    EXPECT_EQ(mesh.getPass(*fixture.target), Pass::Opaque);
     EXPECT_EQ(mesh.getNumIndices(), 1000u);
     EXPECT_EQ(mesh.getVertexCount(), 500u);
 }

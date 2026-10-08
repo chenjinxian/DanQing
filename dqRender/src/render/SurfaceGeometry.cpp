@@ -2,6 +2,7 @@
 // DanQing dqRender — Surface/Edge/Polyline/PointCloud/PointString geometry
 // Ported from: itwinjs-core core/frontend/src/internal/render/webgl/
 #include "SurfaceGeometry.h"
+#include "TargetImpl.h"  // M-S S-d：getPass(target) 的 wantThematicDisplay/uniforms 面
 #include "dqRender/RenderMemory.h"
 
 #include <cstring>
@@ -149,10 +150,38 @@ int const* SurfaceGeometry::computeSurfaceFlags(CachedGeometry const& geom,
     return s_flags;
 }
 
-Pass SurfaceGeometry::getPass() const noexcept
+// Ported from: itwinjs-core SurfaceGeometry.getPass（SurfaceGeometry.ts:195-277）
+// ——M-S S-d：签名归位 getPass(target) + thematic 段（:205-211 IsoLines 强制
+// translucent[抗锯齿]；:248-262 MultiplySurfaceAndGradient 按渐变
+// textureTransparency 分路）。M-S 范围注：参考的 wireframe/glyph/材质-alpha/
+// 纹理-alpha 段不在本件——DanQing 透明路由经 RenderCommands 覆盖机制面，
+// glyph 未移植；hasAlpha 以均匀色透明度承载（参考 :240-245 的颜色臂）。
+Pass SurfaceGeometry::getPass(TargetImpl const& target) const noexcept
 {
-    if (isPlanar()) return Pass::OpaquePlanar;
-    return Pass::Opaque;
+    Pass opaquePass = isPlanar() ? Pass::OpaquePlanar : Pass::Opaque;
+
+    ThematicUniforms const& tu = target.getUniforms().thematic;
+    dqCommon::ThematicDisplay const* thematic =
+        (target.wantThematicDisplay() && supportsThematicDisplay())
+            ? tu.getThematicDisplay() : nullptr;
+    if (thematic && tu.wantIsoLines())
+        return Pass::Translucent;
+
+    if (thematic && thematic->gradientSettings.transparencyMode ==
+                        dqCommon::ThematicGradientTransparencyMode::MultiplySurfaceAndGradient) {
+        bool const hasAlpha = getColor().getTransparency() != 0;
+        switch (thematic->gradientSettings.textureTransparency()) {
+            case dqCommon::TextureTransparency::Opaque:
+                return hasAlpha ? Pass::Translucent : opaquePass;
+            case dqCommon::TextureTransparency::Translucent:
+                return Pass::Translucent;
+            case dqCommon::TextureTransparency::Mixed:
+                return hasAlpha ? Pass::Translucent
+                                : (isPlanar() ? Pass::OpaquePlanarTranslucent
+                                              : Pass::OpaqueTranslucent);
+        }
+    }
+    return opaquePass;
 }
 
 RenderOrder SurfaceGeometry::getRenderOrder() const noexcept

@@ -106,7 +106,10 @@ public:
 
     Pass getRenderPass() const
     {
-        return m_geometry ? m_geometry->getPass() : Pass::None;
+        // M-S S-d：getPass(target) 签名随参考归位（CachedGeometry.ts:84）——
+        // 本面零调用方（DrawCommand.cpp:81 走 executor 面）；target 缺席时
+        // 无法判 thematic/透明路由 → None（惰性面原样）。
+        return (m_geometry && m_target) ? m_geometry->getPass(*m_target) : Pass::None;
     }
 
     TechniqueId getTechniqueId() const

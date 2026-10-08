@@ -19,6 +19,7 @@
 BEGIN_DQ_RENDER_NAMESPACE
 
 class DrawParams;
+class TargetImpl;  // M-S S-d getPass(target) 形参前向声明
 
 // ---------------------------------------------------------------------------
 // EdgeLUT — edge lookup table texture wrapping an EdgeTable
@@ -118,7 +119,7 @@ public:
     // Ported from: :131 getPass → computeEdgePass（MeshGeometry.ts:58-69——
     // DanQing 边缘家族既有形态：translucent/wireframe 细分未移植，pass 恒
     // OpaqueLinear，"none" 门在 SceneCompositorImpl dispatch 侧）。
-    Pass getPass() const noexcept override { return Pass::OpaqueLinear; }
+    Pass getPass(TargetImpl const& /*target*/) const noexcept override { return Pass::OpaqueLinear; }
     // Ported from: :132 renderOrder → isPlanar ? PlanarEdge : Edge。
     RenderOrder getRenderOrder() const noexcept override
     {

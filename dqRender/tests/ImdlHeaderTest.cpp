@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 
 #include "NullDriver.h"
+#include "NullTargetFixture.h"
 
 #include "rhi/DriverBase.h"
 #include "rhi/HandleAllocator.h"
@@ -1272,6 +1273,7 @@ private:
 //              :52（segmentEdges 与 surface 同属一个 mesh graphic）。
 TEST(ImdlGraphicsTest, LutPathProducesSegmentEdgeGraphics)
 {
+    dqRender::NullTargetFixture fixture;  // M-S S-d getPass(target) 签名
     auto doc = parseFull(V1_1::rectangleBytes, V1_1::rectangleSize);
     ASSERT_TRUE(doc.has_value());
 
@@ -1291,7 +1293,7 @@ TEST(ImdlGraphicsTest, LutPathProducesSegmentEdgeGraphics)
     // technique/量化形态：Edge technique + 量化 LUT 几何（与 surface 共享
     // 顶点表——MeshData.lut）。
     EXPECT_EQ(edge->getTechniqueId(), dqRender::TechniqueId::Edge);
-    EXPECT_EQ(edge->getPass(), dqRender::Pass::OpaqueLinear);
+    EXPECT_EQ(edge->getPass(*fixture.target), dqRender::Pass::OpaqueLinear);
     EXPECT_TRUE(edge->usesQuantizedPositions());
     ASSERT_NE(edge->getLut(), nullptr);
     EXPECT_EQ(edge->getLut()->getTexture().getId(), surf->getLut().getTexture().getId())
@@ -1813,6 +1815,7 @@ TEST(ImdlEdges, DirectIndexedTakesPrecedenceOverCompact)
 // ---------------------------------------------------------------------------
 TEST(ImdlGraphicsTest, LutPathProducesIndexedEdgeGraphics)
 {
+    dqRender::NullTargetFixture fixture;  // M-S S-d getPass(target) 签名
     dqRender::ImdlDocument doc;
     // BIN 布局：bvIdx @0 len 9（1 三角形 0,1,2）、bvVtx @16 len 96（6 顶点 ×
     // 16B LitMesh）、bvEdgeIdx @112 len 144（8 边 × 6 顶点 × 3B）、
@@ -1866,7 +1869,7 @@ TEST(ImdlGraphicsTest, LutPathProducesIndexedEdgeGraphics)
 
     // technique/pass/order/量化形态（IndexedEdgeGeometry.ts :130/:131/:132）。
     EXPECT_EQ(ix->getTechniqueId(), dqRender::TechniqueId::IndexedEdge);
-    EXPECT_EQ(ix->getPass(), dqRender::Pass::OpaqueLinear);
+    EXPECT_EQ(ix->getPass(*fixture.target), dqRender::Pass::OpaqueLinear);
     EXPECT_EQ(ix->getRenderOrder(), dqRender::RenderOrder::Edge);
     EXPECT_TRUE(ix->usesQuantizedPositions());
 

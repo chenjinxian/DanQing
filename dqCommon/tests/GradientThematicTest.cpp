@@ -168,6 +168,48 @@ TEST(GradientCreateThematicTest, CreateThematicWithFixedScheme)
     EXPECT_EQ(symb.keys.size(), 5u);  // Blue-Red fixed scheme has 5 keys
 }
 
+// Authored: no reference test pins the fixed-scheme key colors——值锚
+// Gradient.ts:131-136 _fixedSchemeKeys 逐字（rbg 序）。M-S S-d 取证修复：
+// DanQing 原表归一 (r,g,b) 存储却保留参考 (1,3,2) 调用序 → 非对称行 g/b
+// 互换（BlueRed 0 值端绿而非蓝——渐变带内容错误）。本锁钉 BlueRed 全 5 键
+// 与 RedBlue/Monochrome 端点。
+TEST(GradientCreateThematicTest, FixedSchemeKeyColorsAreReferenceExact)
+{
+    // tbgr = 0xTTBBGGRR。BlueRed 参考五行 rbg（[v,r,b,g]）经 (kv[1],kv[3],
+    // kv[2]) 调用：[0,0,255,0]→蓝(0,0,255)=0x00FF0000；[0.25,0,255,255]→
+    // 青(0,255,255)=0x00FFFF00；[0.5,0,0,255]→绿(0,255,0)=0x0000FF00；
+    // [0.75,255,0,255]→黄(255,255,0)=0x0000FFFF；[1,255,0,0]→红=0x000000FF。
+    auto settings = ThematicGradientSettings::defaults();
+    settings.colorScheme = ThematicGradientColorScheme::BlueRed;
+    const auto blueRed = GradientSymb::createThematic(settings);
+    ASSERT_EQ(blueRed.keys.size(), 5u);
+    const uint32_t expectBlueRed[5] = {
+        0x00FF0000u,  // 蓝
+        0x00FFFF00u,  // 青
+        0x0000FF00u,  // 绿
+        0x0000FFFFu,  // 黄
+        0x000000FFu,  // 红
+    };
+    const double expectValues[5] = {0.0, 0.25, 0.5, 0.75, 1.0};
+    for (size_t i = 0; i < 5; ++i) {
+        EXPECT_DOUBLE_EQ(blueRed.keys[i].value, expectValues[i]);
+        EXPECT_EQ(blueRed.keys[i].color.getTbgr(), expectBlueRed[i]) << "key " << i;
+    }
+
+    // RedBlue 端点（rbg 行 [0,255,0,0]→红 / [1,0,255,0]→蓝）。
+    settings.colorScheme = ThematicGradientColorScheme::RedBlue;
+    const auto redBlue = GradientSymb::createThematic(settings);
+    ASSERT_EQ(redBlue.keys.size(), 5u);
+    EXPECT_EQ(redBlue.keys[0].color.getTbgr(), 0x000000FFu);  // 红
+    EXPECT_EQ(redBlue.keys[4].color.getTbgr(), 0x00FF0000u);  // 蓝
+
+    settings.colorScheme = ThematicGradientColorScheme::Monochrome;
+    const auto mono = GradientSymb::createThematic(settings);
+    ASSERT_EQ(mono.keys.size(), 2u);
+    EXPECT_EQ(mono.keys[0].color.getTbgr(), 0x00000000u);  // 黑
+    EXPECT_EQ(mono.keys[1].color.getTbgr(), 0x00FFFFFFu);  // 白
+}
+
 // Authored: createThematic with custom color scheme uses the provided customKeys.
 TEST(GradientCreateThematicTest, CreateThematicWithCustomKeys)
 {

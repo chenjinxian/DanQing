@@ -26,6 +26,8 @@
 
 BEGIN_DQ_RENDER_NAMESPACE
 
+class TargetImpl;  // M-S S-d getPass(target) 形参前向声明
+
 // ---------------------------------------------------------------------------
 // SurfaceGeometry — concrete surface geometry
 // (Ported from: itwinjs-core SurfaceGeometry.ts)
@@ -66,7 +68,11 @@ public:
 
     // --- CachedGeometry interface ---
     TechniqueId getTechniqueId() const noexcept override { return TechniqueId::Surface; }
-    Pass getPass() const noexcept override;
+    Pass getPass(TargetImpl const& target) const noexcept override;
+    // Ported from: itwinjs-core SurfaceGeometry.supportsThematicDisplay
+    //（SurfaceGeometry.ts:135-137——`!this.isGlyph`；glyph 未移植恒 false
+    // [wantMixMonochromeColor 的同族 EQUIVALENCE 在案]——归位恒 true）。
+    bool supportsThematicDisplay() const override { return true; }
     RenderOrder getRenderOrder() const noexcept override;
     void draw(rhi::Driver& driver) override;
     // InstancedGeometry 的 VAO 绑定入口（draw 的 bind 半段——
@@ -259,7 +265,7 @@ public:
 
     // --- CachedGeometry interface ---
     TechniqueId getTechniqueId() const noexcept override { return TechniqueId::Edge; }
-    Pass getPass() const noexcept override { return Pass::OpaqueLinear; }
+    Pass getPass(TargetImpl const& /*target*/) const noexcept override { return Pass::OpaqueLinear; }
     // Ported from: itwinjs-core EdgeGeometry.ts renderOrder (:66)——
     // isPlanar ? PlanarEdge : Edge。
     RenderOrder getRenderOrder() const noexcept override
@@ -399,7 +405,7 @@ public:
     bool isNonUniformColor() const noexcept { return m_nonUniformColor; }
     // Ported from: itwinjs-core Polyline.ts:114 (techniqueId === TechniqueId.Polyline).
     TechniqueId getTechniqueId() const noexcept override { return TechniqueId::Polyline; }
-    Pass getPass() const noexcept override { return Pass::OpaqueLinear; }
+    Pass getPass(TargetImpl const& /*target*/) const noexcept override { return Pass::OpaqueLinear; }
     RenderOrder getRenderOrder() const noexcept override { return RenderOrder::Linear; }
     void draw(rhi::Driver& driver) override;
     void collectStatistics(RenderMemory::Statistics& stats) const override;
@@ -449,7 +455,7 @@ public:
 
     // --- CachedGeometry interface ---
     TechniqueId getTechniqueId() const noexcept override { return TechniqueId::PointCloud; }
-    Pass getPass() const noexcept override { return Pass::PointClouds; }
+    Pass getPass(TargetImpl const& /*target*/) const noexcept override { return Pass::PointClouds; }
     RenderOrder getRenderOrder() const noexcept override { return RenderOrder::Linear; }
     void draw(rhi::Driver& driver) override;
     void collectStatistics(RenderMemory::Statistics& stats) const override;
@@ -488,7 +494,7 @@ public:
         m_usesQuantized = true;
     }
     TechniqueId getTechniqueId() const noexcept override { return TechniqueId::PointString; }
-    Pass getPass() const noexcept override { return Pass::OpaqueLinear; }
+    Pass getPass(TargetImpl const& /*target*/) const noexcept override { return Pass::OpaqueLinear; }
     RenderOrder getRenderOrder() const noexcept override { return RenderOrder::Linear; }
     void draw(rhi::Driver& driver) override;
     void collectStatistics(RenderMemory::Statistics& stats) const override;

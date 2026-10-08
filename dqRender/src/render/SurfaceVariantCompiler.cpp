@@ -374,7 +374,19 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
     // --- Thematic display ---
     // Ported from: itwinjs-core Thematic.ts addThematicDisplay() (line 214-336)
     if (thematic) {
+        // ComputeBaseColor 归位（glsl/Surface.ts:821——thematic 时
+        // `return getSurfaceColor();`：s_texture 已被渐变纹理接管，
+        // sampleSurfaceTexture 不得再采样它[否则渐变带被当表面纹理]；
+        // 基色只留 v_color[alpha 供 postlude 相乘]）。addTexture 的
+        // kComputeBaseColor 槽在此覆写。
+        builder.getFragmentBuilder().setFragmentComponent(
+            FragmentShaderComponent::ComputeBaseColor, "return getSurfaceColor();");
         addThematicDisplay(builder);
+    } else {
+        // 非 thematic 臂的 u_modelToWorld 注册（glsl/Surface.ts:739-745——
+        // 参考以 constantLodVParams 门 GraphicUniform 绑定；DanQing 的
+        // constantLod 消费面未移植——nullptr 声明保持既有形态）。
+        builder.getVertexBuilder().addUniform("u_modelToWorld", VariableType::Mat4, nullptr);
     }
     if (flags.hasClip()) {
         addClipping(builder.getFragmentBuilder());

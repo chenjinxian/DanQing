@@ -96,6 +96,9 @@ vec4 getIsoLineColor(float ndx, float stepCount) {
 // ---------------------------------------------------------------------------
 // computeThematicIndex — vertex varying computation for height/hillshade modes
 // Ported from: itwinjs-core Thematic.ts getComputeThematicIndex()
+//（:172-191——modelPos：instanced 时 (g_instancedRtcMatrix * rawPosition)
+// [DanQing 对应全局=g_modelMatrixRTC，InstancingShaders.h:84]；HillShade 顶
+// 点臂 decodeNormal=true → computeSurfaceNormal().z）。
 // ---------------------------------------------------------------------------
 inline constexpr char const* kComputeThematicIndex = R"(
   if (kThematicDisplayMode_Height == u_thematicDisplayMode) {
@@ -107,7 +110,23 @@ inline constexpr char const* kComputeThematicIndex = R"(
     vec3 c = proju;
     v_thematicIndex = findFractionalPositionOnLine(a, b, c);
   } else if (kThematicDisplayMode_HillShade == u_thematicDisplayMode) {
-    v_thematicIndex = v_n.z;
+    v_thematicIndex = computeSurfaceNormal().z;
+  }
+)";
+
+// instanced 形（getComputeThematicIndex instanced=true 臂——modelPos 前乘
+// 逐实例 RTC 矩阵）。
+inline constexpr char const* kComputeThematicIndexInstanced = R"(
+  if (kThematicDisplayMode_Height == u_thematicDisplayMode) {
+    vec3 u = (u_modelToWorld * (g_modelMatrixRTC * rawPosition)).xyz;
+    vec3 v = u_thematicAxis;
+    vec3 proju = (dot(v, u) / dot(v, v)) * v;
+    vec3 a = v * u_thematicRange.x;
+    vec3 b = v * u_thematicRange.y;
+    vec3 c = proju;
+    v_thematicIndex = findFractionalPositionOnLine(a, b, c);
+  } else if (kThematicDisplayMode_HillShade == u_thematicDisplayMode) {
+    v_thematicIndex = computeSurfaceNormal().z;
   }
 )";
 
@@ -124,7 +143,8 @@ inline constexpr char const* kApplyThematicColorPrelude = R"(
     ndx = -1.0;
     float distanceCutoff = u_thematicSettings.y;
 
-    for (int i = 0; i < 128; i++) {
+    for (int i = 0; i < 8192; i++) {  // 参考硬上限 8192（Thematic.ts:93 同位
+                                      // ###TODO 注记——原 128 系发散）
       if (i >= u_numSensors)
         break;
       vec4 sensor = getSensor(i);
@@ -139,7 +159,10 @@ inline constexpr char const* kApplyThematicColorPrelude = R"(
     if (contributionSum > 0.0)
       ndx = sensorSum / contributionSum;
   } else if (kThematicDisplayMode_Slope == u_thematicDisplayMode) {
-    float d = dot(v_n, u_thematicAxis);
+    // 参考 slopeAndHillShadeShader（Thematic.ts:50-71）：g_normal（片元
+    // finalizeNormal 后法线）——原 v_n 系发散（顶点插值法线，缺 normalMap/
+    // 双面终态）。
+    float d = dot(g_normal, u_thematicAxis);
     if (d < 0.0) d = -d;
     d = acos(d);
     if (d < u_thematicRange.x || d > u_thematicRange.y)
@@ -150,7 +173,7 @@ inline constexpr char const* kApplyThematicColorPrelude = R"(
     }
     ndx = d;
   } else if (kThematicDisplayMode_HillShade == u_thematicDisplayMode) {
-    float d = dot(v_n, u_thematicSunDirection);
+    float d = dot(g_normal, u_thematicSunDirection);
     ndx = max(0.0, d);
   }
 )";

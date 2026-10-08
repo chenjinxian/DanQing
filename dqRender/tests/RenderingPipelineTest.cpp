@@ -17,6 +17,7 @@
 #include "dqRender/Pixel.h"
 
 #include "NullDriver.h"
+#include "NullTargetFixture.h"
 
 #include <gtest/gtest.h>
 #include <cmath>
@@ -64,10 +65,11 @@ TEST(BranchUniformsTest, Matrices)
 // Authored: no reference test exists in itwinjs-core or filament for render pipeline integration
 TEST(SurfaceGeometryTest, Properties)
 {
+    NullTargetFixture fixture;  // M-S S-d getPass(target) 签名
     rhi::NullDriver driver;
     SurfaceGeometry geo(driver, rhi::IndexBufferHandle{}, 100, SurfaceType::Opaque, true, true);
     EXPECT_EQ(geo.getTechniqueId(), TechniqueId::Surface);
-    EXPECT_EQ(geo.getPass(), Pass::OpaquePlanar);  // isPlanar=true
+    EXPECT_EQ(geo.getPass(*fixture.target), Pass::OpaquePlanar);  // isPlanar=true
     EXPECT_EQ(geo.getRenderOrder(), RenderOrder::LitSurface);
     EXPECT_TRUE(geo.isLit());
     EXPECT_TRUE(geo.isPlanar());
@@ -77,15 +79,17 @@ TEST(SurfaceGeometryTest, Properties)
 // Authored: no reference test exists in itwinjs-core or filament for render pipeline integration
 TEST(EdgeGeometryTest, Properties)
 {
+    NullTargetFixture fixture;  // M-S S-d getPass(target) 签名
     EdgeGeometry geo(50);
     EXPECT_EQ(geo.getTechniqueId(), TechniqueId::Edge);
-    EXPECT_EQ(geo.getPass(), Pass::OpaqueLinear);
+    EXPECT_EQ(geo.getPass(*fixture.target), Pass::OpaqueLinear);
     EXPECT_EQ(geo.getRenderOrder(), RenderOrder::Edge);
 }
 
 // Authored: no reference test exists in itwinjs-core or filament for render pipeline integration
 TEST(PolylineGeometryTest, Properties)
 {
+    NullTargetFixture fixture;  // M-S S-d getPass(target) 签名
     rhi::NullDriver driver;
     // Faithful thick-line PolylineGeometry ctor (ported from itwinjs-core Polyline.ts).
     // NullDriver's createXxx return {} so all GL handles are nullid — safe for
@@ -99,7 +103,7 @@ TEST(PolylineGeometryTest, Properties)
     // TechniqueId flipped from Surface (PRAGMATIC) to Polyline (faithful) in the
     // SAME commit that swaps the VAO to the corner buffer.
     EXPECT_EQ(geo.getTechniqueId(), TechniqueId::Polyline);
-    EXPECT_EQ(geo.getPass(), Pass::OpaqueLinear);
+    EXPECT_EQ(geo.getPass(*fixture.target), Pass::OpaqueLinear);
     EXPECT_EQ(geo.getRenderOrder(), RenderOrder::Linear);
     EXPECT_FALSE(geo.usesQuantizedPositions());  // Unquantized LUT path
     // getLineWeight clamps to [1.0, 31.0] (CachedGeometry.ts:140-150).
@@ -146,9 +150,10 @@ TEST(PolylineGeometryTest, LineWeightClamp)
 // Authored: no reference test exists in itwinjs-core or filament for render pipeline integration
 TEST(PointCloudGeometryTest, Properties)
 {
+    NullTargetFixture fixture;  // M-S S-d getPass(target) 签名
     PointCloudGeometry geo(1000, 0.5f);
     EXPECT_EQ(geo.getTechniqueId(), TechniqueId::PointCloud);
-    EXPECT_EQ(geo.getPass(), Pass::PointClouds);
+    EXPECT_EQ(geo.getPass(*fixture.target), Pass::PointClouds);
     EXPECT_EQ(geo.getVertexCount(), 1000u);
     EXPECT_FLOAT_EQ(geo.getVoxelSize(), 0.5f);
 }
@@ -156,10 +161,11 @@ TEST(PointCloudGeometryTest, Properties)
 // Authored: no reference test exists in itwinjs-core or filament for render pipeline integration
 TEST(PointStringGeometryTest, Properties)
 {
+    NullTargetFixture fixture;  // M-S S-d getPass(target) 签名
     rhi::NullDriver driver;
     PointStringGeometry geo(driver, rhi::IndexBufferHandle{}, 50, 3.0f);
     EXPECT_EQ(geo.getTechniqueId(), TechniqueId::PointString);
-    EXPECT_EQ(geo.getPass(), Pass::OpaqueLinear);
+    EXPECT_EQ(geo.getPass(*fixture.target), Pass::OpaqueLinear);
     EXPECT_FLOAT_EQ(geo.getWeight(), 3.0f);
 }
 
@@ -378,22 +384,20 @@ TEST(FeatureSymbologyShadersTest, RenderOrderConstants)
 #include "render/Batch.h"
 #include "render/TargetImpl.h"
 
-// Helper: construct RenderCommands for testing.
-// Allocates raw memory for a TargetImpl without calling constructor —
-// safe because tests only use command buffer methods that don't dereference it.
-static RenderCommands makeTestRenderCommands(BranchStack& stack, BatchState& batchState)
+// Helper: construct RenderCommands for testing（M-S S-d：真 TargetImpl 栈——
+// getPass(target) 签名化后 addPrimitiveCommand 真读 target，伪目标裸缓冲的
+// getUniforms 读脏内存 → getTop 断言崩[实测]；夹具自持栈/批态）。
+static RenderCommands makeTestRenderCommands(NullTargetFixture& fixture)
 {
-    static char buf[sizeof(TargetImpl)];  // NOLINT — uninitialized is intentional
-    auto* fakeTarget = reinterpret_cast<TargetImpl*>(buf);
-    return RenderCommands(*fakeTarget, stack, batchState);
+    return RenderCommands(*fixture.target, fixture.target->getBranchStack(),
+                          fixture.target->getBatchState());
 }
 
 // Authored: no reference test exists in itwinjs-core or filament for render pipeline integration
 TEST(RenderCommandsTest, EmptyCommands)
 {
-    BranchStack stack;
-    BatchState batchState;
-    auto cmds = makeTestRenderCommands(stack, batchState);
+    NullTargetFixture fixture;
+    auto cmds = makeTestRenderCommands(fixture);
     auto const& opaqueCmds = cmds.getCommands(RenderPass::OpaqueGeneral);
     EXPECT_TRUE(opaqueCmds.empty());
 }
@@ -401,9 +405,8 @@ TEST(RenderCommandsTest, EmptyCommands)
 // Authored: no reference test exists in itwinjs-core or filament for render pipeline integration
 TEST(RenderCommandsTest, AddPrimitiveNull)
 {
-    BranchStack stack;
-    BatchState batchState;
-    auto cmds = makeTestRenderCommands(stack, batchState);
+    NullTargetFixture fixture;
+    auto cmds = makeTestRenderCommands(fixture);
     // Test that null geometry is handled gracefully.
     cmds.addPrimitive(static_cast<CachedGeometry*>(nullptr));
     EXPECT_TRUE(cmds.isEmpty());
@@ -412,9 +415,8 @@ TEST(RenderCommandsTest, AddPrimitiveNull)
 // Authored: no reference test exists in itwinjs-core or filament for render pipeline integration
 TEST(RenderCommandsTest, Clear)
 {
-    BranchStack stack;
-    BatchState batchState;
-    auto cmds = makeTestRenderCommands(stack, batchState);
+    NullTargetFixture fixture;
+    auto cmds = makeTestRenderCommands(fixture);
     cmds.clear();
 
     for (size_t i = 0; i < RenderCommands::getPassCount(); ++i) {

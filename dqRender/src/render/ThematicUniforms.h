@@ -171,12 +171,13 @@ public:
 
 private:
     /// Ported from: itwinjs-core ThematicUniforms._updateAxis（:73-79——
-    /// 视矩阵旋转向量[可选] + 恒 normalize）。
-    void updateAxis(dqGeom::Vector3d const& axis, dqGeom::Transform const* viewMatrix);
+    /// 恒 normalize。EQUIVALENCE（E1）：参考的视矩阵变换臂随 DanQing 世界
+    /// 帧结构舍去（g_normal 世界法线——详注在 ThematicUniforms.cpp update）。
+    void updateAxis(dqGeom::Vector3d const& axis);
 
     /// Ported from: itwinjs-core ThematicUniforms._updateSunDirection（:81-88——
-    /// 视矩阵变换 + negate + normalize）。
-    void updateSunDirection(dqGeom::Vector3d const& sunDir, dqGeom::Transform const& viewMatrix);
+    /// negate + normalize；E1 同上）。
+    void updateSunDirection(dqGeom::Vector3d const& sunDir);
 
     /// Create gradient texture from thematic display settings.
     /// Ported from: itwinjs-core ThematicUniforms.update() :149-151——

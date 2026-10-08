@@ -195,34 +195,41 @@ public:
     void pushState(BranchState const& state);
 
     /// Push with transform and view flags (convenience for tests/legacy code).
+    /// M-S S-d：localToWorldDelta 可选参——携带时组合进子态的 localToWorld
+    ///（参考 BranchState.fromBranch 的 transform 组合[BranchState.ts:101-125]，
+    ///  缺席=恒等 → 纯继承父态）。
     void push(std::array<float, 16> const& branchMv,
               std::array<float, 16> const& branchMvp,
-              ViewFlags const& flags);
+              ViewFlags const& flags,
+              dqGeom::Transform const* localToWorldDelta = nullptr);
 
     /// Push with raw float pointers (convenience overload).
-    void push(float const* mv16, float const* mvp16, ViewFlags const& flags)
+    void push(float const* mv16, float const* mvp16, ViewFlags const& flags,
+              dqGeom::Transform const* localToWorldDelta = nullptr)
     {
         std::array<float, 16> mv, mvp;
         for (int i = 0; i < 16; ++i) {
             mv[i] = mv16[i];
             mvp[i] = mvp16[i];
         }
-        push(mv, mvp, flags);
+        push(mv, mvp, flags, localToWorldDelta);
     }
 
     /// Push with transform only (view flags inherited from parent).
     void pushTransform(std::array<float, 16> const& branchMv,
-                       std::array<float, 16> const& branchMvp);
+                       std::array<float, 16> const& branchMvp,
+                       dqGeom::Transform const* localToWorldDelta = nullptr);
 
     /// Push with raw float pointers (convenience overload).
-    void pushTransform(float const* mv16, float const* mvp16)
+    void pushTransform(float const* mv16, float const* mvp16,
+                       dqGeom::Transform const* localToWorldDelta = nullptr)
     {
         std::array<float, 16> mv, mvp;
         for (int i = 0; i < 16; ++i) {
             mv[i] = mv16[i];
             mvp[i] = mvp16[i];
         }
-        pushTransform(mv, mvp);
+        pushTransform(mv, mvp, localToWorldDelta);
     }
 
     /// Push with view flags only (transform inherited from parent).

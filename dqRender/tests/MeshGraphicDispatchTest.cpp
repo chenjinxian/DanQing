@@ -24,6 +24,7 @@
 #include "render/TargetImpl.h"
 
 #include "NullDriver.h"
+#include "NullTargetFixture.h"
 
 #include "dqRender/RenderGraphic.h"
 
@@ -103,17 +104,15 @@ TEST(MeshGraphicDispatchTest, FinishTreeIsAllGraphicSoDispatchIsDefined)
 
 // Authored: weak runtime test of the addCommands dispatch — the finish() tree (Branch → GraphicsArray →
 // MeshGraphic) actually produces RenderCommands entries when traversed (not just compile-time type
-// checks). Uses the fake-TargetImpl trick from RenderingPipelineTest.cpp:329-334 — RenderCommands::
-// addPrimitive(CachedGeometry*) never dereferences the target. The MeshGraphic's SurfaceGeometry has a
-// null primitive handle (the weak path never calls draw(), so no GL is touched).
+// checks). M-S S-d：真 TargetImpl 栈（NullTargetFixture——getPass(target) 签名化后
+// addPrimitiveCommand 真读 target；原伪目标裸缓冲读脏内存 → getTop 断言崩[实测]）。
+// The MeshGraphic's SurfaceGeometry has a null primitive handle (the weak path never calls draw(),
+// so no GL is touched).
 TEST(MeshGraphicDispatchTest, AddCommandsProducesRenderCommands)
 {
-    BranchStack stack;
-    BatchState batchState;
-    // Fake, never-dereferenced TargetImpl storage (see RenderingPipelineTest.cpp:331).
-    static char buf[sizeof(TargetImpl)];  // NOLINT — uninitialized is intentional
-    auto* fakeTarget = reinterpret_cast<TargetImpl*>(buf);
-    RenderCommands cmds(*fakeTarget, stack, batchState);
+    NullTargetFixture fixture;
+    RenderCommands cmds(*fixture.target, fixture.target->getBranchStack(),
+                        fixture.target->getBatchState());
 
     // Build the exact tree finish() produces, with one surface leaf.
     rhi::NullDriver driver;

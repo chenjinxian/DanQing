@@ -10,6 +10,7 @@
 #include "render/TargetGraphics.h"
 
 #include "NullDriver.h"
+#include "NullTargetFixture.h"
 
 #include <gtest/gtest.h>
 #include <memory>
@@ -35,11 +36,15 @@ TEST(DrawParamsTest, DefaultState)
 // Authored: no reference test exists in itwinjs-core for batch rendering
 TEST(DrawParamsTest, InitReset)
 {
+    // M-S S-d：getPass(target) 签名化后 getRenderPass 需真目标（无目标=
+    // None 惰性面——target 臂读 thematic 态）。NullTargetFixture 持真栈。
+    NullTargetFixture fixture;
     rhi::NullDriver driver;
     DrawParams params;
     SurfaceGeometry geo(driver, rhi::IndexBufferHandle{}, 100, SurfaceType::Opaque, false, false);
 
     params.init(nullptr, &geo);
+    params.setTarget(fixture.target.get());
     EXPECT_EQ(params.getGeometry(), &geo);
     EXPECT_EQ(params.getRenderPass(), Pass::Opaque);
     EXPECT_EQ(params.getTechniqueId(), TechniqueId::Surface);

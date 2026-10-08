@@ -32,6 +32,9 @@
 #include "render/VertexKey.h"
 
 #include "NullDriver.h"
+#include "NullTargetFixture.h"  // M-S S-d：真 TargetImpl 栈（getPass(target) 签名
+                              // 化后 addPrimitiveCommand 真读 target——伪目标
+                              // 裸缓冲的 getUniforms 读脏内存 → getTop 断言崩）
 
 #include <dqGeom/Point3d.h>
 #include <dqGeom/Range3d.h>
@@ -63,11 +66,9 @@ PushBranchCommand const* findRecordedPushBranch(RenderCommands const& cmds)
 // Column-major (GL): translation lives at data[12],[13],[14].
 TEST(BranchLocalToWorldTest, LocalToWorldTranslationFoldsIntoRecordedDrawTransform)
 {
-    BranchStack stack;
-    BatchState batchState;
-    static char buf[sizeof(TargetImpl)];  // NOLINT — uninitialized is intentional (fake target)
-    auto* fakeTarget = reinterpret_cast<TargetImpl*>(buf);
-    RenderCommands cmds(*fakeTarget, stack, batchState);
+    NullTargetFixture fixture;
+    RenderCommands cmds(*fixture.target, fixture.target->getBranchStack(),
+                        fixture.target->getBatchState());
 
     // Branch(setLocalToWorld=translate) → GraphicsArray → MeshGraphic leaf, the tree
     // PrimitiveBuilder.finish() produces. The leaf carries one surface so pushAndPop
@@ -95,6 +96,12 @@ TEST(BranchLocalToWorldTest, LocalToWorldTranslationFoldsIntoRecordedDrawTransfo
     EXPECT_FLOAT_EQ(10.0f, push->getMv()[12]);
     EXPECT_FLOAT_EQ(20.0f, push->getMv()[13]);
     EXPECT_FLOAT_EQ(30.0f, push->getMv()[14]);
+    // M-S S-d：命令携带 localToWorld（thematic u_modelToWorld 的栈组合源——
+    // PushBranchCommand.execute → BranchState.fromBranch 组合语义）。
+    auto const& ltw = push->getLocalToWorld();
+    EXPECT_FLOAT_EQ(10.0f, static_cast<float>(ltw.origin.x));
+    EXPECT_FLOAT_EQ(20.0f, static_cast<float>(ltw.origin.y));
+    EXPECT_FLOAT_EQ(30.0f, static_cast<float>(ltw.origin.z));
 }
 
 // Non-quantized Mesh vertices are stored relative to the shared range center. This
