@@ -2252,6 +2252,17 @@ void Viewport::ValidateRenderPlan()
         // 像素锁（hline.visible.color=0 黑边上屏）。
         if (newPlan.is3d)
             newPlan.hline = style.getSettings().getHiddenLineSettings();
+
+        // thematic 主题染色设置（M-S S-b）。
+        // Ported from: itwinjs-core RenderPlan.ts:127——
+        //   const thematic = (style.is3d() && view.displayStyle.viewFlags.
+        //   thematicDisplay) ? style.settings.thematic : undefined;
+        // EQUIVALENCE（§11.10）：同 hline 段——style.is3d() 判别退化为视图的
+        // 3d 判别（dqApp::DisplayStyle 恒持 3d 设置载体）；发散=若未来引入
+        // 2d display style 载体须回到 style 侧判别；验证法=S-d E2E 像素锁
+        //（thematic 开关的双向上屏/恢复）。
+        if (newPlan.is3d && newPlan.viewFlags.thematicDisplay())
+            newPlan.thematic = style.getSettings().getThematic();
     }
 
     // View clip + clip style（M-P P-C）。

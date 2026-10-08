@@ -101,6 +101,14 @@ struct DQ_RENDER_EXPORT RenderPlan {
     // + :123 填充（`style.settings.clipStyle`）。M-P P-C。
     dqCommon::ClipStyle clipStyle;
 
+    // Thematic display（主题染色设置）。
+    // Ported from: itwinjs-core RenderPlan.ts thematic（:127 填充——
+    //   `thematic = (style.is3d() && view.displayStyle.viewFlags.thematicDisplay)
+    //    ? style.settings.thematic : undefined`）+ Target.ts:537 消费
+    //（`uniforms.thematic.update(this)`）。
+    // §3.4 适配：TS `thematic?: ThematicDisplay` → std::optional。M-S S-b。
+    std::optional<dqCommon::ThematicDisplay> thematic;
+
     // Check if this plan equals another (for change detection)
     bool equals(RenderPlan const& rhs) const {
         if (!viewFlags.equals(rhs.viewFlags)) return false;
@@ -128,6 +136,10 @@ struct DQ_RENDER_EXPORT RenderPlan {
         if (clip != rhs.clip) return false;
         // clipStyle 段（RenderPlan.ts:57——M-P P-C）。
         if (!clipStyle.equals(rhs.clipStyle)) return false;
+        // thematic 段（RenderPlan.ts:127——M-S S-b）：optional 在场性 +
+        // ThematicDisplay.equals（ThematicDisplay.ts:479-494）。
+        if (thematic.has_value() != rhs.thematic.has_value()) return false;
+        if (thematic.has_value() && !thematic->equals(*rhs.thematic)) return false;
         // Feature overrides pointer comparison is sufficient
         // (overrides are rebuilt when they change)
         if (featureOverrides != rhs.featureOverrides) return false;

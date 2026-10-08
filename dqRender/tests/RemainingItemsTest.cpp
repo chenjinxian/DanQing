@@ -207,6 +207,37 @@ TEST(RenderPlanTest, EqualsChangeDetection)
     EXPECT_FALSE(a == b);
 }
 
+// Authored: no reference test exists in itwinjs-core for RenderPlan.equals
+// thematic coverage —— plan.equals 驱动 Viewport 变化检测（RenderPlan.ts:127
+// thematic 段（is3d && viewFlags.thematicDisplay 门）；M-S S-b）。
+TEST(RenderPlanTest, ThematicEqualityAndPresence)
+{
+    RenderPlan a;
+    RenderPlan b;
+    // 双缺席相等
+    EXPECT_TRUE(a == b);
+    // 缺席 → 在场：不等
+    dqCommon::ThematicDisplay td;
+    b.thematic = td;
+    EXPECT_FALSE(a == b);
+    // 同值在场：相等
+    a.thematic = td;
+    EXPECT_TRUE(a == b);
+    // 在场字段翻：不等
+    b.thematic->displayMode = dqCommon::ThematicDisplayMode::Slope;
+    EXPECT_FALSE(a == b);
+    b.thematic->displayMode = dqCommon::ThematicDisplayMode::Height;
+    EXPECT_TRUE(a == b);
+    // range 段翻：不等
+    b.thematic->range = dqGeom::Range1d(0.0, 100.0);
+    EXPECT_FALSE(a == b);
+    // 在场 → 缺席：不等
+    b.thematic = std::nullopt;
+    EXPECT_FALSE(a == b);
+    a.thematic = std::nullopt;
+    EXPECT_TRUE(a == b);
+}
+
 // ============================================================================
 // GraphicBranchFrustum tests
 // ============================================================================
