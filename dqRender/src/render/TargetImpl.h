@@ -26,6 +26,8 @@
 #include <dqCommon/ContourDisplay.h>
 #include <dqCommon/DisplayStyleSettings.h>
 #include <dqCommon/FeatureOverrides.h>  // M-O(2) I10——overrides 指针成员
+//（AmbientOcclusion.h 随 DisplayStyleSettings.h 传入——dqCommon 族内聚；
+//  M-T T-b 的 m_aoSettings 载体消费它。）
 
 #include <dqRender/CanvasDecoration.h>
 
@@ -262,9 +264,14 @@ public:
     /// M-S S-c：thematic 形参承载 plan.thematic（Target.plan.thematic 的
     /// 读取面——ThematicUniforms.update :91 / wantThematicSensors :407；
     /// TargetImpl 不持整 plan，仅存管 thematic 段）。
+    /// M-T T-b：ao 形参承载 plan.ao（Target.ts:524-530 的 AO 门——
+    /// SmoothShade && is3d && plan.ao 在场 && vf.ambientOcclusion →
+    /// m_wantAO=true + 设置存管；否臂 vf 的 ambientOcclusion 位关后透传
+    /// 栈[参考 `vf = vf.with("ambientOcclusion", false)`]）。
     void changeRenderPlan(ViewFlags const& viewFlags, bool is3d,
                           dqCommon::HiddenLineSettings const* hline = nullptr,
-                          dqCommon::ThematicDisplay const* thematic = nullptr);
+                          dqCommon::ThematicDisplay const* thematic = nullptr,
+                          dqCommon::AmbientOcclusion::Settings const* ao = nullptr);
 
     /// Get the current view flags from the branch stack.
     /// Ported from: itwinjs-core Target.currentViewFlags
@@ -292,6 +299,12 @@ public:
     /// Ported from: itwinjs-core Target.wantAmbientOcclusion
     bool wantAmbientOcclusion() const noexcept { return m_wantAO; }
     void setWantAmbientOcclusion(bool v) noexcept { m_wantAO = v; }
+
+    /// AO 设置读取面（Target.ambientOcclusionSettings getter——M-T T-b）。
+    dqCommon::AmbientOcclusion::Settings const& ambientOcclusionSettings() const noexcept
+    {
+        return m_aoSettings;
+    }
 
     /// Get the current contour display settings.
     /// Ported from: itwinjs-core Target.currentContours
@@ -543,6 +556,11 @@ private:
 
     // Ambient occlusion flag (Ported from: itwinjs-core Target.wantAmbientOcclusion)
     bool m_wantAO = false;
+
+    // AO 设置存管（Target.ambientOcclusionSettings——Target.ts:127 字段；
+    // 消费面 = AO/Blur 程序的 u_hbaoSettings/u_blurSettings/u_maxDistance
+    // ProgramUniform[glsl/AmbientOcclusion.ts:266-292 + Blur.ts:106-115]）。
+    dqCommon::AmbientOcclusion::Settings m_aoSettings;
 
     // Contour display settings (Ported from: itwinjs-core Target.currentContours)
     dqCommon::ContourDisplay const* m_contours = nullptr;

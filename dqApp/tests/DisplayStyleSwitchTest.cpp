@@ -282,3 +282,47 @@ TEST(DisplayStyleSwitch, ThematicHeightWithoutRangeFillsFromProjectExtents)
 
     dqApp::Application::Get().GetViewManager().DropViewport(f.vp);
 }
+
+// ---------------------------------------------------------------------------
+// M-T T-b：DisplayStyle::setAmbientOcclusionSettings 门面（同 S-f thematic
+// 门面形——equals 短路 → 先 raise 后赋值 → 赋值）+ OnAmbientOcclusionChanged
+// 接线（ported-but-uncalled 清偿：事件与 Viewport 监听面[Viewport.cpp:690]
+// 早已在、本件前无 raise 方）。
+// Authored: no reference test exists in itwinjs-core for the AO settings
+//           setter event（行为锚 = setter 族原文序 + AmbientOcclusion.test.ts
+//           数据面已由 dqCommon AmbientOcclusionTest 覆盖）。
+// ---------------------------------------------------------------------------
+TEST(DisplayStyleSwitch, AoFacadeSetterSemantics)
+{
+    SwitchFixture f;
+    auto& style = f.view->GetDisplayStyle();
+
+    int events = 0;
+    double seenIntensity = -1.0;  // 哨兵
+    auto scope = style.OnAmbientOcclusionChanged.AddListener([&]() {
+        ++events;
+        seenIntensity = style.getAmbientOcclusionSettings().intensity;  // 事件内读=旧值
+    });
+
+    // 等值写入 → 短路无事件。
+    dqCommon::AmbientOcclusion::Settings same;
+    style.setAmbientOcclusionSettings(same);
+    EXPECT_EQ(events, 0);
+
+    // 变更写入 → 事件恰一次 + 事件内读=**旧值**（参考 raise-先于-赋值序——
+    // 默认 intensity=1.0 旧值观测）+ 返回后新值就位。
+    dqCommon::AmbientOcclusion::Settings changed;
+    changed.intensity = 3.5;
+    style.setAmbientOcclusionSettings(changed);
+    EXPECT_EQ(events, 1);
+    EXPECT_DOUBLE_EQ(seenIntensity, 1.0);
+    EXPECT_DOUBLE_EQ(style.getAmbientOcclusionSettings().intensity, 3.5);
+
+    // 再写同值 → 短路（equals 全字段面——blurSigma 翻面试真）。
+    dqCommon::AmbientOcclusion::Settings sameAsChanged = changed;
+    style.setAmbientOcclusionSettings(sameAsChanged);
+    EXPECT_EQ(events, 1);
+    sameAsChanged.blurSigma = 4.0;
+    style.setAmbientOcclusionSettings(sameAsChanged);
+    EXPECT_EQ(events, 2);
+}

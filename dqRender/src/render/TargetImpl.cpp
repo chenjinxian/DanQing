@@ -703,13 +703,31 @@ void TargetImpl::drawCanvasDecorations(std::vector<CanvasDecoration> const& canv
 // ---------------------------------------------------------------------------
 void TargetImpl::changeRenderPlan(ViewFlags const& viewFlags, bool is3d,
                                   dqCommon::HiddenLineSettings const* hline,
-                                  dqCommon::ThematicDisplay const* thematic)
+                                  dqCommon::ThematicDisplay const* thematic,
+                                  dqCommon::AmbientOcclusion::Settings const* ao)
 {
     // M-S S-c：plan.thematic 存管（Target.plan.thematic 读取面的承载）。
     if (thematic)
         m_planThematic = *thematic;
     else
         m_planThematic.reset();
+
+    // M-T T-b：AO 门（Target.ts:524-530——SmoothShade && is3d && plan.ao 在场
+    // && vf.ambientOcclusion → wantAO + 设置存管；否臂把透传给栈的 vf 的
+    // ambientOcclusion 位关[参考 `vf = vf.with("ambientOcclusion", false)`
+    // ——栈侧 see 关闭态，拾取/合成一致]）。
+    //（vf 类型注：dqRender::ViewFlags=ViewFlagsProperties 别名[全普通字段
+    //  非 optional]——直字段改写即参考的 with() 语义。）
+    dqCommon::ViewFlagsProperties vf = viewFlags;
+    if (dqCommon::RenderMode::SmoothShade == vf.renderMode && is3d
+        && ao != nullptr && vf.ambientOcclusion) {
+        m_wantAO = true;
+        m_aoSettings = *ao;
+    } else {
+        m_wantAO = false;
+        if (vf.ambientOcclusion)
+            vf.ambientOcclusion = false;
+    }
 
     // Update 3D flag
     if (m_is3d != is3d) {
@@ -721,8 +739,8 @@ void TargetImpl::changeRenderPlan(ViewFlags const& viewFlags, bool is3d,
 
     // Update branch stack with new view flags
     //（Target.ts:533——vf + is3d + hline 透传；BranchState.ts:93-96 消费
-    // edgeSettings.init(hline)）
-    m_branchStack.changeRenderPlan(viewFlags, is3d, hline);
+    // edgeSettings.init(hline)；M-T T-b：vf=AO 门裁剪后形态）
+    m_branchStack.changeRenderPlan(vf, is3d, hline);
 }
 
 // ---------------------------------------------------------------------------

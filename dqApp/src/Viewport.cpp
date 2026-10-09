@@ -2263,6 +2263,15 @@ void Viewport::ValidateRenderPlan()
         //（thematic 开关的双向上屏/恢复）。
         if (newPlan.is3d && newPlan.viewFlags.thematicDisplay())
             newPlan.thematic = style.getSettings().getThematic();
+
+        // ao 环境光遮蔽设置（M-T T-b）。
+        // Ported from: itwinjs-core RenderPlan.ts:125——
+        //   const ao = style.is3d() ? style.settings.ambientOcclusionSettings
+        //                           : undefined;
+        //（仅 is3d 门——vf.ambientOcclusion 位不在此查[Target.changeRenderPlan
+        //  :524-530 的门消费]；EQUIVALENCE 同 thematic 段的 2d 判别注记）。
+        if (newPlan.is3d)
+            newPlan.ao = style.getSettings().getAmbientOcclusionSettings();
     }
 
     // View clip + clip style（M-P P-C）。

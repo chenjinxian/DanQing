@@ -143,9 +143,11 @@ void OpenGLRenderTarget::changeRenderPlan(RenderPlan const& plan)
     m_impl->updateViewClip(plan.clip, plan.clipStyle);
     // M-S S-c：plan.thematic 段透传（Target.plan.thematic 的读取面——
     // TargetImpl 存管，uniforms.thematic.update 在本函数尾段消费）。
+    // M-T T-b：plan.ao 段透传（Target.ts:524-530 的 AO 门在 TargetImpl 内）。
     m_impl->changeRenderPlan(vf, plan.is3d,
                              plan.hline.has_value() ? &*plan.hline : nullptr,
-                             plan.thematic.has_value() ? &*plan.thematic : nullptr);
+                             plan.thematic.has_value() ? &*plan.thematic : nullptr,
+                             plan.ao.has_value() ? &*plan.ao : nullptr);
 
     // Frustum uniforms FIRST — the projection/view pair (u_proj/u_mv) comes from
     // FrustumUniforms.changeFrustum (lookIn + ortho(0,depth) / frustum()), the

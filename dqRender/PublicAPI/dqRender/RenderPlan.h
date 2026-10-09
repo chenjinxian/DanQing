@@ -9,6 +9,7 @@
 
 #include "Export.h"
 
+#include <dqCommon/AmbientOcclusion.h>  // M-T T-b：plan.ao 载体
 #include <dqCommon/ClipStyle.h>
 #include <dqCommon/DisplayStyleSettings.h>
 #include <dqCommon/FeatureOverrides.h>
@@ -109,6 +110,14 @@ struct DQ_RENDER_EXPORT RenderPlan {
     // §3.4 适配：TS `thematic?: ThematicDisplay` → std::optional。M-S S-b。
     std::optional<dqCommon::ThematicDisplay> thematic;
 
+    // Ambient occlusion（环境光遮蔽设置）。
+    // Ported from: itwinjs-core RenderPlan.ts ao（:60 声明 + :125 填充——
+    //   `ao = style.is3d() ? style.settings.ambientOcclusionSettings :
+    //    undefined`[仅 is3d 门——vf.ambientOcclusion 位不在此查，在
+    //    Target.changeRenderPlan 门 :524-530]）+ 消费=同门。
+    // §3.4 适配：TS `ao?: AmbientOcclusion.Settings` → std::optional。M-T T-b。
+    std::optional<dqCommon::AmbientOcclusion::Settings> ao;
+
     // Check if this plan equals another (for change detection)
     bool equals(RenderPlan const& rhs) const {
         if (!viewFlags.equals(rhs.viewFlags)) return false;
@@ -140,6 +149,11 @@ struct DQ_RENDER_EXPORT RenderPlan {
         // ThematicDisplay.equals（ThematicDisplay.ts:479-494）。
         if (thematic.has_value() != rhs.thematic.has_value()) return false;
         if (thematic.has_value() && !thematic->equals(*rhs.thematic)) return false;
+        // ao 段（RenderPlan.ts:60——M-T T-b）：optional 在场性 +
+        // AmbientOcclusion.Settings.equals（逐字段——DanQing 增补面，参考
+        // Settings 无 equals[shy 恒赋值+事件]，T-b 登记）。
+        if (ao.has_value() != rhs.ao.has_value()) return false;
+        if (ao.has_value() && !ao->equals(*rhs.ao)) return false;
         // Feature overrides pointer comparison is sufficient
         // (overrides are rebuilt when they change)
         if (featureOverrides != rhs.featureOverrides) return false;

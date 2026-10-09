@@ -238,6 +238,35 @@ TEST(RenderPlanTest, ThematicEqualityAndPresence)
     EXPECT_TRUE(a == b);
 }
 
+// Authored: 同上（RenderPlan.ts:60 ao 段——M-T T-b；AmbientOcclusion.Settings.
+//           equals 为 DanQing 增补面[参考 Settings 无 equals——T-b 登记]）。
+TEST(RenderPlanTest, AoEqualityAndPresence)
+{
+    RenderPlan a;
+    RenderPlan b;
+    // 双缺席相等。
+    EXPECT_TRUE(a == b);
+    // 缺席 → 在场：不等。
+    dqCommon::AmbientOcclusion::Settings ao;
+    b.ao = ao;
+    EXPECT_FALSE(a == b);
+    // 同值在场：相等。
+    a.ao = ao;
+    EXPECT_TRUE(a == b);
+    // 在场字段翻：不等。
+    b.ao->bias = 0.9;
+    EXPECT_FALSE(a == b);
+    b.ao->bias = 0.25;
+    EXPECT_TRUE(a == b);
+    b.ao->blurSigma = 4.0;
+    EXPECT_FALSE(a == b);
+    // 在场 → 缺席：不等。
+    b.ao = std::nullopt;
+    EXPECT_FALSE(a == b);
+    a.ao = std::nullopt;
+    EXPECT_TRUE(a == b);
+}
+
 // ============================================================================
 // GraphicBranchFrustum tests
 // ============================================================================

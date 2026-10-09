@@ -179,6 +179,19 @@ public:
     // iModel 访问（projectExtents 补齐链消费——DisplayStyleState.ts:1010）。
     IModelConnection const* getIModel() const noexcept { return m_iModel; }
 
+    // ── Ambient occlusion（M-T T-b——同 thematic 门面形）─────────────
+    // ← itwinjs-core DisplayStyleSettings.ambientOcclusionSettings setter
+    //   （onAmbientOcclusionChanged——OnAmbientOcclusionChanged 事件与
+    //   Viewport 监听面[Viewport.cpp:690]本件前无 raise 方，同族清偿）。
+    dqCommon::AmbientOcclusion::Settings const& getAmbientOcclusionSettings() const noexcept {
+        return m_settings.getAmbientOcclusionSettings();
+    }
+    void setAmbientOcclusionSettings(dqCommon::AmbientOcclusion::Settings const& ao) {
+        if (ao.equals(m_settings.getAmbientOcclusionSettings())) return;
+        OnAmbientOcclusionChanged.Raise();  // 参考序（同 setThematic 注）
+        m_settings.setAmbientOcclusionSettings(ao);
+    }
+
     // ── Time point ──────────────────────────────────────────────
     double getTimePoint() const noexcept { return m_settings.getTimePoint().value_or(0.0); }
     void setTimePoint(double time) {
