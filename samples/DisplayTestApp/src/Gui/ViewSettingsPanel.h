@@ -20,6 +20,8 @@ class QWidget;
 
 namespace Gui {
 
+class ThematicDisplayEditor;  // M-S S-g（同目录 Gui/——编辑器拆分文件）
+
 // 弹出面板：View Flags 复选组（12 + Camera + Monochrome）+ Render Mode 下拉 +
 // Monochrome Color/Scaled 子项（M-O(1) I1）+ 置灰分区标注。flags 读写经活动视口
 // 的 DisplayStyle（setViewFlags + SetupFromView）。
@@ -74,5 +76,11 @@ private:
     QCheckBox* m_hidWidthCb = nullptr;
     QSpinBox* m_hidWidth = nullptr;
     QComboBox* m_hidPattern = nullptr;
+    // Thematic Display 编辑区（M-S S-g——ThematicDisplay.ts:37-777；DTA 内序
+    // 最末）。syncFromViewport 时经它回读（updateThematicDisplayUI）。
+    ThematicDisplayEditor* m_thematicEditor = nullptr;
+public:
+    // 测试/宿主访问面（面板内控件直读防呆——锁内用）。
+    ThematicDisplayEditor* thematicEditor() const noexcept { return m_thematicEditor; }
 };
 }  // namespace Gui

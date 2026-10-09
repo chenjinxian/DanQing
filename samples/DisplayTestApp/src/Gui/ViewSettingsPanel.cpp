@@ -3,6 +3,7 @@
 #include "ViewSettingsPanel.h"
 
 #include "RenderingStyles.h"  // M-Q Q-c：Rendering Style 14 预设下拉
+#include "ThematicDisplayEditor.h"  // M-S S-g：Thematic Display 编辑区
 
 #include <QCheckBox>
 #include <QColor>
@@ -721,9 +722,14 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
         layout->addWidget(groundCb);
     }
 
-    // 置灰分区标注（DTA 面板的其余分区：BackgroundMap/AO/Thematic）。
+    // ── Thematic Display 编辑区（M-S S-g——ThematicDisplay.ts:37-777 全量；
+    // DTA 内序最末[ViewAttributes.ts:327 addThematicDisplay 在 AO 之后]）。
+    m_thematicEditor = new ThematicDisplayEditor(this);
+    layout->addWidget(m_thematicEditor);
+
+    // 置灰分区标注（DTA 面板的其余分区：BackgroundMap/AO；Thematic 已激活[S-g]）。
     const char* disabledSections[] = {
-        "Background Map", "Ambient Occlusion", "Thematic Display",
+        "Background Map", "Ambient Occlusion",
     };
     for (auto* s : disabledSections) {
         auto* l = new QLabel(QString::fromLatin1(s) + QStringLiteral(" (not yet implemented)"), this);
@@ -1043,6 +1049,16 @@ void ViewSettingsPanel::syncFromViewport()
                 sl->setValue(static_cast<int>(std::lround(
                     grad.groundExponent.value_or(4.0) * 4.0)));
             }
+        }
+
+        // ── Thematic Display 回读（M-S S-g——ThematicDisplay.ts:654-664 的
+        // _update 闭包语义：is3d 显隐门[DanQing 恒 3d] + checkbox=vf 位 +
+        // 控件显隐 + 全控件回读）──
+        if (m_thematicEditor) {
+            bool const on = v3d->getViewFlags().thematicDisplay();
+            m_thematicEditor->syncEnabledState(on);
+            if (on)
+                m_thematicEditor->updateThematicDisplayUI();
         }
     }
 }

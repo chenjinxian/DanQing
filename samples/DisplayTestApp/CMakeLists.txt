@@ -59,6 +59,8 @@ add_executable(DisplayTestApp WIN32
     src/Gui/SectionsPanel.h            # MOC needs this for Q_OBJECT
     src/Gui/RenderingStyles.cpp        # Rendering Style 14 预设表（M-Q Q-b——ViewAttributes.ts:31-268）
     src/Gui/RenderingStyles.h
+    src/Gui/ThematicDisplayEditor.cpp  # M-S S-g：Thematic Display 编辑区（ViewSettingsPanel 末节——ViewAttributes.ts:327 宿主位）
+    src/Gui/ThematicDisplayEditor.h
     src/Gui/NamedViews.cpp            # NamedVSPS 持久化载体（M-O(2) I9 Saved Views）
     src/Gui/SavedViewsPanel.cpp       # SavedViewPicker 弹出面板（M-O(2) I9）
     src/Gui/SavedViewsPanel.h         # MOC needs this for Q_OBJECT
@@ -271,6 +273,7 @@ if(TARGET gtest_main AND TARGET dqApp)
         tests/CesiumGalleryTest.cpp     # M-O(4) P8 陈列馆像素锁（8 族上屏+WHERE 展布+弧几何回代）
         tests/SectionsPanelTest.cpp     # M-P P-G SectionsPanel wiring 锁（Define/Edit/Clear + instances60 工具入口 E2E）
         tests/RenderingStylesTest.cpp   # M-Q Q-b 14 预设表完整性锁 + applyRenderingStyle
+        tests/ThematicDisplayEditorTest.cpp  # M-S S-g：Thematic 编辑器五锁
         tests/JoesHouseColorTest.cpp    # JoesHouse 管线蓝/红回归像素锁（M-I Task 3 色表顶点色——注册在 PickDumpSceneTest 之后：同因 fetcher 替换不回溢）
         tests/JoesHouseEdgeTest.cpp     # JoesHouse 面板黑边线回归像素锁（M-I Task 4 边线两段——注册在 JoesHouseColorTest 之后：同因 fetcher 替换不回溢）
         tests/JoesHouseHoverTest.cpp    # JoesHouse hover 高亮像素锁（M-J Task 2——注册在 JoesHouseEdgeTest 之后：同因 fetcher 替换不回溢）
@@ -321,6 +324,8 @@ if(TARGET gtest_main AND TARGET dqApp)
         src/Gui/SyncViewportsTool.h
         src/Gui/TileTreePanel.cpp        # M-L(3)：Models 面板（provider 消费方——机制锁在 ModelsPanelWiringTest）
         src/Gui/TileTreePanel.h          # MOC needs this for Q_OBJECT
+        src/Gui/ThematicDisplayEditor.cpp  # M-S S-g：Thematic 编辑区（被测面——ThematicDisplayEditorTest）
+        src/Gui/ThematicDisplayEditor.h    # MOC needs this for Q_OBJECT
         src/Gui/ViewSettingsPanel.cpp    # Task 4: View Settings 弹出面板
         src/Gui/Application.cpp   # Gui::Application 门面（newDocument 工厂）
         # LNK2019 最小增量：Application.cpp 引用 MainWindow::addWindow/activeWindow +
