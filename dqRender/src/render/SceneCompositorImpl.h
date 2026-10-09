@@ -138,6 +138,17 @@ private:
     void renderOpaque(RenderCommands& commands, CompositeFlags compositeFlags,
                       bool renderForReadPixels);
 
+    /// M-T T-e：AO 三绘制（SceneCompositor.ts:1220-1252——AO 计算→X 模糊→
+    /// Y 模糊[TestOrder 臂]；renderOpaqueAO 尾部调用位[:1043]在 DanQing 的
+    /// renderOpaque AO 臂尾）。
+    void renderAmbientOcclusion(rhi::Driver& driver);
+
+    /// AO 帧的 opaque/背景目标（SceneCompositor.ts:943-947 分流 +
+    /// getBackgroundFbo(needComposite)[:1189] 语义——DanQing 单 FBO 承载
+    /// [color+featureId+depthAndOrder]，参考的 color-only/MRT 双 FBO 系
+    /// MSAA 制品面[本仓 m_samples=1 恒]）。
+    rhi::RenderTargetHandle currentOpaqueTarget();
+
     /// Render translucent geometry to OIT FBO.
     /// Ported from: itwinjs-core Compositor.renderTranslucent()
     void renderTranslucent(RenderCommands& commands);
@@ -148,7 +159,9 @@ private:
 
     /// Composite OIT and hilite to main framebuffer.
     /// Ported from: itwinjs-core Compositor.composite()
-    void composite(bool wantTranslucent);
+    /// M-T T-e：wantOcclusion 形参（Composite.ts:127-132 的 wantOcclusion
+    /// 变体门——DanQing 均匀门承载，见 OitShaders.h kOitCompositeFrag 注）。
+    void composite(bool wantTranslucent, bool wantOcclusion);
 
     /// copy pick data between textures (pingPong).
     /// Ported from: itwinjs-core Compositor.pingPong()
@@ -171,7 +184,8 @@ private:
     // Ported from: itwinjs-core SceneCompositor.ts weighted blended OIT
     void initOitResources(rhi::Driver& driver);
     void destroyOitResources(rhi::Driver& driver);
-    void compositeOit(rhi::Driver& driver);
+    void compositeOit(rhi::Driver& driver, bool wantTranslucent = true,
+                      bool wantOcclusion = false);  // M-T T-e：AO 腿门
 
     /// Composite the hilite buffer over the opaque scene.
     /// Ported from: itwinjs-core Compositor.composite() (CompositeGeometry with
@@ -274,6 +288,9 @@ private:
     bool initAoResources(rhi::Driver& driver);
     /// AO 程序组编译态（测试锁面）。
     bool aoProgramsCompiled() const noexcept { return m_aoProgramsCompiled; }
+    /// 全屏四边形（initOitResources/initAoResources 共用——AO-only 帧不经
+    /// OIT 初始化，quad 须独立可就位）。M-T T-e 抽取。
+    void ensureQuadPrimitive(rhi::Driver& driver);
     // 当前 use() 中的程序（activateProgram/deactivateProgram 维护；参考
     // ShaderProgramExecutor._program）。非所有权指针：程序归 Techniques/
     // m_oitCompositeProgram 所有。

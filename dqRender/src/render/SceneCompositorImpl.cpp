@@ -459,10 +459,19 @@ bool SceneCompositor::initAoResources(rhi::Driver& driver)
         return false;
 
     // TestOrder 臂的串接序（Blur.ts:62-66——testRenderOrder + computeBlur 槽串
-    // → DanQing 直编译形：prefix 声明先、common 函数体后、main 收尾）。
+    // → DanQing 直编译形：prefix 声明先、common 函数体后、main 收尾）；
+    // common 的 #version 行剥除（#version 必须居首——实测 0:17 编译错）。
+    // 注意原串以换行起（raw string 形）——find 首个 '\n' 会漏剥，按
+    // "#version" 锚定剥。
+    std::string const commonBody = std::string(kBlurCommonPrefix);
+    size_t const vpos = commonBody.find("#version");
+    std::string const commonNoVersion =
+        vpos == std::string::npos
+            ? commonBody
+            : commonBody.substr(commonBody.find('\n', vpos) + 1);
     m_aoBlurYProgram.setSource(std::string(kBlurVert),
-        std::string(kBlurTestOrderPrefix) + std::string(kBlurCommonPrefix)
-            + std::string(kBlurTestOrderFrag), "BlurTestOrder");
+        "#version 410 core\n" + std::string(kBlurTestOrderPrefix)
+            + commonNoVersion + std::string(kBlurTestOrderFrag), "BlurTestOrder");
     if (m_aoBlurYProgram.compile(driver) != CompileStatus::Success)
         return false;
 
@@ -480,6 +489,49 @@ bool SceneCompositor::initAoResources(rhi::Driver& driver)
 
     m_aoProgramsCompiled = true;
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// ensureQuadPrimitive — 全屏四边形（initOitResources/initAoResources 共用——
+// AO-only 帧不经过 initOitResources，quad 须独立可就位）。
+// ---------------------------------------------------------------------------
+void SceneCompositor::ensureQuadPrimitive(rhi::Driver& driver)
+{
+    if (m_quadPrimitive) return;
+
+    // Create fullscreen quad geometry
+    {
+        rhi::AttributeArray attrs = {};
+        attrs[0].buffer = 0;
+        attrs[0].offset = 0;
+        attrs[0].type = rhi::ElementType::FLOAT2;
+
+        m_quadVbih = driver.createVertexBufferInfo(1, 1, attrs);
+        m_quadVbh = driver.createVertexBuffer(4, m_quadVbih);
+
+        struct QuadVertex { float x, y; };
+        QuadVertex vertices[4] = {
+            {-1.0f, -1.0f}, {+1.0f, -1.0f}, {+1.0f, +1.0f}, {-1.0f, +1.0f},
+        };
+
+        auto vbo = driver.createBufferObject(
+            sizeof(vertices), rhi::BufferObjectBinding::VERTEX, rhi::BufferUsage::STATIC);
+        rhi::BufferDescriptor vboData(vertices, sizeof(vertices));
+        driver.updateBufferObject(vbo, std::move(vboData), 0);
+        driver.setVertexBufferObject(m_quadVbh, 0, vbo);
+
+        uint16_t indices[6] = {0, 1, 2, 0, 2, 3};
+        // createIndexBuffer only glGenBuffers (no data store); updateIndexBuffer
+        // glBufferData's the IndexBufferHandle compositeOit's draw2(0,6,0) binds as
+        // GL_ELEMENT_ARRAY_BUFFER. The prior orphan-ibo pattern (createBufferObject
+        // + updateBufferObject on a disconnected handle) left m_quadIbh unbacked ->
+        // glDrawElements SIGSEGV. Same bug class as MeshGraphic/PolyfaceGraphic.
+        m_quadIbh = driver.createIndexBuffer(rhi::ElementType::USHORT, 6, rhi::BufferUsage::STATIC);
+        rhi::BufferDescriptor iboData(indices, sizeof(indices));
+        driver.updateIndexBuffer(m_quadIbh, std::move(iboData), 0);
+
+        m_quadPrimitive = driver.createRenderPrimitive(m_quadVbh, m_quadIbh, rhi::PrimitiveType::TRIANGLES);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -526,39 +578,9 @@ void SceneCompositor::initOitResources(rhi::Driver& driver)
         }
     }
 
-    // Create fullscreen quad geometry
-    {
-        rhi::AttributeArray attrs = {};
-        attrs[0].buffer = 0;
-        attrs[0].offset = 0;
-        attrs[0].type = rhi::ElementType::FLOAT2;
-
-        m_quadVbih = driver.createVertexBufferInfo(1, 1, attrs);
-        m_quadVbh = driver.createVertexBuffer(4, m_quadVbih);
-
-        struct QuadVertex { float x, y; };
-        QuadVertex vertices[4] = {
-            {-1.0f, -1.0f}, {+1.0f, -1.0f}, {+1.0f, +1.0f}, {-1.0f, +1.0f},
-        };
-
-        auto vbo = driver.createBufferObject(
-            sizeof(vertices), rhi::BufferObjectBinding::VERTEX, rhi::BufferUsage::STATIC);
-        rhi::BufferDescriptor vboData(vertices, sizeof(vertices));
-        driver.updateBufferObject(vbo, std::move(vboData), 0);
-        driver.setVertexBufferObject(m_quadVbh, 0, vbo);
-
-        uint16_t indices[6] = {0, 1, 2, 0, 2, 3};
-        // createIndexBuffer only glGenBuffers (no data store); updateIndexBuffer
-        // glBufferData's the IndexBufferHandle compositeOit's draw2(0,6,0) binds as
-        // GL_ELEMENT_ARRAY_BUFFER. The prior orphan-ibo pattern (createBufferObject
-        // + updateBufferObject on a disconnected handle) left m_quadIbh unbacked ->
-        // glDrawElements SIGSEGV. Same bug class as MeshGraphic/PolyfaceGraphic.
-        m_quadIbh = driver.createIndexBuffer(rhi::ElementType::USHORT, 6, rhi::BufferUsage::STATIC);
-        rhi::BufferDescriptor iboData(indices, sizeof(indices));
-        driver.updateIndexBuffer(m_quadIbh, std::move(iboData), 0);
-
-        m_quadPrimitive = driver.createRenderPrimitive(m_quadVbh, m_quadIbh, rhi::PrimitiveType::TRIANGLES);
-    }
+    // Create fullscreen quad geometry（M-T T-e：抽取为 ensureQuadPrimitive——
+    // AO-only 帧不经本路径）。
+    ensureQuadPrimitive(driver);
 
     m_oitInitialized = true;
 }
@@ -595,7 +617,8 @@ void SceneCompositor::destroyOitResources(rhi::Driver& driver)
 // compositeOit — resolve OIT accumulation/revealage to main framebuffer
 // Ported from: itwinjs-core SceneCompositor.ts composite()
 // ---------------------------------------------------------------------------
-void SceneCompositor::compositeOit(rhi::Driver& driver)
+void SceneCompositor::compositeOit(rhi::Driver& driver, bool wantTranslucent,
+                                   bool wantOcclusion)
 {
     if (!m_oitInitialized) return;
 
@@ -603,7 +626,16 @@ void SceneCompositor::compositeOit(rhi::Driver& driver)
 
     // 参考 Composite.ts computeOpaqueColor：over 合成需采样"已画 opaque 场景色"。
     // 同一 FBO 不可边读边写——先把主 RT 的 color blit 到 opaque 快照 RT。
-    if (m_opaqueSceneRenderTarget) {
+    // M-T T-e：AO 帧的 opaque 在 FBO（currentOpaqueTarget 改道——主 RT 尚无
+    // 场景）→ 直接读 FBO 的 color 附件，跳过 blit。
+    rhi::TextureHandle opaqueSrc = m_opaqueSceneTexture;
+    if (wantOcclusion) {
+        auto const aoFbo = m_frameBuffers.getOpaqueAndCompositeAll();
+        if (aoFbo) {
+            if (auto const c = driver.getRenderTargetColorAttachment(aoFbo, 0))
+                opaqueSrc = c;
+        }
+    } else if (m_opaqueSceneRenderTarget) {
         rhi::Viewport full;
         full.left = 0;
         full.bottom = 0;
@@ -629,6 +661,10 @@ void SceneCompositor::compositeOit(rhi::Driver& driver)
         shaderParams.setInt("u_accumTexture", 0);
         shaderParams.setInt("u_revealTexture", 1);
         shaderParams.setInt("u_opaqueTexture", 2);
+        shaderParams.setInt("u_occlusion", 3);   // M-T T-e（参考 TextureUnit.Four
+                                                 // 的 DanQing 布局位——0-2 占）
+        shaderParams.setFloat("u_wantOcclusion", wantOcclusion ? 1.0f : 0.0f);
+        shaderParams.setFloat("u_wantTranslucent", wantTranslucent ? 1.0f : 0.0f);
         activateProgram(&m_oitCompositeProgram, driver, shaderParams);
         // 名字型 uniform（sampler 单元号）经 uploadUniforms 上传——use() 只跑
         // ProgramUniform 绑定。漏掉时 sampler 全默认 0：u_revealTexture 采到
@@ -637,7 +673,13 @@ void SceneCompositor::compositeOit(rhi::Driver& driver)
         m_oitCompositeProgram.uploadUniforms(driver, shaderParams);
         driver.bindTexture(0, m_oitAccumTexture);
         driver.bindTexture(1, m_oitRevealageTexture);
-        driver.bindTexture(2, m_opaqueSceneTexture);
+        driver.bindTexture(2, opaqueSrc);
+        // AO 纹理（CompositeGeometry.occlusion[:918-924] 的 DanQing 承载）——
+        // 读 FBO 附件（实际绘制落点——createFBOImpl 内部附件与
+        // CompositorTextures 是两份[参考共享]，按实读侧归位）。
+        if (wantOcclusion)
+            driver.bindTexture(3, driver.getRenderTargetColorAttachment(
+                m_frameBuffers.getOcclusion(), 0));
     }
 
     // Draw fullscreen quad
@@ -830,7 +872,8 @@ void SceneCompositor::draw(RenderCommands& commands)
 
         // Composite
         m_target.beginPerfMetricRecord("Composite");  // 参考同名
-        composite(static_cast<uint8_t>(compositeFlags) & static_cast<uint8_t>(GL::CompositeFlags::Translucent));
+        composite(static_cast<uint8_t>(compositeFlags) & static_cast<uint8_t>(GL::CompositeFlags::Translucent),
+                  static_cast<uint8_t>(compositeFlags) & static_cast<uint8_t>(GL::CompositeFlags::AmbientOcclusion));  // M-T T-e：AO 位入合成
         m_target.endPerfMetricRecord();
 
         // TEMP-DIAG（env 开关，零常态开销）：OIT 三纹理帧尾回读。
@@ -887,7 +930,8 @@ void SceneCompositor::clearOpaque(bool /*needComposite*/)
     params.viewport = {static_cast<int32_t>(rect.left), static_cast<int32_t>(rect.top),
                        rect.width(), rect.height()};
 
-    driver.beginRenderPass(m_target.getRenderTarget(), params);
+    driver.beginRenderPass(currentOpaqueTarget(), params);
+    //（M-T T-e：AO 帧的 FBO 改道——currentOpaqueTarget 的注释面）
     driver.endRenderPass();
 }
 
@@ -906,7 +950,7 @@ void SceneCompositor::renderBackground(RenderCommands& commands, bool /*needComp
     rhi::RenderPassParams params;
     params.viewport = {static_cast<int32_t>(rect.left), static_cast<int32_t>(rect.top),
                        rect.width(), rect.height()};
-    driver.beginRenderPass(m_target.getRenderTarget(), params);
+    driver.beginRenderPass(currentOpaqueTarget(), params);  // M-T T-e：AO 帧 FBO 改道（getBackgroundFbo(needComposite) 语义）
 
     applyRenderState(RenderPass::Background);
     drawPass(commands, RenderPass::Background);
@@ -929,7 +973,7 @@ void SceneCompositor::renderSkyBox(RenderCommands& commands, bool /*needComposit
     rhi::RenderPassParams params;
     params.viewport = {static_cast<int32_t>(rect.left), static_cast<int32_t>(rect.top),
                        rect.width(), rect.height()};
-    driver.beginRenderPass(m_target.getRenderTarget(), params);
+    driver.beginRenderPass(currentOpaqueTarget(), params);  // M-T T-e：AO 帧 FBO 改道
 
     applyRenderState(RenderPass::SkyBox);
     drawPass(commands, RenderPass::SkyBox);
@@ -951,7 +995,7 @@ void SceneCompositor::renderBackgroundMap(RenderCommands& commands, bool /*needC
     rhi::RenderPassParams params;
     params.viewport = {static_cast<int32_t>(rect.left), static_cast<int32_t>(rect.top),
                        rect.width(), rect.height()};
-    driver.beginRenderPass(m_target.getRenderTarget(), params);
+    driver.beginRenderPass(currentOpaqueTarget(), params);  // M-T T-e：AO 帧 FBO 改道
 
     applyRenderState(RenderPass::BackgroundMap);
     drawPass(commands, RenderPass::BackgroundMap);
@@ -960,14 +1004,178 @@ void SceneCompositor::renderBackgroundMap(RenderCommands& commands, bool /*needC
 }
 
 // ---------------------------------------------------------------------------
+// currentOpaqueTarget（M-T T-e）——AO 帧的 opaque/背景目标
+// Ported from: itwinjs-core SceneCompositor.ts renderOpaque 的 AO 分流
+//              (:943-947) + getBackgroundFbo(needComposite) (:1189)。
+// ---------------------------------------------------------------------------
+rhi::RenderTargetHandle SceneCompositor::currentOpaqueTarget()
+{
+    // AO 开 → opaqueAndCompositeAll FBO（MRT[color,featureId,depthAndOrder]
+    // +depth——AO 的 PB 臂读附件 2）；无效/关 → 主目标（参考的 FBO 恒渲染在
+    // DanQing 的直出屏架构上的最小改道——E2 登记）。
+    if (m_target.wantAmbientOcclusion()) {
+        auto fbo = m_frameBuffers.getOpaqueAndCompositeAll();
+        if (fbo)
+            return fbo;
+    }
+    return m_target.getRenderTarget();
+}
+
+// ---------------------------------------------------------------------------
+// renderAmbientOcclusion — AO 计算 → X 模糊 → Y 模糊三绘制
+// Ported from: itwinjs-core SceneCompositor.ts renderAmbientOcclusion()
+//              (:1220-1252——fbStack.execute(fbo) 三段的 DanQing 直驱形) +
+//              glsl/AmbientOcclusion.ts 绑定位（:247-292）+ Blur.ts:89-115。
+// ---------------------------------------------------------------------------
+void SceneCompositor::renderAmbientOcclusion(rhi::Driver& driver)
+{
+    if (!initAoResources(driver))
+        return;
+
+    auto const aoFbo = m_frameBuffers.getOpaqueAndCompositeAll();
+    if (!aoFbo)
+        return;
+    // PB 臂的深度源 = MRT 附件 2（depthAndOrder——拾取打包面，
+    // FeatureSymbologyShaders.h 同值）。
+    auto const depthAndOrder = driver.getRenderTargetColorAttachment(aoFbo, 2);
+    if (!depthAndOrder)
+        return;
+
+    auto const rect = m_target.getViewRect();
+    auto const& frustum = m_target.getUniforms().frustum;
+    auto const& ao = m_target.ambientOcclusionSettings();
+
+    // RenderState defaults（参考 :1226 的 System.applyRenderState(
+    // RenderState.defaults)——composite() 同例；全屏 quad 无深度/混合）。
+    RenderState::defaults().apply(m_currentRenderState);
+    m_currentRenderState = RenderState::defaults();
+
+    ensureQuadPrimitive(driver);
+    if (!m_quadPrimitive)
+        return;
+
+    // u_invProj = projection 的逆（参考 :258-263——params.projectionMatrix.
+    // clone().invert()；FrustumUniforms.getProjectionMatrix() 为当前帧投影）。
+    float invProj[16];
+    {
+        Matrix4d inv;
+        if (!frustum.getProjectionMatrix().Inverse(inv))
+            inv = Matrix4d::CreateIdentity();
+        for (int row = 0; row < 4; ++row)
+            for (int col = 0; col < 4; ++col)
+                invProj[col * 4 + row] = static_cast<float>(inv.at(row, col));
+    }
+    float const viewport[2] = {static_cast<float>(rect.width()),
+                               static_cast<float>(rect.height())};
+    float const hbao[4] = {static_cast<float>(ao.bias),
+                           static_cast<float>(ao.zLengthCap),
+                           static_cast<float>(ao.intensity),
+                           static_cast<float>(ao.texelStepSize)};
+    float const blurSettings[3] = {static_cast<float>(ao.blurDelta),
+                                   static_cast<float>(ao.blurSigma),
+                                   static_cast<float>(ao.blurTexelStepSize)};
+
+    // —— Pass 1：AO 计算 → occlusion FBO（:1223-1229）——
+    {
+        rhi::RenderPassParams params;
+        params.flags.clear = rhi::TargetBufferFlags::COLOR_ALL;
+        params.clearColor.f[0] = params.clearColor.f[1] = 1.0f;
+        params.clearColor.f[2] = params.clearColor.f[3] = 1.0f;
+        params.viewport = {0, 0, rect.width(), rect.height()};
+        driver.beginRenderPass(m_frameBuffers.getOcclusion(), params);
+
+        ShaderProgramParams sp;
+        sp.setInt("u_pickDepthAndOrder", 0);   // TextureUnit.Zero
+        sp.setInt("u_noise", 1);               // TextureUnit.One
+        sp.setVec3("u_frustum", frustum.getFrustumData());
+        sp.setVec4("u_frustumPlanes", frustum.getPlanes());
+        sp.setVec2("u_viewport", viewport);
+        sp.setMatrix4("u_invProj", invProj);
+        sp.setVec4("u_hbaoSettings", hbao);
+        sp.setFloat("u_maxDistance", static_cast<float>(ao.maxDistance));
+
+        driver.bindTexture(0, depthAndOrder);
+        driver.bindTexture(1, m_aoNoiseTexture);
+        activateProgram(&m_aoProgram, driver, sp);
+        m_aoProgram.uploadUniforms(driver, sp);
+        driver.bindRenderPrimitive(m_quadPrimitive);
+        driver.draw2(0, 6, 0);
+        deactivateProgram(driver);
+        driver.endRenderPass();
+    }
+
+    // —— Pass 2：X 向高斯（occlusion → occlusionBlur——:1231-1239）——
+    {
+        rhi::RenderPassParams params;
+        params.viewport = {0, 0, rect.width(), rect.height()};
+        driver.beginRenderPass(m_frameBuffers.getOcclusionBlur(), params);
+
+        ShaderProgramParams sp;
+        sp.setInt("u_textureToBlur", 0);       // TextureUnit.Zero
+        float const dirX[2] = {1.0f, 0.0f};
+        sp.setVec2("u_blurDir", dirX);
+        sp.setVec2("u_viewport", viewport);
+        sp.setVec3("u_blurSettings", blurSettings);
+
+        // 纹理源=FBO 附件（非 CompositorTextures——createFBOImpl 的内部
+        // 附件与 textures 是两份[参考共享]；读取=实际绘制落点）。
+        driver.bindTexture(0, driver.getRenderTargetColorAttachment(
+            m_frameBuffers.getOcclusion(), 0));
+        activateProgram(&m_aoBlurXProgram, driver, sp);
+        m_aoBlurXProgram.uploadUniforms(driver, sp);
+        driver.bindRenderPrimitive(m_quadPrimitive);
+        driver.draw2(0, 6, 0);
+        deactivateProgram(driver);
+        driver.endRenderPass();
+    }
+
+    // —— Pass 3：Y 向高斯 TestOrder 臂（occlusionBlur → occlusion——
+    //  :1241-1249；u_pickDepthAndOrder=单元 1[Blur.ts:110-116]——
+    //  needHiddenEdges 的隐藏边替换纹理面随 E3 登记不落[DanQing 无该
+    //  纹理——参考的 useMsBuffers/pingPong 复用面]）——
+    {
+        rhi::RenderPassParams params;
+        params.viewport = {0, 0, rect.width(), rect.height()};
+        driver.beginRenderPass(m_frameBuffers.getOcclusion(), params);
+
+        ShaderProgramParams sp;
+        sp.setInt("u_textureToBlur", 0);
+        sp.setInt("u_pickDepthAndOrder", 1);   // Blur.ts:110-116 的单元 1
+        float const dirY[2] = {0.0f, 1.0f};
+        sp.setVec2("u_blurDir", dirY);
+        sp.setVec2("u_viewport", viewport);
+        sp.setVec3("u_blurSettings", blurSettings);
+
+        driver.bindTexture(0, driver.getRenderTargetColorAttachment(
+            m_frameBuffers.getOcclusionBlur(), 0));
+        driver.bindTexture(1, depthAndOrder);
+        activateProgram(&m_aoBlurYProgram, driver, sp);
+        m_aoBlurYProgram.uploadUniforms(driver, sp);
+        driver.bindRenderPrimitive(m_quadPrimitive);
+        driver.draw2(0, 6, 0);
+        deactivateProgram(driver);
+        driver.endRenderPass();
+    }
+
+
+}
+
+// ---------------------------------------------------------------------------
 // renderOpaque — render opaque geometry (Linear, Planar, General, HiddenEdge)
 // Ported from: itwinjs-core Compositor.renderOpaque() (lines 947-982)
 // ---------------------------------------------------------------------------
 void SceneCompositor::renderOpaque(RenderCommands& commands,
-                                   CompositeFlags /*compositeFlags*/,
-                                   bool /*renderForReadPixels*/)
+                                   CompositeFlags compositeFlags,
+                                   bool renderForReadPixels)
 {
     auto& driver = m_target.getDriver();
+
+    // M-T T-e：AO 分流（SceneCompositor.ts:943-947——AO 位且非读像素 → FBO
+    // 渲染 + AO 三绘制[renderOpaqueAO :981-1044 的尾部 :1043]）。
+    bool const wantAO =
+        (compositeFlags & CompositeFlags::AmbientOcclusion) != CompositeFlags::None
+        && !renderForReadPixels;
+    auto const target = wantAO ? currentOpaqueTarget() : m_target.getRenderTarget();
 
     auto rect = m_target.getViewRect();
     float const* bgColor = m_target.getBackgroundColor();
@@ -987,7 +1195,7 @@ void SceneCompositor::renderOpaque(RenderCommands& commands,
     params.viewport = {static_cast<int32_t>(rect.left), static_cast<int32_t>(rect.top),
                        rect.width(), rect.height()};
 
-    driver.beginRenderPass(m_target.getRenderTarget(), params);
+    driver.beginRenderPass(target, params);
 
     // Set frame-constant uniforms once per pass
     m_frameParams = ShaderProgramParams{};
@@ -1024,6 +1232,11 @@ void SceneCompositor::renderOpaque(RenderCommands& commands,
     drawPass(commands, RenderPass::HiddenEdge);
 
     driver.endRenderPass();
+
+    // M-T T-e：AO 三绘制（参考 renderOpaqueAO 的尾部 :1043 调用位——
+    // renderAmbientOcclusion 在 FBO 渲染完成后执行）。
+    if (wantAO)
+        renderAmbientOcclusion(driver);
 }
 
 // ---------------------------------------------------------------------------
@@ -1097,7 +1310,7 @@ void SceneCompositor::renderHilite(RenderCommands& commands)
 // composite — resolve OIT and hilite to main framebuffer
 // Ported from: itwinjs-core Compositor.composite() (lines 2298-2302)
 // ---------------------------------------------------------------------------
-void SceneCompositor::composite(bool wantTranslucent)
+void SceneCompositor::composite(bool wantTranslucent, bool wantOcclusion)
 {
     auto& driver = m_target.getDriver();
 
@@ -1114,8 +1327,11 @@ void SceneCompositor::composite(bool wantTranslucent)
     // 参考 SceneCompositor.composite()（CompositeFlags 分派变体）：仅当
     // Translucent 参与时走 OIT 合成——纯 Hilite 场景 accum/revealage 为空，
     // OIT 公式 (1-ta)·t + ta·opaque 会输出黑覆盖整帧（hilite 视觉回归）。
-    if (wantTranslucent)
-        compositeOit(driver);
+    // M-T T-e：AO 位同驱——wantOcclusion 时合成必须跑（AO 乘腿入
+    // computeOpaqueColor，Composite.ts:71-75）；AO-only 帧由 shader 的
+    // u_wantTranslucent=0 臂直出 opaque×AO（Composite.ts:119 形）。
+    if (wantTranslucent || wantOcclusion)
+        compositeOit(driver, wantTranslucent, wantOcclusion);
 }
 
 // ---------------------------------------------------------------------------
@@ -1281,7 +1497,10 @@ void SceneCompositor::renderLayers(RenderCommands& commands, bool /*needComposit
     rhi::RenderPassParams params;
     params.viewport = {static_cast<int32_t>(rect.left), static_cast<int32_t>(rect.top),
                        rect.width(), rect.height()};
-    driver.beginRenderPass(m_target.getRenderTarget(), params);
+    driver.beginRenderPass(pass == RenderPass::OpaqueLayers
+                                       ? currentOpaqueTarget()
+                                       : m_target.getRenderTarget(), params);
+    //（M-T T-e：AO 帧 FBO 改道仅 OpaqueLayers——Translucent/Overlay 层路径不变）
 
     applyRenderState(pass);
     drawPass(commands, pass);

@@ -278,6 +278,7 @@ if(TARGET gtest_main AND TARGET dqApp)
         tests/JoesHouseEdgeTest.cpp     # JoesHouse 面板黑边线回归像素锁（M-I Task 4 边线两段——注册在 JoesHouseColorTest 之后：同因 fetcher 替换不回溢）
         tests/JoesHouseHoverTest.cpp    # JoesHouse hover 高亮像素锁（M-J Task 2——注册在 JoesHouseEdgeTest 之后：同因 fetcher 替换不回溢）
         tests/ThematicDisplayE2ETest.cpp # M-S S-d：Thematic Height/Slope 像素锁（注册在 JoesHouseHoverTest 之后：同因 fetcher 替换不回溢）
+        tests/AmbientOcclusionE2ETest.cpp # M-T T-e：AO 交角遮蔽像素锁（Scene 装饰——注册序同族注记）
         tests/DtaToolsWiringTest.cpp    # M-L(3) 接线级回归：Keyin 字段/诊断三小件/视口同步/ToolAssistance 提示表
         src/Gui/ZoomToSelectedTool.cpp  # M-N(2)：ZoomToSelectedElements（zoom 锁被测面）
         src/Gui/GridSettingsTool.cpp  # M-O(1) I5：ChangeGridSettings（grid 设置锁被测面）

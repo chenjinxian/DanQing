@@ -59,6 +59,15 @@ in vec2 v_texCoord;
 uniform sampler2D u_accumTexture;    // accumulated color+weight
 uniform sampler2D u_revealTexture;   // revealage
 uniform sampler2D u_opaqueTexture;   // opaque scene color (pre-composite)
+uniform sampler2D u_occlusion;       // AO 纹理（M-T T-e——Composite.ts:79）
+uniform float u_wantOcclusion;       // 0/1——DanQing 均匀门（参考编译期变体门
+                                     // [Composite.ts:127-132]——帧内恒值，
+                                     // EQUIVALENCE 登记：无运行期发散）
+uniform float u_wantTranslucent;     // 0/1（同形门——AO-only 帧直出
+                                     // opaque×AO[Composite.ts:119 的
+                                     // computeAmbientOcclusionBaseColor=
+                                     // return computeOpaqueColor()]——空 accum
+                                     // 的 OIT 公式绕行[M-M 爆白实录]）。
 
 out vec4 fragColor;
 
@@ -70,12 +79,21 @@ void main() {
     //   vec4 col = mix((1.0 - transparent.a) * transparent + transparent.a * opaque,
     //                  vec4(u_clipIntersection.rgb, 1.0), rg.g);
     // rg.g（clip intersection 标记）未接线恒 0 → mix 退化为 over 合成。
-    vec4 accum = texture(u_accumTexture, v_texCoord);
-    vec2 rg = texture(u_revealTexture, v_texCoord).rg;
+    // computeOpaqueColor（Composite.ts:71-75——`opaque.rgb *=
+    // computeAmbientOcclusion()`）——AO 乘腿先入座。
     vec4 opaque = texture(u_opaqueTexture, v_texCoord);
+    if (u_wantOcclusion != 0.0)
+        opaque.rgb *= texture(u_occlusion, v_texCoord).r;
 
-    vec4 transparent = vec4(accum.rgb / clamp(rg.r, 1e-4, 5e4), accum.a);
-    fragColor = (1.0 - transparent.a) * transparent + transparent.a * opaque;
+    if (u_wantTranslucent != 0.0) {
+        vec4 accum = texture(u_accumTexture, v_texCoord);
+        vec2 rg = texture(u_revealTexture, v_texCoord).rg;
+
+        vec4 transparent = vec4(accum.rgb / clamp(rg.r, 1e-4, 5e4), accum.a);
+        fragColor = (1.0 - transparent.a) * transparent + transparent.a * opaque;
+    } else {
+        fragColor = opaque;  // computeAmbientOcclusionBaseColor（Composite.ts:119）
+    }
 }
 )glsl";
 

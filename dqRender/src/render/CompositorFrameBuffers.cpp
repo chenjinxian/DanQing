@@ -142,15 +142,19 @@ bool CompositorFrameBuffers::enableOcclusion(rhi::Driver& driver,
         return false;
 
     // occlusion FBO: [occlusion] (no depth)
+    // M-T T-e 修复（取证实锤——occlusion FBO 回读恒哨兵值）：原 colorCount=0
+    // → 零颜色附件 → AO 绘制全弃。参考 FrameBuffer.create([textures.occlusion])
+    // 语义=1 颜色附件无深度（DanQing 的 createFBOImpl 恒挂深度纹理——登记：
+    // 多带未用，无行为分叉）。
     {
         rhi::TextureFormat fmts[] = {rhi::TextureFormat::RGBA8};
-        m_occlusion = createFBOImpl(driver, fmts, 0, rhi::TextureFormat::DEPTH24, w, h);
+        m_occlusion = createFBOImpl(driver, fmts, 1, rhi::TextureFormat::DEPTH24, w, h);
     }
 
     // occlusionBlur FBO: [occlusionBlur] (no depth)
     {
         rhi::TextureFormat fmts[] = {rhi::TextureFormat::RGBA8};
-        m_occlusionBlur = createFBOImpl(driver, fmts, 0, rhi::TextureFormat::DEPTH24, w, h);
+        m_occlusionBlur = createFBOImpl(driver, fmts, 1, rhi::TextureFormat::DEPTH24, w, h);
     }
 
     // opaqueAndCompositeAllHidden FBO: [color, accumulation, revealage] + depth

@@ -14,6 +14,7 @@
 
 #include "CommonShaders.h"   // addFrustum
 #include "InstancingShaders.h"  // addInstancedModelMatrixRTC / addInstanceColor（TD-25）
+#include "FeatureSymbologyShaders.h"  // kComputeLinearDepth/kEncodeDepthRgb（M-T T-e AO 深度写）
 #include "shader/ColorShaders.h"  // kColorComputeVertexColorQuantized[Instanced]（Color.ts getComputeColor 全文）
 #include "RenderPassShaders.h"  // addRenderPass (authoritative u_renderPass + kRenderPass_*)
 #include "ShaderBindings.h"  // wireProjectionMatrix, wireModelViewMatrix
@@ -261,7 +262,8 @@ inline void addColor(ProgramBuilder& builder, bool quantized = false, bool insta
 // AssignFragData slot is then owned by the caller (Pick branch of
 // SurfaceVariantCompiler).
 // ---------------------------------------------------------------------------
-inline void addFragData(ProgramBuilder& builder, bool pickOutput = false)
+inline void addFragData(ProgramBuilder& builder, bool pickOutput = false,
+                        bool writeDepthOrder = false)
 {
     auto& frag = builder.getFragmentBuilder();
 
@@ -277,7 +279,25 @@ inline void addFragData(ProgramBuilder& builder, bool pickOutput = false)
     }
 
     // Fragment output declaration.
-    frag.addCode("out vec4 fragColor;\n");
+    // M-T T-e：AO 的 depthAndOrder 供给——writeDepthOrder 开（Surface 面）时加
+    // FragColor2 输出（layout 2=MRT FBO 的 depthAndOrder 附件位；参考
+    // Fragment.ts addPickBufferOutputs 的 output2 语义[order*0.0625 + RGB 打包
+    // 深度]——DanQing 的变体分裂[Pick 变体整换输出]使常态帧从不写 pick 附件，
+    // AO 的 PB 臂需要逐像素深度+order 通道 → 常态写[屏绘时附件缺席被 GL 丢弃，
+    // 零像素效应]）。**PointString/Polyline 等共享本函数而无 u_frustum/
+    // v_eyeSpace 的面恒 false**（AO 不作用于线/点——参考的 order 门[Linear 等
+    // 恒跳]同效；实测误开编译错[u_frustum/v_eyeSpace 未声明]实锤共享面）。
+    // EQUIVALENCE（§11.10，E7）：order 通道恒写 LitSurface×0.0625（参考的
+    // u_renderOrder 逐几何上传在 DanQing 恒 0[SurfaceVariantCompiler.cpp:266-267
+    // 既有登记]；写 4.0=LitSurface 使 AO 的 order 门[≥LitSurface 才遮蔽]对本
+    // shader 族恒过——本族即 LitSurface；平面位族[PlanarBit]DanQing 面不产，
+    // 登记）。featureId 附件（location 1）本臂不写——AO 不读、参考的
+    // featureId 写随 RGBA 打包拾取链统一时归位（R32UI 分歧既有登记 TD-28②族）。
+    if (writeDepthOrder)
+        frag.addCode("layout(location = 0) out vec4 fragColor;\n"
+                     "layout(location = 2) out vec4 fragDepthOrder;\n");
+    else
+        frag.addCode("out vec4 fragColor;\n");
 
     // Render pass uniform + the kRenderPass_* constants (OpaqueLinear=2, OpaquePlanar=3,
     // OpaqueGeneral=5, WorldOverlay=12, ...). Use the AUTHORITATIVE addRenderPass() — do
@@ -293,12 +313,30 @@ inline void addFragData(ProgramBuilder& builder, bool pickOutput = false)
     // wraps it as `void assignFragData(vec4 baseColor)` and emits the call.
     // Ported from: itwinjs-core Fragment.ts addFragColorWithPreMultipliedAlpha()
     //              + multiplyAlpha (line 45-50).
-    frag.setFragmentComponent(FragmentShaderComponent::AssignFragData,
-        "    if (u_renderPass >= kRenderPass_OpaqueLinear && u_renderPass <= kRenderPass_OpaqueGeneral)\n"
-        "        baseColor.a = 1.0;\n"
-        "    else\n"
-        "        baseColor = vec4(baseColor.rgb * baseColor.a, baseColor.a);\n"
-        "    fragColor = baseColor;\n");
+    // M-T T-e：+ depthAndOrder 写（encodeDepthRgb/computeLinearDepth——
+    // FeatureSymbologyShaders.h 同源；仅 opaque pass 域写[参考
+    // addPickBufferOutputs 的 pass 门]——其余 pass 写恒等占位防未初始化读）。
+    if (writeDepthOrder) {
+        frag.addFunction(std::string(kComputeLinearDepth.data(), kComputeLinearDepth.size()));
+        frag.addFunction(std::string(kEncodeDepthRgb.data(), kEncodeDepthRgb.size()));
+        frag.setFragmentComponent(FragmentShaderComponent::AssignFragData,
+            "    if (u_renderPass >= kRenderPass_OpaqueLinear && u_renderPass <= kRenderPass_OpaqueGeneral)\n"
+            "        baseColor.a = 1.0;\n"
+            "    else\n"
+            "        baseColor = vec4(baseColor.rgb * baseColor.a, baseColor.a);\n"
+            "    fragColor = baseColor;\n"
+            "    if (u_renderPass >= kRenderPass_OpaqueLinear && u_renderPass <= kRenderPass_OpaqueGeneral)\n"
+            "        fragDepthOrder = vec4(0.25, encodeDepthRgb(computeLinearDepth(v_eyeSpace.z)));\n"
+            "    else\n"
+            "        fragDepthOrder = vec4(0.0);\n");
+    } else {
+        frag.setFragmentComponent(FragmentShaderComponent::AssignFragData,
+            "    if (u_renderPass >= kRenderPass_OpaqueLinear && u_renderPass <= kRenderPass_OpaqueGeneral)\n"
+            "        baseColor.a = 1.0;\n"
+            "    else\n"
+            "        baseColor = vec4(baseColor.rgb * baseColor.a, baseColor.a);\n"
+            "    fragColor = baseColor;\n");
+    }
 }
 
 END_DQ_RENDER_NAMESPACE

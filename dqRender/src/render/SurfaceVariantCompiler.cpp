@@ -173,7 +173,11 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
     // --- Fragment output ---
     // Ported from: itwinjs-core Common.ts addFragColorWithPreMultipliedAlpha()
     //               + Fragment.ts addPickBufferOutputs（pick pass 整体换输出）
-    addFragData(builder, /*pickOutput=*/featureMode == FeatureMode::Pick);
+    // M-T T-e：writeDepthOrder=true——Surface 族常态写 FragColor2（参考
+    // addPickBufferOutputs 的 output2 面——AO 的 PB 臂逐像素深度源；详注在
+    // SurfaceCommon.h addFragData）。
+    addFragData(builder, /*pickOutput=*/featureMode == FeatureMode::Pick,
+                /*writeDepthOrder=*/true);
 
     // --- Feature symbology (pick / overrides) ---
     // Ported from: itwinjs-core FeatureSymbology.ts addFeatureSymbology()
