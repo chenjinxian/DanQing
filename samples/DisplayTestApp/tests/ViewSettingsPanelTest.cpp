@@ -9,6 +9,7 @@
 #include <QPixmap>
 #include <QImage>
 #include <QCheckBox>
+#include <QSlider>
 #include <QPushButton>
 #include <QComboBox>
 #include <QLabel>
@@ -241,4 +242,60 @@ TEST(ViewSettingsPanel, MonochromeColorAndScaledWriteDisplayStyle)
     EXPECT_TRUE(findBox(panel2, "Monochrome")->isChecked());
     EXPECT_TRUE(panel2.findChild<QCheckBox*>(QStringLiteral("MonochromeScaled"))
                     ->isVisibleTo(&panel2));
+}
+
+// ---------------------------------------------------------------------------
+// M-T T-f：Ambient Occlusion 编辑区（display-test-app AmbientOcclusion.ts
+// 全量——cbx_AO 开关 + 8 滑条 + Reset + 写环 + 回读）。
+// Authored: no reference test exists in display-test-app for the AO editor
+//          （交互件无测试面——行为锚 = handler 体逐条 + T-b 门面事件）。
+// ---------------------------------------------------------------------------
+TEST(ViewSettingsPanel, AmbientOcclusionEditor)
+{
+    VpGuard g;
+    Gui::ViewSettingsPanel panel;
+    panel.syncFromViewport();
+
+    auto* cbx = panel.findChild<QCheckBox*>(QStringLiteral("cbx_AO"));
+    ASSERT_NE(cbx, nullptr);
+    EXPECT_FALSE(cbx->isChecked());  // blank 默认关（vf.ambientOcclusion=false）
+
+    // 开（控件直驱——参考的 checkbox handler 路径）→ vf 位 + 显隐 + 门面事件。
+    int aoEvents = 0;
+    auto scope = g.vp->GetView()->GetDisplayStyle().OnAmbientOcclusionChanged.AddListener(
+        [&aoEvents]() { ++aoEvents; });
+    cbx->setChecked(true);
+    EXPECT_TRUE(g.vp->GetView()->GetDisplayStyle().getViewFlags().ambientOcclusion());
+    EXPECT_TRUE(panel.findChild<QSlider*>(QStringLiteral("viewAttr_AOBias"))
+                    ->isVisibleTo(&panel));
+
+    // 滑条写值（Bias 槽——setAoField 直驱同 handler 体）：intensity=3.5。
+    panel.setAoField(3, 3.5);
+    EXPECT_DOUBLE_EQ(g.vp->GetView()->GetDisplayStyle().getAmbientOcclusionSettings().intensity, 3.5);
+    EXPECT_GE(aoEvents, 1);  // 门面事件（T-b 面——equals 短路在同值侧锁）
+    panel.setAoField(3, 3.5);  // 同值 → 门面 equals 短路无新事件
+    EXPECT_EQ(aoEvents, 1);
+    panel.setAoField(0, 0.5);
+    EXPECT_DOUBLE_EQ(g.vp->GetView()->GetDisplayStyle().getAmbientOcclusionSettings().bias, 0.5);
+    EXPECT_EQ(aoEvents, 2);
+
+    // Reset → 默认（intensity 1.0/bias 0.25）+ 回读显示默认。
+    panel.resetAmbientOcclusion();
+    auto const& d = g.vp->GetView()->GetDisplayStyle().getAmbientOcclusionSettings();
+    EXPECT_DOUBLE_EQ(d.intensity, 1.0);
+    EXPECT_DOUBLE_EQ(d.bias, 0.25);
+    auto* readout = panel.findChild<QLabel*>(QStringLiteral("viewAttr_AOBias_readout"));
+    ASSERT_NE(readout, nullptr);
+    EXPECT_EQ(readout->text(), QStringLiteral("0.25"));
+
+    // 回读：新面板从视口恢复（checkbox 位 + 控件显隐）。
+    Gui::ViewSettingsPanel panel2;
+    panel2.syncFromViewport();
+    EXPECT_TRUE(panel2.findChild<QCheckBox*>(QStringLiteral("cbx_AO"))->isChecked());
+    EXPECT_TRUE(panel2.findChild<QSlider*>(QStringLiteral("viewAttr_AOBias"))
+                    ->isVisibleTo(&panel2));
+
+    // 关 → vf 位落 + 控件隐。
+    panel.findChild<QCheckBox*>(QStringLiteral("cbx_AO"))->setChecked(false);
+    EXPECT_FALSE(g.vp->GetView()->GetDisplayStyle().getViewFlags().ambientOcclusion());
 }

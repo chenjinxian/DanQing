@@ -9,6 +9,7 @@
 #include <QColor>
 #include <QColorDialog>
 #include <QComboBox>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
@@ -722,14 +723,81 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
         layout->addWidget(groundCb);
     }
 
+    // ── Ambient Occlusion 分区（M-T T-f——display-test-app AmbientOcclusion.ts
+    // 全量：checkbox + 8 滑条 + Reset；DTA 内序在 Thematic 之前
+    // [ViewAttributes.ts:326-327]）。
+    {
+        auto* aoBox = new QGroupBox(QStringLiteral("Ambient Occlusion"), this);
+        auto* al = new QVBoxLayout(aoBox);
+        m_aoCheckbox = new QCheckBox(QStringLiteral("Ambient Occlusion"), aoBox);
+        m_aoCheckbox->setObjectName(QStringLiteral("cbx_AO"));
+        al->addWidget(m_aoCheckbox);
+        connect(m_aoCheckbox, &QCheckBox::toggled, this,
+                [this](bool on) { enableAO(on); });
+
+        m_aoControls = new QWidget(aoBox);
+        auto* cl = new QVBoxLayout(m_aoControls);
+        cl->setContentsMargins(0, 0, 0, 0);
+
+        // 八滑条（参考 :51-154——min/step/max/标签订序原值）。
+        struct AoSliderDef {
+            char const* label; char const* objectName;
+            double lo; double step; double hi;
+            int field;  // AmbientOcclusion::Settings 段序（见 setAoField）
+        };
+        constexpr AoSliderDef kAoSliders[] = {
+            { "Bias: ", "viewAttr_AOBias", 0.0, 0.025, 1.0, 0 },
+            { "Length Cap: ", "viewAttr_AOZLengthCap", 0.0, 0.000025, 0.25, 1 },
+            { "Max Distance: ", "viewAttr_AOMaxDistance", 1.0, 10.0, 50000.0, 2 },
+            { "Intensity: ", "viewAttr_AOIntensity", 0.1, 0.1, 16.0, 3 },
+            { "Step: ", "viewAttr_AOTexelStepSize", 1.0, 0.005, 50.0, 4 },
+            { "Blur Delta: ", "viewAttr_AOBlurDelta", 0.5, 0.0001, 1.5, 5 },
+            { "Blur Sigma: ", "viewAttr_AOBlurSigma", 0.5, 0.0001, 5.0, 6 },
+            { "Blur Step: ", "viewAttr_AOBlurTexelStepSize", 1.0, 0.005, 5.0, 7 },
+        };
+        for (auto const& d : kAoSliders) {
+            auto* row = new QWidget(m_aoControls);
+            auto* rl = new QHBoxLayout(row);
+            rl->setContentsMargins(0, 0, 0, 0);
+            rl->addWidget(new QLabel(QString::fromLatin1(d.label), row));
+            int const steps = static_cast<int>(std::lround((d.hi - d.lo) / d.step));
+            auto* sl = new QSlider(Qt::Horizontal, row);
+            sl->setObjectName(QString::fromLatin1(d.objectName));
+            sl->setRange(0, steps);
+            rl->addWidget(sl);
+            auto* readout = new QLabel(QStringLiteral("0"), row);
+            readout->setObjectName(QString::fromLatin1(d.objectName) + QStringLiteral("_readout"));
+            rl->addWidget(readout);
+            cl->addWidget(row);
+            connect(sl, &QSlider::valueChanged, this,
+                    [this, d, readout](int i) {
+                double const v = d.lo + d.step * i;
+                readout->setText(QString::number(v));
+                setAoField(d.field, v);
+            });
+        }
+
+        // Reset（:157-162——Settings.defaults + sync + 回读）。
+        auto* resetBtn = new QPushButton(QStringLiteral("Reset"), m_aoControls);
+        resetBtn->setObjectName(QStringLiteral("viewAttr_AOReset"));
+        cl->addWidget(resetBtn);
+        connect(resetBtn, &QPushButton::clicked, this,
+                [this]() { resetAmbientOcclusion(); });
+
+        m_aoControls->setVisible(false);  // showHideDropDowns(false) 初始态
+        al->addWidget(m_aoControls);
+        layout->addWidget(aoBox);
+    }
+
     // ── Thematic Display 编辑区（M-S S-g——ThematicDisplay.ts:37-777 全量；
     // DTA 内序最末[ViewAttributes.ts:327 addThematicDisplay 在 AO 之后]）。
     m_thematicEditor = new ThematicDisplayEditor(this);
     layout->addWidget(m_thematicEditor);
 
-    // 置灰分区标注（DTA 面板的其余分区：BackgroundMap/AO；Thematic 已激活[S-g]）。
+    // 置灰分区标注（DTA 面板的其余分区：BackgroundMap；AO 已激活[T-f]、
+    // Thematic 已激活[S-g]）。
     const char* disabledSections[] = {
-        "Background Map", "Ambient Occlusion",
+        "Background Map",
     };
     for (auto* s : disabledSections) {
         auto* l = new QLabel(QString::fromLatin1(s) + QStringLiteral(" (not yet implemented)"), this);
@@ -871,6 +939,107 @@ void ViewSettingsPanel::setEnvironmentDisplay(bool sky, bool enabled)
     else
         style.toggleGroundPlane(enabled);
     vp->synchWithView();   // 同 V-7：入撤销栈
+}
+
+// ---------------------------------------------------------------------------
+// M-T T-f：Ambient Occlusion 写通道（display-test-app AmbientOcclusion.ts——
+// updateAmbientOcclusion 写环 :212-219[toJSON→改→fromJSON→setter→sync] +
+// enableAO :36-41 + reset :222-226 + 回读 :197-209）。
+// ---------------------------------------------------------------------------
+
+// enableAO（:36-41——vf.ambientOcclusion 位 + 显隐 + sync）。
+void ViewSettingsPanel::enableAO(bool enabled)
+{
+    auto* vp = activeViewport();
+    if (!vp || !vp->GetView())
+        return;
+    auto& style = vp->GetView()->GetDisplayStyle();
+    {
+        auto p = style.getViewFlags().Properties();
+        p.ambientOcclusion = enabled;
+        style.setViewFlags(dqCommon::ViewFlags(p));
+    }
+    m_aoControls->setVisible(enabled);  // showHideDropDowns
+    vp->synchWithView();                // sync()（:230-232 同形）
+}
+
+// setAoField——八滑条 handler 同体（:60-154 各 slider 的 aoProps.X=parse 语义）。
+void ViewSettingsPanel::setAoField(int field, double value)
+{
+    auto* vp = activeViewport();
+    if (!vp || !vp->GetView())
+        return;
+    auto& style = vp->GetView()->GetDisplayStyle();
+    auto props = style.getAmbientOcclusionSettings().toJSON();
+    switch (field) {
+        case 0: props.bias = value; break;
+        case 1: props.zLengthCap = value; break;
+        case 2: props.maxDistance = value; break;
+        case 3: props.intensity = value; break;
+        case 4: props.texelStepSize = value; break;
+        case 5: props.blurDelta = value; break;
+        case 6: props.blurSigma = value; break;
+        case 7: props.blurTexelStepSize = value; break;
+        default: return;
+    }
+    // :217-218——settings.ambientOcclusionSettings = fromJSON(props)（T-b 门面：
+    // equals 短路 + OnAmbientOcclusionChanged[Viewport.cpp:690 监听面]）。
+    style.setAmbientOcclusionSettings(
+        dqCommon::AmbientOcclusion::Settings::fromJSON(&props));
+    vp->synchWithView();
+}
+
+// resetAmbientOcclusion（:222-226）。
+void ViewSettingsPanel::resetAmbientOcclusion()
+{
+    auto* vp = activeViewport();
+    if (!vp || !vp->GetView())
+        return;
+    vp->GetView()->GetDisplayStyle().setAmbientOcclusionSettings(
+        dqCommon::AmbientOcclusion::Settings::defaults());
+    vp->synchWithView();
+    updateAmbientOcclusionUI();
+}
+
+// updateAmbientOcclusionUI（:197-209——八滑条读当前值）。
+void ViewSettingsPanel::updateAmbientOcclusionUI()
+{
+    auto* vp = activeViewport();
+    if (!vp || !vp->GetView())
+        return;
+    auto const& ao = vp->GetView()->GetDisplayStyle().getAmbientOcclusionSettings();
+    // 滑条参数表（与构造同序——读回 value→步进索引）。
+    struct AoSliderDef { char const* objectName; double lo; double step; double value; };
+    AoSliderDef const defs[] = {
+        { "viewAttr_AOBias", 0.0, 0.025, ao.bias },
+        { "viewAttr_AOZLengthCap", 0.0, 0.000025, ao.zLengthCap },
+        { "viewAttr_AOMaxDistance", 1.0, 10.0, ao.maxDistance },
+        { "viewAttr_AOIntensity", 0.1, 0.1, ao.intensity },
+        { "viewAttr_AOTexelStepSize", 1.0, 0.005, ao.texelStepSize },
+        { "viewAttr_AOBlurDelta", 0.5, 0.0001, ao.blurDelta },
+        { "viewAttr_AOBlurSigma", 0.5, 0.0001, ao.blurSigma },
+        { "viewAttr_AOBlurTexelStepSize", 1.0, 0.005, ao.blurTexelStepSize },
+    };
+    for (auto const& d : defs) {
+        if (auto* sl = findChild<QSlider*>(QString::fromLatin1(d.objectName))) {
+            QSignalBlocker const b(sl);
+            sl->setValue(static_cast<int>(std::lround((d.value - d.lo) / d.step)));
+        }
+        if (auto* ro = findChild<QLabel*>(
+                QString::fromLatin1(d.objectName) + QStringLiteral("_readout")))
+            ro->setText(QString::number(d.value));
+    }
+}
+
+// syncAoEnabledState（_update 闭包 :164-172 的 checkbox/显隐面——宿主
+// syncFromViewport 调用）。
+void ViewSettingsPanel::syncAoEnabledState(bool enabled)
+{
+    if (!m_aoCheckbox || !m_aoControls)
+        return;
+    QSignalBlocker const b(m_aoCheckbox);
+    m_aoCheckbox->setChecked(enabled);
+    m_aoControls->setVisible(enabled);
 }
 
 void ViewSettingsPanel::applyMonochromeColor(QColor const& color)
@@ -1059,6 +1228,15 @@ void ViewSettingsPanel::syncFromViewport()
             m_thematicEditor->syncEnabledState(on);
             if (on)
                 m_thematicEditor->updateThematicDisplayUI();
+        }
+
+        // ── Ambient Occlusion 回读（M-T T-f——AmbientOcclusion.ts:164-172 的
+        // _update 闭包语义：checkbox=vf.ambientOcclusion 位 + 显隐 + 回读）──
+        {
+            bool const on = v3d->getViewFlags().ambientOcclusion();
+            syncAoEnabledState(on);
+            if (on)
+                updateAmbientOcclusionUI();
         }
     }
 }

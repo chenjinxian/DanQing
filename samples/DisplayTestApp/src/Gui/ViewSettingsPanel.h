@@ -79,8 +79,25 @@ private:
     // Thematic Display 编辑区（M-S S-g——ThematicDisplay.ts:37-777；DTA 内序
     // 最末）。syncFromViewport 时经它回读（updateThematicDisplayUI）。
     ThematicDisplayEditor* m_thematicEditor = nullptr;
+    // Ambient Occlusion 分区（M-T T-f——display-test-app AmbientOcclusion.ts
+    // 全量；DTA 内序在 Thematic 前[ViewAttributes.ts:326-327]）。
+    QCheckBox* m_aoCheckbox = nullptr;
+    QWidget* m_aoControls = nullptr;
 public:
     // 测试/宿主访问面（面板内控件直读防呆——锁内用）。
     ThematicDisplayEditor* thematicEditor() const noexcept { return m_thematicEditor; }
+
+    // ── AO 写通道（M-T T-f——AmbientOcclusion.ts 的 handler 体逐条；测试直驱）──
+    // 开关（:36-41——vf.ambientOcclusion 位 + 显隐 + sync）。
+    void enableAO(bool enabled);
+    // 字段写（:60-154 的八滑条 handler 同体——toJSON→改字段→fromJSON→
+    // setAmbientOcclusionSettings 门面[T-b]+sync）。
+    void setAoField(int field, double value);
+    // Reset（:157-162——Settings.defaults + sync + 回读）。
+    void resetAmbientOcclusion();
+    // UI 回读（updateAmbientOcclusionUI :197-209——八滑条读当前设置）。
+    void updateAmbientOcclusionUI();
+    // 开关态回读（_update 闭包 :164-172——checkbox=vf 位+显隐）。
+    void syncAoEnabledState(bool enabled);
 };
 }  // namespace Gui
