@@ -2,15 +2,19 @@
 // Ported from: itwinjs-core core/frontend/src/test/FeatureSymbology.test.ts
 // DanQing dqRender — P2/P3 feature tests
 //
-// Tests for PlanarClassifier, ThematicDisplay, ContourLines,
+// Tests for PlanarClassifier, ContourLines,
 // MonochromeMode, RealityMeshGeometry, Layer, LineCode, Sync,
 // Decorations, PerformanceMetrics, RenderMemory, AttributeMap, MockRender,
 // and remaining GLSL modules.
+// （M-S S-h：孤儿 dqRender::ThematicDisplay 三测试随类删除——该类的枚举序
+//  [Slope=1/HillShade=2/IDW=3] 与参考[Height=0/IDW=1/Slope=2/HillShade=3]
+//  相悖且出处注释虚假[指到 FeatureSymbology.test.ts 的无 thematic 面]；
+//  真 thematic 测试面 = dqCommon ThematicDisplayTest + ThematicUniformsTest +
+//  ThematicDisplayShaderTest + ThematicSensorsGpuTest + E2E 五锁。）
 // （SolarShadowMap/GraphicTemplate 的 src/render 自创平行实现已删——前者与
 // ShadowUniforms.h 的同名 struct、后者与公开 API 抽象接口构成 ODR 双定义。）
 
 #include "render/PlanarClassifier.h"
-#include "render/ThematicDisplay.h"
 #include "render/ContourLines.h"
 #include "render/MonochromeMode.h"
 #include "render/RealityMeshGeometry.h"
@@ -60,55 +64,6 @@ TEST(PlanarClassifierTest, SetColor)
     EXPECT_FLOAT_EQ(color[0], 1.0f);
     EXPECT_FLOAT_EQ(color[1], 0.0f);
     EXPECT_FLOAT_EQ(color[3], 0.5f);
-}
-
-// ============================================================================
-// ThematicDisplay tests
-// ============================================================================
-
-// Ported from: itwinjs-core core/frontend/src/test/FeatureSymbology.test.ts
-TEST(ThematicDisplayTest, DefaultState)
-{
-    ThematicDisplay thematic;
-    EXPECT_FALSE(thematic.isEnabled());
-    EXPECT_EQ(thematic.getMode(), ThematicDisplayMode::Height);
-}
-
-// Ported from: itwinjs-core core/frontend/src/test/FeatureSymbology.test.ts
-TEST(ThematicDisplayTest, Configure)
-{
-    ThematicDisplay thematic;
-    thematic.setEnabled(true);
-    thematic.setMode(ThematicDisplayMode::Slope);
-    thematic.setRange(0.0f, 90.0f);
-
-    EXPECT_TRUE(thematic.isEnabled());
-    EXPECT_EQ(thematic.getMode(), ThematicDisplayMode::Slope);
-    EXPECT_FLOAT_EQ(thematic.getRangeMin(), 0.0f);
-    EXPECT_FLOAT_EQ(thematic.getRangeMax(), 90.0f);
-}
-
-// Ported from: itwinjs-core core/frontend/src/test/FeatureSymbology.test.ts
-TEST(ThematicDisplayTest, BuildGradientLut)
-{
-    ThematicDisplay thematic;
-    std::vector<ThematicGradientColor> colors = {
-        {0.0f, 0x0000FF},  // blue at 0
-        {0.5f, 0x00FF00},  // green at 0.5
-        {1.0f, 0xFF0000},  // red at 1
-    };
-    thematic.setGradientColors(colors);
-
-    auto lut = thematic.buildGradientLutData();
-    EXPECT_EQ(lut.size(), 256u * 4);
-
-    // Check first pixel (blue)
-    EXPECT_EQ(lut[2], 255);  // B
-    EXPECT_EQ(lut[0], 0);    // R
-
-    // Check last pixel (red)
-    EXPECT_EQ(lut[255 * 4 + 0], 255);  // R
-    EXPECT_EQ(lut[255 * 4 + 2], 0);    // B
 }
 
 // ============================================================================

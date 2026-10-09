@@ -460,3 +460,52 @@ DisplayTestAppTest 139/139 + ThematicDisplayE2E 5/5（含污染邻接对拍：
 JoesHouseHover→E2E 全绿）+ DumpOpenChain.OpensBaytownOrthographicSavedView
 隔离复跑 ×2 绿（TD-29 族规程）；全量 ctest 见收口提交注。
 
+### S-f 完成实录（2026-10-09——DisplayStyle 门面 + projectExtents 补齐）
+
+①**DisplayStyle::setThematic 门面**（dqApp DisplayStyle.h——
+DisplayStyleSettings.ts:1221-1227 setter 1:1：equals 短路 → 先 raise 后赋值
+[监听器事件内读旧值，锁内实钉] → 赋值）：**OnThematicChanged ported-but-
+uncalled 清偿**（事件与 Viewport 监听面[Viewport.cpp:678=SetDisplayStyle+
+RequestRedraw]早已在、本件前无 raise 方）；EQUIVALENCE=事件无载荷（参考携
+新值形参，监听面不消费）。②**projectExtents 补齐**（DisplayStyleState.ts
+:1004-1016 的 onOverridesApplied 监听语义——DanQing 无该事件面，
+applyOverrides3d 唯一调用点在 Viewport::overrideDisplayStyle，同域落地）：
+overrides 携 thematic 且应用后模式==Height 且 props 无 range →
+iModel.projectExtents.z 填充 + 门面 setter 重写；DisplayStyle::getIModel
+访问面新增。锁 2（Authored——参考无对应测试面）：ThematicFacadeSetter-
+Semantics（短路/恰一次/读旧值/新值就位/同值短路）+ ThematicHeightWithout-
+RangeFillsFromProjectExtents（填 [-100,100]+事件 / 显式保持 / Slope 不填）。
+门禁：dqAppTest 447/447（+2）+ E2E 5/5 回归绿。提交 43736642c3。
+
+### S-g 完成实录（2026-10-09——ViewSettingsPanel Thematic 编辑器全量）
+
+新建 Gui/ThematicDisplayEditor.{h,cpp}（ThematicDisplay.ts:37-777 的
+ThematicDisplayEditor 1:1，参考独立文件划分）：**13 控件组全量**（首启
+副作用复选 / Display Mode 四条目带 range 副作用 / Gradient Mode 随模式重建
+/ Step Count / Color Scheme 5+3 伪项[键值表原样] / Multiply alpha / Range
+High-Low / Axis XYZ / colorMix 滑条 / SunDir XYZ / DistanceCutoff / 传感器
+编辑[选择+XYZ/Value+Add/Delete/Grid 32×32] / Reset）+ 写回环单环（toJSON→
+修改→fromJSON→S-f 门面→synchWithView）+ UI 回读（range null→extents 默认
+域显示）。宿主：ViewSettingsPanel 末节（置灰清单摘 Thematic 项——留
+Background Map/AO）。锁 5（Authored——DTA 无编辑器测试面）：
+EnableFirstTimeSideEffects / DisplayModeSlopeRangeAndGradientEntries /
+ColorSchemeCustomPseudoEntries / SensorGridAddDeleteAndEdit /
+ResetAndFacadeEventAndUiReadback。EQUIVALENCE：activeViewport 逐次取（面板
+共享件）/传感器选择态属主=QComboBox/sensorSettings 缺段防御补壳（参考非空
+断言恒真域外零分叉）。门禁：编辑器 5/5 + 面板族子集 19/19 +
+DisplayTestAppTest 139/139。提交 579db322fe。
+
+### S-h 完成实录（2026-10-09——孤儿类清理 + M-S 收口）
+
+**孤儿 dqRender::ThematicDisplay 删除**（dqRender/src/render/
+ThematicDisplay.{h,cpp} 整删 + dqRender/CMakeLists 注册行 + P2P3FeaturesTest
+的三测试块[DefaultState/Configure/BuildGradientLut]与 include 清除）：
+该类系早期自创面——枚举序相悖（Slope=1/HillShade=2/IDW=3 vs 参考
+Height=0/IDW=1/Slope=2/HillShade=3）、出处注释虚假（"Ported from
+FeatureSymbology.test.ts"——该文件无 thematic 面）、buildGradientLutData
+系自创 API；真测试面已由 S-a~S-e 五层覆盖（dqCommon ThematicDisplayTest +
+ThematicUniformsTest + ThematicDisplayShaderTest + ThematicSensorsGpuTest +
+E2E 五锁）。另：M-Q E2 登记勾销 Thematic 半（M-Q 计划文档 E2 行注记——
+AO/Atmosphere 两半维持）。
+
+

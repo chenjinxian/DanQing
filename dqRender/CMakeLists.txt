@@ -123,7 +123,6 @@ target_sources(dqRender
         src/render/InstancedGeometry.cpp
         src/render/SurfaceGeometry.cpp
         src/render/ViewportQuadGeometry.cpp
-        src/render/ThematicDisplay.cpp
         src/render/ThematicSensors.cpp
         src/render/ContourLines.cpp
         src/render/LineCode.cpp
