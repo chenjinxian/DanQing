@@ -143,4 +143,89 @@
 
 ## 完成实录（逐件回填）
 
-（待填）
+### T-a 完成实录（2026-10-09——数据面对拍）
+
+dqCommon AmbientOcclusion.Settings 八字段默认值逐位吻合（intensity=1.0/
+texelStepSize=1 代码值钉死——注释文档的 2.0/1.95 系陈旧）；**修复：toJSON
+从恒写全字段归位逐字段 !=默认才写**（参考省略语义——缺席=fromJSON 缺省
+守恒）。锁：AmbientOcclusionTest.cpp 新设（AmbientOcclusion.test.ts 三例
+1:1——ToJsonOmitsDefaults RED 实锤→GREEN）。门禁：dqCommonTest 487/487。
+提交 89fd349f44。
+
+### T-b 完成实录（2026-10-09——RenderPlan/Target 接线 + 门面）
+
+RenderPlan.ao 载体（RenderPlan.ts:60/125——仅 is3d 门）+ ValidateRenderPlan
+填充 + **TargetImpl::changeRenderPlan AO 门**（Target.ts:524-530 四条件 AND
++否臂 vf 位关透传栈）+ ambientOcclusionSettings 载体 + **DisplayStyle::
+setAmbientOcclusionSettings 门面**（S-f 同形——equals 短路+先 raise 后赋值；
+OnAmbientOcclusionChanged ported-but-uncalled 清偿[Viewport.cpp:690 监听面
+既有]）。锁 3（Authored）：RenderPlanTest.AoEqualityAndPresence +
+TargetUniformsTest.AoGateRequiresSmoothShade3dPlanAoAndViewFlag（四条件矩阵+
+设置存管+否臂栈顶读回实钉）+ DisplayStyleSwitch.AoFacadeSetterSemantics。
+门禁：dqRenderTest 748 + dqAppTest 448 + dqCommonTest 487 全绿。提交
+a3f5792aba。
+
+### T-c 完成实录（2026-10-09——FBO/纹理接线 + PB/DB 实锤）
+
+**E1 裁决证据入库**：createRenderTargetMRT 深度附件=可采样纹理
+（OpenGLDriver.cpp:1145+——DB 物理可行）而仍裁 **PB 先行**（参考 WebGL1
+路径=合法同款——自含于拾取链已锁的 depthAndOrder 纹理；DB 臂登记随深度
+纹理消费面升级）。**preDraw AO 开关段**（SceneCompositor.ts:1354-1370——
+includeOcclusion 逐帧评估+尺寸重建后同序+init 复位；MSAA 联动臂登记不落）：
+重构尺寸守卫为反向块使开关段两路径共达（原早退形态 AO 永不建资源）。
+**enableOcclusion 尺寸修复**：原硬编码 1024×768→按 textures 尺寸（FBO-随
+纹理语义——init 既有注释实录的同族事故先踩先修）。门禁：dqRenderTest
+748/748（清净重建+errcount 前置核验——上轮曾以陈旧 exe 假象绿，本伦
+核验序实锤）。提交 3758776d3c。
+
+### T-d 完成实录（2026-10-09——shader 移植 + 桩件清退）
+
+**shader/AmbientOcclusionShaders.h 全文重写**（glsl/AmbientOcclusion.ts 的
+PB 变体 1:1——4 方向×6 步 HBAO[噪声旋转/zLengthCap 权重/bias 截止/距离
+淡出]+深度重建法线四邻域差分+pick 打包复用既有面+PB 臂三件套；**早期桩版
+背离实锤二则**：renderOrder 误作逐 draw uniform[参考逐像素读 pick 纹理]+
+缺噪声旋转/距离淡出段）。**shader/BlurShaders.h 新设**（Blur.ts 123 行
+1:1——高斯 7 步+NoTest/TestOrder 两变体[kRenderOrder_Silhouette=7 实钉]）。
+**桩件清退**：SsaoTechnique/BlurTechnique/BlurTestOrderTechnique 三类三注册
+三实现全删+kSsaoFrag/kBlurFrag/getSsaoFragmentShader/getBlurFragmentShader
+删——**AO/Blur 程序归合成器内全屏 pass 直持**（compositeOit 同形；
+EQUIVALENCE：绑定机制=直绑，源与语义 1:1；TechniqueId 枚举项保留参考序）。
+**合成器 AO 资源组**：三程序+initAoResources 惰性编译+析构释放+**噪声纹理**
+（System.ts:457-460 的 16 字节定值表逐字节原样、R8=核内 Luminance 形态、
+Repeat——合成器自持后处理资源同 OIT 例，EQUIVALENCE 登记）。锁：
+BatchBTest 两桩断言替换为移植源源锁（令牌逐项）。门禁：dqRenderTest
+748/748。提交 988f9c214c。
+
+### T-e 完成实录（2026-10-09——渲染路径全链 + E2E 首绿）
+
+**renderOpaque AO 分流**（:943-947）+ **currentOpaqueTarget** 六处改道
+（clearOpaque/renderBackground/renderSkyBox/renderBackgroundMap/
+renderLayers[OpaqueLayers]/renderOpaque——AO 帧全入 opaqueAndCompositeAll
+FBO；参考 getBackgroundFbo(needComposite) 语义；DanQing 单 FBO 承载，参考
+双 FBO 系 MSAA 制品面登记）+ **renderAmbientOcclusion 三绘制** +
+**SurfaceCommon addFragData writeDepthOrder 门**（Surface 族常态写
+FragColor2——DanQing 变体分裂致常态帧从不写 pick 附件的移植缺口清偿；
+PointString 共享面恒 false 实锤）+ **合成 AO 乘腿**（computeOpaqueColor 的
+AO 乘+AO-only 直出臂——u_occlusion 单元 3 + 双均匀门）。
+**五实锤修复**（取证逐层）：①enableOcclusion 两 FBO colorCount 0→1（零颜色
+附件→AO 绘制全弃——回读恒哨兵实锤）；②Blur TestOrder 串接 #version 剥除
+锚定（raw 串起头换行漏剥——实测 0:17 编译错）；③探针诱导挂死（逐帧 GL
+同步回读挂死泵环——§13.1 族探针一律单发）；④printf 换行 heredoc 陷阱
+（\\n 面值被剥——C 串面值用 Edit/Write 不用 heredoc，记忆在案）；
+⑤WorldToView 逻辑像素 vs 帧设备像素（1000×700 vs 2000×1400——未缩放采样
+落空场，环心实测校准×2）。
+**E2E 像素锁首绿**（AmbientOcclusionE2E.CornerSeamDarkensAndRestores——
+双盒交角 Scene 装饰+关光照纯 AO 隔离：立柱足根环带 255→185[70 luma 降]、
+开阔面不动、关恢复逐位精确；WHERE=投影锚+设备比缩放）。门禁：
+dqRenderTest 748 + dqAppTest 448 + DisplayTestAppTest 139 + 像素族 41/42
+（Baytown=TD-29 族隔离 ×2 绿）+ ThematicDisplayE2E 5/5。提交 fb049ba65c。
+
+### T-f 完成实录（2026-10-09——面板 AO 编辑区）
+
+ViewSettingsPanel 增 AO 分区（DTA 内序在 Thematic 前——复选+8 滑条[参考
+min/step/max 原值逐项]+Reset+显隐）+ 置灰清单摘 AO（仅留 Background Map）。
+写通道全量（enableAO/setAoField 八段/reset/回读——经 T-b 门面+事件）。
+锁：ViewSettingsPanel.AmbientOcclusionEditor（开关位/写值/门面事件/Reset+
+回读/恢复/关断）。门禁：面板族子集 26/26 + DisplayTestAppTest 139/139。
+提交 d9a7d8b296。
+

@@ -151,7 +151,7 @@
 | # | 面 | 预期发散 | 验证法 |
 |---|---|---|---|
 | E1 | viewflags 合并 | 无（1:1 补齐——本件核心） | merge 测试（RED 起点） |
-| E2 | AO/Thematic/Atmosphere 视觉面 | 数据面写入、视觉 pass 缺 | 数据面锁（viewflags 位 + props round-trip）+ 登记注；**Thematic 半勾销（2026-10-09 M-S 清偿——Thematic 视觉面全链上屏[E2E 五锁]，AO/Atmosphere 两半维持登记）** |
+| E2 | AO/Thematic/Atmosphere 视觉面 | 数据面写入、视觉 pass 缺 | 数据面锁（viewflags 位 + props round-trip）+ 登记注；**Thematic 半勾销（2026-10-09 M-S 清偿——Thematic 视觉面全链上屏[E2E 五锁]）+ AO 半勾销（2026-10-09 M-T 清偿——HBAO 屏空间遮蔽全链上屏[E2E 交角锁]）；仅 Atmosphere 维持登记** |
 | E3 | solarShadows/planProjections/contours 字段 | 未解析（消费面未立项） | Sun-dappled shadows 位数据面断言 + 登记注 |
 | E4 | 2d 显隐门 | DanQing 面板无 2d 场景（门按参考落、无 2d 测试面） | 代码面登记 |
 | E5 | envJSON 采集面（矩阵行原文"envJSON 链"） | 预设经 C++ 表非 JSON 加载——等价承载（数据同源） | 表完整性锁 |
