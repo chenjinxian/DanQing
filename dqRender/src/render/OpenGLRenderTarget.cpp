@@ -272,8 +272,14 @@ void OpenGLRenderTarget::drawFrame(float elapsedMs)
         for (int row = 0; row < 4; ++row)
             for (int col = 0; col < 4; ++col)
                 mvp[col * 4 + row] = static_cast<float>(mvpRow.at(row, col));
-        dqCommon::ViewFlagsProperties defaultFlags;
-        stack.push(mv, mvp, defaultFlags);
+        // vf 继承（M-S S-e 双栈统一修复）：参考无此 push——其根态经
+        // changeRenderPlan 携 plan vf（BranchUniforms._stack 单栈，
+        // BranchUniforms.ts:50 + Target.ts:533）；DanQing 本 push 仅为
+        // draw-time 视口变换适配面 → vf 必须继承栈根（=plan vf），不得以
+        // 默认 vf 覆写——原 `ViewFlagsProperties defaultFlags; stack.push(...)`
+        // 形态把 plan 的 thematicDisplay 等位全掩掉（ThematicDisplayE2E 全族
+        // 绘制期 vf.thematic=0 的实锤根因，[THM-DRAW] 探针取证）。
+        stack.pushTransform(mv, mvp);
     }
 
     // Propagate decorations to TargetGraphics so the single-tree render path

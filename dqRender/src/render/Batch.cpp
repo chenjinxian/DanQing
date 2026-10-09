@@ -426,4 +426,25 @@ bool BatchState::getFeature(uint32_t featureId, dqCommon::Feature& result) const
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// getThematicSensors — per-batch sensor texture（distanceCutoff>0 臂）
+// Ported from: itwinjs-core Graphic.ts PerTargetBatchData.getThematicSensors
+//              (:111-120) + Batch.getThematicSensors (:315-321)
+// ---------------------------------------------------------------------------
+ThematicSensors const& Batch::getThematicSensors(
+    dqCommon::ThematicDisplaySensorSettings const& settings,
+    dqGeom::Transform const& localToWorld,
+    dqGeom::Transform const& viewMatrix,
+    rhi::Driver* driver)
+{
+    // 缓存失效（参考 matchesTarget——sensorSettings 指针同一性）。
+    if (!m_thematicSensors || m_thematicSensorSettings != &settings) {
+        auto const filtered = ThematicSensors::accumulateSensorsInRange(
+            settings.sensors, m_range, localToWorld, settings.distanceCutoff);
+        m_thematicSensors = ThematicSensors::create(filtered, viewMatrix, driver);
+        m_thematicSensorSettings = &settings;
+    }
+    return *m_thematicSensors;
+}
+
 END_DQ_RENDER_NAMESPACE

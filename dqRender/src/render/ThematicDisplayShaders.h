@@ -115,33 +115,29 @@ inline void addThematicDisplay(ProgramBuilder& builder)
         });
     });
 
-    // u_numSensors（:293-303——全局/逐 batch 分流；逐 batch 臂随 S-e 的
-    // BatchUniforms GPU 面，本期全局臂[wantGlobalSensorTexture]）。
+    // u_numSensors（:293-303——全局/逐 batch 分流：wantGlobalSensorTexture→
+    // thematic.bindNumSensors；否则 batch.bindNumThematicSensors[BatchUniforms.
+    // _setCurrentBatch :74-82 的 m_sensors——drawPass 分流绑定面供给]）。
     frag.addUniform("u_numSensors", VariableType::Int, [](ShaderProgram& prog) {
         prog.addGraphicUniform("u_numSensors", [](UniformHandle& u, DrawParams const& dp) {
             auto* t = dp.getTarget();
             if (t && t->wantThematicSensors()) {
-                // 逐 batch 臂（wantGlobalSensorTexture==false）随 S-e。
-                t->getUniforms().thematic.bindNumSensors(u);
+                if (t->getUniforms().thematic.wantGlobalSensorTexture())
+                    t->getUniforms().thematic.bindNumSensors(u);
+                else
+                    t->getUniforms().batch.bindNumThematicSensors(u);
             } else {
                 u.setUniform1i(0);
             }
         });
     });
 
-    // s_sensorSampler（:305-318——GPU 纹理绑随 S-e；本期 ensureSamplerBound
-    // 等价[占位绑空——参考无传感器时同形]）。
+    // s_sensorSampler（:305-318——GPU 纹理绑=drawPass 分流绑定面
+    // [SceneCompositorImpl 的 flags.isThematic 块；DanQing 绑定架构=绘制环，
+    //  EQUIVALENCE 同 s_texture 注]。采样器单元=7[ThematicSensors]）。
     frag.addUniform("s_sensorSampler", VariableType::Sampler2D, [](ShaderProgram& prog) {
-        prog.addGraphicUniform("s_sensorSampler", [](UniformHandle& u, DrawParams const& dp) {
-            auto* t = dp.getTarget();
-            if (t && t->wantThematicSensors()) {
-                // GPU 上传随 S-e（ThematicSensors 纹理）——本期绑渐变纹理
-                // 占位以持采样器有效（IDW 消费面=单元 7）。
-                // TODO(S-e): bindSensors(u) 归位。
-                u.setUniform1i(7);
-            } else {
-                u.setUniform1i(7);
-            }
+        prog.addGraphicUniform("s_sensorSampler", [](UniformHandle& u, DrawParams const&) {
+            u.setUniform1i(7);
         });
     });
 
@@ -212,6 +208,14 @@ inline void addThematicDisplay(ProgramBuilder& builder)
             slotBody = "  return vec4(u_thematicRange.x / 3.14159, u_thematicRange.y / 3.14159, 0.0, 1.0);\n";
         else if (mode == "6")
             slotBody = "  return vec4(vec3(v_thematicIndex), 1.0);\n";
+        else if (mode == "7")  // S-e IDW 取证：shader 实读 sensor0 位（|p|/10）
+            slotBody = "  return vec4(abs(getSensor(0).xyz) * 0.1, 1.0);\n";
+        else if (mode == "8")  // sensor1 位
+            slotBody = "  return vec4(abs(getSensor(1).xyz) * 0.1, 1.0);\n";
+        else if (mode == "9")  // 双传感器值通道（R=sensor0.w, G=sensor1.w）
+            slotBody = "  return vec4(getSensor(0).w, getSensor(1).w, 0.0, 1.0);\n";
+        else if (mode == "10")  // S-e IDW 取证：v_eyeSpace 帧判别（×0.02+0.5）
+            slotBody = "  return vec4(v_eyeSpace * 0.02 + 0.5, 1.0);\n";
     }
     frag.setFragmentComponent(FragmentShaderComponent::ApplyThematicDisplay, slotBody);
 }

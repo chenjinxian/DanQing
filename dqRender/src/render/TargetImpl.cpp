@@ -966,9 +966,10 @@ void TargetImpl::beginReadPixels()
     // unwinds at frame end, so readPixels invoked BETWEEN frames sees a stale/
     // identity stack top — deriving mv/mvp from the frustum uniforms here
     // (identical math to that push) keeps the pick view aligned with the
-    // displayed frame. NOTE: pushes go on the COMPOSITOR's stack — that is the
-    // one drawPass consumes (pushing TargetImpl's own stack is invisible to
-    // draws; the pick pass then rendered with identity mvp → zero fragments).
+    // displayed frame. NOTE（M-S S-e 起）：compositor 栈与 TargetImpl 栈已统一
+    // 为同一对象（参考 BranchUniforms._stack 单栈语义——compositor 持引用，
+    // SceneCompositorImpl.h 注）；此处经 compositor 访问面 push 与帧 push
+    // 同栈，drawPass 直接可见。
     // Ported from: itwinjs-core Target.beginReadPixels() — pushState(state)
     //               (view matrices per FrustumUniforms, Target.ts:899-910)
     if (!m_compositor)
@@ -1009,8 +1010,8 @@ void TargetImpl::beginReadPixels()
 // ---------------------------------------------------------------------------
 void TargetImpl::endReadPixels()
 {
-    // Pop the BranchState pushed by beginReadPixels (the compositor's stack —
-    // the one draws consume; see beginReadPixels).
+    // Pop the BranchState pushed by beginReadPixels（M-S S-e 起 compositor 栈
+    // 与 target 栈同一对象——统一单栈，见 SceneCompositorImpl.h 注）。
     if (m_compositor)
         m_compositor->getBranchStack().pop();
     m_batchState.reset();

@@ -143,6 +143,7 @@ static void computeNormalMatrixFromMv(float const* mv, float* outNm)
 SceneCompositor::SceneCompositor(TargetImpl& target, Techniques& techniques)
     : m_target(target)
     , m_techniques(techniques)
+    , m_branchStack(target.getBranchStack())  // 单栈统一（M-S S-e——头注）
     , m_batchState(target.getBatchState())
 {
     // _opaqueRenderState: depthTest = true
@@ -1569,7 +1570,14 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                         if (lut) {
                             float width = static_cast<float>(lut->getWidth());
                             params.setFloat("u_featureOverrideWidth", width > 0.0f ? 1.0f / width : 0.0f);
-                            params.setInt("u_featureOverrides", 7);
+                            // 单元 1 = TextureUnit.FeatureSymbology（RenderFlags.ts:157 +
+                            // FeatureOverrides.ts:449——参考的 override LUT 单元）。
+                            // **M-S S-e 修正**：初提交起误用单元 7——与
+                            // ThematicSensors（参考同单元 7）碰撞：IDW + 激活
+                            // override 集同帧时 override 采样将读到传感器纹理。
+                            // 单元 1 在 opaque surface pass 空闲（OIT revealage/
+                            // pick 的单元 1 绑在别的 pass——帧序隔离无冲突）。
+                            params.setInt("u_featureOverrides", 1);
                             // u_hiliteColor feeds the override shader's Hilited mix
                             // (kOvrBit_Hilited → mix(baseColor, u_hiliteColor, ratio)，
                             //  ratio = 参考默认 visibleRatio 0.25，Hilite.ts:53).
@@ -2298,6 +2306,34 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                             driver.bindTexture(0, gradTex);
                             params.setInt("s_texture", 0);
                         }
+                        // M-S S-e：传感器纹理（s_sensorSampler=单元 7——
+                        // RenderFlags.ts:171-173 ThematicSensors，与 ShadowMap
+                        // 复用[阴影未移植无冲突]）。分流（glsl/Thematic.ts:
+                        // 293-318 + BatchUniforms._setCurrentBatch :74-82）：
+                        // 全局臂[无 cutoff→target 全局共享纹理] / 逐 batch 臂
+                        // [cutoff>0→Batch.getThematicSensors 按域过滤]。
+                        if (m_target.wantThematicSensors()) {
+                            auto& tu = m_target.getUniforms().thematic;
+                            if (tu.wantGlobalSensorTexture()) {
+                                if (auto const sensorTex = tu.getSensorsTexture()) {
+                                    driver.bindTexture(7, sensorTex);
+                                    params.setInt("s_sensorSampler", 7);
+                                }
+                            } else if (auto* curBatch = m_batchState.getCurrentBatch()) {
+                                if (auto const* planTd = m_target.getPlanThematic()) {
+                                    auto const& sensors = curBatch->getThematicSensors(
+                                        planTd->sensorSettings,
+                                        m_branchStack.getTop().getLocalToWorld(),
+                                        m_target.getUniforms().frustum.getViewMatrix(),
+                                        &driver);
+                                    if (sensors.getTexture()) {
+                                        driver.bindTexture(7, sensors.getTexture());
+                                        m_target.getUniforms().batch.setSensors(&sensors);
+                                        params.setInt("s_sensorSampler", 7);
+                                    }
+                                }
+                            }
+                        }
                     } else if (surfTex != rhi::TextureHandle{}) {
                         driver.bindTexture(0, surfTex);
                         params.setInt("s_texture", 0);
@@ -2481,8 +2517,11 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                             // undefined); an inactive batch never samples the
                             // unit, so binding nothing leaves no stale-LUT
                             // exposure on the sampler.
+                            // 单元 1 = TextureUnit.FeatureSymbology（参考
+                            // RenderFlags.ts:157——M-S S-e 自单元 7 修正[与
+                            // ThematicSensors 的碰撞消解]，详注见 :1572 段）。
                             if (lut->getTextureHandle() && lut->anyOverridden()) {
-                                driver.bindTexture(7, lut->getTextureHandle());
+                                driver.bindTexture(1, lut->getTextureHandle());
                             }
                         }
                     }

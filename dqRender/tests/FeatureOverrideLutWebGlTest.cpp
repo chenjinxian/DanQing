@@ -274,7 +274,7 @@ TEST(FeatureOverrideLutWebGlTest, BatchUniformsNumThematicSensors)
         sensors.push_back(mk(1.0, 1.0, 1.0, 2.0));
         sensors.push_back(mk(2.0, 2.0, 2.0, 3.0));
     }
-    ThematicSensors ts = ThematicSensors::create(sensors, dqGeom::Transform::CreateIdentity());
+    ThematicSensors ts = ThematicSensors::create(sensors, dqGeom::Transform::CreateIdentity(), nullptr);  // M-S S-e：签名归位（恒等视矩阵+驱动可空=纯 CPU 面）
     ASSERT_EQ(ts.numSensors(), 3u);
 
     // ThematicSensors.bindNumSensors uploads the count.

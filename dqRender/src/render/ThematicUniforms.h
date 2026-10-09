@@ -169,15 +169,27 @@ public:
     /// Get the gradient texture handle.
     rhi::TextureHandle getGradientTexture() const noexcept { return m_texture.getRhiHandle(); }
 
+    /// Get the global shared sensor texture handle（无传感器/未建=空）。
+    /// Ported from: itwinjs-core ThematicUniforms._sensors.texture（全局臂）。
+    rhi::TextureHandle getSensorsTexture() const noexcept
+    {
+        return m_sensors ? m_sensors->getTexture() : rhi::TextureHandle{};
+    }
+
+    /// The global shared sensors object（计数/数据面——绑定分流用）。
+    ThematicSensors const* getSensors() const noexcept
+    {
+        return m_sensors ? &*m_sensors : nullptr;
+    }
+
 private:
     /// Ported from: itwinjs-core ThematicUniforms._updateAxis（:73-79——
-    /// 恒 normalize。EQUIVALENCE（E1）：参考的视矩阵变换臂随 DanQing 世界
-    /// 帧结构舍去（g_normal 世界法线——详注在 ThematicUniforms.cpp update）。
-    void updateAxis(dqGeom::Vector3d const& axis);
+    /// viewMatrix 在场（Slope 臂）则变换后 normalize；否则恒 normalize）。
+    void updateAxis(dqGeom::Vector3d const& axis, dqGeom::Transform const* viewMatrix);
 
     /// Ported from: itwinjs-core ThematicUniforms._updateSunDirection（:81-88——
-    /// negate + normalize；E1 同上）。
-    void updateSunDirection(dqGeom::Vector3d const& sunDir);
+    /// viewMatrix.multiplyVector + negate + normalize）。
+    void updateSunDirection(dqGeom::Vector3d const& sunDir, dqGeom::Transform const& viewMatrix);
 
     /// Create gradient texture from thematic display settings.
     /// Ported from: itwinjs-core ThematicUniforms.update() :149-151——
@@ -201,8 +213,8 @@ private:
     int m_numSensors = 0;
     int m_gradientDimension = kDefaultGradientDimension;
 
-    // 全局共享传感器纹理的 CPU 数据面（GPU 上传随 S-e 接线——
-    // ThematicSensors GPU 化前 update 的 wantThematicSensors 臂仅持 CPU 态）。
+    // 全局共享传感器纹理（ThematicSensors——视空间打包 + 逐帧惰性刷新，
+    // S-e GPU 链已通；参考 _sensors 的注释语义：仅无 cutoff 时使用）。
     std::optional<ThematicSensors> m_sensors;
 };
 

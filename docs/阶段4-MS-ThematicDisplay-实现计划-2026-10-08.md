@@ -398,4 +398,65 @@ cpp:53-55 消费判定/SurfaceVariantCompiler.cpp:374-378 编译接线/Instanced
 
 ## 完成实录（收口时回填）
 
-（待填）
+### S-e 完成实录（2026-10-09，传感器 GPU 链 + 三修复 + 一纠错）
+
+**主线**：传感器 GPU 链全通——ThematicSensors 视空间打包（1×N RGBA32F
+列向浮点纹理，NEAREST/ClampToEdge，单元 7[ThematicSensors 与 ShadowMap 复用
+——阴影未移植无冲突]）+ 逐帧 update 惰性门（viewMatrix isAlmostEqual）+
+全局臂（ThematicUniforms 持）/逐 batch 臂（Batch::getThematicSensors——
+accumulateSensorsInRange 按 batch.range×localToWorld 过滤 + settings 指针
+同一性缓存失效，Graphic.ts:111-120/BatchUniforms._setCurrentBatch :74-82 语义）
+双臂分流绑定 + u_numSensors/s_sensorSampler shader 绑定分流（glsl/
+Thematic.ts:293-318）。IDW E2E 像素锁 SensorIdwColorSeparatesNearEachSensor
+（joeshouse 双传感器异值——红族质心 (702,572)[A 端值 1]/蓝族 (1407,919)
+[B 端值 0]、蓝族 36804px、质心 2D 分离 786px——IDW 逐片元 1/dist² 加权的
+直接证据）。
+
+**纠错（S-d 的"E1 世界帧"EQUIVALENCE 登记撤销）**：S-e 取证连环定音——
+DANQING_THM_FRAGDBG=10 直读 v_eyeSpace=视空间坐标场（z 负深度形态）、
+mode=1 法线场 roofTop 读回 (0.09,0.83,0.61)≈R_iso·ẑ——DanQing 着色器为
+**视空间结构，与参考同帧**（S-d 的"世界帧"判定系误诊，Slope 混帧的当时
+根因已不可考[疑为 S-c 前 update 先于 changeFrustum 的时序]，E1 按错误前提
+舍去了参考的视变换臂）。归位：axis 仅 Slope 经视矩阵变换（_updateAxis
+:73-79 条件臂）、sunDirection HillShade 变换+negate+normalize（:81-88）、
+传感器视空间逐帧刷新（ThematicSensors.update 惰性门——S-e 曾短暂拆除此臂
+的 fast-path 调用，一并归位）。单测两锁翻钉（AxisTransformedByViewMatrix-
+ForSlopeOnly/HillShadeSunDirectionViewTransformedNegatedAndNormalized——
+rotX90 手算对拍）+ FastPath 锁订正（Slope 臂 desync 恢复→syncKey 推进）+
+SensorsGpu 锁翻钉（视空间打包值对拍+惰性门）。
+
+**修复 1——BranchStack 双栈分裂统一（本里程碑最大的引擎级清偿）**：
+参考为 BranchUniforms._stack **单栈**（BranchUniforms.ts:50——命令构建/
+绘制派发/changeRenderPlan/拾取全共享）；DanQing 适配面裂为 TargetImpl 与
+SceneCompositorImpl 两栈，changeRenderPlan 只喂 target 栈根 → 绘制栈根永持
+默认 vf → drawPass 的 isThematic 门恒假（[THM-DRAW] 探针实锤 vf.thematic=0，
+且 draws 周无 PushBranch/PushState 命令——栈顶即 drawFrame 根 push 的
+defaultFlags）。**S-d 的 E2E 四锁"首绿"实系 MSVC 增量构建陈旧 obj 掩盖下的
+假绿**（清净重建后 S-d 树裸跑同红——归档教训再应验：行为未随源码变时先
+删 obj 强制重编）。修复：SceneCompositorImpl::m_branchStack 改**引用成员**
+（与 m_batchState 同形态，TargetImpl 成员序 branchStack<compositor 安全）
++ drawFrame 根 push 改 pushTransform（vf 继承栈根=plan vf——原为
+defaultFlags 覆写）。全部五锁转绿。
+**修复 2——WorldDecorations 豁免语义锁定**：参考 Target.ts:236-243/
+Graphic.ts:484-491——世界装饰分支强制自带 vf（thematicDisplay=默认 false），
+**对 thematic 豁免是参考刻意行为**。TallBox 测试改挂 GraphicType::Scene
+（normal 列表并入场景随 plan vf）后渐变扫描上屏。
+**修复 3——FeatureOverrides LUT 纹理单元 7→1 归位**（RenderFlags.ts:157
+FeatureSymbology=One + FeatureOverrides.ts:449——初提交起误用单元 7，
+与 ThematicSensors 碰撞：IDW+激活 override 集同帧时 override 采样将读
+传感器纹理；单元 1 在 opaque surface pass 空闲）。
+
+**TD-31 登记+清偿**（全二进制模式跨测试污染——CLAUDE.md §14）：TileAdmin
+全局 fetcher 被 dump 测试换为 DumpTileFetcher 不恢复（app 会话刻意语义），
+文件 tileset 测试后置命中 NotFound 全黑——MinimalSolidBox 重挂
+FileTileFetcher（消费侧隔离；TileTreeRender 的注册序侥幸同族风险登记）。
+
+**探针**：DANQING_THM_FRAGDBG 扩 7-10（getSensor(0/1) 位置/双值通道/
+v_eyeSpace 帧直读——§13.1 登记）；[THM] 传感器纹理 GPU 回读对拍探针
+（CLIPDUMP 先例，§13.1 登记）；TD-30 S-e 复读实锤（压平仍在）。
+
+**门禁（S-e 收口轮）**：dqRenderTest 749/749 + dqAppTest 445/445 +
+DisplayTestAppTest 139/139 + ThematicDisplayE2E 5/5（含污染邻接对拍：
+JoesHouseHover→E2E 全绿）+ DumpOpenChain.OpensBaytownOrthographicSavedView
+隔离复跑 ×2 绿（TD-29 族规程）；全量 ctest 见收口提交注。
+

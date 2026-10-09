@@ -19,14 +19,26 @@ void ThematicUniforms::update(TargetImpl& target)
     auto const* planThematic = target.getPlanThematic();
     auto const& viewMatrix = target.getUniforms().frustum.getViewMatrix();
 
-    // 快路径（:93-106）：设置在且等值 + 纹理在 → 仅刷新传感器 eye-space 后
-    // 返回。EQUIVALENCE（§11.10，同下 axis/sunDirection 注）：Slope 轴与
-    // HillShade 太阳向的视矩阵刷新臂在 DanQing 的世界帧着色结构下无需执行
-    // （轴/太阳向恒世界空间，不随相机变——见下 E1 注）。传感器纹理的
-    // eye-space 变换保留（S-e 落地时再评——其 eye-space 消费点在 v_eyeSpace）。
+    // 快路径（:93-106）：设置在且等值 + 纹理在 → 逐帧刷新视域臂后返回——
+    // 传感器 eye-space 重打包（update 的 isAlmostEqual 惰性门）、Slope 轴 /
+    // HillShade 太阳向随视矩阵重变换+desync。（S-d 的"E1 世界帧"登记实测证伪
+    // 后归位——v_eyeSpace/g_normal 皆视空间[FRAGDBG=10/1 直读实证：roofTop
+    // 法线 (0.09,0.83,0.61)=R_iso·ẑ]，参考的视变换臂为必需而非可舍。）
     if (m_thematicDisplay && planThematic && m_thematicDisplay->equals(*planThematic) && m_texture.isValid()) {
         if (m_sensors)
-            m_sensors->update(viewMatrix);
+            m_sensors->update(viewMatrix, &target.getDriver());
+
+        // :100-105——Slope 轴 / HillShade 太阳向逐帧随视矩阵刷新 + desync
+        //（参考 desync(this)——绑定侧 sync 去重为性能优化，DanQing bind* 恒
+        // 上传的既有 EQUIVALENCE 下 desync 仅推进 syncKey[观测面]）。
+        if (dqCommon::ThematicDisplayMode::Slope == m_thematicDisplay->displayMode) {
+            updateAxis(m_thematicDisplay->axis, &viewMatrix);
+            desync();
+        } else if (dqCommon::ThematicDisplayMode::HillShade == m_thematicDisplay->displayMode) {
+            updateSunDirection(m_thematicDisplay->sunDirection, viewMatrix);
+            desync();
+        }
+
         return;
     }
 
@@ -54,24 +66,13 @@ void ThematicUniforms::update(TargetImpl& target)
 
     m_colorMix = static_cast<float>(td.gradientSettings.colorMix);
 
-    // :125 轴 + :127-128 太阳向——**EQUIVALENCE（§11.10，E1）**：
-    // 参考源 = ThematicUniforms._updateAxis/:97-103 与 _updateSunDirection
-    //（:73-88/:127-128——Slope 轴经 frustum.viewMatrix 变换、HillShade 太阳向
-    //  变换+negate+normalize；其语义前提 = 参考的 g_normal 为**视空间**法线
-    // [u_nmx 与 u_mv 同源的视空间体系]）。
-    // 发散 = DanQing 着色器为**世界帧结构**（M-P P-D clip 既有登记同族：
-    //  v_eyeSpace = 栈底 u_mv·p = 世界坐标[相机仅经 u_mvp 进入]；
-    //  u_normalMatrix = transpose(inverse(栈底 mv)) = 恒等旋转 →
-    //  v_n/g_normal = **世界法线**[非实例变体]；实例变体 g_nmx 自 g_mv
-    //  计算——u_instanced_modelView 同为世界域[M-M(1) 注记面]，全变体一致）。
-    // 本式 = 旋转不变量下的等价重表达：世界法线 × 世界轴 = 参考的
-    // 视法线 × 视轴（点积逐位同）——故 axis 恒 normalize（无变换）、
-    // sunDirection 仅 HillShade 取负+归一（negate/normalize 与旋转可交换，
-    // 世界空间同义）。
-    // 验证法 = Slope 墙面白/屋面暗 + HillShade 阴阳面像素锁（S-d E2E）。
-    updateAxis(td.axis);
+    // :125 轴（Slope 臂经视矩阵变换）+ :127-128 太阳向（HillShade 臂变换
+    // +negate+normalize）——参考语义逐行归位（E1 登记撤销：实测 DanQing 着色
+    // 器为视空间结构，与参考同帧）。
+    updateAxis(td.axis,
+               dqCommon::ThematicDisplayMode::Slope == td.displayMode ? &viewMatrix : nullptr);
     if (dqCommon::ThematicDisplayMode::HillShade == td.displayMode)
-        updateSunDirection(td.sunDirection);
+        updateSunDirection(td.sunDirection, viewMatrix);
 
     // :130
     m_marginColor = FloatRgba::fromHex(
@@ -90,14 +91,16 @@ void ThematicUniforms::update(TargetImpl& target)
     m_fragSettings[3] = (td.gradientSettings.transparencyMode ==
         dqCommon::ThematicGradientTransparencyMode::SurfaceOnly) ? 0.0f : 1.0f;
 
-    // :142-147——wantSensors 且无 cutoff → 全局共享传感器纹理。
-    //（GPU 上传随 S-e；本步先持 CPU 数据面 + 计数。参考无 else 臂——模式
-    // 切离 IDW 时传感器态滞留但惰性[shader 仅 IDW 分支读 u_numSensors，
-    // s_sensorSampler 绑定受 wantThematicSensors 门]；1:1 保留该形态。）
+    // :142-147——wantSensors 且无 cutoff → 全局共享传感器纹理（创建即按当前
+    // 视矩阵打包 eye-space——参考 create(target, nullRange) 内 _update）。
+    //（参考无 else 臂——模式切离 IDW 时传感器态滞留但惰性[shader 仅 IDW 分支读
+    //  u_numSensors，s_sensorSampler 绑定受 wantThematicSensors 门]；
+    //  1:1 保留该形态。）
     if (target.wantThematicSensors() && !(m_fragSettings[1] > 0.0f)) {
         m_numSensors = static_cast<int>(td.sensorSettings.sensors.size());
         m_sensors.reset();
-        m_sensors = ThematicSensors::create(td.sensorSettings.sensors, viewMatrix);
+        m_sensors = ThematicSensors::create(td.sensorSettings.sensors, viewMatrix,
+                                            &target.getDriver());
     }
 
     // :149-151——渐变纹理重建。
@@ -105,12 +108,13 @@ void ThematicUniforms::update(TargetImpl& target)
 }
 
 // ---------------------------------------------------------------------------
-// Ported from: itwinjs-core ThematicUniforms._updateAxis（:73-79——恒
-// normalize；DanQing 世界帧结构下无视矩阵变换——E1 EQUIVALENCE 见 update）。
+// Ported from: itwinjs-core ThematicUniforms._updateAxis（:73-79——viewMatrix
+// 在场则 multiplyVector 变换（方向变换——旋转不含平移）后恒 normalize）。
 // ---------------------------------------------------------------------------
-void ThematicUniforms::updateAxis(dqGeom::Vector3d const& axis)
+void ThematicUniforms::updateAxis(dqGeom::Vector3d const& axis,
+                                  dqGeom::Transform const* viewMatrix)
 {
-    dqGeom::Vector3d tAxis = axis;
+    dqGeom::Vector3d tAxis = viewMatrix ? viewMatrix->MultiplyVector(axis) : axis;
     tAxis.Normalize();
     m_axis[0] = static_cast<float>(tAxis.x);
     m_axis[1] = static_cast<float>(tAxis.y);
@@ -119,11 +123,12 @@ void ThematicUniforms::updateAxis(dqGeom::Vector3d const& axis)
 
 // ---------------------------------------------------------------------------
 // Ported from: itwinjs-core ThematicUniforms._updateSunDirection（:81-88——
-// negate + normalize；DanQing 世界帧结构下无视矩阵变换）。
+// viewMatrix.multiplyVector + negate + normalize）。
 // ---------------------------------------------------------------------------
-void ThematicUniforms::updateSunDirection(dqGeom::Vector3d const& sunDir)
+void ThematicUniforms::updateSunDirection(dqGeom::Vector3d const& sunDir,
+                                          dqGeom::Transform const& viewMatrix)
 {
-    auto v = sunDir;
+    auto v = viewMatrix.MultiplyVector(sunDir);
     v.Negate();
     v.Normalize();
     m_sunDirection[0] = static_cast<float>(v.x);

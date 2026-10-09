@@ -13,6 +13,7 @@
 #include <dqCommon/FeatureOverrides.h>  // M-O(2) I10——updateAppearanceOverrides
 #include <dqCommon/FeatureTable.h>
 #include "FeatureOverrideLUT.h"
+#include "ThematicSensors.h"  // M-S S-e：逐 batch 传感器缓存
 
 #include <cstdint>
 #include <memory>
@@ -93,6 +94,19 @@ public:
     /// Set the batch's content range (used by unionRange).
     /// Ported from: itwinjs-core Batch constructor range (Graphic.ts:262-267)
     void setRange(dqGeom::Range3d const& range) noexcept { m_range = range; }
+
+    /// Get the per-batch thematic sensors（distanceCutoff>0 臂——
+    /// Graphic.ts:111-120 的 PerTargetBatchData.getThematicSensors +
+    /// BatchUniforms._setCurrentBatch :74-82）。按 batch.range × localToWorld
+    /// （世界域）过滤 + 缓存（settings 指针同一性失效——参考 matchesTarget
+    /// 语义）+ 创建即按 viewMatrix 打包 eye-space（参考 create(target, range)
+    /// 内 _update(frustum.viewMatrix)——视空间打包实测归位，S-e）。
+    /// @return 恒引用（可能为空集——域内零传感器时 numSensors=0）。
+    ThematicSensors const& getThematicSensors(
+        dqCommon::ThematicDisplaySensorSettings const& settings,
+        dqGeom::Transform const& localToWorld,
+        dqGeom::Transform const& viewMatrix,
+        rhi::Driver* driver);
 
     /// Get the feature override LUT (may be nullptr).
     FeatureOverrideLUT const* getFeatureOverrideLUT() const noexcept { return m_featureOverrideLUT.get(); }
@@ -197,6 +211,8 @@ private:
     std::unique_ptr<Graphic> m_child;
     std::unique_ptr<dqCommon::FeatureTable> m_featureTable;
     std::unique_ptr<FeatureOverrideLUT> m_featureOverrideLUT;
+    std::optional<ThematicSensors> m_thematicSensors;      // M-S S-e：逐 batch 传感器缓存
+    dqCommon::ThematicDisplaySensorSettings const* m_thematicSensorSettings = nullptr;  // 缓存失效判据（指针同一性）
     BatchContext m_context;
     // Range stored at creation (Graphic.ts:262-267) — the child graphic's
     // primitives are CachedGeometry whose unionRange is a no-op, so without a

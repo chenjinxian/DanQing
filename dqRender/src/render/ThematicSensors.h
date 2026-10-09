@@ -12,6 +12,7 @@
 #include <cstring>
 #include <vector>
 
+#include "TextureHandle.h"  // rhi::TextureHandle（GPU 上传——M-S S-e）
 #include "UniformHandle.h"
 #include "dqGeom/Point3d.h"
 #include "dqGeom/Range3d.h"
@@ -40,7 +41,13 @@ using dqCommon::ThematicDisplaySensor;
 //
 // The texture layout is a 1-by-N float RGBA texture where N = numSensors.
 // Each texel stores (position.x, position.y, position.z, value).
-// Positions are transformed to view space before writing.
+//
+// **视空间打包（参考语义，M-S S-e 实测归位）**：参考 _update 把传感器位置经
+// frustum.viewMatrix 变换到**视空间**（ThematicSensors.ts:82-93——消费点
+// distance(v_eyeSpace, sensor) 的 v_eyeSpace 为视空间）。S-d 的"E1 世界帧"
+// 登记经实测**证伪**（DANQING_THM_FRAGDBG=10 直读 v_eyeSpace=视空间坐标场、
+// mode=1 法线场 roofTop≈(0,0.82,0.58)=R·ẑ——DanQing 着色器与参考同构视帧），
+// 传感器逐帧视变换与 update 惰性门（viewMatrix isAlmostEqual）1:1 归位。
 class ThematicSensors {
 public:
     ThematicSensors() = default;
@@ -53,14 +60,22 @@ public:
 
     ~ThematicSensors() = default;
 
-    // create a ThematicSensors from a list of sensors.
-    // viewMatrix is the current view transform used to transform sensor positions.
+    // create a ThematicSensors from a list of sensors（视空间打包 + GPU 上传）。
+    // Ported from: itwinjs-core ThematicSensors.create（:51-66——accumulate 后
+    //  createFloat + 立即 _update(frustum.viewMatrix)）。
+    // @param sensors    世界位传感器集（源数据恒世界域——update 重打包的底本）
+    // @param viewMatrix 当前视矩阵（world→view——打包其 eye-space 位置）
+    // @param driver     纹理创建驱动（NullDriver 可——句柄无效则 getTexture 空）。
     static ThematicSensors create(
         const std::vector<ThematicDisplaySensor>& sensors,
-        const Transform& viewMatrix);
+        const Transform& viewMatrix,
+        rhi::Driver* driver = nullptr);
 
-    // Update the sensor data if the view matrix has changed.
-    void update(const Transform& viewMatrix);
+    /// Per-frame refresh（ThematicSensors.ts update :95-99——viewMatrix
+    ///  isAlmostEqual 惰性门：视角未变不重打包/不重传；变则 _update 重打包
+    ///  eye-space + replaceTextureData 重传）。
+    /// Ported from: itwinjs-core ThematicSensors.update()
+    void update(const Transform& viewMatrix, rhi::Driver* driver = nullptr);
 
     // Access the raw float texture data (4 floats per sensor: x, y, z, value).
     const float* data() const { return m_data.data(); }
@@ -77,13 +92,16 @@ public:
         uniform.setUniform1i(static_cast<int>(numSensors()));
     }
 
+    /// The GPU texture handle (1×N RGBA32F；无驱动创建时为空）。
+    /// Ported from: itwinjs-core ThematicSensors.texture（createForData 形态）。
+    rhi::TextureHandle getTexture() const noexcept
+    {
+        return m_texture.isValid() ? m_texture.getRhiHandle() : rhi::TextureHandle{};
+    }
+
     // Texture dimensions: width=1, height=numSensors.
     int textureWidth() const { return 1; }
     int textureHeight() const { return static_cast<int>(m_sensors.size()); }
-
-    // Whether the texture data has been modified since last upload.
-    bool isDirty() const { return m_dirty; }
-    void clearDirty() { m_dirty = false; }
 
     // Whether this object is empty (no sensors).
     bool isEmpty() const { return m_sensors.empty(); }
@@ -100,11 +118,13 @@ private:
     void appendValues(double a, double b, double c, double d);
     void reset();
     void advance(std::size_t numBytes);
-    void updateTextureData();
+    void updateTextureData();          // _update 的打包半（视空间——m_viewMatrix）
+    void uploadTexture(rhi::Driver* driver, bool replace = false);
 
-    std::vector<ThematicDisplaySensor> m_sensors;
-    std::vector<float> m_data;
-    Transform m_viewMatrix = Transform::CreateIdentity();
+    std::vector<ThematicDisplaySensor> m_sensors;  // 世界位源（参考 _sensors）
+    std::vector<float> m_data;                      // 视空间打包（参考 _texture.data）
+    TextureHandle m_texture;  // 渲染层包装（create2D 产出——getRhiHandle 供绑定）
+    Transform m_viewMatrix = Transform::CreateIdentity();  // 打包用视矩阵（参考 _viewMatrix——惰性门判据）
     std::size_t m_curPos = 0;
     bool m_dirty = false;
 };

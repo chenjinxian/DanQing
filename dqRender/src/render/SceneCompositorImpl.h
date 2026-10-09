@@ -197,7 +197,16 @@ private:
     RenderState m_layerRenderState;            // depthTest=true, depthFunc=Always, (ONE,ONE_MINUS_SRC_ALPHA)
 
     // --- State stacks ---
-    BranchStack m_branchStack;
+    // BranchStack 归属 TARGET（参考 BranchUniforms._stack 单栈语义
+    // [BranchUniforms.ts:50]——命令构建/绘制派发/changeRenderPlan/拾取全共享
+    // 同一栈；RenderCommands 本就以 target 栈构造[TargetImpl ctor :31]）。
+    // compositor 引用它——原 compositor 自持第二栈=双栈分裂移植偏差：
+    // changeRenderPlan 只喂 target 栈根（TargetImpl::changeRenderPlan），绘制
+    // 栈根永持默认 vf → 绘制期 getCurrentViewFlags() 的 thematicDisplay 等位
+    // 恒默认（M-S S-e 取证实锤：ThematicDisplayE2E 全族 draw 期 vf.thematic=0
+    // ——[THM-DRAW]/[THM-PUSH] 探针：draws 周无 PushBranch/PushState 命令，
+    // 栈顶=drawFrame 根 push 的 defaultFlags）。与 m_batchState 同引用形态。
+    BranchStack& m_branchStack;
     // BatchState belongs to the TARGET (reference: compositor.target.uniforms.batch.state,
     // Target.ts:793). The compositor references it — RenderCommands (populate-time
     // assignBatchId/findBatch registration) and the compositor's PushBatchCommand lookup

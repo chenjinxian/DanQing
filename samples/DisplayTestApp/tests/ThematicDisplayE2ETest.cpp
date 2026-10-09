@@ -1,19 +1,31 @@
-// ThematicDisplayE2ETest — Thematic Display 引擎链像素锁（M-S S-d）。
+// ThematicDisplayE2ETest — Thematic Display 引擎链像素锁（M-S S-d 起，
+// S-e 扩 IDW + 视空间归位）。
 //
 // 链（全段本里程碑接线）：ViewSettings/预设 → DisplayStyle3dSettings.thematic
 // + viewFlags.thematicDisplay → Viewport::ValidateRenderPlan（RenderPlan.ts:127
 // 门）→ Target.changeRenderPlan → ThematicUniforms.update（渐变纹理 1×N 列向
-// + NEAREST）→ drawPass flags.isThematic（DrawCommand.ts:206-216）→ Surface
-// thematic 变体（rawPosition 顶点索引 + 渐变采样片元）。
+// + NEAREST；传感器 1×N RGBA32F 视空间打包 + 逐帧惰性刷新）→ drawPass
+// flags.isThematic（DrawCommand.ts 206-216——**读绘制栈当前 vf**：S-e 修复
+// BranchStack 双栈分裂[compositor/target 各持一栈→参考 BranchUniforms._stack
+// 单栈归位] + drawFrame 根 push vf 继承化，此前门恒假）→ Surface thematic
+// 变体（rawPosition 顶点索引 + 渐变采样片元 + IDW 传感器循环）。
 //
-// 判据（§11.11 位置断言制度）：
-//   Height：axis=+Z + range=projectExtents.z + BlueRed 渐变（低端蓝 0x00FF0000
-//     tbgr / 高端红 0x000000FF tbgr——Gradient.ts:131-136 的 rbg 表，S-d 取证
-//     修复后逐键钉死）→ joeshouse 屋面（世界高 z）偏红族、地面/墙脚（低 z）
-//     偏蓝族；关开关恢复原帧。
-//   Slope：Thematic: Slope 预设形态（Custom 双色键 0x404040→0xffffff，
-//     ViewAttributes.ts:198-215）→ 竖直墙面（slope≈90°）近白、平顶/地面
-//    （slope≈0°）近 #404040 暗。
+// 锁序（声明序非 dump 先行——防跨测试污染；TD-31 取证另见 MinimalSolidBox
+// 内的 fetcher 重挂注记）：
+//   1. MinimalSolidBoxHeightAndSlopeAreExact——tileset 三板收敛锁（thematic
+//      重上色后三板收敛同族、与原色全不同；Slope 臂分流实证）。
+//   2. TallBoxGradientSweepIsExact——2×2×10 盒（GraphicType::Scene 挂接——
+//      WorldDecoration 对 thematic 豁免是参考刻意语义[Target.ts:236-243/
+//      Graphic.ts:484-491]，S-e 取证后改挂）；TD-30 z 压平形态下 Height 段
+//      全域低端纯蓝、Slope 段侧面归白端。
+//   3. HeightGradientColorsByWorldZAndRestores——joeshouse Height（蓝族主导
+//      + 蓝道 stdB 展布 + 关闭恢复精确）。
+//   4. SlopeDistinguishesVerticalFromFlat——joeshouse Slope（Custom 双色键，
+//      关光照纯渐变域：竖直面 ndx=1 白族 487891 / 水平面 ndx=0 暗族 557104
+//      ——S-e 视空间归位后钉值）。
+//   5. SensorIdwColorSeparatesNearEachSensor——joeshouse IDW 双传感器
+//     （S-e 主件：红族质心 (736,571)[A 端值 1] / 蓝族 (1408,924)[B 端值 0]、
+//      质心 2D 分离 786px——视空间 1/dist² 加权场直接证据）。
 //
 // Authored: no reference test exists in itwinjs-core for thematic pixel output
 //          （参考的渲染覆盖在 DTA 交互式会话，无离线回放对应物；渲染像素回归
@@ -27,7 +39,7 @@
 #include <QDateTime>
 
 #include "View3DInventor.h"
-
+#include "FileTileFetcher.h"  // dqApp/src（测试隔离重挂——TD-31，见 MinimalSolidBox 注）
 #include "DumpOpenHelper.h"
 
 #include <dqApp/Application.h>
@@ -36,6 +48,7 @@
 #include <dqApp/ViewState.h>
 #include <dqGeom/PolyfaceBuilder.h>
 #include <dqRender/tile/RealityTileTree.h>
+#include <dqRender/tile/TileAdmin.h>
 
 #include <algorithm>
 #include <array>
@@ -228,6 +241,15 @@ TEST(ThematicDisplayE2E, MinimalSolidBoxHeightAndSlopeAreExact)
         ASSERT_TRUE(app.Startup(opts));
     }
 
+    // 测试隔离（TD-31——全二进制模式取证实锤）：dump 族测试把 TileAdmin 全局
+    // fetcher 换成 DumpTileFetcher 且不恢复（DumpOpenHelper.cpp:71——app 会话内
+    // 多模型共享 dump 根的刻意语义）；本测试的文件 tileset 经
+    // RealityTile::loadContent 的 `TileAdmin::instance().getFetcher()` 取数，
+    // 若fetcher 滞留 dump 根则 .b3dm 命中 manifest NotFound → 内容永不达（全
+    // 二进制下前序 dump 测试后 baseline 全黑实录）。重挂 FileTileFetcher =
+    // Application::Startup 的初始面（Application.cpp:80）。
+    dqRender::TileAdmin::instance().setFetcher(std::make_unique<dqApp::FileTileFetcher>());
+
     std::unique_ptr<dqRender::RealityTileTree> tree;  // 先声明（M-Q 同款析构序——view 先析构）
 
     Gui::View3DInventor view(nullptr, nullptr, nullptr);
@@ -374,7 +396,14 @@ public:
     void Decorate(dqApp::DecorateContext& context) override
     {
         dqRender::GraphicBuilderOptions opts;
-        opts.type = dqRender::GraphicType::WorldDecoration;
+        // GraphicType::Scene——**WorldDecoration 不承载本锁**：参考的
+        // WorldDecorations 分支强制自带 vf（Target.ts:236-243 getWorldDecorations
+        // 的 `new ViewFlags({...})`[thematicDisplay=默认 false] +
+        // Graphic.ts:484-491 ctor setViewFlags）——**世界装饰对 thematic 豁免**
+        // 是参考刻意语义（"Don't allow flags like monochrome etc to affect
+        // world decorations"）。本锁要钉的是**场景内容**的渐变扫描 → 必须挂
+        // Scene（normal 列表并入场景、随 plan vf——S-e 双栈统一修复后生效）。
+        opts.type = dqRender::GraphicType::Scene;
         // M-O(4) P8 实证：finish 的 LOD 门要求 computeChordTolerance 接线
         //（缺 closure 恒 null——CesiumDecorator::beginDecoration 同面）。
         auto& vp = context.GetViewport();
@@ -736,6 +765,15 @@ TEST(ThematicDisplayE2E, SlopeDistinguishesVerticalFromFlat)
         props.thematic = td;
         view.getUeViewport()->overrideDisplayStyle(props);
     }
+    // 关光照（TallBox 同款——渐变原色精确断言面：光照调制会把白端压到
+    // ~150 使阈值族失真；光照链另有锁看护）。
+    {
+        auto& style = view.getUeViewport()->GetView()->GetDisplayStyle();
+        auto p = style.getViewFlags().Properties();
+        p.lighting = false;
+        style.setViewFlags(dqCommon::ViewFlags(p));
+        view.getUeViewport()->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+    }
     spinTHM(400);
     ReadStableFrame(view, f);
     dumpBmpTHM(f.frame, f.w, f.h,
@@ -764,11 +802,12 @@ TEST(ThematicDisplayE2E, SlopeDistinguishesVerticalFromFlat)
     if (dark > 0) darkCy /= dark;
     printf("[THM] slope bright=%ld (cy=%.0f) dark=%ld (cy=%.0f)\n",
            bright, brightCy, dark, darkCy);
-    // 钉值=首绿实测（世界帧 E1 修复后：亮族=竖直墙面 1979[修复前 295]，暗族
-    // =水平面 707453——判据阈值取修复后实测的 0.5× 与 0.002×，双向容差）。
-    EXPECT_GT(bright, 1000L);  // 竖直墙面族存在（修复前 295 → 修复后 1979）
-    EXPECT_GT(dark, 100000L);  // 水平面族存在（707453）
-    EXPECT_GT(dark, bright);   // 数据形状：本视角水平面域大于竖直面域
+    // 钉值=S-e 视空间归位后实测（关光照纯渐变域：竖直面 ndx=1→白族 487891、
+    // 水平面 ndx=0→#404040 暗族 557104——判据取实测 0.49×/0.48× 容差带；
+    // 早前 295/1979/707453 三值系 S-d 世界帧 E1 误登记形态下的伪影，作废）。
+    EXPECT_GT(bright, 240000L);  // 竖直面族（ndx=1 白端——视空间轴点积逐位正确）
+    EXPECT_GT(dark, 270000L);    // 水平面族（ndx=0 暗端）
+    EXPECT_GT(dark, bright);     // 数据形状：本视角水平面域略大于竖直面域
 }
 
 // ---------------------------------------------------------------------------
@@ -779,3 +818,88 @@ TEST(ThematicDisplayE2E, SlopeDistinguishesVerticalFromFlat)
 //（90°→白）。
 // ---------------------------------------------------------------------------
 
+
+// ---------------------------------------------------------------------------
+// 锁 5（IDW 传感器模式 E2E——S-e 的 GPU 链终证）：joeshouse 双传感器异值
+//（A 值 1→近端红族 / B 值 0→近端蓝族；distanceCutoff=0=全局臂——无裁剪，
+// ThematicUniforms.ts:142-147 全局共享纹理面）。IDW 片元循环（
+// glsl/Thematic.ts prelude——1/dist² 加权）消费 s_sensorSampler（单元 7，
+// 与 ShadowMap 复用[阴影未移植无冲突——E3 登记]）+ u_numSensors 全局臂。
+// ---------------------------------------------------------------------------
+TEST(ThematicDisplayE2E, SensorIdwColorSeparatesNearEachSensor)
+{
+    auto& app = dqApp::Application::Get();
+    if (!app.isInitialized()) {
+        dqApp::Application::Options opts;
+        opts.applicationId = "ThematicDisplayE2E";
+        opts.applicationVersion = "1.0";
+        ASSERT_TRUE(app.Startup(opts));
+    }
+
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    view.resize(1000, 700);
+    view.show();
+    spinTHM(400);
+
+    ThematicFrame f;
+    OpenAndStabilize(view, f);
+
+    // 关 grid/ACS（色族分类器净空——ACS 红轴落判据带内会污染红族计数；
+    // 与其余锁同形）。
+    {
+        auto& style = view.getUeViewport()->GetView()->GetDisplayStyle();
+        auto p = style.getViewFlags().Properties();
+        p.grid = false;
+        p.acsTriad = false;
+        style.setViewFlags(dqCommon::ViewFlags(p));
+        view.getUeViewport()->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+        spinTHM(200);
+    }
+
+    // IDW 模式 + 双传感器（joeshouse extents x=[-7.5,27.8] 的两端，z≈1 房体
+    // 带；y=4.9 中带）——A 端值 1（近端→红族）、B 端值 0（近端→蓝族）。
+    {
+        dqCommon::DisplayStyle3dSettingsProps props;
+        dqCommon::ViewFlagProps vf;
+        vf.thematicDisplay = true;
+        props.viewflags = vf;
+        dqCommon::ThematicDisplayProps td;
+        td.displayMode = dqCommon::ThematicDisplayMode::InverseDistanceWeightedSensors;
+        dqCommon::ThematicDisplaySensorSettingsProps ss;
+        ss.distanceCutoff = 0.0;  // 全局臂（无裁剪）
+        dqCommon::ThematicDisplaySensorProps sa;
+        sa.position = dqGeom::Point3d::From(-7.0, 4.9, 1.0);  // 内容西端
+        sa.value = 1.0;
+        dqCommon::ThematicDisplaySensorProps sb;
+        sb.position = dqGeom::Point3d::From(27.0, 4.9, 1.0);  // 内容东端
+        sb.value = 0.0;
+        ss.sensors = std::vector<dqCommon::ThematicDisplaySensorProps>{sa, sb};
+        td.sensorSettings = ss;
+        props.thematic = td;
+        view.getUeViewport()->overrideDisplayStyle(props);
+    }
+    spinTHM(400);
+    ReadStableFrame(view, f);
+    dumpBmpTHM(f.frame, f.w, f.h,
+               DANQING_TILE_ASSETS_DIR "/../../build/thematic-sensors-idw.bmp");
+
+    // WHERE：A 端近域（frame 右半？—— saved 等轴测内容展布由首绿实测钉死；
+    // 先按内容 bbox 的左右三分带统计红/蓝族质心分离）——红族质心显著偏 A
+    // 侧、蓝族偏 B 侧（IDW 逐片元 1/dist² 加权的直接证据）。
+    //（frame y=0=底[glReadPixels]；x 向=内容横展布。）
+    uint32_t const w = f.w, h = f.h;
+    HueStats const red = classifyHue(f.frame, w, h,
+                                     0, w, uint32_t(h * 0.15), uint32_t(h * 0.90), true);
+    HueStats const blue = classifyHue(f.frame, w, h,
+                                      0, w, uint32_t(h * 0.15), uint32_t(h * 0.90), false);
+    printf("[THM] idw red: count=%ld centroid=(%.0f,%.0f) | blue: count=%ld centroid=(%.0f,%.0f)\n",
+           red.count, red.cx, red.cy, blue.count, blue.cx, blue.cy);
+    EXPECT_GT(red.count, 1000L);
+    EXPECT_GT(blue.count, 1000L);
+    // 两族质心 2D 分离（A/B 传感器在内容两端——首绿实测：分离沿内容长轴走
+    // 屏幕对角线[dx=28/dy=461]，取 2D 距离≥内容展布/5）。
+    double const sep = std::sqrt((red.cx - blue.cx) * (red.cx - blue.cx)
+                                 + (red.cy - blue.cy) * (red.cy - blue.cy));
+    printf("[THM] idw centroid separation=%.0f px\n", sep);
+    EXPECT_GT(sep, w * 0.10);
+}
