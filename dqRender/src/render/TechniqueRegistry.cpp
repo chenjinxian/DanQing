@@ -76,13 +76,9 @@ std::unique_ptr<Techniques> createDefaultTechniques(rhi::Driver& driver)
     oitCompositeTechnique->compileShaders(driver);
     techniques->registerTechnique(TechniqueId::CompositeTranslucent, std::move(oitCompositeTechnique));
 
-    auto ssaoTechnique = std::make_unique<SsaoTechnique>();
-    ssaoTechnique->compileShaders(driver);
-    techniques->registerTechnique(TechniqueId::AmbientOcclusion, std::move(ssaoTechnique));
-
-    auto blurTechnique = std::make_unique<BlurTechnique>();
-    blurTechnique->compileShaders(driver);
-    techniques->registerTechnique(TechniqueId::Blur, std::move(blurTechnique));
+    // M-T T-d：SsaoTechnique/BlurTechnique 自创桩件清退——参考的 AO/Blur
+    // 程序为合成器内全屏 pass（compositeOit 同形的 DanQing 直持程序面，
+    // SceneCompositorImpl.cpp m_aoProgram 族），非 Technique 注册面。
 
     auto edlTechnique = std::make_unique<EdlTechnique>();
     edlTechnique->compileShaders(driver);
@@ -176,9 +172,8 @@ std::unique_ptr<Techniques> createDefaultTechniques(rhi::Driver& driver)
     volClassBlendTechnique->compileShaders(driver);
     techniques->registerTechnique(TechniqueId::VolClassBlend, std::move(volClassBlendTechnique));
 
-    auto blurTestOrderTechnique = std::make_unique<BlurTestOrderTechnique>();
-    blurTestOrderTechnique->compileShaders(driver);
-    techniques->registerTechnique(TechniqueId::BlurTestOrder, std::move(blurTestOrderTechnique));
+    // M-T T-d：BlurTestOrderTechnique 桩件清退（同上注——Blur 的 TestOrder
+    // 臂在合成器 AO 链内以单独程序承载）。
 
     auto combineTexturesTechnique = std::make_unique<CombineTexturesTechnique>();
     combineTexturesTechnique->compileShaders(driver);

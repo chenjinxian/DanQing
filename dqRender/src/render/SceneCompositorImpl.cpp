@@ -21,6 +21,8 @@
 #include "shader/OitShaders.h"
 #include "shader/CompositeShaders.h"   // compositeHiliteFrag
 #include "shader/PostProcessShaders.h" // kFullscreenQuadVert
+#include "shader/AmbientOcclusionShaders.h"  // M-T T-d：kAmbientOcclusionVert/Frag
+#include "shader/BlurShaders.h"              // M-T T-d：kBlur* 三段
 #include "gl/GL.h"
 #include <algorithm>
 #include <array>
@@ -358,6 +360,15 @@ SceneCompositor::~SceneCompositor()
     // OIT 合成程序归本 compositor 持有（不经 Techniques）——析构时释放 GL 程序
     // 防泄漏（resize 路径已不销毁它，见 destroyOitResources 注释）。
     m_oitCompositeProgram.releaseGlProgram(driver);
+    // M-T T-d：AO 程序组 + 噪声纹理同面释放（同 OIT 程序注释语义）。
+    if (m_aoProgramsCompiled) {
+        m_aoProgram.releaseGlProgram(driver);
+        m_aoBlurXProgram.releaseGlProgram(driver);
+        m_aoBlurYProgram.releaseGlProgram(driver);
+        if (m_aoNoiseTexture)
+            driver.destroyTexture(m_aoNoiseTexture);
+        m_aoProgramsCompiled = false;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -423,6 +434,52 @@ void SceneCompositor::preDraw(uint32_t width, uint32_t height)
             m_textures.disableOcclusion(driver);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// AO 资源管理（M-T T-d）
+// Ported from: itwinjs-core SceneCompositor.ts Geometry.enableOcclusion
+//              (:563-569——AO/Blur 几何建立) + System.onInitialized 的
+//              noiseTexture 建（:457-460——4×4 定值表 16 字节、Repeat）。
+// ---------------------------------------------------------------------------
+bool SceneCompositor::initAoResources(rhi::Driver& driver)
+{
+    if (m_aoProgramsCompiled) return true;
+
+    // 三程序（PB 臂 AO + NoTest X 向 Blur + TestOrder Y 向 Blur——
+    // glsl/AmbientOcclusion.ts + glsl/Blur.ts 移植源）。
+    m_aoProgram.setSource(std::string(kAmbientOcclusionVert),
+                          std::string(kAmbientOcclusionFrag), "AmbientOcclusion");
+    if (m_aoProgram.compile(driver) != CompileStatus::Success)
+        return false;
+
+    m_aoBlurXProgram.setSource(std::string(kBlurVert),
+        std::string(kBlurCommonPrefix) + std::string(kBlurFrag), "Blur");
+    if (m_aoBlurXProgram.compile(driver) != CompileStatus::Success)
+        return false;
+
+    // TestOrder 臂的串接序（Blur.ts:62-66——testRenderOrder + computeBlur 槽串
+    // → DanQing 直编译形：prefix 声明先、common 函数体后、main 收尾）。
+    m_aoBlurYProgram.setSource(std::string(kBlurVert),
+        std::string(kBlurTestOrderPrefix) + std::string(kBlurCommonPrefix)
+            + std::string(kBlurTestOrderFrag), "BlurTestOrder");
+    if (m_aoBlurYProgram.compile(driver) != CompileStatus::Success)
+        return false;
+
+    // 噪声纹理（System.ts:457-460 定值表逐字节原样；R8=单通道[Luminance 的
+    // desktop-GL 核内形态——shader 仅消费 .r 通道（noiseVec.x），与参考
+    // Luminance 的 .r 同值]）。
+    static const uint8_t kNoise[] = {152, 235, 94, 173, 219, 215, 115, 176,
+                                     73, 205, 43, 201, 10, 81, 205, 198};
+    auto noiseTex = TextureHandle::create2D(
+        driver, 4, 4, rhi::TextureFormat::R8, kNoise, sizeof(kNoise),
+        GL::Texture::WrapMode::Repeat);
+    if (!noiseTex.isValid())
+        return false;
+    m_aoNoiseTexture = noiseTex.getRhiHandle();
+
+    m_aoProgramsCompiled = true;
+    return true;
 }
 
 // ---------------------------------------------------------------------------

@@ -7,6 +7,8 @@
 #include "render/CompositingShaderBuilders.h"
 #include "render/FeatureEffectShaderBuilders.h"
 #include "render/SkyShaderBuilders.h"
+#include "shader/AmbientOcclusionShaders.h"  // M-T T-d：kAmbientOcclusionFrag
+#include "shader/BlurShaders.h"              // M-T T-d：kBlurCommonPrefix/...
 
 #include <gtest/gtest.h>
 #include <string>
@@ -25,23 +27,44 @@ TEST(CompositingShaderBuildersTest, FullscreenQuadVertex)
     EXPECT_NE(std::string(src).find("v_texCoord"), std::string::npos);
 }
 
+// M-T T-d：SsaoFragment/BlurFragment 两桩测试替换为参考移植源的源锁——
+// 旧断言钉的是自创 SSAO 的发明 uniform（s_depthTexture/u_radius/u_texelSize
+// 等），与参考 HBAO/高斯模糊语义背离；桩件随本件清退（TechniqueId 注册面
+// 已撤——AO/Blur 程序归合成器内全屏 pass 直持）。
 // Authored: no reference test exists in itwinjs-core for batch rendering
-TEST(CompositingShaderBuildersTest, SsaoFragment)
+//          （锁移植后 shader 源的参考标识符——glsl/AmbientOcclusion.ts /
+//           glsl/Blur.ts）。
+TEST(CompositingShaderBuildersTest, AmbientOcclusionFragmentMatchesReference)
 {
-    char const* src = getSsaoFragmentShader();
-    std::string s(src);
-    EXPECT_NE(s.find("s_depthTexture"), std::string::npos);
-    EXPECT_NE(s.find("u_radius"), std::string::npos);
-    EXPECT_NE(s.find("occlusion"), std::string::npos);
+    std::string const s{std::string(kAmbientOcclusionFrag)};
+    // PB 变体链令牌（参考 createAmbientOcclusionProgram 的 PB 臂）：
+    EXPECT_NE(s.find("u_pickDepthAndOrder"), std::string::npos);
+    EXPECT_NE(s.find("readDepthAndOrder"), std::string::npos);
+    EXPECT_NE(s.find("decodeDepthRgb"), std::string::npos);
+    EXPECT_NE(s.find("computePositionFromDepth"), std::string::npos);
+    EXPECT_NE(s.find("computeNormalFromDepth"), std::string::npos);
+    EXPECT_NE(s.find("u_hbaoSettings"), std::string::npos);
+    EXPECT_NE(s.find("u_maxDistance"), std::string::npos);
+    EXPECT_NE(s.find("u_noise"), std::string::npos);
+    // 主循环结构（4 方向 × 6 步——参考 :93-121）。
+    EXPECT_NE(s.find("for (int i = 0; i < 4; i++)"), std::string::npos);
+    EXPECT_NE(s.find("for (int j = 0; j < 6; j++)"), std::string::npos);
+    EXPECT_NE(s.find("kRenderOrder_LitSurface"), std::string::npos);
 }
 
-// Authored: no reference test exists in itwinjs-core for batch rendering
-TEST(CompositingShaderBuildersTest, BlurFragment)
+// Authored: 同上（Blur.ts——高斯 7 步 + u_blurSettings/u_blurDir 令牌 +
+//           TestOrder 臂的 order 跳读）。
+TEST(CompositingShaderBuildersTest, BlurFragmentMatchesReference)
 {
-    char const* src = getBlurFragmentShader();
-    std::string s(src);
-    EXPECT_NE(s.find("u_texelSize"), std::string::npos);
-    EXPECT_NE(s.find("u_blurRadius"), std::string::npos);
+    std::string const common{std::string(kBlurCommonPrefix)};
+    EXPECT_NE(common.find("u_blurSettings"), std::string::npos);
+    EXPECT_NE(common.find("u_blurDir"), std::string::npos);
+    EXPECT_NE(common.find("u_textureToBlur"), std::string::npos);
+    EXPECT_NE(common.find("gaussian"), std::string::npos);
+    std::string const testOrder{std::string(kBlurTestOrderPrefix) +
+                                std::string(kBlurTestOrderFrag)};
+    EXPECT_NE(testOrder.find("u_pickDepthAndOrder"), std::string::npos);
+    EXPECT_NE(testOrder.find("kRenderOrder_Silhouette"), std::string::npos);
 }
 
 // Authored: no reference test exists in itwinjs-core for batch rendering

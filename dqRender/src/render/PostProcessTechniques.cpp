@@ -32,30 +32,6 @@ bool OitCompositeTechnique::compileShaders(rhi::Driver& driver)
     return prog->compile(driver, kOitCompositeVert, kOitCompositeFrag, "OitComposite") == CompileStatus::Success;
 }
 
-SsaoTechnique::SsaoTechnique()
-    : SingularTechnique(ShaderProgram())
-{
-}
-
-bool SsaoTechnique::compileShaders(rhi::Driver& driver)
-{
-    auto* prog = getShader({});
-    if (!prog || prog->isValid()) return prog && prog->isValid();
-    return prog->compile(driver, kFullscreenQuadVert, kSsaoFrag, "SSAO") == CompileStatus::Success;
-}
-
-BlurTechnique::BlurTechnique()
-    : SingularTechnique(ShaderProgram())
-{
-}
-
-bool BlurTechnique::compileShaders(rhi::Driver& driver)
-{
-    auto* prog = getShader({});
-    if (!prog || prog->isValid()) return prog && prog->isValid();
-    return prog->compile(driver, kFullscreenQuadVert, kBlurFrag, "Blur") == CompileStatus::Success;
-}
-
 EdlTechnique::EdlTechnique()
     : SingularTechnique(ShaderProgram())
 {

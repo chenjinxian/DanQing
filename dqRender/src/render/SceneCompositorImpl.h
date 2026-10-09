@@ -256,6 +256,24 @@ private:
     rhi::RenderTargetHandle m_opaqueSceneRenderTarget;
     rhi::TextureHandle m_opaqueSceneTexture;
     ShaderProgram m_oitCompositeProgram;
+
+    // --- AO pass 资源组（M-T T-d——参考 TechniqueId::AmbientOcclusion/Blur/
+    //     BlurTestOrder 的 SingularTechnique 注册面[Technique.ts:910-912/
+    //     :1082-1083]；DanQing 合成器内全屏 pass 直持程序[compositeOit 同形]，
+    //     EQUIVALENCE：绑定机制=直绑，shader 源与语义 1:1）---
+    ShaderProgram m_aoProgram;       // kAmbientOcclusionVert/Frag（PB 变体）
+    ShaderProgram m_aoBlurXProgram;  // Blur NoTest（X 向——Blur.ts:24-56）
+    ShaderProgram m_aoBlurYProgram;  // Blur TestOrder（Y 向——Blur.ts:58-71）
+    // 噪声纹理（System.ts:457-460——4×4 定值表 16 字节、Repeat、单通道）。
+    // 参考挂 System.instance.noiseTexture——DanQing 合成器自持后处理资源
+    //（OIT 纹理同例），EQUIVALENCE 登记：归属差异、内容逐字节同。
+    rhi::TextureHandle m_aoNoiseTexture;
+    bool m_aoProgramsCompiled = false;
+    /// 惰性编译 AO 程序组 + 建噪声纹理（initOitResources 同形——首个 AO 帧
+    /// 调用；renderAmbientOcclusion[T-e]的头部）。
+    bool initAoResources(rhi::Driver& driver);
+    /// AO 程序组编译态（测试锁面）。
+    bool aoProgramsCompiled() const noexcept { return m_aoProgramsCompiled; }
     // 当前 use() 中的程序（activateProgram/deactivateProgram 维护；参考
     // ShaderProgramExecutor._program）。非所有权指针：程序归 Techniques/
     // m_oitCompositeProgram 所有。

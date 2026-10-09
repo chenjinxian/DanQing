@@ -32,12 +32,6 @@ bool VolClassBlendTechnique::compileShaders(rhi::Driver& driver) {
     return p->compile(driver, kFullscreenQuadVert, kVolClassBlendFrag, "VolClassBlend") == CompileStatus::Success;
 }
 
-BlurTestOrderTechnique::BlurTestOrderTechnique() : SingularTechnique(ShaderProgram()) {}
-bool BlurTestOrderTechnique::compileShaders(rhi::Driver& driver) {
-    auto* p = getShader({}); if (!p || p->isValid()) return p && p->isValid();
-    return p->compile(driver, kFullscreenQuadVert, kBlurTestOrderFrag, "BlurTestOrder") == CompileStatus::Success;
-}
-
 CombineTexturesTechnique::CombineTexturesTechnique() : SingularTechnique(ShaderProgram()) {}
 bool CombineTexturesTechnique::compileShaders(rhi::Driver& driver) {
     auto* p = getShader({}); if (!p || p->isValid()) return p && p->isValid();

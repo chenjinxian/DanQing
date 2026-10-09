@@ -482,16 +482,6 @@ public:
     OitCompositeTechnique();
     bool compileShaders(rhi::Driver& driver) override;
 };
-class SsaoTechnique : public SingularTechnique {
-public:
-    SsaoTechnique();
-    bool compileShaders(rhi::Driver& driver) override;
-};
-class BlurTechnique : public SingularTechnique {
-public:
-    BlurTechnique();
-    bool compileShaders(rhi::Driver& driver) override;
-};
 class EdlTechnique : public SingularTechnique {
 public:
     EdlTechnique();
@@ -594,11 +584,6 @@ public:
 class VolClassBlendTechnique : public SingularTechnique {
 public:
     VolClassBlendTechnique();
-    bool compileShaders(rhi::Driver& driver) override;
-};
-class BlurTestOrderTechnique : public SingularTechnique {
-public:
-    BlurTestOrderTechnique();
     bool compileShaders(rhi::Driver& driver) override;
 };
 class CombineTexturesTechnique : public SingularTechnique {
