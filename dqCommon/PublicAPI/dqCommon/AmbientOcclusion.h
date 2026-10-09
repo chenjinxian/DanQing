@@ -61,17 +61,21 @@ namespace AmbientOcclusion {
             return s;
         }
 
+        // Ported from: itwinjs-core AmbientOcclusion.Settings.toJSON（逐字段
+        // !=默认才写——缺席=fromJSON 缺省守恒；M-T T-a 前恒写全字段系发散，
+        // AmbientOcclusionTest.ToJsonOmitsDefaults RED 实锤后归位）。
         Props toJSON() const
         {
+            auto const& d = defaults();
             Props p;
-            p.bias = bias;
-            p.zLengthCap = zLengthCap;
-            p.maxDistance = maxDistance;
-            p.intensity = intensity;
-            p.texelStepSize = texelStepSize;
-            p.blurDelta = blurDelta;
-            p.blurSigma = blurSigma;
-            p.blurTexelStepSize = blurTexelStepSize;
+            if (bias != d.bias) p.bias = bias;
+            if (zLengthCap != d.zLengthCap) p.zLengthCap = zLengthCap;
+            if (maxDistance != d.maxDistance) p.maxDistance = maxDistance;
+            if (intensity != d.intensity) p.intensity = intensity;
+            if (texelStepSize != d.texelStepSize) p.texelStepSize = texelStepSize;
+            if (blurDelta != d.blurDelta) p.blurDelta = blurDelta;
+            if (blurSigma != d.blurSigma) p.blurSigma = blurSigma;
+            if (blurTexelStepSize != d.blurTexelStepSize) p.blurTexelStepSize = blurTexelStepSize;
             return p;
         }
 
