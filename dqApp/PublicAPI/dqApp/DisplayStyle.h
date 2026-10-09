@@ -161,6 +161,24 @@ public:
         OnClipStyleChanged.Raise();
     }
 
+    // ── Thematic display ────────────────────────────────────────
+    // ← itwinjs-core DisplayStyleSettings.thematic setter（DisplayStyleSettings.ts
+    //   :1221-1227——equals 短路 → **先 raise**（参考序：监听器在事件内读
+    //   settings 得见旧值）→ 赋值）+ DisplayStyleState.applyOverrides 的
+    //   projectExtents 补齐链（:1004-1016——消费面=ViewSettingsPanel 编辑器
+    //   写回环与 overrideDisplayStyle 的 Height 无 range 默认）。
+    // 事件无载荷（DqEvent<> 门面形态——参考携带新值形参，Viewport 监听面
+    // [Viewport.cpp:678]不消费形参，EQUIVALENCE 登记：发散=事件载荷缺席，
+    // 验证法=ThematicFacade 锁的监听器读旧值断言[先 raise 序可观测]）。
+    dqCommon::ThematicDisplay const& getThematic() const noexcept { return m_settings.getThematic(); }
+    void setThematic(dqCommon::ThematicDisplay const& td) {
+        if (td.equals(m_settings.getThematic())) return;
+        OnThematicChanged.Raise();      // 参考序：raise 先于赋值
+        m_settings.setThematic(td);
+    }
+    // iModel 访问（projectExtents 补齐链消费——DisplayStyleState.ts:1010）。
+    IModelConnection const* getIModel() const noexcept { return m_iModel; }
+
     // ── Time point ──────────────────────────────────────────────
     double getTimePoint() const noexcept { return m_settings.getTimePoint().value_or(0.0); }
     void setTimePoint(double time) {

@@ -20,6 +20,7 @@
 #include <dqCommon/ColorDef.h>
 #include <dqCommon/DisplayStyleSettings.h>
 #include <dqCommon/LightSettings.h>
+#include <dqCommon/ThematicDisplay.h>  // M-S S-f：ThematicDisplay/Props + Range1d
 #include <dqCommon/ViewFlags.h>
 
 namespace {
@@ -176,6 +177,108 @@ TEST(DisplayStyleSwitch, OverrideDisplayStyleMergesAndInvalidates)
     f.vp->RenderFrame();
     EXPECT_EQ(f.view->GetDisplayStyle().getSettings().getBackgroundColor().getTbgr(),
               0xF0FFF0u);
+
+    dqApp::Application::Get().GetViewManager().DropViewport(f.vp);
+}
+
+// ---------------------------------------------------------------------------
+// M-S S-f：DisplayStyle::setThematic 门面（DisplayStyleSettings.ts:1221-1227
+// setter——equals 短路 → **先 raise 后赋值** → 赋值）+ OnThematicChanged 接线
+//（ported-but-uncalled 清偿：事件与 Viewport 监听面[Viewport.cpp:678]早已在，
+// 本件前无 raise 方）。
+// Authored: no reference test exists in itwinjs-core for the thematic setter
+//           event（common/frontend 两侧测试目录均无 onThematicChanged 用例；
+//           行为锚 = setter 原文序）。
+// ---------------------------------------------------------------------------
+TEST(DisplayStyleSwitch, ThematicFacadeSetterSemantics)
+{
+    SwitchFixture f;
+    auto& style = f.view->GetDisplayStyle();
+
+    int events = 0;
+    dqCommon::ThematicDisplay seenAtRaise;  // 默认（range null）
+    seenAtRaise.displayMode = dqCommon::ThematicDisplayMode::Slope;  // 哨兵：与默认 Height 区分
+    seenAtRaise.range = dqGeom::Range1d(-777.0, -776.0);             // 哨兵值
+    auto scope = style.OnThematicChanged.AddListener([&]() {
+        ++events;
+        seenAtRaise = style.getThematic();  // 事件内读取（参考序=旧值可观测）
+    });
+
+    // 等值写入 → 短路无事件（默认构造彼此相等——ThematicDisplay.equals 全字段面）。
+    dqCommon::ThematicDisplay same;
+    style.setThematic(same);
+    EXPECT_EQ(events, 0);
+
+    // 变更写入 → 事件恰一次 + 事件内读=**旧值**（参考 raise-先于-赋值序）+
+    // 返回后新值就位。
+    dqCommon::ThematicDisplay changed;
+    changed.displayMode = dqCommon::ThematicDisplayMode::Slope;
+    changed.range = dqGeom::Range1d(0.0, 90.0);
+    style.setThematic(changed);
+    EXPECT_EQ(events, 1);
+    EXPECT_EQ(seenAtRaise.displayMode, dqCommon::ThematicDisplayMode::Height)
+        << "listener must observe the PRE-assignment value (reference raise-first order)";
+    EXPECT_TRUE(seenAtRaise.range.isNull());
+    EXPECT_EQ(style.getThematic().displayMode, dqCommon::ThematicDisplayMode::Slope);
+    EXPECT_FALSE(style.getThematic().range.isNull());
+
+    // 再写同值 → 短路（equals 覆盖 displayMode+range 段）。
+    style.setThematic(changed);
+    EXPECT_EQ(events, 1);
+}
+
+// M-S S-f：projectExtents 补齐（DisplayStyleState.ts:1004-1016——overrides 携
+// thematic 且新模式==Height 且无 range → projectExtents.z 填充 + setter 重写）。
+// Authored: 同上（参考无此链单测；行为锚 = DisplayStyleState 监听体原文）。
+TEST(DisplayStyleSwitch, ThematicHeightWithoutRangeFillsFromProjectExtents)
+{
+    SwitchFixture f;  // extents z=[-100,100]
+    dqApp::Application::Get().GetViewManager().AddViewport(f.vp);
+    f.vp->RenderFrame();
+
+    int events = 0;
+    auto scope = f.view->GetDisplayStyle().OnThematicChanged.AddListener(
+        [&events]() { ++events; });
+
+    // ①Height 无 range → 填 projectExtents.z（-100..100）+ 门面事件发。
+    {
+        dqCommon::DisplayStyle3dSettingsProps o;
+        dqCommon::ThematicDisplayProps td;
+        td.displayMode = dqCommon::ThematicDisplayMode::Height;
+        o.thematic = td;
+        f.vp->overrideDisplayStyle(o);
+    }
+    auto const& filled = f.view->GetDisplayStyle().getThematic();
+    ASSERT_FALSE(filled.range.isNull());
+    EXPECT_DOUBLE_EQ(filled.range.low, -100.0);
+    EXPECT_DOUBLE_EQ(filled.range.high, 100.0);
+    EXPECT_GE(events, 1);
+
+    // ②Height 显式 range → 保持（补齐门不开）。
+    {
+        dqCommon::DisplayStyle3dSettingsProps o;
+        dqCommon::ThematicDisplayProps td;
+        td.displayMode = dqCommon::ThematicDisplayMode::Height;
+        td.range = dqGeom::Range1d(3.0, 7.0);
+        o.thematic = td;
+        f.vp->overrideDisplayStyle(o);
+    }
+    auto const& kept = f.view->GetDisplayStyle().getThematic();
+    ASSERT_FALSE(kept.range.isNull());
+    EXPECT_DOUBLE_EQ(kept.range.low, 3.0);
+    EXPECT_DOUBLE_EQ(kept.range.high, 7.0);
+
+    // ③Slope 无 range → 不填（参考条件仅 Height；Slope range 是角度域）。
+    {
+        dqCommon::DisplayStyle3dSettingsProps o;
+        dqCommon::ThematicDisplayProps td;
+        td.displayMode = dqCommon::ThematicDisplayMode::Slope;
+        o.thematic = td;
+        f.vp->overrideDisplayStyle(o);
+    }
+    auto const& slope = f.view->GetDisplayStyle().getThematic();
+    EXPECT_EQ(slope.displayMode, dqCommon::ThematicDisplayMode::Slope);
+    EXPECT_TRUE(slope.range.isNull());
 
     dqApp::Application::Get().GetViewManager().DropViewport(f.vp);
 }

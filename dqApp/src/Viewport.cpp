@@ -2774,6 +2774,26 @@ void Viewport::overrideDisplayStyle(dqCommon::DisplayStyle3dSettingsProps const&
         // 失效面与 viewflags 族同（thematicDisplay/ambientOcclusion 位在 viewflags）。
         m_changeFlags.SetDisplayStyle();
         InvalidateRenderPlan();
+
+        // M-S S-f：projectExtents 补齐（DisplayStyleState.ts:1004-1016 的
+        // registerSettingsEventListeners→onOverridesApplied 监听语义——DanQing
+        // 无 onOverridesApplied 事件面，applyOverrides3d 的唯一调用点在本函数
+        // [参考 DisplayStyleState 的监听注册点与消费点同域]，故在此同域落地）：
+        // overrides 携 thematic 且**应用后**模式==Height（参考读 settings 新态）
+        // 且 overrides 无 range → 以 iModel.projectExtents.z 填充并经门面
+        // setter 重写（OnThematicChanged 再发——参考经 settings setter 同发）。
+        // NB（参考原注保留）：assumes using Z axis。
+        auto& style = GetView()->GetDisplayStyle();
+        if (overrides.thematic
+            && style.getThematic().displayMode == dqCommon::ThematicDisplayMode::Height
+            && !overrides.thematic->range.has_value()) {
+            if (auto const* im = style.getIModel()) {
+                auto const& ext = im->GetProjectExtents();
+                dqCommon::ThematicDisplay td = style.getThematic();
+                td.range = dqGeom::Range1d(ext.low.z, ext.high.z);
+                style.setThematic(td);  // 门面：equals 短路 → raise → 赋值
+            }
+        }
     }
 }
 
