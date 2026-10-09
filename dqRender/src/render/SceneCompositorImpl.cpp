@@ -371,36 +371,58 @@ void SceneCompositor::preDraw(uint32_t width, uint32_t height)
     if (width == 0 || height == 0)
         return;
 
-    // Skip if viewport hasn't changed and resources are already initialized
-    if (m_resourcesInitialized && width == m_lastWidth && height == m_lastHeight)
-        return;
-
     auto& driver = m_target.getDriver();
 
-    // Dispose old resources
-    m_frameBuffers.dispose(&driver);
-    m_textures.dispose(&driver);
-    // OIT 资源一并重置：参考的 translucent/clearTranslucent FBO 在 FrameBuffers.init
-    // 里创建（SceneCompositor.ts:290-291），随 preDraw 的尺寸变化重建（:1310-1319
-    // → reset :1677-1687 → dispose(_fbos) 含 translucent）。DanQing 的 OIT 是独立的
-    // 惰性初始化（m_oitInitialized 一次性）——缺此重置时 resize 后 OIT 纹理保持
-    // 旧尺寸（合成错乱的根因），对齐参考在此一并失效。
-    destroyOitResources(driver);
-    m_oitInitialized = false;
+    // Skip if viewport hasn't changed and resources are already initialized
+    if (!(m_resourcesInitialized && width == m_lastWidth && height == m_lastHeight)) {
+        // Dispose old resources
+        m_frameBuffers.dispose(&driver);
+        m_textures.dispose(&driver);
+        // OIT 资源一并重置：参考的 translucent/clearTranslucent FBO 在 FrameBuffers.init
+        // 里创建（SceneCompositor.ts:290-291），随 preDraw 的尺寸变化重建（:1310-1319
+        // → reset :1677-1687 → dispose(_fbos) 含 translucent）。DanQing 的 OIT 是独立的
+        // 惰性初始化（m_oitInitialized 一次性）——缺此重置时 resize 后 OIT 纹理保持
+        // 旧尺寸（合成错乱的根因），对齐参考在此一并失效。
+        destroyOitResources(driver);
+        m_oitInitialized = false;
 
-    // Initialize textures
-    if (!m_textures.init(driver, width, height))
-        return;
+        // Initialize textures
+        if (!m_textures.init(driver, width, height))
+            return;
 
-    // Initialize FBOs (depth texture is created internally by the driver)
-    // Pass MSAA sample count so opaque render targets can be multisampled.
-    rhi::TextureHandle depth;  // Will be set by FBO init
-    if (!m_frameBuffers.init(driver, m_textures, depth, m_antialiasSamples))
-        return;
+        // Initialize FBOs (depth texture is created internally by the driver)
+        // Pass MSAA sample count so opaque render targets can be multisampled.
+        rhi::TextureHandle depth;  // Will be set by FBO init
+        if (!m_frameBuffers.init(driver, m_textures, depth, m_antialiasSamples))
+            return;
 
-    m_lastWidth = width;
-    m_lastHeight = height;
-    m_resourcesInitialized = true;
+        m_lastWidth = width;
+        m_lastHeight = height;
+        m_resourcesInitialized = true;
+        // AO 态随整链重建复位（参考 init() 内 reset _includeOcclusion 语义——
+        // SceneCompositor.ts:1310 注："init() first calls dispose() ... and
+        // resets the _includeOcclusion flag"）。
+        m_occlusionIncluded = false;
+    }
+
+    // AO 资源开关逐帧评估（SceneCompositor.ts:1354-1370——includeOcclusion 驱
+    // 动；本段在尺寸重建路径**之后**同序执行[参考 init 后接该段]——E2 注：
+    // MSAA 切换的联动臂[参考 :1317-1352]随 DanQing 恒 m_antialiasSamples 登记
+    // 不落）。几何面（AO/Blur 几何包装建立/销毁）随 T-d 接线。
+    bool const includeOcclusion = m_target.wantAmbientOcclusion();
+    if (includeOcclusion != m_occlusionIncluded) {
+        m_occlusionIncluded = includeOcclusion;
+        if (includeOcclusion) {
+            if (!m_textures.enableOcclusion(driver, width, height))
+                return;
+            if (!m_frameBuffers.enableOcclusion(driver, m_textures,
+                                                rhi::TextureHandle{}))
+                return;
+        } else {
+            m_frameBuffers.disableOcclusion(driver);
+            m_textures.disableOcclusion(driver);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

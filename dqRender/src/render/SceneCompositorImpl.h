@@ -236,6 +236,9 @@ private:
     uint32_t m_lastWidth = 0;
     uint32_t m_lastHeight = 0;
     bool m_resourcesInitialized = false;
+    // AO 资源态（SceneCompositor.ts:1354 的 _includeOcclusion——preDraw 逐帧
+    // 评估门；M-T T-c）。
+    bool m_occlusionIncluded = false;
 
     // --- OIT composite shader (kept separate from textures/FBOs) ---
     bool m_oitInitialized = false;

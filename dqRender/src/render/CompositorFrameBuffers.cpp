@@ -127,13 +127,19 @@ bool CompositorFrameBuffers::init(rhi::Driver& driver,
 // Ported from: itwinjs-core FrameBuffers.enableOcclusion() (lines 356-387)
 // ---------------------------------------------------------------------------
 bool CompositorFrameBuffers::enableOcclusion(rhi::Driver& driver,
-                                              CompositorTextures const& /*textures*/,
+                                              CompositorTextures const& textures,
                                               rhi::TextureHandle /*depth*/)
 {
     if (m_occlusionEnabled)
         return true;
 
-    uint32_t w = 1024, h = 768;  // Will be set from target
+    // M-T T-c 修复：FBO 尺寸取自纹理（参考 enableOcclusion(textures,...) 语义
+    // ——FBO 与合成纹理同尺寸）；原硬编码 1024×768 在非该尺寸视口下 FBO 附件
+    // 维度不匹配 → GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS（FrameBuffers.init 的
+    // 既有注释实录同族事故——本次接线即踩中同坑先修）。
+    uint32_t const w = textures.getWidth(), h = textures.getHeight();
+    if (w == 0 || h == 0)
+        return false;
 
     // occlusion FBO: [occlusion] (no depth)
     {
