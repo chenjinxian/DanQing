@@ -102,6 +102,123 @@ public:
     /// Ported from: Point4d.toPlane3dByOriginAndUnitNormal (Point4d.ts:560-562) —
     /// defined inline at the bottom of Plane3dByOriginAndUnitNormal.h.
     std::optional<Plane3dByOriginAndUnitNormal> toPlane3dByOriginAndUnitNormal() const noexcept;
+
+    // ── 四元数插值原语（RenderSchedule 动画 transform 插值消费面——
+    //    RenderSchedule.ts getAnimationTransform :663-696 经
+    //    Point4d.interpolateQuaternions + Matrix3d.createFromQuaternion） ──
+
+    /// Component-wise sum, *this + other.
+    /// Ported from: itwinjs-core Point4d.plus (Point4d.ts:215-217)
+    Point4d plus(Point4d const& other) const noexcept {
+        return Point4d(x + other.x, y + other.y, z + other.z, w + other.w);
+    }
+
+    /// *this + other * scale.
+    /// Ported from: itwinjs-core Point4d.plusScaled (Point4d.ts:323-325)
+    Point4d plusScaled(Point4d const& other, double scale) const noexcept {
+        return Point4d(x + other.x * scale, y + other.y * scale,
+                       z + other.z * scale, w + other.w * scale);
+    }
+
+    /// vectorA * scalarA + vectorB * scalarB.
+    /// Ported from: itwinjs-core Point4d.createAdd2Scaled (Point4d.ts:313-315)
+    static Point4d createAdd2Scaled(Point4d const& vectorA, double scalarA,
+                                    Point4d const& vectorB, double scalarB) noexcept {
+        return Point4d(vectorA.x * scalarA + vectorB.x * scalarB,
+                       vectorA.y * scalarA + vectorB.y * scalarB,
+                       vectorA.z * scalarA + vectorB.z * scalarB,
+                       vectorA.w * scalarA + vectorB.w * scalarB);
+    }
+
+    /// 4D dot product.
+    /// Ported from: itwinjs-core Point4d.dotProduct (Point4d.ts:328-330)
+    double dotProduct(Point4d const& other) const noexcept {
+        return x * other.x + y * other.y + z * other.z + w * other.w;
+    }
+
+    /// Component-wise negation.
+    /// Ported from: itwinjs-core Point4d.negate (Point4d.ts:410-417)
+    Point4d negate() const noexcept { return Point4d(-x, -y, -z, -w); }
+
+    /// Component-wise linear interpolation: this + fraction * (other - this).
+    /// Ported from: itwinjs-core Point4d.interpolate (Point4d.ts:300-303)
+    Point4d interpolate(double fraction, Point4d const& other) const noexcept {
+        return Point4d(x + fraction * (other.x - x),
+                       y + fraction * (other.y - y),
+                       z + fraction * (other.z - z),
+                       w + fraction * (other.w - w));
+    }
+
+    /// (Toleranced) equality over all 4 components.
+    /// Ported from: itwinjs-core Point4d.isAlmostEqual (Point4d.ts:125-130)
+    bool isAlmostEqual(Point4d const& other,
+                       double tolerance = kSmallMetricDistance) const noexcept {
+        return std::abs(x - other.x) <= tolerance && std::abs(y - other.y) <= tolerance &&
+               std::abs(z - other.z) <= tolerance && std::abs(w - other.w) <= tolerance;
+    }
+
+    /// Normalize in place, regarding (x,y,z,w) as a quaternion. Returns the
+    /// magnitude before normalization.
+    /// Ported from: itwinjs-core Point4d.normalizeQuaternion (Point4d.ts:564-575)
+    double normalizeQuaternion() noexcept {
+        double const magnitude = std::sqrt(x * x + y * y + z * z + w * w);
+        if (magnitude > 0.0) {
+            double const f = 1.0 / magnitude;
+            x *= f; y *= f; z *= f; w *= f;
+        }
+        return magnitude;
+    }
+
+    /// Return a (normalized) quaternion interpolated between two quaternions.
+    /// Ported from: itwinjs-core Point4d.interpolateQuaternions (Point4d.ts:577-629)
+    static Point4d interpolateQuaternions(Point4d const& quaternion0,
+                                          double fractionParameter,
+                                          Point4d const& quaternion1) noexcept {
+        double constexpr maxSafeCosine = 0.9995;
+
+        // return exact quaternions for special values
+        if (0.0 == fractionParameter)
+            return quaternion0;
+        if (1.0 == fractionParameter)
+            return quaternion1;
+        if (0.5 == fractionParameter) {
+            Point4d result = quaternion0.plus(quaternion1);
+            result.normalizeQuaternion();
+            return result;
+        }
+
+        Point4d q0 = quaternion0;
+        Point4d q1 = quaternion1;
+        double dot = quaternion0.dotProduct(quaternion1);
+
+        // prevent interpolation through the longer great arc
+        if (dot < 0.0) {
+            q1 = q1.negate();
+            dot = -dot;
+        }
+
+        // if nearly parallel, use interpolate and renormalize .
+        if (dot > maxSafeCosine) {
+            Point4d result = q0.interpolate(fractionParameter, q1);
+            result.normalizeQuaternion();
+            return result;
+        }
+
+        // safety check
+        if (dot < -1.0)
+            dot = -1.0;
+        else if (dot > 1.0)
+            dot = 1.0;
+
+        // create orthonormal basis {q0, q2}
+        Point4d q2 = q1.plusScaled(q0, -dot);  // bsiDPoint4d_addScaledDPoint4d(&q2, &q1, &q0, -dot);
+        q2.normalizeQuaternion();
+
+        double const angle = std::acos(dot);
+        double const angleOfInterpolation = angle * fractionParameter;
+        return createAdd2Scaled(q0, std::cos(angleOfInterpolation),
+                                q2, std::sin(angleOfInterpolation));
+    }
 };
 
 END_DQ_GEOM_NAMESPACE

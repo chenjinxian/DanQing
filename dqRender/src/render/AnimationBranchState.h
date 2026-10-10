@@ -103,37 +103,29 @@ struct AnimationBranchStates {
 // for clip planes, visibility, and transforms.
 // ---------------------------------------------------------------------------
 inline std::optional<AnimationBranchStates> animationBranchStatesFromScript(
-    dqCommon::RenderSchedule::Script const& script, double /*time*/)
+    dqCommon::RenderSchedule::Script const& script, double time)
 {
-    if (!script.containsModelClipping() && !script.containsTransform())
+    // M-U U-a 最小适配：dqCommon RenderSchedule 全量移植（RenderSchedule.ts 1:1）
+    // 后 containsX 为字段、elementTimelines 为解析后对象——本文件系早期自创
+    // 桩（"For now, use the first entry (simplified)"），U-e 将按
+    // AnimationBranchState.ts 全文重写（getClipVector(time) 消费 + fromScript
+    // 1:1）；此处仅保编译兼容。
+    if (!script.containsModelClipping && !script.containsTransform)
         return std::nullopt;
 
     AnimationBranchStates result;
 
     for (auto const& model : script.modelTimelines) {
-        // Process model-level timeline
-        // (Model clipping would go here if supported)
-
-        // Process element-level timelines
         for (auto const& elem : model.elementTimelines) {
-            // Check visibility at the given time
-            if (elem.visibilityTimeline.has_value() && !elem.visibilityTimeline->empty()) {
-                // Find the visibility value at the given time
-                // For now, use the first entry (simplified)
-                auto const& visEntry = elem.visibilityTimeline->front();
-                if (visEntry.value.has_value() && visEntry.value.value() <= 0.0) {
-                    // Element is hidden at this time
-                    auto branchId = formatAnimationBranchId(model.modelId, elem.batchId);
-                    AnimationBranchState state;
-                    state.setOmit(true);
-                    result.branchStates[branchId] = state;
-                }
+            if (elem.getVisibility(time) <= 0.0) {
+                auto branchId = formatAnimationBranchId(model.modelId, static_cast<int>(elem.batchId));
+                AnimationBranchState state;
+                state.setOmit(true);
+                result.branchStates[branchId] = state;
             }
 
-            // Check for transform at the given time
-            if (elem.transformTimeline.has_value() && !elem.transformTimeline->empty()) {
-                result.transformNodeIds.insert(elem.batchId);
-            }
+            if (elem.containsTransform())
+                result.transformNodeIds.insert(static_cast<int>(elem.batchId));
         }
     }
 

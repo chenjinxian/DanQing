@@ -14,6 +14,7 @@
 #include "Range3d.h"
 #include "Vector3d.h"
 
+#include <array>
 #include <optional>
 #include <vector>
 
@@ -115,6 +116,30 @@ struct DQ_GEOM_EXPORT Transform {
     static Transform CreateOriginAndMatrix(Point3d const& origin, Matrix3d const& matrix)
     {
         return Transform(origin, matrix);
+    }
+
+    /// Create a transform from a 3x4 row-major array (3 rows of [qx qy qz ax],
+    /// fourth column = translation). Absent/invalid rows yield the identity.
+    /// Ported from: itwinjs-core Transform.fromJSON (Transform.ts:149-166——
+    /// RenderSchedule.TransformEntryProps.value.transform 的消费面）。
+    static Transform FromRows(std::array<std::array<double, 4>, 3> const& rows)
+    {
+        Matrix3d m(
+            rows[0][0], rows[0][1], rows[0][2],
+            rows[1][0], rows[1][1], rows[1][2],
+            rows[2][0], rows[2][1], rows[2][2]);
+        return Transform(Point3d::From(rows[0][3], rows[1][3], rows[2][3]), m);
+    }
+
+    /// Convert to a 3x4 row-major array (3 rows of [qx qy qz ax]).
+    /// Ported from: itwinjs-core Transform.toRows (Transform.ts:168-176)。
+    std::array<std::array<double, 4>, 3> ToRows() const
+    {
+        return {{
+            {{matrix.coffs[0], matrix.coffs[1], matrix.coffs[2], origin.x}},
+            {{matrix.coffs[3], matrix.coffs[4], matrix.coffs[5], origin.y}},
+            {{matrix.coffs[6], matrix.coffs[7], matrix.coffs[8], origin.z}},
+        }};
     }
 
     /// Initialize npcToGlobal / globalToNpc maps between the unit NPC box [0,0,0]-[1,1,1]

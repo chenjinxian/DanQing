@@ -327,6 +327,10 @@ TEST(RealityDataSourceKeyTest, ToString)
 //            describe("RenderSchedule") { it("interpolates transforms" / "interpolates visibility") }
 //            describe("ScriptBuilder") { it("produces expected JSON" / ...) }
 //            describe("VisibilityEntry"/"ColorEntry"/"TransformEntry"/...) { it("compares for equality") }
+// M-U U-a 订正：本文件的 RenderSchedule 段原写于桩 API 面（自创简化 Script——
+// equals 只比 size、containsX 为方法、elementIds 为 vector<string>）；U-a 全量
+// 移植后按参考形重写（完整数据层见 RenderScheduleTest.cpp——插值/ScriptBuilder/
+// 相等族全例在该处直移）。
 // ---------------------------------------------------------------------------
 
 // Authored: no equivalent reference test in itwinjs-core for empty-script fromJSON (returns nullopt)
@@ -336,14 +340,15 @@ TEST(RenderScheduleScriptTest, FromEmpty)
 {
     RenderSchedule::ScriptProps props;
     auto s = RenderSchedule::Script::fromJSON(props);
-    EXPECT_FALSE(s.has_value());
+    EXPECT_TRUE(!s);
 }
 
 // Ported from: itwinjs-core core/common/src/test/RenderSchedule.test.ts
 //              describe("RenderSchedule") it("interpolates transforms") (L13-154)
 //              (ref builds a ScriptProps with one model + one element timeline that has a
 //               transformTimeline, then asserts Script.fromJSON succeeds. DanQing ports the
-//               fromJSON + structure assertions; numeric interpolation is a separate concern.)
+//               fromJSON + structure assertions; numeric interpolation is covered in
+//               RenderScheduleTest.InterpolatesTransforms.)
 TEST(RenderScheduleScriptTest, fromJSON)
 {
     RenderSchedule::ScriptProps props;
@@ -351,12 +356,13 @@ TEST(RenderScheduleScriptTest, fromJSON)
     mt.modelId = "0x1";
     RenderSchedule::ElementTimelineProps et;
     et.batchId = 1;
-    et.elementIds = {"0xA", "0xB"};
+    et.elementIds = dqBase::DqIdVector{dqBase::DqId::FromString("0xA"),
+                                       dqBase::DqId::FromString("0xB")};
     mt.elementTimelines = {et};
     props = {mt};
 
     auto s = RenderSchedule::Script::fromJSON(props);
-    ASSERT_TRUE(s.has_value());
+    ASSERT_TRUE(s);
     EXPECT_EQ(s->modelTimelines.size(), 1u);
     EXPECT_EQ(s->modelTimelines[0].modelId, "0x1");
     EXPECT_EQ(s->modelTimelines[0].elementTimelines.size(), 1u);
@@ -365,37 +371,47 @@ TEST(RenderScheduleScriptTest, fromJSON)
 // Ported from: itwinjs-core core/common/src/test/RenderSchedule.test.ts
 //              describe("ScriptBuilder") it("produces expected JSON") (L219-297)
 //              (ref builds elem2 with addTransform → script contains transformTimeline;
-//               DanQing asserts the resulting containsTransform() flag.)
+//               DanQing asserts the resulting containsTransform flag.)
+// 参考语义核：ModelTimeline.containsTransform 只统计 element 级 transform
+// （model 级自身 transformTimeline 不计入——RenderSchedule.ts :899-914 原样）。
 TEST(RenderScheduleScriptTest, containsTransform)
 {
-    RenderSchedule::Script s;
+    RenderSchedule::ScriptProps props;
     RenderSchedule::ModelTimelineProps mt;
     mt.modelId = "0x1";
+    RenderSchedule::ElementTimelineProps et;
+    et.batchId = 1;
+    et.elementIds = dqBase::DqIdVector{dqBase::DqId::FromString("0x2")};
     RenderSchedule::TransformEntryProps te;
     te.time = 0.0;
-    mt.transformTimeline = {te};
-    s.modelTimelines = {mt};
+    et.transformTimeline = {te};
+    mt.elementTimelines = {et};
+    props = {mt};
 
-    EXPECT_TRUE(s.containsTransform());
-    EXPECT_FALSE(s.containsModelClipping());
+    auto s = RenderSchedule::Script::fromJSON(props);
+    ASSERT_TRUE(s);
+    EXPECT_TRUE(s->containsTransform);
+    EXPECT_FALSE(s->containsModelClipping);
 }
 
 // Ported from: itwinjs-core core/common/src/test/RenderSchedule.test.ts
 //              describe("ScriptBuilder") it("produces expected JSON") (L266-275)
 //              (ref builds elem3 with addCuttingPlane → script contains cuttingPlaneTimeline;
-//               DanQing asserts the resulting containsModelClipping() flag.)
+//               DanQing asserts the resulting containsModelClipping flag.)
 TEST(RenderScheduleScriptTest, containsModelClipping)
 {
-    RenderSchedule::Script s;
+    RenderSchedule::ScriptProps props;
     RenderSchedule::ModelTimelineProps mt;
     mt.modelId = "0x1";
     RenderSchedule::CuttingPlaneEntryProps ce;
     ce.time = 0.0;
     mt.cuttingPlaneTimeline = {ce};
-    s.modelTimelines = {mt};
+    props = {mt};
 
-    EXPECT_FALSE(s.containsTransform());
-    EXPECT_TRUE(s.containsModelClipping());
+    auto s = RenderSchedule::Script::fromJSON(props);
+    ASSERT_TRUE(s);
+    EXPECT_FALSE(s->containsTransform);
+    EXPECT_TRUE(s->containsModelClipping);
 }
 
 // Ported from: itwinjs-core core/common/src/test/RenderSchedule.test.ts
@@ -410,7 +426,7 @@ TEST(RenderScheduleScriptTest, Roundtrip)
     props = {mt};
 
     auto s = RenderSchedule::Script::fromJSON(props);
-    ASSERT_TRUE(s.has_value());
+    ASSERT_TRUE(s);
     auto j = s->toJSON();
     EXPECT_EQ(j.size(), 1u);
     EXPECT_EQ(j[0].modelId, "0x1");

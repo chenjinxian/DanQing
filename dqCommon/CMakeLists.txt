@@ -37,6 +37,7 @@ target_sources(dqCommon
         src/PackedFeatureTable.cpp
         src/PerModelCategoryVisibility.cpp
         src/DisplayStyleSettings.cpp
+        src/RenderSchedule.cpp   # M-U U-a：schedule script 数据层（RenderSchedule.ts）
 )
 
 target_include_directories(dqCommon
@@ -84,6 +85,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/GradientThematicTest.cpp
         tests/ThematicDisplayTest.cpp
         tests/AmbientOcclusionTest.cpp   # M-T T-a：AO 设置数据面锁（AmbientOcclusion.test.ts 三例直移）
+        tests/RenderScheduleTest.cpp     # M-U U-a：RenderSchedule.test.ts 全例直移
         tests/GeometryStreamBuilderTest.cpp
         tests/Tier2DisplayTypesTest.cpp
         tests/Tier3DisplayTypesTest.cpp

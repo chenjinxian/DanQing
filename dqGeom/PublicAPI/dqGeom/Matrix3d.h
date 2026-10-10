@@ -127,6 +127,80 @@ struct DQ_GEOM_EXPORT Matrix3d {
         return Matrix3d(a00, a01, a02, a10, a11, a12, a20, a21, a22);
     }
 
+    /// Calculate quaternion terms used to convert a matrix to a quaternion.
+    /// Ported from: itwinjs-core Matrix3d.computeQuatTerm (Matrix3d.ts:2907-2918)
+    static double ComputeQuatTerm(double numerator, double denomCoff,
+                                  double reciprocal, double diagSum) noexcept
+    {
+        double coff;
+        double constexpr diagTol = 0.500;
+        if (diagSum > diagTol) {
+            coff = 0.5 * std::sqrt(diagSum);
+            if (denomCoff * numerator < 0.0)
+                coff = -coff;
+        } else {
+            coff = numerator * reciprocal;
+        }
+        return coff;
+    }
+
+    /// Convert `this` matrix to a quaternion.
+    /// **Note:** This calculation requires `this` matrix to have unit length rows and columns.
+    /// Ported from: itwinjs-core Matrix3d.toQuaternion (Matrix3d.ts:2928-2977).
+    /// The reference stores coffs column-major and reads them via
+    /// `props[i][j] = coffs[j*3+i]`; DanQing's coffs are row-major, so the same
+    /// math matrix element is `m_coffs[i*3+j]`.
+    Point4d ToQuaternion() const
+    {
+        // props[i][j] = math-matrix element (row i, column j)
+        double const props[3][3] = {
+            {coffs[0], coffs[1], coffs[2]},
+            {coffs[3], coffs[4], coffs[5]},
+            {coffs[6], coffs[7], coffs[8]},
+        };
+        double const xx = props[0][0];
+        double const yy = props[1][1];
+        double const zz = props[2][2];
+        double dSum[4];
+        dSum[0] = 1.0 + xx - yy - zz;
+        dSum[1] = 1.0 - xx + yy - zz;
+        dSum[2] = 1.0 - xx - yy + zz;
+        dSum[3] = 1.0 + xx + yy + zz;
+        double denom = 0.0;
+        int maxIndex = 0;
+        for (int i = 1; i <= 3; i++) {
+            if (dSum[i] > dSum[maxIndex])
+                maxIndex = i;
+        }
+        Point4d result = Point4d::CreateZero();
+        if (maxIndex == 0) {
+            result.x = 0.5 * std::sqrt(dSum[0]);
+            denom = 1.0 / (4.0 * result.x);
+            result.y = ComputeQuatTerm(props[0][1] + props[1][0], result.x, denom, dSum[1]);
+            result.z = ComputeQuatTerm(props[0][2] + props[2][0], result.x, denom, dSum[2]);
+            result.w = ComputeQuatTerm(props[2][1] - props[1][2], result.x, denom, dSum[3]);
+        } else if (maxIndex == 1) {
+            result.y = 0.5 * std::sqrt(dSum[1]);
+            denom = 1.0 / (4.0 * result.y);
+            result.x = ComputeQuatTerm(props[0][1] + props[1][0], result.y, denom, dSum[0]);
+            result.z = ComputeQuatTerm(props[1][2] + props[2][1], result.y, denom, dSum[2]);
+            result.w = ComputeQuatTerm(props[0][2] - props[2][0], result.y, denom, dSum[3]);
+        } else if (maxIndex == 2) {
+            result.z = 0.5 * std::sqrt(dSum[2]);
+            denom = 1.0 / (4.0 * result.z);
+            result.x = ComputeQuatTerm(props[0][2] + props[2][0], result.z, denom, dSum[0]);
+            result.y = ComputeQuatTerm(props[1][2] + props[2][1], result.z, denom, dSum[1]);
+            result.w = ComputeQuatTerm(props[1][0] - props[0][1], result.z, denom, dSum[3]);
+        } else {
+            result.w = 0.5 * std::sqrt(dSum[3]);
+            denom = 1.0 / (4.0 * result.w);
+            result.x = ComputeQuatTerm(props[2][1] - props[1][2], result.w, denom, dSum[0]);
+            result.y = ComputeQuatTerm(props[0][2] - props[2][0], result.w, denom, dSum[1]);
+            result.z = ComputeQuatTerm(props[1][0] - props[0][1], result.w, denom, dSum[2]);
+        }
+        return result;
+    }
+
     /// Create from column vectors.
     /// Ported from: itwinjs-core Matrix3d.createColumns
     static Matrix3d CreateColumns(const Vector3d& colX, const Vector3d& colY, const Vector3d& colZ)
