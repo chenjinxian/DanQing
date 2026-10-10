@@ -711,12 +711,32 @@ void RenderCommands::pushAndPopBranch(Branch& branch, std::function<void()> func
 // pushAndPopBranchForPass — push/pop for a specific render pass
 // Ported from: itwinjs-core RenderCommands.pushAndPopBranchForPass() (line 357-394)
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// getAnimationBranchState — schedule 脚本的分支态查找
+// Ported from: itwinjs-core RenderCommands.getAnimationBranchState (:352-355)
+// ---------------------------------------------------------------------------
+static AnimationBranchState const* getAnimationBranchState(TargetImpl& target,
+                                                           Branch& branch)
+{
+    auto const& animId = branch.getAnimationId();
+    if (!animId.has_value())
+        return nullptr;
+    auto const& branches = target.getAnimationBranches();
+    if (!branches.has_value())
+        return nullptr;
+    auto const it = branches->branchStates.find(*animId);
+    return it != branches->branchStates.end() ? &it->second : nullptr;
+}
+
 void RenderCommands::pushAndPopBranchForPass(RenderPass pass, Branch& branch,
                                               std::function<void()> func)
 {
-    // Ported from: itwinjs-core pushAndPopBranchForPass (line 360-362)
-    // Animation state check: omit branches not visible in current frame.
-    // Requires animation system to be ported.
+    // Ported from: itwinjs-core pushAndPopBranchForPass (:357-394)。
+    // Animation 分支态（M-U U-e——Target.animationBranches 消费面）：
+    // omit → 整分支早退；clip → PushClip/PopClip 夹 PushBranch。
+    AnimationBranchState const* const animState = getAnimationBranchState(*m_target, branch);
+    if (animState && animState->omit)
+        return;
 
     assert(pass != RenderPass::None);
 
@@ -730,26 +750,37 @@ void RenderCommands::pushAndPopBranchForPass(RenderPass pass, Branch& branch,
 
     auto& cmds = m_commands[static_cast<size_t>(pass)];
 
-    // Ported from: itwinjs-core pushAndPopBranchForPass (line 374-377)
-    // Animation clip: if the branch has an animation clip, wrap commands
-    // in a PushClip/PopClip pair. Requires animation system.
+    // Ported from: itwinjs-core pushAndPopBranchForPass (:374-377)——动画裁剪：
+    // clip 态分支的命令包进 PushClip/PopClip 对（clip 先于 branch push）。
+    std::unique_ptr<PushClipCommand> pushClip;
+    if (animState && animState->clip.IsValid())
+        pushClip = std::make_unique<PushClipCommand>(animState->clip);
+    if (pushClip)
+        cmds.push_back(std::move(pushClip));
 
     auto push = std::make_unique<PushBranchCommand>();
     push->setTransform(mv.data(), mvp.data());
     push->setLocalToWorld(branch.getLocalToWorld());  // M-S S-d：携分支模型变换
     if (branch.hasViewFlags())
         push->setViewFlags(branch.getViewFlags());
+    DrawCommand const* const pushRaw = push.get();
     cmds.push_back(std::move(push));
 
     func();
 
     m_stack->pop();
 
-    // Check if push is still the last command (no commands added between push/pop).
-    // Ported from: itwinjs-core pushAndPopBranchForPass (line 385-393)
-    // Note: we need to compare by pointer identity, same as itwinjs.
-    // For now, always add pop (conservative approach).
-    cmds.push_back(std::make_unique<PopBranchCommand>());
+    // Ported from: itwinjs-core pushAndPopBranchForPass (:385-393)——push 仍是
+    // 末命令（回调未产命令）→ 弹 push（连带 clip）；否则补 PopBranch/PopClip。
+    if (!cmds.empty() && cmds.back().get() == pushRaw) {
+        cmds.pop_back();
+        if (animState && animState->clip.IsValid())
+            cmds.pop_back();  // clip 命令位于 push 之前，紧邻末位
+    } else {
+        cmds.push_back(std::make_unique<PopBranchCommand>());
+        if (animState && animState->clip.IsValid())
+            cmds.push_back(std::make_unique<PopClipCommand>());
+    }
 }
 
 // ---------------------------------------------------------------------------

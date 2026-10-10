@@ -10,6 +10,7 @@
 
 #include "render/Matrix.h"
 #include "render/RenderGeometry.h"
+#include <dqBase/DqId.h>
 #include <dqRender/RenderPlan.h>
 #include "render/GraphicBranchFrustum.h"
 #include "render/AnimationBranchState.h"
@@ -293,34 +294,70 @@ TEST(GraphicBranchFrustumTest, MultiplyTransforms)
 }
 
 // ============================================================================
-// AnimationBranchState tests
+// AnimationBranchState tests（M-U U-e：参考形重写——早期自创桩三例
+// [setTransform/hasTransform/isVisible 等非参考 API] 随 AnimationBranchState.h
+// 全文重写清退；新例锁 formatAnimationBranchId 与 fromScript 的参考语义）。
 // ============================================================================
 
-// Authored: no reference test exists in itwinjs-core for remaining render items
-TEST(AnimationBranchStateTest, DefaultState)
+// Ported from: itwinjs-core AnimationBranchState.ts formatAnimationBranchId (:21-26)
+TEST(AnimationBranchStateTest, FormatAnimationBranchId)
 {
-    AnimationBranchState state;
-    EXPECT_FALSE(state.hasTransform());
-    EXPECT_TRUE(state.isVisible());
-    EXPECT_EQ(state.getNodeId(), 0u);
+    using namespace dqRender;
+    EXPECT_EQ(formatAnimationBranchId("0x123", -1), "0x123");
+    EXPECT_EQ(formatAnimationBranchId("0x123", 0), "0x123_Node_0");
+    EXPECT_EQ(formatAnimationBranchId("0x123", 7), "0x123_Node_7");
 }
 
-// Authored: no reference test exists in itwinjs-core for remaining render items
-TEST(AnimationBranchStateTest, SetTransform)
+// Ported from: itwinjs-core AnimationBranchState.ts AnimationBranchStates.fromScript
+//              (:44-63——requiresBatching[element 级 visibility×batchId 腿]的
+//               omit 分支态；模型级 cutting plane 的 clip 分支态)。
+TEST(AnimationBranchStateTest, FromScriptProducesOmitAndClipStates)
 {
-    AnimationBranchState state;
-    float transform[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 5,10,15,1};
-    state.setTransform(transform);
-    EXPECT_TRUE(state.hasTransform());
-    EXPECT_FLOAT_EQ(state.getTransform()[12], 5.0f);
+    using namespace dqRender;
+    using namespace dqCommon::RenderSchedule;
+
+    ScriptBuilder builder;
+    auto& model = builder.addModelTimeline("0x1");
+    auto& hidden = model.addElementTimeline(dqBase::DqIdVector{dqBase::DqId::FromString("0xa")});
+    hidden.addVisibility(0.0, 0.0);  // 0% 可见性 → omit
+    auto& visible = model.addElementTimeline(dqBase::DqIdVector{dqBase::DqId::FromString("0xb")});
+    visible.addVisibility(0.0, 100.0);
+    auto props = builder.finish();
+    // element 级 visibility + 非 0 batchId → requiresBatching（:835）——
+    // fromScript 的前置门由此开（containsModelClipping 假 + requiresBatching 真）。
+    ASSERT_EQ(props[0].elementTimelines->size(), 2u);
+
+    auto script = Script::fromJSON(props);
+    ASSERT_TRUE(script);
+
+    auto states = animationBranchStatesFromScript(*script, 0.0);
+    ASSERT_TRUE(states.has_value());
+
+    // batchId 1（首个 element timeline）的 visibility(0)=0 → omit。
+    auto const omitIt = states->branchStates.find("0x1_Node_1");
+    ASSERT_TRUE(omitIt != states->branchStates.end());
+    EXPECT_TRUE(omitIt->second.omit);
+    EXPECT_TRUE(omitIt->second.clip.IsNull());
+
+    // batchId 2 可见且无 cutting plane → 无分支态条目。
+    EXPECT_EQ(states->branchStates.find("0x1_Node_2"), states->branchStates.end());
 }
 
-// Authored: no reference test exists in itwinjs-core for remaining render items
-TEST(AnimationBranchStateTest, Visibility)
+// Ported from: itwinjs-core AnimationBranchState.ts AnimationBranchStates.fromScript
+//              (:45——无裁剪且无批处理需求时返回 undefined[nullopt]）。
+TEST(AnimationBranchStateTest, FromScriptReturnsNulloptWithoutAnimation)
 {
-    AnimationBranchState state;
-    state.setVisible(false);
-    EXPECT_FALSE(state.isVisible());
+    using namespace dqRender;
+    using namespace dqCommon::RenderSchedule;
+
+    ScriptBuilder builder;
+    auto& model = builder.addModelTimeline("0x1");
+    model.addVisibility(0.0, 50.0);  // 仅模型级 visibility（requiresBatching 假：
+                                     // 无 element timeline、无 cutting plane）
+    auto script = Script::fromJSON(builder.finish());
+    ASSERT_TRUE(script);
+
+    EXPECT_FALSE(animationBranchStatesFromScript(*script, 0.0).has_value());
 }
 
 // ============================================================================

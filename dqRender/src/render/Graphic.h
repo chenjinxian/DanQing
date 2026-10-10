@@ -14,6 +14,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <string>
 #include <vector>
 
 #ifndef BEGIN_DQ_RENDER_NAMESPACE
@@ -199,6 +201,14 @@ public:
         m_hasAnimationNodeId = true;
     }
 
+    // Animation branch Id（schedule 脚本分支键——瓦树 draw 包裹时 = modelId，
+    // RenderSchedule 烘焙瓦 = `${modelId}_Node_${batchId}`）。
+    // Ported from: itwinjs-core GraphicBranch.animationId（GraphicBranch.ts:122-127；
+    // 设置面 TileDrawArgs.ts:288 `this.graphics.animationId = tree.modelId`——
+    // DanQing 的创建期 location 包裹点接线随树 modelId 载体落地，E1 登记）。
+    void setAnimationId(std::string id) { m_animationId = std::move(id); }
+    std::optional<std::string> const& getAnimationId() const noexcept { return m_animationId; }
+
     // Set group node ID for this branch
     // Ported from: itwinjs-core Graphic.ts Branch.groupNodeId
     void setGroupNodeId(int32_t nodeId) {
@@ -239,6 +249,8 @@ private:
     BranchViewFlags m_viewFlags;
     int32_t m_animationNodeId = -1;
     int32_t m_groupNodeId = -1;
+    // ← GraphicBranch.animationId（schedule 分支键——见 setAnimationId 注）。
+    std::optional<std::string> m_animationId;
     bool m_hasTransform = false;
     bool m_hasViewFlags = false;
     bool m_hasAnimationNodeId = false;

@@ -58,6 +58,16 @@ struct DQ_RENDER_EXPORT RenderPlan {
     // Time point (for schedule scripts)
     double timePoint = 0.0;
 
+    // Analysis style（分析位移/标量通道设置）。
+    // Ported from: itwinjs-core RenderPlan.ts:59（`readonly analysisStyle?:
+    //   AnalysisStyle`）+ :126 填充（`const analysisStyle = style.settings.
+    //   analysisStyle`——无 is3d 门，参考原文）+ Target.ts:516 消费
+    //   （changeRenderPlan 的 `this.analysisStyle = plan.analysisStyle`）。
+    // 位移着色器消费随 AuxChannel 几何面落地（E2 登记）；本件为 plan 载体段。
+    // §3.4 适配：TS 引用 → optional 值（Target 侧经 changeRenderPlan 桥转
+    // 裸指针存管——同 thematic 的载体模式）。
+    std::optional<dqCommon::AnalysisStyle> analysisStyle;
+
     // Monochrome
     // Ported from: itwinjs-core RenderPlan.ts:52 (`monochromeMode: MonochromeMode`)
     // — default Scaled (:83), sourced from the display style settings (:114).
@@ -154,6 +164,11 @@ struct DQ_RENDER_EXPORT RenderPlan {
         // Settings 无 equals[shy 恒赋值+事件]，T-b 登记）。
         if (ao.has_value() != rhs.ao.has_value()) return false;
         if (ao.has_value() && !ao->equals(*rhs.ao)) return false;
+        // analysisStyle 段（RenderPlan.ts:59——M-U U-e）：optional 在场性 +
+        // AnalysisStyle.equals（AnalysisStyle.ts:257-272）。
+        if (analysisStyle.has_value() != rhs.analysisStyle.has_value()) return false;
+        if (analysisStyle.has_value() && !analysisStyle->equals(*rhs.analysisStyle))
+            return false;
         // Feature overrides pointer comparison is sufficient
         // (overrides are rebuilt when they change)
         if (featureOverrides != rhs.featureOverrides) return false;

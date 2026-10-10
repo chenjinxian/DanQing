@@ -15,6 +15,7 @@
 #include <dqBase/DqEvent.h>
 #include <dqCommon/FeatureOverrides.h>  // M-O(2) I10——overrideFeatureSymbology
 #include <dqCommon/Image.h>
+#include <dqCommon/RenderSchedule.h>  // M-U U-d——setScheduleScript 缝
 
 #ifndef BEGIN_DQ_RENDER_NAMESPACE
 #define BEGIN_DQ_RENDER_NAMESPACE namespace dqRender {
@@ -217,6 +218,20 @@ public:
     virtual void overrideFeatureSymbology(dqCommon::FeatureOverrides const* /*ovrs*/) {}
     virtual dqCommon::FeatureOverrides const* getFeatureOverrides() const { return nullptr; }
     virtual uint32_t getFeatureOverridesVersion() const { return 0; }
+
+    // Set the schedule script + current time point whose animation branch states
+    // drive omit/clip branch handling at draw-command build time.
+    // Ported from: itwinjs-core Viewport.renderFrame step 8（Viewport.ts:2626-
+    //   2639——`target.animationBranches = AnimationBranchStates.fromScript(
+    //   scheduleScript, this.timePoint ?? scheduleScript.duration.low)`）。
+    // EQUIVALENCE（§11.10）：参考在 Viewport 侧求值——DanQing 的
+    // AnimationBranchStates 系 dqRender 内部类型（持 ClipVolume），经本缝传
+    // script+timePoint 由 Target 侧求值；可观察行为一致（求值点差异登记）。
+    // M-U U-d/U-e。script=nullptr = 参考无脚本分支的不赋值语义（旧态保留）。
+    virtual void setScheduleScript(dqCommon::RenderSchedule::Script const* /*script*/,
+                                   double /*timePoint*/)
+    {
+    }
 };
 
 END_DQ_RENDER_NAMESPACE

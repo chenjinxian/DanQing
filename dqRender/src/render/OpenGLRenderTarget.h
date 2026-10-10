@@ -64,6 +64,10 @@ public:
     void setHiliteColor(float r, float g, float b) override;
     void setViewportTransform(float const* mv16, float const* mvp16) override;
     void setDevicePixelRatio(float ratio) override;
+    // M-U U-d：schedule 动画分支态交付（Viewport step 8——Target 侧求值
+    // AnimationBranchStates::fromScript，见 RenderTarget.h 缝注）。
+    void setScheduleScript(dqCommon::RenderSchedule::Script const* script,
+                           double timePoint) override;
 
     // Access internal implementation
     TargetImpl& getImpl() noexcept { return *m_impl; }

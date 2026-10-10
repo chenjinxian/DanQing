@@ -17,6 +17,7 @@
 #include "TargetGraphics.h"
 #include "Uniforms.h"       // FrustumUniforms
 #include "ShadowUniforms.h" // SolarShadowMap
+#include "AnimationBranchState.h"  // M-U U-e：AnimationBranchStates 参考形
 #include "Batch.h"          // BatchState
 #include "BranchStack.h"    // BranchStack
 #include "ClipStack.h"      // ClipStack（view clip 栈——M-P P-C）
@@ -340,11 +341,64 @@ public:
     PlanarClassifier* getPlanarClassifier() const noexcept { return m_planarClassifier; }
 
     // --- Animation state ---
-    // Ported from: itwinjs-core Target.animationBranches
+    // Ported from: itwinjs-core Target.animationBranches（RenderTarget.ts:79-80
+    // + Target.ts:208-217——`animationBranches?: AnimationBranchStates` 的
+    // 赋值面；undefined = 无脚本/无动画分支）。
+    // M-U U-e：vector<uint32_t> 占位形升维为参考形（branchStates 映射 +
+    // transformNodeIds 集）——Viewport step 8（U-d）喂
+    // AnimationBranchStates::fromScript 的产出；RenderCommands 消费
+    // omit/clip 两腿（pushAndPopBranchForPass）。
+    std::optional<AnimationBranchStates> const& getAnimationBranches() const noexcept
+    {
+        return m_animationBranches;
+    }
+    void setAnimationBranches(std::optional<AnimationBranchStates> branches)
+    {
+        m_animationBranches = std::move(branches);
+    }
 
-    /// Get the animation branches (node IDs for time-based filtering).
-    std::vector<uint32_t> const& getAnimationBranches() const noexcept { return m_animationBranches; }
-    void setAnimationBranches(std::vector<uint32_t> branches) { m_animationBranches = std::move(branches); }
+    // --- Analysis state（M-U U-e——Target.ts:125/:137/:205-206）---
+    // analysisFraction：Viewport step 7 语义（Viewport.ts:2623 直写
+    // target.analysisFraction）的 DanQing plan 载体等价面（E7 登记——
+    // plan.analysisFraction → changeRenderPlan 桥消费）。
+    float getAnalysisFraction() const noexcept { return m_analysisFraction; }
+    void setAnalysisFraction(float fraction) noexcept { m_analysisFraction = fraction; }
+    // analysisStyle：Target.ts:125 字段 + :516 changeRenderPlan 消费
+    // （`this.analysisStyle = plan.analysisStyle`）。位移着色器消费随
+    // AuxChannel 几何面落地（E2 登记）；本件落存管读取面。
+    dqCommon::AnalysisStyle const* getAnalysisStyle() const noexcept
+    {
+        return m_analysisStyle;
+    }
+    void setAnalysisStyle(dqCommon::AnalysisStyle const* style) noexcept
+    {
+        m_analysisStyle = style;
+    }
+
+    // --- Animation transform node filtering（Target.ts:1160-1176）---
+    // currentAnimationTransformNodeId 的 holder（绘制 batch 时的变换过滤
+    // 面——逐 batch 消费随烘焙瓦落地，E1 登记；holder 语义原样）。
+    int32_t getCurrentAnimationTransformNodeId() const noexcept
+    {
+        return m_currentAnimationTransformNodeId;
+    }
+    void setCurrentAnimationTransformNodeId(int32_t id) noexcept
+    {
+        m_currentAnimationTransformNodeId = id;
+    }
+    // Given GraphicBranch.animationNodeId identifying *any* node in the scene's
+    // schedule script, return the transform node Id to filter by, or undefined.
+    std::optional<int32_t> getAnimationTransformNodeId(
+        std::optional<int32_t> animationNodeId) const noexcept
+    {
+        if (!m_animationBranches.has_value() || m_currentAnimationTransformNodeId < 0 ||
+            !animationNodeId.has_value())
+            return std::nullopt;
+        // AnimationNodeId.Untransformed = 0（AnimationNodeId.ts:13-16）。
+        return m_animationBranches->transformNodeIds.count(*animationNodeId) != 0
+                   ? *animationNodeId
+                   : std::optional<int32_t>(0);
+    }
 
     // --- Display feature flags ---
     // Ported from: itwinjs-core Target.wantThematicDisplay/wantAtmosphere
@@ -573,8 +627,17 @@ private:
     PlanarClassifier* m_planarClassifier = nullptr;
 
     // Animation state (Ported from: itwinjs-core Target.animationBranches)
-    // Stores animation node IDs for time-based filtering.
-    std::vector<uint32_t> m_animationBranches;
+    // M-U U-e：参考形（branchStates 映射 + transformNodeIds 集——
+    // AnimationBranchStates::fromScript 的产出面）；nullopt = 参考 undefined。
+    std::optional<AnimationBranchStates> m_animationBranches;
+
+    // Analysis state（Ported from: itwinjs-core Target.analysisStyle[.ts:125]/
+    // analysisFraction[:137]字段面——plan 载体消费；E2/E7 登记见 setter 注）。
+    dqCommon::AnalysisStyle const* m_analysisStyle = nullptr;
+    float m_analysisFraction = 0.0f;
+    // ← Target._currentAnimationTransformNodeId（Target.ts:1163-1166——
+    // <0 = 无过滤态；E1 登记）。
+    int32_t m_currentAnimationTransformNodeId = -1;
 
     // Display feature flags (Ported from: itwinjs-core Target members)
     // M-S S-c：m_wantThematicDisplay 存储字段删（wantThematicDisplay 归位

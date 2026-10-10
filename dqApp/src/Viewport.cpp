@@ -1750,6 +1750,11 @@ void Viewport::RenderFrame()
         isRedrawNeeded = true;
     }
 
+    // Step 7 前声明（参考序——Viewport.ts:2619 `let overridesNeeded =
+    // changeFlags.areFeatureOverridesDirty` 在 step 7/8 之前；step 8 的
+    // containsFeatureOverrides 腿据此置位）。
+    bool overridesNeeded = changeFlags.AreFeatureOverridesDirty();
+
     // Step 7: Analysis fraction
     // Ported from: itwinjs-core Viewport.ts step 7 (lines 2585-2588)
     if (!m_analysisFractionValid) {
@@ -1762,24 +1767,43 @@ void Viewport::RenderFrame()
     }
 
     // Step 8: Time point / schedule script
-    // Ported from: itwinjs-core Viewport.ts step 8 (lines 2590-2603)
+    // Ported from: itwinjs-core Viewport.ts step 8 (lines 2626-2639)
     if (!m_timePointValid) {
-        m_timePointValid = true;
         isRedrawNeeded = true;
-        // The time point is read in ValidateRenderPlan() and stored in the RenderPlan.
-        // Schedule script evaluation (AnimationBranchStates) is deferred until the
-        // full schedule script API is exposed through DisplayStyle public interface.
+
+        // M-U U-d：schedule 脚本消费实装（此前占位注释——AnimationBranchStates
+        // 数据面 U-a/U-e 落地后接通）：
+        //   target.animationBranches = AnimationBranchStates.fromScript(
+        //     scheduleScript, this.timePoint ?? scheduleScript.duration.low)
+        //   + containsFeatureOverrides → overridesNeeded
+        //   + containsTransform && !this._freezeScene → invalidateScene
+        // （animationBranches 求值在 Target 侧——RenderTarget.h setScheduleScript
+        //   缝的 EQUIVALENCE 注。）
+        if (m_view) {
+            auto& style = m_view->GetDisplayStyle();
+            if (auto const* scheduleScript = style.getScheduleScript()) {
+                m_renderTarget->setScheduleScript(
+                    scheduleScript,
+                    style.getTimePoint().value_or(scheduleScript->duration.low));
+
+                if (scheduleScript->containsFeatureOverrides)
+                    overridesNeeded = true;
+
+                if (scheduleScript->containsTransform && !m_freezeScene)
+                    InvalidateScene();
+            }
+        }
+
+        m_timePointValid = true;
     }
 
     // Step 9: Feature symbology overrides
-    // Ported from: itwinjs-core Viewport.ts step 9（:2619 overridesNeeded =
-    // changeFlags.areFeatureOverridesDirty + :2641-2645 rebuild——provider 变更
+    // Ported from: itwinjs-core Viewport.ts step 9（:2641-2645 rebuild——provider 变更
     // 经 setFeatureOverrideProviderChanged 置位、随捕获快照驱动重建）。
     // M-O(2) I10：驱动位从恒死布尔（m_featureOverridesDirty 只在首帧为 true，
     // provider 变更永不触发重建——行为 RED 实锤）改为捕获快照的 change flags；
     // provider 列表自 ViewManager 全局面迁 per-viewport 参考形（:1630-1632
     // addFeatureOverrides 的遍历面）。
-    bool const overridesNeeded = changeFlags.AreFeatureOverridesDirty();
     if (overridesNeeded) {
         m_featureOverrides.clearModelSubCategoryOverrides();
         m_featureOverrides.clear();
@@ -1813,6 +1837,19 @@ void Viewport::RenderFrame()
         // Ported from: itwinjs-core Viewport.ts addModelSubCategoryVisibilityOverrides (line 1519)
         if (!m_perModelCategoryVisibility.isEmpty()) {
             addModelSubCategoryVisibilityOverrides(m_featureOverrides);
+        }
+
+        // M-U U-d：schedule 脚本的符号覆盖腿（FeatureSymbology.ts:161——
+        //   `if (script) script.addSymbologyOverrides(this, style.settings.
+        //    timePoint ?? 0)`，initFromView 内、provider 收集之后）。模型级
+        //   visibility/color → overrideModel（现有 dump 可 E2E 的面）；element
+        //   级 batchId 路径随烘焙瓦落地（E1 登记）。
+        if (m_view) {
+            auto& style = m_view->GetDisplayStyle();
+            if (auto const* scheduleScript = style.getScheduleScript()) {
+                scheduleScript->addSymbologyOverrides(m_featureOverrides,
+                                                      style.getTimePoint().value_or(0.0));
+            }
         }
 
         // ← itwinjs-core Viewport.ts:2643 target.overrideFeatureSymbology(ovr)
@@ -2276,6 +2313,13 @@ void Viewport::ValidateRenderPlan()
         //  :524-530 的门消费]；EQUIVALENCE 同 thematic 段的 2d 判别注记）。
         if (newPlan.is3d)
             newPlan.ao = style.getSettings().getAmbientOcclusionSettings();
+
+        // Analysis style（M-U U-e）——RenderPlan.ts:126
+        //   const analysisStyle = style.settings.analysisStyle;
+        //（参考无 is3d 门；Target.changeRenderPlan :516 消费[E2 着色器面随
+        // AuxChannel 几何落地]）。
+        if (auto const& analysisStyle = style.getAnalysisStyle(); analysisStyle.has_value())
+            newPlan.analysisStyle = *analysisStyle;
     }
 
     // View clip + clip style（M-P P-C）。

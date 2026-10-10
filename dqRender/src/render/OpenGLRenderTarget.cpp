@@ -149,6 +149,12 @@ void OpenGLRenderTarget::changeRenderPlan(RenderPlan const& plan)
                              plan.thematic.has_value() ? &*plan.thematic : nullptr,
                              plan.ao.has_value() ? &*plan.ao : nullptr);
 
+    // M-U U-e：analysisFraction/analysisStyle 段（Target.ts:516/:205-206——
+    // step 7 直写语义的 plan 载体等价面[E7 登记]；位移着色器消费随 E2）。
+    m_impl->setAnalysisFraction(plan.analysisFraction);
+    m_impl->setAnalysisStyle(plan.analysisStyle.has_value() ? &*plan.analysisStyle
+                                                            : nullptr);
+
     // Frustum uniforms FIRST — the projection/view pair (u_proj/u_mv) comes from
     // FrustumUniforms.changeFrustum (lookIn + ortho(0,depth) / frustum()), the
     // reference's ONLY projection source. The worldToNdc linear map (m22>0)
@@ -394,6 +400,19 @@ void OpenGLRenderTarget::setHiliteColor(float r, float g, float b)
 {
     if (m_impl)
         m_impl->setHiliteColor(r, g, b);
+}
+
+// M-U U-d：schedule 动画分支态——Viewport step 8 的 target.animationBranches
+// 赋值语义（Viewport.ts:2630）；Target 侧求值（RenderTarget.h 缝 EQUIVALENCE 注）。
+// script 在场时每次 timePointValid 帧重算（fromScript nullopt = 参考 undefined
+// 赋值——containsModelClipping/requiresBatching 双假时清空分支态）；script 缺席
+// = 参考无 else 分支的不赋值语义（旧态保留）。
+void OpenGLRenderTarget::setScheduleScript(dqCommon::RenderSchedule::Script const* script,
+                                           double timePoint)
+{
+    if (!m_impl || !script)
+        return;
+    m_impl->setAnimationBranches(animationBranchStatesFromScript(*script, timePoint));
 }
 
 void OpenGLRenderTarget::setViewportTransform(float const* /*mv16*/, float const* /*mvp16*/)
