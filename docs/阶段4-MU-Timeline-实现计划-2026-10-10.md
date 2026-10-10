@@ -1,6 +1,7 @@
 # 阶段 4 M-U Timeline 实现计划（2026-10-10）
 
-> 里程碑：M-U（Animation/Solar Timeline——大件 5/16）。
+> 里程碑：M-U（Animation/Solar Timeline——大件 5/16）。**已完成（2026-10-10，U-a~U-g 七件全清，提交 6 笔）**。
+> 完成实录见文末「完成实录」节；终态门禁见 CLAUDE.md §1 M-U 段。
 > 基线：M-T 收口（2026-10-09，2719 项全量门禁）。权威对照面：
 > `docs/DTA功能对照统计-2026-10-07.md`（Animation/Timeline ❌ 行）+
 > CLAUDE.md §15 余量序（Timeline 列首）。
@@ -196,3 +197,19 @@ Timeline 测试面，行为锚=Timeline.ts handler 体逐条）：provider 选�
 ## 3. 门禁标准
 - 每任务：定向测试 RED→GREEN 双向 + 受影响族回归绿。
 - 里程碑收口：全量 ctest（Debug）零失败（环境态族按 TD-26/29 规程隔离归因）。
+
+---
+
+## 4. 完成实录（2026-10-10，U-a~U-g 全账）
+
+| 任务 | 提交 | 实绩 |
+|---|---|---|
+| U-a RenderSchedule 数据层 | 7b7714a6bc | RenderSchedule.ts 1491 行 1:1（条目族/Interval/Timeline 基类/ElementTimeline 双形态/ModelTimeline/Script/ScriptBuilder）+ dqGeom 两四元数原语 + 两自创桩清偿（dqCommon RenderSchedule.h 旧桩/Tier4 四例重写；dqRender AnimationBranchState.h 最小适配）+ RenderScheduleTest 20 锁全绿。 |
+| U-b+U-c 数据面+Solar | 69ff7e7580 | AnalysisStyle 归位补全（legacy 转换/gradient 懒建/省略默认/clone）+ DisplayStyleSettings 钳位语义与两新键 + DisplayStyle 五访问器（参考 setter 语义怪癖原样）+ SolarCalculate 全家（NOAA 链 15 助手）+ setSunTime/clearSunTime 门面（HasEcefLocation 虚面）+ SolarCalculateTest 三城八腿直移 + TD-26 stash 双态对照实录（相位漂移定式）。 |
+| U-d+U-e 链路面+消费面 | 15f3fe87e0 | Viewport step 8/9 实装 + RenderTarget setScheduleScript 公共缝 + AnimationBranchState 参考形重写 + TargetImpl 升维 + RenderCommands 全形 + Branch::animationId + RenderPlan.analysisStyle 载体。 |
+| U-f Timeline 面板 | b3fb12b37b | Timeline.ts 328 行 1:1（四 provider/_active 门/parseInt 怪癖/单发 QTimer=rAF）+ Viewport.timePoint 直通 + DtaToolBars item 19 激活 + TimelinePanelTest 9 锁。 |
+| U-g E2E+修复 | 1a044186d9 | SolarTimeChangesBoxLighting 首绿（alwaysEnabled 门=参考原语义，LIGHT_TRACE 定案）+ ScheduleModelVisibilityPopulatesFeatureOverrides + 实锤修复二（ModelTimeline :897 初始化腿/DisplayStyle 监听族 InvalidateRenderPlan 十一补齐+scheduleChanged 形两旗）。 |
+| 收口（本笔） | 待定 | CLAUDE.md §1 M-U 段 + §15 基线（5/16、余量 11）+ TD-26 行 M-U 实录 + 本文档实录 + 全量门禁。 |
+
+**EQUIVALENCE 终态**：E1（element 级 schedule 烘焙瓦面）/E2（Analysis displacement 随 AuxChannel 几何=Analysis Style Example 大件）/E3（renderTimeline RPC 面）/E4（isGeoLocated→Philadelphia）/E5（rAF→QTimer 单发链）/E6（WeakMap→直比）/E7（plan 载体等价）全部落实登记。
+**数据面边界维持**：模型级 visibility/color/clip 消费面全通（overrideModel+branchStates 就绪）；element 级 batchId 路径与 transform 过滤 holder 就位、逐 batch 消费随烘焙瓦落地。
