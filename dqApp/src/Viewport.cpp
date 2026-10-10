@@ -605,26 +605,36 @@ void Viewport::AttachToView()
 
     // Core display style events
     m_viewEventScope.add(style.OnViewFlagsChanged.AddListener([this]() {
-        // ← itwinjs-core: settings.onViewFlagsChanged
-        // If background map changed, invalidate controller; otherwise render plan
+        // ← itwinjs-core: settings.onViewFlagsChanged（Viewport.ts:1373-1380——
+        // backgroundMap 位差 → invalidateController；否则 invalidateRenderPlan；
+        // 恒 + setDisplayStyle。DanQing 无 backgroundMap 载体 → 恒
+        // invalidateRenderPlan 支[2d/背景图载体落地时回参考分支]）。
         InvalidateRenderPlan();
         RequestRedraw();
     }));
 
     m_viewEventScope.add(style.OnBackgroundColorChanged.AddListener([this]() {
-        // ← itwinjs-core: settings.onBackgroundColorChanged
+        // ← itwinjs-core: settings.onBackgroundColorChanged（Viewport.ts:1299——
+        // displayStyleChanged = invalidateRenderPlan + setDisplayStyle）。
+        // M-U U-g RED 实锤：缺 invalidateRenderPlan 时 plan 不重建——setSunTime
+        // 的灯光变化永不到达像素（帧逐位相同实证）。
+        InvalidateRenderPlan();
         m_changeFlags.SetDisplayStyle();
         RequestRedraw();
     }));
 
     m_viewEventScope.add(style.OnEnvironmentChanged.AddListener([this]() {
-        // ← itwinjs-core: settings.onEnvironmentChanged
+        // ← itwinjs-core: settings.onEnvironmentChanged（Viewport.ts:1406——
+        // displayStyleChanged 形——同 OnLightSettingsChanged 缺口族）。
+        InvalidateRenderPlan();
         m_changeFlags.SetDisplayStyle();
         RequestRedraw();
     }));
 
     m_viewEventScope.add(style.OnLightSettingsChanged.AddListener([this]() {
-        // ← itwinjs-core: settings.onLightsChanged
+        // ← itwinjs-core: settings.onLightsChanged（Viewport.ts:1401——
+        // displayStyleChanged 形；U-g setSunTime E2E 的直接修复面）。
+        InvalidateRenderPlan();
         m_changeFlags.SetDisplayStyle();
         RequestRedraw();
     }));
@@ -645,13 +655,25 @@ void Viewport::AttachToView()
     }));
 
     m_viewEventScope.add(style.OnMonochromeColorChanged.AddListener([this]() {
-        // ← itwinjs-core: settings.onMonochromeColorChanged
+        // ← itwinjs-core: settings.onMonochromeColorChanged（Viewport.ts:1300——
+        // displayStyleChanged 形；同缺口族）。
+        InvalidateRenderPlan();
+        m_changeFlags.SetDisplayStyle();
+        RequestRedraw();
+    }));
+
+    m_viewEventScope.add(style.OnMonochromeModeChanged.AddListener([this]() {
+        // ← itwinjs-core: settings.onMonochromeModeChanged（Viewport.ts:1301——
+        // displayStyleChanged 形）。
+        InvalidateRenderPlan();
         m_changeFlags.SetDisplayStyle();
         RequestRedraw();
     }));
 
     m_viewEventScope.add(style.OnWhiteOnWhiteReversalChanged.AddListener([this]() {
-        // ← itwinjs-core: settings.onWhiteOnWhiteReversalChanged
+        // ← itwinjs-core: settings.onWhiteOnWhiteReversalChanged（Viewport.ts:1304
+        // ——displayStyleChanged 形）。
+        InvalidateRenderPlan();
         m_changeFlags.SetDisplayStyle();
         RequestRedraw();
     }));
@@ -676,31 +698,43 @@ void Viewport::AttachToView()
     }));
 
     m_viewEventScope.add(style.OnThematicChanged.AddListener([this]() {
-        // ← itwinjs-core: settings.onThematicChanged
+        // ← itwinjs-core: settings.onThematicChanged（Viewport.ts:1403——
+        // displayStyleChanged 形；M-S 事件接通时遗漏 invalidateRenderPlan——
+        // 编辑器写回依赖 synchWithView 间接失效勉强可达，U-g 缺口族同型）。
+        InvalidateRenderPlan();
         m_changeFlags.SetDisplayStyle();
         RequestRedraw();
     }));
 
     m_viewEventScope.add(style.OnHiddenLineChanged.AddListener([this]() {
-        // ← itwinjs-core: settings.onHiddenLineSettingsChanged
+        // ← itwinjs-core: settings.onHiddenLineSettingsChanged（Viewport.ts:1404
+        // ——displayStyleChanged 形）。
+        InvalidateRenderPlan();
         m_changeFlags.SetDisplayStyle();
         RequestRedraw();
     }));
 
     m_viewEventScope.add(style.OnAmbientOcclusionChanged.AddListener([this]() {
         // ← itwinjs-core: settings.onAmbientOcclusionSettingsChanged
+        // （Viewport.ts:1405——displayStyleChanged 形；M-T T-b 事件接通时的
+        // 同族缺口——AO 面板写回此前依赖面板侧 synchWithView 间接失效）。
+        InvalidateRenderPlan();
         m_changeFlags.SetDisplayStyle();
         RequestRedraw();
     }));
 
     m_viewEventScope.add(style.OnSolarShadowsChanged.AddListener([this]() {
-        // ← itwinjs-core: settings.onSolarShadowsChanged
+        // ← itwinjs-core: settings.onSolarShadowsChanged（Viewport.ts:1402——
+        // displayStyleChanged 形）。
+        InvalidateRenderPlan();
         m_changeFlags.SetDisplayStyle();
         RequestRedraw();
     }));
 
     m_viewEventScope.add(style.OnPlanProjectionChanged.AddListener([this]() {
         // ← itwinjs-core: settings.onPlanProjectionSettingsChanged
+        // （Viewport.ts:1407——displayStyleChanged 形）。
+        InvalidateRenderPlan();
         m_changeFlags.SetDisplayStyle();
         RequestRedraw();
     }));
@@ -722,14 +756,24 @@ void Viewport::AttachToView()
     }));
 
     m_viewEventScope.add(style.OnScheduleScriptChanged.AddListener([this]() {
-        // ← itwinjs-core: style.onScheduleScriptChanged
+        // ← itwinjs-core: style.onScheduleScriptChanged（Viewport.ts:1341-1347——
+        // scriptChanged = scheduleChanged + invalidateScene；scheduleChanged =
+        // timePointValid=false + setDisplayStyle + setFeatureOverrideProvider
+        // Changed [U-d 曾只置 timePointValid+InvalidateScene——overrides 重建
+        // 腿缺，脚本替换后符号覆盖不刷新]）。
         m_timePointValid = false;
+        m_changeFlags.SetDisplayStyle();
+        m_changeFlags.SetFeatureOverridesDirty();
         InvalidateScene();
     }));
 
     m_viewEventScope.add(style.OnTimePointChanged.AddListener([this]() {
-        // ← itwinjs-core: settings.onTimePointChanged
+        // ← itwinjs-core: settings.onTimePointChanged（Viewport.ts:1334-1346——
+        // scheduleChanged 形：timePointValid=false + setDisplayStyle +
+        // setFeatureOverrideProviderChanged）。
         m_timePointValid = false;
+        m_changeFlags.SetDisplayStyle();
+        m_changeFlags.SetFeatureOverridesDirty();
         InvalidateScene();
     }));
 

@@ -1231,6 +1231,10 @@ public:
         , realityModelUrl(props.realityModelUrl)
     {
         containsModelClipping = cuttingPlane.has_value();
+        // :897——containsFeatureOverrides 的初始化含 **model 级**自身
+        // visibility/color（M-U U-g RED 实锤：此前恒 false 起 OR——纯模型级
+        // visibility 脚本永不置位 → Viewport step 8 的 overridesNeeded 腿死）。
+        containsFeatureOverrides = visibility.has_value() || color.has_value();
 
         bool containsElementIds = false;
         if (props.elementTimelines) {

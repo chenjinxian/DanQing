@@ -275,6 +275,7 @@ if(TARGET gtest_main AND TARGET dqApp)
         tests/CesiumGalleryTest.cpp     # M-O(4) P8 陈列馆像素锁（8 族上屏+WHERE 展布+弧几何回代）
         tests/SectionsPanelTest.cpp     # M-P P-G SectionsPanel wiring 锁（Define/Edit/Clear + instances60 工具入口 E2E）
         tests/TimelinePanelTest.cpp     # M-U U-f Timeline 面板锁（provider 矩阵/映射/状态机——Authored）
+        tests/TimelineE2ETest.cpp      # M-U U-g：setSunTime 顶面 luma 序像素锁 + schedule 模型级 override 接线锁（注册在 TimelinePanelTest 后）
         tests/RenderingStylesTest.cpp   # M-Q Q-b 14 预设表完整性锁 + applyRenderingStyle
         tests/ThematicDisplayEditorTest.cpp  # M-S S-g：Thematic 编辑器五锁
         tests/JoesHouseColorTest.cpp    # JoesHouse 管线蓝/红回归像素锁（M-I Task 3 色表顶点色——注册在 PickDumpSceneTest 之后：同因 fetcher 替换不回溢）
