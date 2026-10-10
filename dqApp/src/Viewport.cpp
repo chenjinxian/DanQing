@@ -1024,6 +1024,20 @@ void Viewport::InvalidateRenderPlan()
     InvalidateScene();  // cascade
 }
 
+// Ported from: itwinjs-core Viewport.timePoint（Viewport.ts:579-584——
+// displayStyle.settings.timePoint 直通；setter 的失效经 settings
+// onTimePointChanged 事件链（Viewport.cpp 监听面既有））。
+std::optional<double> Viewport::getTimePoint() const
+{
+    return m_view ? m_view->GetDisplayStyle().getTimePoint() : std::nullopt;
+}
+
+void Viewport::setTimePoint(std::optional<double> timePoint)
+{
+    if (m_view)
+        m_view->GetDisplayStyle().setTimePoint(timePoint);
+}
+
 void Viewport::InvalidateScene()
 {
     m_sceneValid = false;

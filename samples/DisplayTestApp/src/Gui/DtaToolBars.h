@@ -9,6 +9,7 @@
 #pragma once
 
 #include <QComboBox>
+#include <QIcon>
 #include <QObject>
 #include <QPointer>
 #include <dqBase/DqEvent.h>
@@ -24,6 +25,10 @@ class QToolBar;
 class QWidget;
 
 namespace Gui {
+
+// DTA 图标字形渲染（DtaToolBars.cpp 实现——TimelinePanel 等弹出面板的
+// play/pause 钮复用；createToolButton 的 iconUnicode 承载面）。
+QIcon dtaGlyphIcon(ushort codepoint);
 
 // ViewPickerComboBox — DTA ViewPicker 的 Qt 对应控件：HTML <select>
 //（ViewPicker.ts:176-190）→ QComboBox（FreeCAD WorkbenchSelector.cpp 同为

@@ -34,6 +34,7 @@
 #include "DebugWindow.h"              // Viewer.ts:238-242 Debug info panel
 #include "FeatureOverridesPanel.h"   // M-O(2) I10 Overrides 弹出面板
 #include "SectionsPanel.h"           // M-P P-G Sectioning 弹出面板
+#include "TimelinePanel.h"           // M-U U-f Animation/Timeline 弹出面板
 #include "SavedViewsPanel.h"         // M-O(2) I9 Saved Views 弹出面板
 #include "MainWindow.h"               // M-O(1) R2 addPanelToggle（dock 面板开关）
 #include "View3DInventor.h"
@@ -62,10 +63,13 @@ QString dtaIconFontFamily()
     return family;
 }
 
+}  // namespace
+
 // 字形 → QIcon。固定色渲染（不随系统调色板）：DTA 按钮是浅色瓷砖 #f0f0f0 +
 // 默认黑文本（index.css .simpleicon 无 color 声明）→ DanQing 浅色 chrome 对应
 // 固定近黑；构造时读 palette 在 Windows 深色应用模式下会烘出白图标（浅底不可读）。
 // QPainter 位图不自动派生禁用态，显式渲染 Normal + Disabled 两态。
+// M-U U-f：移出匿名命名空间——DtaToolBars.h 导出声明（TimelinePanel 复用）。
 QIcon dtaGlyphIcon(ushort codepoint)
 {
     constexpr int px = 32;   // 工具栏 iconSize 之上的高清渲染，QIcon 自行缩放
@@ -87,6 +91,8 @@ QIcon dtaGlyphIcon(ushort codepoint)
     }
     return icon;
 }
+
+namespace {
 
 void setGlyphIcon(QAction* a, ushort codepoint) { a->setIcon(dtaGlyphIcon(codepoint)); }
 void setSvgIcon(QAction* a, const char* rcPath) { a->setIcon(QIcon(QLatin1String(rcPath))); }
@@ -615,8 +621,34 @@ void DtaToolBarSet::buildMainToolBar(QMainWindow* mw)
         });
     }
 
-    // ── 19. Animation（:373-377——大件未移植置灰）──
-    addEmptyDropDown(tb, QStringLiteral("Animation"), 0xe931, QStringLiteral("Animation / solar time"));
+    // ── 19. Animation（:382-386——M-U U-f live：Timeline 面板）──
+    {
+        auto* btn = new QToolButton(tb);
+        btn->setText(QStringLiteral("Animation"));
+        btn->setIcon(dtaGlyphIcon(0xe931));
+        btn->setToolTip(QStringLiteral("Animation / solar time"));
+        btn->setPopupMode(QToolButton::InstantPopup);
+        DtaToolBarSet* self = this;
+        QObject::connect(btn, &QToolButton::clicked, btn, [btn, self]() {
+            auto* vp = activeViewport();
+            if (!vp)
+                return;
+            // TimelinePanel 的生存期挂面板 widget（WA_DeleteOnClose）；
+            // 面板本体经 widget() 暴露（QObject 承载时钟/事件订阅）。
+            // 时长 10s = 参考 createTimeline 调用点 Viewer.ts:384 的字面量。
+            auto* panel = new Gui::TimelinePanel(vp, btn, /*durationInSeconds=*/10);
+            // 生命周期绑定：widget 关闭（WA_DeleteOnClose）→ panel QObject 一并
+            // 删除（其持 m_widget 裸指针 + onViewChanged 订阅——不随删则悬垂）。
+            QObject::connect(panel->widget(), &QObject::destroyed, btn,
+                             [panel] { delete panel; });
+            panel->widget()->setAttribute(Qt::WA_DeleteOnClose);
+            panel->widget()->move(btn->mapToGlobal(QPoint(0, btn->height())));
+            self->openDropDown(panel->widget());
+        });
+        QAction* sa = tb->addWidget(btn);
+        sa->setText(QStringLiteral("Animation"));
+        sa->setIcon(dtaGlyphIcon(0xe931));
+    }
 
     // ── 20. Sectioning tools（:378-383——M-P P-G live）──
     {

@@ -76,8 +76,8 @@ TEST(DtaToolBarsSet, NoToolbarsUntilViewportFocused)
 }
 
 // 主工具栏 26 项严格序（Viewer.ts:238-446）+ Measure/Walk 激活（M-R——引擎
-// 已移植 [M-O(3) P1/P2]，此前置灰）+ 置灰面（hub/CameraPaths/Animation/
-// Classification/PointCloud/Contours/FormatSet）。
+// 已移植 [M-O(3) P1/P2]，此前置灰）+ Animation 激活（M-U U-f TimelinePanel）
+// + 置灰面（hub/CameraPaths/Classification/PointCloud/Contours/FormatSet）。
 TEST(DtaToolBarsMain, TwentySixItemsInDtaOrder)
 {
     QMainWindow mw;
@@ -97,7 +97,7 @@ TEST(DtaToolBarsMain, TwentySixItemsInDtaOrder)
     EXPECT_TRUE(acts[19]->isEnabled()) << "Sectioning (M-P P-G)";
 
     // 置灰面（大件未移植/零网络）。
-    // Camera Paths/Animation 为可点空下拉（DTA blank 语义——面板空非置灰）。
+    // Camera Paths 为可点空下拉（DTA blank 语义——面板空非置灰）。
     for (int i : { 2 /*Open Hub*/, 20 /*Classification*/, 22 /*PointCloud*/,
                    23 /*Contours*/, 24 /*Format Set*/ })
         EXPECT_FALSE(acts[i]->isEnabled()) << kMainTexts[i];

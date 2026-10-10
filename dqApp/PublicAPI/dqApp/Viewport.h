@@ -494,6 +494,14 @@ public:
     void InvalidateDecorations();
     void RequestRedraw();
 
+    // The point in time currently reflected by the view (seconds in the Unix
+    // epoch), or absent. Identifies a point on the timeline of the style's
+    // schedule script, if any.
+    // Ported from: itwinjs-core Viewport.timePoint（Viewport.ts:579-584——
+    // displayStyle.settings.timePoint 的直通属性）。
+    std::optional<double> getTimePoint() const;
+    void setTimePoint(std::optional<double> timePoint);
+
     // If true, a new frame renders on every tick of the render loop (e.g. FPS
     // tracking). May negatively impact battery life.
     // Ported from: itwinjs-core Viewport.continuousRendering
