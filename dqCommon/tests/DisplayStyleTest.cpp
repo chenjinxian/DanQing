@@ -5,6 +5,9 @@
 #include "dqCommon/HiddenLine.h"
 #include "dqCommon/LightSettings.h"
 
+#include <dqBase/DqId.h>
+#include <dqGeom/Range3d.h>  // Range1d
+
 #include <gtest/gtest.h>
 
 using namespace dqCommon;
@@ -315,7 +318,8 @@ TEST(HiddenLineSettings, Equality)
 //              "overrides selected settings" (:554-588 ——
 //               应用键输出=overrides 值 + 缺席键=原值；参考以
 //               ViewFlags.fromJSON({...current.toJSON(), ...overrides.viewflags})
-//               承载。analysisStyle/scheduleScript 两例随消费面立项登记。）
+//               承载。analysisStyle/scheduleScript 两例（:573-599）M-U U-b
+//               补全——Case 5/6。)
 TEST(DisplayStyle3dSettings, OverridesSelectedSettings)
 {
     auto makeBase = [] {
@@ -375,7 +379,8 @@ TEST(DisplayStyle3dSettings, OverridesSelectedSettings)
     }
 
     // Case 4（:586）：viewflags + monochromeMode=Flat + timePoint（:587 段
-    // analysisFraction 的可移植面；analysisStyle 未移植登记）。
+    // analysisFraction 的可移植面；analysisStyle 未移植登记——M-U U-b 清偿，
+    // Case 5/6 补全）。
     {
         DisplayStyle3dSettings settings = makeBase();
         DisplayStyle3dSettingsProps o;
@@ -391,6 +396,95 @@ TEST(DisplayStyle3dSettings, OverridesSelectedSettings)
         EXPECT_DOUBLE_EQ(*settings.getTimePoint(), 87654321.0);
         EXPECT_DOUBLE_EQ(settings.getAnalysisFraction(), 0.8);
         EXPECT_TRUE(settings.getViewFlags().Properties().grid);
+    }
+
+    // Case 5（M-U U-b 补全——参考 :573-587）：analysisStyle 全字段 + analysisFraction。
+    // 参考断言 output[key] deep-equal overrides[key]：toJSON 往返后逐段对账。
+    {
+        DisplayStyle3dSettings settings = makeBase();
+        DisplayStyle3dSettingsProps o;
+        AnalysisStyleProps style;
+        AnalysisStyleDisplacementProps disp;
+        disp.channelName = "displacement";
+        disp.scale = 2.5;
+        style.displacement = disp;
+        style.normalChannelName = "normal";
+        AnalysisStyleThematicProps scalar;
+        scalar.channelName = "scalar";
+        scalar.range = dqGeom::Range1d(-1.0, 2.0);
+        style.scalar = scalar;
+        o.analysisStyle = style;
+        o.analysisFraction = 0.8;
+        settings.applyOverrides3d(o);
+
+        ASSERT_TRUE(settings.hasAnalysisStyle());
+        auto const& out = *settings.getAnalysisStyle();
+        ASSERT_TRUE(out.displacement.has_value());
+        EXPECT_EQ(out.displacement->channelName, "displacement");
+        EXPECT_DOUBLE_EQ(out.displacement->scale, 2.5);
+        ASSERT_TRUE(out.normalChannelName.has_value());
+        EXPECT_EQ(*out.normalChannelName, "normal");
+        ASSERT_TRUE(out.scalar.has_value());
+        EXPECT_EQ(out.scalar->channelName, "scalar");
+        EXPECT_NEAR(out.scalar->range.low, -1.0, 1e-10);
+        EXPECT_NEAR(out.scalar->range.high, 2.0, 1e-10);
+        EXPECT_DOUBLE_EQ(settings.getAnalysisFraction(), 0.8);
+
+        // toJSON 往返（参考 roundTrip 语义：output.analysisStyle ==
+        // overrides.analysisStyle——省略默认字段后逐键对账）。
+        auto const json = settings.toJSON3d();
+        ASSERT_TRUE(json.analysisStyle.has_value());
+        ASSERT_TRUE(json.analysisStyle->displacement.has_value());
+        EXPECT_EQ(json.analysisStyle->displacement->channelName, "displacement");
+        ASSERT_TRUE(json.analysisStyle->displacement->scale.has_value());
+        EXPECT_DOUBLE_EQ(*json.analysisStyle->displacement->scale, 2.5);
+        EXPECT_EQ(json.analysisStyle->normalChannelName, std::optional<std::string>("normal"));
+        ASSERT_TRUE(json.analysisStyle->scalar.has_value());
+        EXPECT_NEAR(json.analysisStyle->scalar->range.low, -1.0, 1e-10);
+        EXPECT_NEAR(json.analysisStyle->scalar->range.high, 2.0, 1e-10);
+    }
+
+    // Case 6（M-U U-b 补全——参考 :589-599）：timePoint + scheduleScript。
+    {
+        DisplayStyle3dSettings settings = makeBase();
+        DisplayStyle3dSettingsProps o;
+        o.timePoint = 87654321.0;
+        RenderSchedule::ModelTimelineProps mt;
+        mt.modelId = "0xadf";
+        mt.realityModelUrl = "askjeeves.com";
+        RenderSchedule::ElementTimelineProps et;
+        et.batchId = 54;
+        et.elementIds = dqBase::DqIdVector{dqBase::DqId::FromString("0x1"),
+                                           dqBase::DqId::FromString("0x2"),
+                                           dqBase::DqId::FromString("0x3"),
+                                           dqBase::DqId::FromString("0x4")};
+        mt.elementTimelines = std::vector<RenderSchedule::ElementTimelineProps>{et};
+        o.scheduleScript = RenderSchedule::ScriptProps{mt};
+        settings.applyOverrides3d(o);
+
+        ASSERT_TRUE(settings.getTimePoint().has_value());
+        EXPECT_DOUBLE_EQ(*settings.getTimePoint(), 87654321.0);
+        auto const& scriptProps = settings.getScheduleScriptProps();
+        ASSERT_TRUE(scriptProps.has_value());
+        ASSERT_EQ(scriptProps->size(), 1u);
+        EXPECT_EQ((*scriptProps)[0].modelId, "0xadf");
+        ASSERT_TRUE((*scriptProps)[0].realityModelUrl.has_value());
+        EXPECT_EQ(*(*scriptProps)[0].realityModelUrl, "askjeeves.com");
+        ASSERT_TRUE((*scriptProps)[0].elementTimelines.has_value());
+        ASSERT_EQ((*scriptProps)[0].elementTimelines->size(), 1u);
+        EXPECT_EQ((*(*scriptProps)[0].elementTimelines)[0].batchId, 54u);
+
+        // Script::fromJSON 消费面对账（解析链 round-trip）。
+        auto const script = RenderSchedule::Script::fromJSON(*scriptProps);
+        ASSERT_TRUE(script);
+        EXPECT_EQ(script->modelTimelines.size(), 1u);
+        EXPECT_EQ(script->modelTimelines[0].modelId, "0xadf");
+        ASSERT_EQ(script->modelTimelines[0].elementTimelines.size(), 1u);
+        EXPECT_EQ(script->modelTimelines[0].elementTimelines[0].batchId, 54u);
+        auto const ids = script->modelTimelines[0].elementTimelines[0].elementIds();
+        ASSERT_EQ(ids.size(), 4u);
+        EXPECT_EQ(ids[0].GetValue(), dqBase::DqId::FromString("0x1").GetValue());
+        EXPECT_EQ(ids[3].GetValue(), dqBase::DqId::FromString("0x4").GetValue());
     }
 
     // 3d 层缺席保持（:554-588 的 absent 键面——lights/hline/environment 原样）。

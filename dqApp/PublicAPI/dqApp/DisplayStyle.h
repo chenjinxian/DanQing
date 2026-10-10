@@ -128,6 +128,20 @@ public:
         OnLightSettingsChanged.Raise();
     }
 
+    // ── Solar time（M-U U-c）────────────────────────────────────
+    // ← itwinjs-core DisplayStyleState.setSunTime（DisplayStyleState.ts:989-992
+    //   `this.settings.setSunTime(time, this.iModel)`）——参考 settings 侧
+    //   IModel 分支：ecefLocation → Cartographic.fromEcef(origin)；缺席 →
+    //   Philadelphia 默认（-75.17035, 39.954927, 0——SolarCalculate.test.ts
+    //   同款坐标原样）。灯光赋值经 settings.setSunTime（direction+timePoint），
+    //   事件 = onLightSettingsChanged（参考 lights setter 的 raise 面）。
+    // 定义在 DisplayStyle.cpp（IModelConnection 完整类型面）。
+    void setSunTime(double timePoint);
+    // ← itwinjs-core DisplayStyle3dSettings.clearSunTime（DisplayStyleSettings.ts
+    //   :1355-1364——只清 timePoint，不动 direction）。
+    void clearSunTime();
+    std::optional<double> getSunTime() const noexcept { return m_settings.getSunTime(); }
+
     // ── White-on-white reversal ─────────────────────────────────
     // ← itwinjs-core: rendering reads viewFlags.whiteOnWhiteReversal (default true).
     // Routed through ViewFlags rather than a duplicate field.
@@ -143,11 +157,58 @@ public:
     }
 
     // ── Analysis fraction ───────────────────────────────────────
+    // ← itwinjs-core DisplayStyleSettings.analysisFraction setter（:748-754）——
+    // equals 短路比较系 **钳位后存值 vs 原始入参**（参考怪癖原样：越界入参
+    // 每发必 raise）；短路命中后 raise **先于** 赋值（监听器事件内读旧值）。
     double getAnalysisFraction() const noexcept { return m_settings.getAnalysisFraction(); }
     void setAnalysisFraction(double fraction) {
         if (m_settings.getAnalysisFraction() == fraction) return;
+        OnAnalysisFractionChanged.Raise();      // 参考序：raise 先于赋值
         m_settings.setAnalysisFraction(fraction);
-        OnAnalysisFractionChanged.Raise();
+    }
+
+    // ── Analysis style ──────────────────────────────────────────
+    // ← itwinjs-core DisplayStyleSettings.analysisStyle setter（:729-739）——
+    // 对象同一性短路（DanQing 值语义以 equals 承载——EQUIVALENCE：TS 同一性
+    // 系不可变对象优化，可观察行为=内容相等不 raise）；raise 先于赋值。
+    std::optional<dqCommon::AnalysisStyle> const& getAnalysisStyle() const noexcept
+    {
+        return m_settings.getAnalysisStyle();
+    }
+    void setAnalysisStyle(std::optional<dqCommon::AnalysisStyle> style) {
+        auto const& current = m_settings.getAnalysisStyle();
+        bool const same = (!current.has_value() && !style.has_value()) ||
+                          (current.has_value() && style.has_value() && current->equals(*style));
+        if (same) return;
+        OnAnalysisStyleChanged.Raise();         // 参考序：raise 先于赋值
+        m_settings.setAnalysisStyle(std::move(style));
+    }
+
+    // ── Schedule script ─────────────────────────────────────────
+    // ← itwinjs-core DisplayStyleState.scheduleScript（:377-399）——对象同一性
+    // 短路（C++ unique_ptr get() 同值比较——等价 TS ===）；raise 先于赋值；
+    // settings.scheduleScriptProps = script?.toJSON()。renderTimeline 回退腿
+    // （loadScriptReferenceFromTimeline）系 RPC 数据面——E3 登记（dump 面无
+    // RenderTimeline 元素表）。
+    dqCommon::RenderSchedule::Script const* getScheduleScript() const
+    {
+        if (!m_scheduleScriptParsed) {
+            m_scheduleScriptParsed = true;
+            if (auto const& props = m_settings.getScheduleScriptProps(); props.has_value())
+                m_scheduleScript = dqCommon::RenderSchedule::Script::fromJSON(*props);
+        }
+        return m_scheduleScript.get();
+    }
+    void setScheduleScript(std::unique_ptr<dqCommon::RenderSchedule::Script> script) {
+        if (script.get() == m_scheduleScript.get() && m_scheduleScriptParsed)
+            return;
+        OnScheduleScriptChanged.Raise();        // 参考序：raise 先于赋值
+        m_scheduleScriptParsed = true;
+        m_scheduleScript = std::move(script);
+        if (m_scheduleScript)
+            m_settings.setScheduleScriptProps(m_scheduleScript->toJSON());
+        else
+            m_settings.setScheduleScriptProps(std::nullopt);
     }
 
     // ── Clip style ──────────────────────────────────────────────
@@ -193,10 +254,13 @@ public:
     }
 
     // ── Time point ──────────────────────────────────────────────
-    double getTimePoint() const noexcept { return m_settings.getTimePoint().value_or(0.0); }
-    void setTimePoint(double time) {
+    // ← itwinjs-core DisplayStyleSettings.timePoint setter（:718-723）——
+    // 同一性（!==）短路 + raise 先于赋值；optional 承载 undefined。
+    std::optional<double> getTimePoint() const noexcept { return m_settings.getTimePoint(); }
+    void setTimePoint(std::optional<double> time) {
+        if (m_settings.getTimePoint() == time) return;
+        OnTimePointChanged.Raise();             // 参考序：raise 先于赋值
         m_settings.setTimePoint(time);
-        OnTimePointChanged.Raise();
     }
 
     // ── Clone (data only; events not cloned) ────────────────────
@@ -219,6 +283,10 @@ public:
 
 private:
     dqCommon::DisplayStyle3dSettings m_settings;
+    // ← itwinjs-core DisplayStyleState._scriptReference（:378 读面）——
+    // settings.scheduleScriptProps 的解析缓存（懒建）。
+    mutable bool m_scheduleScriptParsed = false;
+    mutable std::unique_ptr<dqCommon::RenderSchedule::Script> m_scheduleScript;
     // getBackgroundMapGeometry 的缓存（参考 _backgroundMapGeometry
     // (DisplayStyleState.ts:717-721)：globeMode/bimElevationBias 变键重建）。
     // mutable —— getBackgroundMapGeometry 逻辑上是只读查询。

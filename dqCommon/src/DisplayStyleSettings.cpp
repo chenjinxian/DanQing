@@ -70,11 +70,17 @@ DisplayStyleSettingsProps DisplayStyleSettings::toJSON() const
     p.backgroundColor = m_backgroundColor.getTbgr();
     p.monochromeColor = m_monochromeColor.getTbgr();
     p.monochromeMode = m_monochromeMode;
-    p.analysisFraction = m_analysisFraction;
+    // Ported from: itwinjs-core DisplayStyleSettings.toJSON (:972)——写出
+    // analysisFraction getter（钳位值）。
+    p.analysisFraction = getAnalysisFraction();
     if (!m_renderTimeline.empty()) p.renderTimeline = m_renderTimeline;
     p.timePoint = m_timePoint;
     p.clipStyle = m_clipStyle.toJSON();
     p.whiteOnWhiteReversal = m_whiteOnWhiteReversal.toJSON();
+    // M-U U-b：analysisStyle/scheduleScript 写出腿（参考 setter 维护
+    // _json.analysisStyle / _json.scheduleScript——toJSON 经 _json 自然带出）。
+    if (m_analysisStyle) p.analysisStyle = m_analysisStyle->toJSON();
+    if (m_scheduleScriptProps) p.scheduleScript = *m_scheduleScriptProps;
     return p;
 }
 
@@ -119,9 +125,15 @@ void DisplayStyleSettings::applyOverrides(const DisplayStyleSettingsProps& props
     if (props.backgroundColor) m_backgroundColor = ColorDef::fromTbgr(*props.backgroundColor);
     if (props.monochromeColor) m_monochromeColor = ColorDef::fromTbgr(*props.monochromeColor);
     if (props.monochromeMode) m_monochromeMode = *props.monochromeMode;
-    if (props.analysisFraction) m_analysisFraction = *props.analysisFraction;
+    // Ported from: itwinjs-core DisplayStyleSettings.applyOverrides (:1049-1050)——
+    // 经 analysisFraction setter（钳位语义）。
+    if (props.analysisFraction) setAnalysisFraction(*props.analysisFraction);
     if (props.renderTimeline) m_renderTimeline = *props.renderTimeline;
     if (props.timePoint) m_timePoint = *props.timePoint;
+    // Ported from: itwinjs-core DisplayStyleSettings.applyOverrides (:1043-1044
+    // /:1052-1053)——analysisStyle 经 fromJSON；scheduleScriptProps 数组透传。
+    if (props.analysisStyle) m_analysisStyle = AnalysisStyle::fromJSON(&*props.analysisStyle);
+    if (props.scheduleScript) m_scheduleScriptProps = *props.scheduleScript;
     if (props.clipStyle) m_clipStyle = ClipStyle::fromJSON(&*props.clipStyle);
     if (props.whiteOnWhiteReversal) m_whiteOnWhiteReversal = WhiteOnWhiteReversalSettings::fromJSON(&*props.whiteOnWhiteReversal);
 }

@@ -4,6 +4,7 @@
 #pragma once
 
 #include "Export.h"
+#include "Gradient.h"
 #include "ThematicDisplay.h"
 #include "DqCommon.h"
 
@@ -32,6 +33,18 @@ struct AnalysisStyleProps {
     std::optional<AnalysisStyleDisplacementProps> displacement;
     std::optional<AnalysisStyleThematicProps> scalar;
     std::optional<std::string> normalChannelName;
+    // Legacy JSON keys, flat-carried (ref LegacyAnalysisStyleProps
+    // AnalysisStyle.ts:155-162) converted by tryConvertLegacyProps (:164-192).
+    // Filled by the JSON parse layer on encountering legacy keys; mutually
+    // exclusive with displacement/scalar (same as ref).
+    struct {
+        std::optional<std::string> displacementChannelName;
+        std::optional<std::string> scalarChannelName;
+        std::optional<std::string> normalChannelName;
+        std::optional<double> displacementScale;
+        std::optional<dqGeom::Range1d> scalarRange;
+        std::optional<ThematicGradientSettingsProps> scalarThematicSettings;
+    } legacy;
 };
 
 // Analysis displacement style.
@@ -51,9 +64,12 @@ public:
 
     AnalysisStyleDisplacementProps toJSON() const
     {
+        // Ported from: itwinjs-core AnalysisStyleDisplacement.toJSON (:50-55)--
+        // scale default 1, omitted when ==1.
         AnalysisStyleDisplacementProps p;
         p.channelName = channelName;
-        p.scale = scale;
+        if (scale != 1.0)
+            p.scale = scale;
         return p;
     }
 
@@ -73,6 +89,11 @@ public:
     dqGeom::Range1d range;
     ThematicGradientSettings thematicSettings;
 
+private:
+    // Ported from: itwinjs-core AnalysisStyleThematic._gradient (:95--lazy).
+    mutable std::optional<GradientSymb> m_gradient;
+
+public:
     static AnalysisStyleThematic fromJSON(const AnalysisStyleThematicProps& props)
     {
         AnalysisStyleThematic t;
@@ -85,11 +106,23 @@ public:
 
     AnalysisStyleThematicProps toJSON() const
     {
+        // Ported from: itwinjs-core AnalysisStyleThematic.toJSON (:109-119)--
+        // thematicSettings equal to defaults is omitted.
         AnalysisStyleThematicProps p;
         p.channelName = channelName;
         p.range = range;
-        p.thematicSettings = thematicSettings.toJSON();
+        if (!thematicSettings.equals(ThematicGradientSettings::defaults()))
+            p.thematicSettings = thematicSettings.toJSON();
         return p;
+    }
+
+    // The gradient computed from thematicSettings (lazy cache -- ref _gradient :95).
+    // Ported from: itwinjs-core AnalysisStyleThematic.gradient (:122-127).
+    GradientSymb const& gradient() const
+    {
+        if (!m_gradient.has_value())
+            m_gradient = GradientSymb::createThematic(thematicSettings);
+        return *m_gradient;
     }
 
     // Ported from: itwinjs-core AnalysisStyleThematic.equals（AnalysisStyle.
@@ -101,8 +134,47 @@ public:
     }
 };
 
+// Legacy JSON representation (@internal exported strictly for tests).
+// Ported from: itwinjs-core LegacyAnalysisStyleProps (:155-162)
+struct LegacyAnalysisStyleProps {
+    std::optional<std::string> displacementChannelName;
+    std::optional<std::string> scalarChannelName;
+    std::optional<std::string> normalChannelName;
+    std::optional<double> displacementScale;
+    std::optional<dqGeom::Range1d> scalarRange;
+    std::optional<ThematicGradientSettingsProps> scalarThematicSettings;
+};
+
+// Convert legacy props to current props; pass-through when no legacy keys.
+// Ported from: itwinjs-core tryConvertLegacyProps (:164-192)
+inline AnalysisStyleProps tryConvertLegacyProps(AnalysisStyleProps const& input)
+{
+    if (input.displacement || input.scalar)
+        return input;
+
+    if (!input.legacy.displacementChannelName && !input.legacy.scalarChannelName)
+        return input;
+
+    AnalysisStyleProps output;
+    output.normalChannelName = input.normalChannelName;
+    if (input.legacy.displacementChannelName) {
+        AnalysisStyleDisplacementProps disp;
+        disp.channelName = *input.legacy.displacementChannelName;
+        disp.scale = input.legacy.displacementScale;
+        output.displacement = disp;
+    }
+    if (input.legacy.scalarChannelName && input.legacy.scalarRange) {
+        AnalysisStyleThematicProps scalar;
+        scalar.channelName = *input.legacy.scalarChannelName;
+        scalar.range = *input.legacy.scalarRange;
+        scalar.thematicSettings = input.legacy.scalarThematicSettings;
+        output.scalar = scalar;
+    }
+    return output;
+}
+
 // Analysis style for visualization of analysis results.
-// Ported from: itwinjs-core AnalysisStyle
+// Ported from: itwinjs-core AnalysisStyle (:201-274)
 class DQ_COMMON_EXPORT AnalysisStyle {
 public:
     std::optional<AnalysisStyleDisplacement> displacement;
@@ -117,23 +189,50 @@ public:
 
     static AnalysisStyle fromJSON(const AnalysisStyleProps* props = nullptr)
     {
+        // Ported from: itwinjs-core AnalysisStyle.fromJSON (:210-219)--no props,
+        // or no displacement/scalar/normalChannelName (after legacy conversion)
+        // yields defaults.
         AnalysisStyle s;
-        if (!props) return s;
-        if (props->displacement)
-            s.displacement = AnalysisStyleDisplacement::fromJSON(*props->displacement);
-        if (props->scalar)
-            s.scalar = AnalysisStyleThematic::fromJSON(*props->scalar);
-        s.normalChannelName = props->normalChannelName;
+        if (!props)
+            return s;
+
+        auto const converted = tryConvertLegacyProps(*props);
+        if (!converted.displacement && !converted.scalar &&
+            !converted.normalChannelName.has_value())
+            return s;
+
+        if (converted.displacement)
+            s.displacement = AnalysisStyleDisplacement::fromJSON(*converted.displacement);
+        if (converted.scalar)
+            s.scalar = AnalysisStyleThematic::fromJSON(*converted.scalar);
+        s.normalChannelName = converted.normalChannelName;
         return s;
     }
 
     AnalysisStyleProps toJSON() const
     {
+        // Ported from: itwinjs-core AnalysisStyle.toJSON (:231-246)--defaults
+        // identity returns empty props.
         AnalysisStyleProps p;
+        if (this == &defaults())
+            return p;
         if (displacement) p.displacement = displacement->toJSON();
         if (scalar) p.scalar = scalar->toJSON();
         p.normalChannelName = normalChannelName;
         return p;
+    }
+
+    // Produce a copy identical except for properties explicitly specified by
+    // changedProps (spread-merge of toJSON + changedProps).
+    // Ported from: itwinjs-core AnalysisStyle.clone (:249-253).
+    AnalysisStyle clone(AnalysisStyleProps const& changedProps) const
+    {
+        auto merged = toJSON();
+        if (changedProps.displacement) merged.displacement = changedProps.displacement;
+        if (changedProps.scalar) merged.scalar = changedProps.scalar;
+        if (changedProps.normalChannelName)
+            merged.normalChannelName = changedProps.normalChannelName;
+        return fromJSON(&merged);
     }
 
     bool equals(const AnalysisStyle& rhs) const noexcept

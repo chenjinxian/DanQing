@@ -196,3 +196,75 @@ TEST(DisplayStyle3dSettingsTest, Roundtrip3d)
     EXPECT_TRUE(j.environment->sky.has_value());
     EXPECT_TRUE(j.environment->sky->display);
 }
+
+// Ported from: itwinjs-core core/common/src/DisplayStyleSettings.ts
+//              analysisFraction getter/setter 钳位语义（:741-754——存储与读出
+//              皆钳 [0,1]）。
+TEST(DisplayStyleSettingsTest, AnalysisFractionClamps)
+{
+    DisplayStyle3dSettings settings;
+    EXPECT_DOUBLE_EQ(settings.getAnalysisFraction(), 0.0);
+
+    settings.setAnalysisFraction(-0.5);
+    EXPECT_DOUBLE_EQ(settings.getAnalysisFraction(), 0.0);
+
+    settings.setAnalysisFraction(1.5);
+    EXPECT_DOUBLE_EQ(settings.getAnalysisFraction(), 1.0);
+
+    settings.setAnalysisFraction(0.5);
+    EXPECT_DOUBLE_EQ(settings.getAnalysisFraction(), 0.5);
+}
+
+// Ported from: itwinjs-core core/common/src/AnalysisStyle.ts
+//              tryConvertLegacyProps（:164-192——旧版键转换面）
+TEST(AnalysisStyleTest, LegacyPropsConversion)
+{
+    AnalysisStyleProps props;
+    props.legacy.displacementChannelName = "dispChannel";
+    props.legacy.displacementScale = 2.0;
+    props.legacy.normalChannelName = "legacyNormal";
+
+    auto s = AnalysisStyle::fromJSON(&props);
+    ASSERT_TRUE(s.displacement.has_value());
+    EXPECT_EQ(s.displacement->channelName, "dispChannel");
+    EXPECT_DOUBLE_EQ(s.displacement->scale, 2.0);
+    // legacy.normalChannelName 在参考 tryConvertLegacyProps 中不搬运
+    // （:173 仅 output.normalChannelName = input.normalChannelName——
+    // 旧版 normalChannelName 键与新版同名同面，JSON 解析层直填）。
+    EXPECT_FALSE(s.scalar.has_value());
+}
+
+// Ported from: itwinjs-core core/common/src/DisplayStyleSettings.ts
+//              DisplayStyle3dSettings.setSunTime/clearSunTime/sunTime
+//              (:1327-1364——direction 派生自 timePoint+location；clearSunTime
+//              不动 direction)。
+TEST(DisplayStyle3dSettingsTest, SunTime)
+{
+    using namespace dqCommon;
+    DisplayStyle3dSettings settings;
+    EXPECT_FALSE(settings.getSunTime().has_value());
+
+    auto const philadelphia = Cartographic::fromDegrees(-75.17035, 39.954927, 0.0);
+    double const noonMs = 1556902800000.0;  // 2019-05-03 17:00Z（SolarCalculate.test.ts 例）
+    settings.setSunTime(noonMs, philadelphia);
+
+    ASSERT_TRUE(settings.getSunTime().has_value());
+    EXPECT_DOUBLE_EQ(*settings.getSunTime(), noonMs);
+    // direction = calculateSolarDirection(noon, philadelphia)——对账参考公式链。
+    auto const expected = calculateSolarDirection(noonMs, philadelphia);
+    EXPECT_NEAR(settings.getLights().solar.direction.x, expected.x, 1e-12);
+    EXPECT_NEAR(settings.getLights().solar.direction.y, expected.y, 1e-12);
+    EXPECT_NEAR(settings.getLights().solar.direction.z, expected.z, 1e-12);
+
+    // clearSunTime：timePoint 清除、direction 不动（参考 :1356-1358 注）。
+    auto const directionBefore = settings.getLights().solar.direction;
+    settings.clearSunTime();
+    EXPECT_FALSE(settings.getSunTime().has_value());
+    EXPECT_NEAR(settings.getLights().solar.direction.x, directionBefore.x, 1e-12);
+    EXPECT_NEAR(settings.getLights().solar.direction.y, directionBefore.y, 1e-12);
+    EXPECT_NEAR(settings.getLights().solar.direction.z, directionBefore.z, 1e-12);
+
+    // 重复 clear 幂等（参考 timePoint===undefined 早退）。
+    settings.clearSunTime();
+    EXPECT_FALSE(settings.getSunTime().has_value());
+}

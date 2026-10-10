@@ -131,6 +131,11 @@ public:
     dqGeom::Range3d const& GetProjectExtents() const { return m_projectExtents; }
     dqGeom::Point3d const& GetGlobalOrigin() const { return m_globalOrigin; }
     EcefLocation const& GetEcefLocation() const { return m_ecefLocation; }
+    // ← IModelConnection.ecefLocation 的在场性（参考 `EcefLocation |
+    //   undefined`——非地理定位 iModel 缺席；M-U U-c SolarTime 门面消费）。
+    //   基类恒 false（ecefLocation 段缺席语义）；DumpIModelConnection 按
+    //   imodel.json ecefLocation 段覆写。
+    virtual bool HasEcefLocation() const { return false; }
     std::string const& GetKey() const { return m_key; }
     std::string const& GetITwinId() const { return m_iTwinId; }
 

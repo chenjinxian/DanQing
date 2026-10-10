@@ -2220,7 +2220,11 @@ void Viewport::ValidateRenderPlan()
         newPlan.lights = style.GetLightSettings();
 
         newPlan.analysisFraction = style.getAnalysisFraction();
-        newPlan.timePoint = style.getTimePoint();
+        // M-U U-b：timePoint 改 optional 承载（参考 settings.timePoint——
+        // undefined 可观察）；plan 载体系 DanQing 增补面，缺席记 0.0
+        // （schedule 消费走 ValidateRenderPlan 后的 step 8 直读 optional，
+        // U-d 实装——E7 登记）。
+        newPlan.timePoint = style.getTimePoint().value_or(0.0);
         newPlan.monochromeMode = style.getMonochromeMode();
         newPlan.monochromeColor = style.getMonochromeColor();
         newPlan.whiteOnWhiteReversal = style.getWhiteOnWhiteReversal();

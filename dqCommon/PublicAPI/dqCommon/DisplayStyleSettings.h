@@ -7,6 +7,7 @@
 #pragma once
 
 #include "AmbientOcclusion.h"
+#include "AnalysisStyle.h"
 #include "ClipStyle.h"
 #include "ColorDef.h"
 #include "Environment.h"
@@ -14,6 +15,8 @@
 #include "FeatureSymbology.h"
 #include "HiddenLine.h"
 #include "LightSettings.h"
+#include "RenderSchedule.h"
+#include "SolarCalculate.h"
 #include "SubCategoryAppearance.h"
 #include "ThematicDisplay.h"
 #include "DqCommon.h"
@@ -22,6 +25,7 @@
 
 #include <dqBase/DqId.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -49,9 +53,12 @@ struct DisplayStyleSettingsProps {
     std::optional<double> timePoint;
     std::optional<ClipStyleProps> clipStyle;
     std::optional<WhiteOnWhiteReversalProps> whiteOnWhiteReversal;
+    // M-U U-b：analysisStyle/scheduleScript 数据面归位（:318 登记勾销——
+    // DisplayStyleSettings.ts :53-54 TODO 清偿）。
+    std::optional<AnalysisStyleProps> analysisStyle;
+    std::optional<RenderSchedule::ScriptProps> scheduleScript;
     // TODO: subCategoryOvr, modelOvr, excludedElements, backgroundMap,
-    //       mapImagery, contextRealityModels, planarClipOvr, analysisStyle,
-    //       scheduleScript (not yet ported)
+    //       mapImagery, contextRealityModels, planarClipOvr
 };
 
 // JSON persistence for DisplayStyle3dSettings.
@@ -99,8 +106,39 @@ public:
     void setMonochromeMode(MonochromeMode mode) { m_monochromeMode = mode; }
 
     // ── Analysis ──────────────────────────────────────────────────
-    double getAnalysisFraction() const noexcept { return m_analysisFraction; }
-    void setAnalysisFraction(double fraction) { m_analysisFraction = fraction; }
+    // Ported from: itwinjs-core DisplayStyleSettings.analysisFraction
+    //   (:741-754)——getter 钳位 [0,1]（_json 值防御性再钳）；setter 存钳位值
+    //   （事件层在 dqApp::DisplayStyle——settings 是纯数据容器）。
+    double getAnalysisFraction() const noexcept
+    {
+        return std::max(0.0, std::min(1.0, m_analysisFraction));
+    }
+    void setAnalysisFraction(double fraction)
+    {
+        m_analysisFraction = std::max(0.0, std::min(1.0, fraction));
+    }
+
+    // ── Analysis style ────────────────────────────────────────────
+    // Ported from: itwinjs-core DisplayStyleSettings.analysisStyle (:725-739)。
+    std::optional<AnalysisStyle> const& getAnalysisStyle() const noexcept
+    {
+        return m_analysisStyle;
+    }
+    bool hasAnalysisStyle() const noexcept { return m_analysisStyle.has_value(); }
+    void setAnalysisStyle(std::optional<AnalysisStyle> style) { m_analysisStyle = std::move(style); }
+
+    // ── Schedule script ───────────────────────────────────────────
+    // Ported from: itwinjs-core DisplayStyleSettings.scheduleScriptProps
+    //   (:698-709)——raw JSON 透传（参考无 equals 短路）；Script 对象解析在
+    //   dqApp::DisplayStyle::getScheduleScript 消费面。
+    std::optional<RenderSchedule::ScriptProps> const& getScheduleScriptProps() const noexcept
+    {
+        return m_scheduleScriptProps;
+    }
+    void setScheduleScriptProps(std::optional<RenderSchedule::ScriptProps> props)
+    {
+        m_scheduleScriptProps = std::move(props);
+    }
 
     // ── Render timeline ───────────────────────────────────────────
     const std::string& getRenderTimeline() const noexcept { return m_renderTimeline; }
@@ -153,6 +191,8 @@ protected:
     ColorDef m_monochromeColor = ColorDef::from(255, 255, 255);
     MonochromeMode m_monochromeMode = MonochromeMode::Flat;
     double m_analysisFraction = 0.0;
+    std::optional<AnalysisStyle> m_analysisStyle;
+    std::optional<RenderSchedule::ScriptProps> m_scheduleScriptProps;
     std::string m_renderTimeline;
     std::optional<double> m_timePoint;
     ClipStyle m_clipStyle;
@@ -193,6 +233,31 @@ public:
     // ── Lights ────────────────────────────────────────────────────
     const LightSettings& getLights() const noexcept { return m_lights; }
     void setLights(const LightSettings& lights) { m_lights = lights; }
+
+    // ── Solar time（M-U U-c）──────────────────────────────────────
+    // Set the solar time point and the solar light direction derived from it.
+    // Ported from: itwinjs-core DisplayStyle3dSettings.setSunTime
+    //   (:1339-1353)——calculateSolarDirection(new Date(timePoint), cartoCenter)
+    //   → lights.clone({solar: {direction, timePoint}})。IModel 分支（ecef
+    //   查找 + Philadelphia 回退）在 dqApp::DisplayStyle::setSunTime 门面。
+    void setSunTime(double timePoint, Cartographic const& location)
+    {
+        auto const direction = calculateSolarDirection(timePoint, location);
+        m_lights.solar.direction = direction;
+        m_lights.solar.timePoint = timePoint;
+    }
+
+    // Clear the solar time point stored in lights.solarLight.
+    // Note: does not affect the solar light direction.
+    // Ported from: itwinjs-core DisplayStyle3dSettings.clearSunTime (:1355-1364)
+    void clearSunTime() noexcept
+    {
+        m_lights.solar.timePoint = std::nullopt;
+    }
+
+    // The current sun time, or absent if none.
+    // Ported from: itwinjs-core DisplayStyle3dSettings.sunTime (:1327-1332)
+    std::optional<double> getSunTime() const noexcept { return m_lights.solar.timePoint; }
 
     // ── JSON ──────────────────────────────────────────────────────
     DisplayStyle3dSettingsProps toJSON3d() const;

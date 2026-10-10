@@ -86,6 +86,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/ThematicDisplayTest.cpp
         tests/AmbientOcclusionTest.cpp   # M-T T-a：AO 设置数据面锁（AmbientOcclusion.test.ts 三例直移）
         tests/RenderScheduleTest.cpp     # M-U U-a：RenderSchedule.test.ts 全例直移
+        tests/SolarCalculateTest.cpp     # M-U U-c：SolarCalculate.test.ts 全例直移
         tests/GeometryStreamBuilderTest.cpp
         tests/Tier2DisplayTypesTest.cpp
         tests/Tier3DisplayTypesTest.cpp

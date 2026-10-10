@@ -115,6 +115,9 @@ public:
     // getTransform 的移植随 geolocated 数据面（仓外补采）落地——当前恒等
     // 回退分支即数据面实态）。
     bool hasEcefLocation() const noexcept { return m_hasEcefLocation; }
+    // IModelConnection::HasEcefLocation 覆写（M-U U-c：参考 ecefLocation
+    // undefined 语义的 C++ 表达面）。
+    bool HasEcefLocation() const noexcept override { return m_hasEcefLocation; }
     // elementId → placement 查找（zoomToElements 的 ids→placements 步）。
     PlacementInfo const* findPlacement(dqBase::DqId elementId) const noexcept;
 

@@ -1,11 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-// DanQing dqRender — Animation branch state
+// DanQing dqRender — Animation branch states
 // Ported from: itwinjs-core core/frontend/src/internal/render/AnimationBranchState.ts
 //
-// State management for animated branches (schedule scripts, etc.).
-// Evaluates schedule scripts at a given time to produce branch states
-// for clip planes, visibility, and transforms.
+// Clip/Transform for a branch that are varied over time (schedule scripts).
+// Viewport.renderFrame step 8 evaluates the display style's schedule script at
+// the current time point and installs the result on the target; RenderCommands
+// consults it while building draw commands (omit branches / push clip volumes).
+//
+// M-U U-e：参考形全文重写（早期自创桩 AnimationBranchState[transform 矩阵/
+// visible/nodeId] 清退——非参考 API；RemainingItemsTest 三例随重写）。
 #pragma once
+
+#include "ClipVolume.h"
 
 #include <dqBase/bmap.h>
 #include <dqBase/bset.h>
@@ -22,60 +28,17 @@
 
 BEGIN_DQ_RENDER_NAMESPACE
 
-// ---------------------------------------------------------------------------
-// AnimationBranchState — animation state for a branch
-// (Ported from: itwinjs-core AnimationBranchState.ts)
-//
-// Contains clip/omit state for an animated branch. Used by the rendering
-// pipeline to determine which branches to render and how to clip them.
-// ---------------------------------------------------------------------------
-class AnimationBranchState {
-public:
-    AnimationBranchState() = default;
-
-    /// Set the animation transform (4x4 matrix).
-    void setTransform(float const* matrix4x4)
-    {
-        for (int i = 0; i < 16; ++i) m_transform[i] = matrix4x4[i];
-        m_hasTransform = true;
-    }
-
-    /// Get the animation transform.
-    float const* getTransform() const noexcept { return m_transform; }
-
-    /// Check if this state has an animation transform.
-    bool hasTransform() const noexcept { return m_hasTransform; }
-
-    /// Set the animation node ID.
-    void setNodeId(uint32_t id) noexcept { m_nodeId = id; }
-
-    /// Get the animation node ID.
-    uint32_t getNodeId() const noexcept { return m_nodeId; }
-
-    /// Set whether this branch is visible.
-    void setVisible(bool visible) noexcept { m_visible = visible; }
-
-    /// Check if this branch is visible.
-    bool isVisible() const noexcept { return m_visible; }
-
-    /// Set whether to omit this branch entirely.
-    void setOmit(bool omit) noexcept { m_omit = omit; }
-
-    /// Check if this branch should be omitted.
-    bool isOmitted() const noexcept { return m_omit; }
-
-private:
-    float m_transform[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
-    uint32_t m_nodeId = 0;
-    bool m_hasTransform = false;
-    bool m_visible = true;
-    bool m_omit = false;
+// Clip/omit state for a branch that is varied over time.
+// Ported from: itwinjs-core AnimationBranchState (AnimationBranchState.ts:15-18)
+struct AnimationBranchState {
+    // ← AnimationBranchState.clip?: RenderClipVolume
+    ClipVolume::Ptr clip;
+    // ← AnimationBranchState.omit?: boolean
+    bool omit = false;
 };
 
-// ---------------------------------------------------------------------------
-// formatAnimationBranchId — format a branch ID from model + node
-// Ported from: itwinjs-core AnimationBranchState.ts formatAnimationBranchId()
-// ---------------------------------------------------------------------------
+// Format a branch Id from model + node. branchId < 0 → the model itself.
+// Ported from: itwinjs-core formatAnimationBranchId (AnimationBranchState.ts:21-26)
 inline std::string formatAnimationBranchId(std::string const& modelId, int branchId)
 {
     if (branchId < 0)
@@ -83,51 +46,55 @@ inline std::string formatAnimationBranchId(std::string const& modelId, int branc
     return modelId + "_Node_" + std::to_string(branchId);
 }
 
-// ---------------------------------------------------------------------------
-// AnimationBranchStates — mapping from node IDs to branch states
-// Ported from: itwinjs-core AnimationBranchState.ts AnimationBranchStates
-// ---------------------------------------------------------------------------
+// Mapping from node/branch IDs to animation branch state.
+// Ported from: itwinjs-core AnimationBranchStates (AnimationBranchState.ts:36-41)
 struct AnimationBranchStates {
-    /// Maps branch ID string to branch state.
+    // Maps node Id to branch state.
     dqBase::bmap<std::string, AnimationBranchState> branchStates;
-
-    /// IDs of nodes that apply a transform.
+    // Ids of nodes that apply a transform.
     dqBase::bset<int> transformNodeIds;
 };
 
-// ---------------------------------------------------------------------------
-// AnimationBranchStates::fromScript — create branch states from a schedule script
-// Ported from: itwinjs-core AnimationBranchState.ts AnimationBranchStates.fromScript()
-//
-// Evaluates a schedule script at the given time and produces branch states
-// for clip planes, visibility, and transforms.
-// ---------------------------------------------------------------------------
+// Ported from: itwinjs-core addAnimationBranch (AnimationBranchState.ts:28-33)
+// §3.4 适配：参考经 IModelApp.renderSystem.createClipVolume（全局系统门面）；
+// DanQing 单后端直调 ClipVolume::create（ClipStack.cpp:89 的同一适配先例）。
+inline void addAnimationBranch(std::string const& modelId,
+                               dqCommon::RenderSchedule::Timeline const& timeline,
+                               int branchId, AnimationBranchStates& branches, double time)
+{
+    auto const clipVector = timeline.getClipVector(time);
+    if (!clipVector)
+        return;
+
+    ClipVolume::Ptr const clip = ClipVolume::create(*clipVector);
+    if (clip.IsValid())
+        branches.branchStates[formatAnimationBranchId(modelId, branchId)].clip = clip;
+}
+
+// Evaluate a schedule script at the specified time and produce branch states.
+// Ported from: itwinjs-core AnimationBranchStates.fromScript (:44-63)
 inline std::optional<AnimationBranchStates> animationBranchStatesFromScript(
     dqCommon::RenderSchedule::Script const& script, double time)
 {
-    // M-U U-a 最小适配：dqCommon RenderSchedule 全量移植（RenderSchedule.ts 1:1）
-    // 后 containsX 为字段、elementTimelines 为解析后对象——本文件系早期自创
-    // 桩（"For now, use the first entry (simplified)"），U-e 将按
-    // AnimationBranchState.ts 全文重写（getClipVector(time) 消费 + fromScript
-    // 1:1）；此处仅保编译兼容。
-    if (!script.containsModelClipping && !script.containsTransform)
+    if (!script.containsModelClipping && !script.requiresBatching)
         return std::nullopt;
 
     AnimationBranchStates result;
-
     for (auto const& model : script.modelTimelines) {
+        addAnimationBranch(model.modelId, model, -1, result, time);
         for (auto const& elem : model.elementTimelines) {
-            if (elem.getVisibility(time) <= 0.0) {
-                auto branchId = formatAnimationBranchId(model.modelId, static_cast<int>(elem.batchId));
-                AnimationBranchState state;
-                state.setOmit(true);
-                result.branchStates[branchId] = state;
-            }
-
-            if (elem.containsTransform())
-                result.transformNodeIds.insert(static_cast<int>(elem.batchId));
+            if (elem.getVisibility(time) <= 0.0)
+                result.branchStates[formatAnimationBranchId(model.modelId,
+                                                            static_cast<int>(elem.batchId))]
+                    .omit = true;
+            else
+                addAnimationBranch(model.modelId, elem, static_cast<int>(elem.batchId), result,
+                                   time);
         }
     }
+
+    for (auto const batchId : script.transformBatchIds)
+        result.transformNodeIds.insert(static_cast<int>(batchId));
 
     return result;
 }

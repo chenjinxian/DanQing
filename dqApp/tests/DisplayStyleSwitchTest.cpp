@@ -17,9 +17,11 @@
 #include <dqApp/Viewport.h>
 #include <dqApp/ViewState.h>
 
+#include <dqCommon/Cartographic.h>
 #include <dqCommon/ColorDef.h>
 #include <dqCommon/DisplayStyleSettings.h>
 #include <dqCommon/LightSettings.h>
+#include <dqCommon/SolarCalculate.h>  // M-U U-c：setSunTime 门面方向对账
 #include <dqCommon/ThematicDisplay.h>  // M-S S-f：ThematicDisplay/Props + Range1d
 #include <dqCommon/ViewFlags.h>
 
@@ -325,4 +327,31 @@ TEST(DisplayStyleSwitch, AoFacadeSetterSemantics)
     sameAsChanged.blurSigma = 4.0;
     style.setAmbientOcclusionSettings(sameAsChanged);
     EXPECT_EQ(events, 2);
+}
+
+// Authored: no reference test exists in itwinjs-core for the DisplayStyle
+// setSunTime facade（DisplayStyleState.ts:989-992 delegates to settings;
+// SolarTimelineProvider 的消费面在 DTA Timeline.ts）——锁 Philadelphia
+// 默认地理位置分支（imodel 缺席 → 参考 IModel 分支回退原样）。
+TEST(DisplayStyleSwitchTest, SetSunTimeUsesPhiladelphiaFallbackWithoutGeolocation)
+{
+    dqApp::DisplayStyle style;
+    ASSERT_FALSE(style.getIModel());
+    ASSERT_FALSE(style.getSunTime().has_value());
+
+    double const noonMs = 1556902800000.0;
+    style.setSunTime(noonMs);
+
+    ASSERT_TRUE(style.getSunTime().has_value());
+    EXPECT_DOUBLE_EQ(*style.getSunTime(), noonMs);
+
+    // direction 与 Philadelphia 坐标 + 同时刻的参考公式链一致。
+    auto const philadelphia = dqCommon::Cartographic::fromDegrees(-75.17035, 39.954927, 0.0);
+    auto const expected = dqCommon::calculateSolarDirection(noonMs, philadelphia);
+    EXPECT_NEAR(style.GetLightSettings().solar.direction.x, expected.x, 1e-12);
+    EXPECT_NEAR(style.GetLightSettings().solar.direction.y, expected.y, 1e-12);
+    EXPECT_NEAR(style.GetLightSettings().solar.direction.z, expected.z, 1e-12);
+
+    style.clearSunTime();
+    EXPECT_FALSE(style.getSunTime().has_value());
 }

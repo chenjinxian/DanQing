@@ -11,6 +11,33 @@ namespace dqApp {
 DisplayStyle::DisplayStyle() = default;
 DisplayStyle::~DisplayStyle() = default;
 
+// Ported from: itwinjs-core DisplayStyleState.setSunTime（DisplayStyleState.ts:989-992
+//   `this.settings.setSunTime(time, this.iModel)`）+ DisplayStyle3dSettings.setSunTime
+//   IModel 分支（DisplayStyleSettings.ts:1339-1353）。
+void DisplayStyle::setSunTime(double timePoint)
+{
+    // 参考 IModel 分支：ecefLocation → Cartographic.fromEcef(origin)；
+    // 缺席/转换失败 → Philadelphia 默认（原样回退——SolarCalculate.test.ts 坐标）。
+    dqCommon::Cartographic carto =
+        dqCommon::Cartographic::fromDegrees(-75.17035, 39.954927, 0.0);
+    if (m_iModel && m_iModel->HasEcefLocation()) {
+        if (auto const c = dqCommon::Cartographic::fromEcef(m_iModel->GetEcefLocation().origin))
+            carto = *c;
+    }
+    m_settings.setSunTime(timePoint, carto);
+    OnLightSettingsChanged.Raise();
+}
+
+// Ported from: itwinjs-core DisplayStyle3dSettings.clearSunTime（:1355-1364——
+// 只清 timePoint，不动 direction；timePoint 已缺席时早退不 raise）。
+void DisplayStyle::clearSunTime()
+{
+    if (!m_settings.getSunTime().has_value())
+        return;
+    m_settings.clearSunTime();
+    OnLightSettingsChanged.Raise();
+}
+
 // Ported from: itwinjs-core DisplayStyleState.getBackgroundMapGeometry
 //              (DisplayStyleState.ts:763-778).
 BackgroundMapGeometry const* DisplayStyle::getBackgroundMapGeometry() const
