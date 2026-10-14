@@ -129,6 +129,10 @@ struct ViewDetailsProps {
     //   allow3dManipulations = !asBool(disable3dManipulations, false) 反转存储；
     //   仅 true 写出 = 参考 setter allow 分支置 undefined 的语义）
     std::optional<bool> disable3dManipulations;
+    // ← viewDetails.aspectSkew（ViewDetails.ts:102-104 setter——1.0 时置
+    //   undefined 不写出；getter :97-101 读侧 JsonUtils.asDouble(_, 1.0) +
+    //   maxSkew clamp——M-W W-p1）。
+    std::optional<double> aspectSkew;
 };
 
 // ---------------------------------------------------------------------------

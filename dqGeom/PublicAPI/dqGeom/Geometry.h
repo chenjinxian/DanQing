@@ -66,6 +66,12 @@ inline double interpolate(double a, double f, double b) noexcept {
     return f <= 0.5 ? a + f * (b - a) : b - (1.0 - f) * (b - a);
 }
 
+/// Ported from: Geometry.clamp (Geometry.ts:1020-1022).
+/// `Math.max(min, Math.min(max, value))` 原样（min>max 时归 min——与参考同序求值）。
+inline double clamp(double value, double min, double max) noexcept {
+    return std::fmax(min, std::fmin(max, value));
+}
+
 /// Ported from: Geometry.hypotenuseXY (Geometry.ts:756-758).
 inline double hypotenuseXY(double x, double y) noexcept {
     return std::sqrt(x * x + y * y);

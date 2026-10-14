@@ -103,6 +103,8 @@ add_executable(DisplayTestApp WIN32
     src/Mod/Start/Gui/StartView.cpp
     src/Mod/Start/Gui/FlowLayout.cpp
     src/Mod/Start/Gui/NewFileButton.cpp
+    # A-lane 锚（M-W 起——A 道代理只在此锚下追加 app src 注册；勿动他区）
+    # B-lane 锚（M-W 起——B 道代理只在此锚下追加 app src 注册；勿动他区）
 )
 
 target_include_directories(DisplayTestApp PRIVATE
@@ -201,6 +203,8 @@ if(TARGET gtest_main)
         tests/GuiApplicationTest.cpp
         tests/CommandWiringTest.cpp
         tests/IconRenderTest.cpp   # QtSvg path-truncation conformance probe (region-1+2 leftover)
+        # A-lane 锚（M-W 起——A 道代理只在此锚下追加；勿动他区）
+        # B-lane 锚（M-W 起——B 道代理只在此锚下追加；勿动他区）
         resources.qrc
         src/Gui/Command.cpp
         src/Gui/CommandDoc.cpp
@@ -364,6 +368,8 @@ if(TARGET gtest_main AND TARGET dqApp)
         src/Gui/OverlayWidgets.h      # MOC: OverlayToolButton/OverlayTitleBar（DockWindowManager）
         src/Gui/View.cpp              # BaseView（MDIView 基类）
         src/Gui/MenuManager.cpp       # MenuItem + MenuManager::setup（Workbench::activate）
+        # A-lane 锚（M-W 起——A 道代理只在此锚下追加[注册序尾=dump 族序敏感安全位]；勿动他区）
+        # B-lane 锚（M-W 起——B 道代理只在此锚下追加[注册序尾]；勿动他区）
         resources.qrc                 # DTA 图标资源（字体 + SVG——图标断言测试需要）
     )
     target_include_directories(DisplayTestAppDtaTest PRIVATE

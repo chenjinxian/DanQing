@@ -96,6 +96,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/ClipVectorTest.cpp     # M-P P-A：ClipVector/StringifiedClipVector（ClipVector.test.ts 子集）
         tests/ClipUtilsLoopsTest.cpp # M-P P-A：loops/rangeOf/does 族（ClipUtilities.test.ts 子集）
         tests/YawPitchRollAnglesTest.cpp  # angles→rotation 链（M-H Task 3：ViewState3d 构造的 angles 应用面）
+        # A-lane 锚（M-W 起——A 道代理只在此锚下追加测试注册；勿动他区）
     )
     target_link_libraries(dqGeomTest
         PRIVATE

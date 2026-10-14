@@ -11,6 +11,8 @@
 #include "BackgroundMapGeometry.h"
 
 #include <dqCommon/Npc.h>
+#include <dqCommon/ViewDetails.h>  // ViewDetails::maxSkew（getAspectRatioSkew clamp——M-W W-p1）
+#include <dqGeom/Geometry.h>       // dqGeom::clamp（ViewDetails.ts:101 的 Geometry.clamp）
 #include <dqGeom/Ray3d.h>
 #include <dqGeom/YawPitchRollAngles.h>  // CreateFromProps 的 angles→rotation（ViewState.ts:1502）
 
@@ -238,6 +240,7 @@ dqBase::RefPtr<ViewState> ViewState::Clone(IModelConnection* iModel) const
     // ← ViewDetails clip 双态随克隆（json 线形态复制，物化态重置惰性——参考
     //   clone 经 toProps 携带 _json.clip 的等价面）。
     raw->m_clipVectorJson = m_clipVectorJson;
+    raw->m_aspectSkew = m_aspectSkew;  // ← _json.aspectSkew 同线携带（M-W W-p1）
     if (iModel != nullptr && iModel != m_iModel)   // clone(iModel?) redirect 面（审计 S-3）
         raw->SetIModel(iModel);
     return dqBase::RefPtr<ViewState>(raw);
@@ -340,6 +343,7 @@ dqBase::RefPtr<ViewState> ViewState3d::Clone(IModelConnection* iModel) const
     raw->m_cameraOn = m_cameraOn;
     // ← ViewDetails clip 双态随克隆（同 ViewState::Clone 注）。
     raw->m_clipVectorJson = m_clipVectorJson;
+    raw->m_aspectSkew = m_aspectSkew;  // ← _json.aspectSkew 同线携带（M-W W-p1）
     raw->m_disable3dManipulations = m_disable3dManipulations;
     if (iModel != nullptr && iModel != m_iModel)   // clone(iModel?) redirect 面（审计 S-3）
         raw->SetIModel(iModel);
@@ -1087,6 +1091,26 @@ void ViewState3d::SetStandardView(int viewIndex)
         center.z - rotated.z);
 }
 
+// Ported from: itwinjs-core ViewState.getAspectRatioSkew（ViewState.ts:971-973）
+//              → ViewDetails.aspectRatioSkew getter（ViewDetails.ts:97-101）。
+double ViewState::getAspectRatioSkew() const noexcept
+{
+    double const maxSkew = dqCommon::ViewDetails::maxSkew;
+    double const skew = m_aspectSkew.value_or(1.0);  // JsonUtils.asDouble(_, 1.0) 语义
+    return dqGeom::clamp(skew, 1.0 / maxSkew, maxSkew);
+}
+
+// Ported from: itwinjs-core ViewState.setAspectRatioSkew（ViewState.ts:975-977）
+//              → ViewDetails.aspectRatioSkew setter（ViewDetails.ts:102-104）。
+void ViewState::setAspectRatioSkew(double val) noexcept
+{
+    // 参考：`_json.aspectSkew = 1.0 !== skew ? skew : undefined`（1.0 不写出）。
+    if (1.0 != val)
+        m_aspectSkew = val;
+    else
+        m_aspectSkew.reset();
+}
+
 void ViewState3d::FixAspectRatio(float windowAspect)
 {
     // Ported from: itwinjs-core ViewState.fixAspectRatio() (ViewState.ts:811-822).
@@ -1099,9 +1123,9 @@ void ViewState3d::FixAspectRatio(float windowAspect)
     auto origExtents = m_extents;
     auto extents = origExtents;
 
-    // Phase 1: getAspectRatioSkew() is always 1.0.
-    double aspectRatioSkew = 1.0;
-    extents.y = extents.x / (windowAspect * aspectRatioSkew);
+    // getAspectRatioSkew() 归位（M-W W-p1——ViewState.ts:871 消费
+    // details.aspectRatioSkew；此前硬编码 1.0 移植缺口）。
+    extents.y = extents.x / (windowAspect * getAspectRatioSkew());
 
     // isAlmostEqual: bail if Y barely changed (ViewState.ts:815-816).
     double eps = 1e-6 * std::max({std::abs(origExtents.x), std::abs(origExtents.y),
@@ -1676,6 +1700,7 @@ void SpatialViewState::cloneSpatialInto(SpatialViewState* raw) const
     raw->m_cameraOn = m_cameraOn;
     // ← ViewDetails clip 双态随克隆（同 ViewState::Clone 注）。
     raw->m_clipVectorJson = m_clipVectorJson;
+    raw->m_aspectSkew = m_aspectSkew;  // ← _json.aspectSkew 同线携带（M-W W-p1）
     // Clone model selector data (events are not cloned).
     for (auto const& modelId : m_modelSelector.getModels()) {
         raw->m_modelSelector.addModel(modelId);
@@ -1764,6 +1789,10 @@ ViewStateProps SpatialViewState::ToProps() const
     // 不写出；仅 true 落盘）。
     if (m_disable3dManipulations)
         props.viewDetailsProps.disable3dManipulations = true;
+    // aspectSkew（ViewDetails.ts:102-104 setter 语义——1.0 置 undefined 不写出；
+    // 成员只在 !=1.0 时有值，故有值即写出——M-W W-p1）。
+    if (m_aspectSkew.has_value())
+        props.viewDetailsProps.aspectSkew = m_aspectSkew;
 
     // --- CategorySelectorProps（toProps :329）---
     for (auto const& id : GetCategorySelector().getCategories())
@@ -1876,6 +1905,9 @@ dqBase::RefPtr<SpatialViewState> SpatialViewState::CreateFromProps(
     view->m_clipVector = nullptr;
     view->m_disable3dManipulations =
         props.viewDetailsProps.disable3dManipulations.value_or(false);
+    // ← jsonProperties.viewDetails.aspectSkew（ViewDetails ctor json 原样保留——
+    //   M-W W-p1；读侧 clamp 在 getAspectRatioSkew）。
+    view->m_aspectSkew = props.viewDetailsProps.aspectSkew;
     return view;
 }
 
@@ -1897,6 +1929,9 @@ dqBase::RefPtr<OrthographicViewState> OrthographicViewState::CreateFromProps(
     view->m_clipVector = nullptr;
     view->m_disable3dManipulations =
         props.viewDetailsProps.disable3dManipulations.value_or(false);
+    // ← jsonProperties.viewDetails.aspectSkew（ViewDetails ctor json 原样保留——
+    //   M-W W-p1；读侧 clamp 在 getAspectRatioSkew）。
+    view->m_aspectSkew = props.viewDetailsProps.aspectSkew;
     return view;
 }
 

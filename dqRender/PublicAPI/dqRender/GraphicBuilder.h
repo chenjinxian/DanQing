@@ -64,6 +64,17 @@ struct GraphicBuilderOptions {
     // no viewport in GraphicBuilderOptions, so the closure is supplied by the caller (system factory).
     // Required to produce LOD-correct tessellation in finish().
     std::function<double()> computeChordTolerance;
+    // 1:1 ViewportGraphicBuilderOptions.applyAspectRatioSkew (GraphicBuilder.ts:80-81)——
+    // true 时 ViewState.getAspectRatioSkew() 计入 LOD（弦差容差）计算。
+    // 消费点：参考在 GraphicBuilder ctor 内建闭包（GraphicBuilder.ts:177-182，
+    // skew>1 → pixelSize/=skew）；DanQing 闭包由调用方供给（见上注），skew 消费
+    // 落在 Viewport::createGraphicBuilder（参考视口路径同一职责点——EQUIVALENCE
+    // 登记：发散=除法序（(ps/skew)*0.25 ≡ (ps*0.25)/skew 恒等）；验证=
+    // W-b2 细分加密断言 + dqAppTest ViewAspectRatioSkewTest）。
+    // 参考自定义路径禁此旗标（CustomGraphicBuilderOptions.applyAspectRatioSkew?:never，
+    // GraphicBuilder.ts:114）——DanQing 无 viewport 的等价面=非 Viewport::
+    // createGraphicBuilder 路径不消费本旗标。
+    bool applyAspectRatioSkew = false;
 };
 
 // Abstract base class for building RenderGraphics.

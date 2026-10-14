@@ -349,6 +349,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/CanvasDecorationRenderTest.cpp
         tests/OrientationGroundTruthTest.cpp
         tests/PlanarGridRenderTest.cpp
+        # A-lane 锚（M-W 起——A 道代理只在此锚下追加测试注册；勿动他区）
     )
     # SurfaceCompileTest + PolylineRenderTest include GlslCompileHarness.h, which
     # uses the deprecated macOS OpenGL/CGL API (-Werror is on project-wide).

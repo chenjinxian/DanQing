@@ -175,6 +175,8 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/TileTreeRegistryTest.cpp  # 忠实路径 F3：Tiles 注册表（Ported from Tiles.test.ts）
         tests/DumpTileFetcherTest.cpp  # RPC-dump 本地回放契约（零网络 §8.2/TD-24）
         tests/DumpIModelConnectionTest.cpp  # imodel.json 解析 + Views 回放缝 + saved 视图应用锁（M-H Task 3）
+        tests/ViewAspectRatioSkewTest.cpp  # M-W W-p1：aspectRatioSkew 引擎缝（clamp/props 往返/fixAspectRatio/maxSkew）
+        # A-lane 锚（M-W 起——A 道代理只在此锚下追加测试注册；勿动他区）
     )
     target_link_libraries(dqAppTest
         PRIVATE

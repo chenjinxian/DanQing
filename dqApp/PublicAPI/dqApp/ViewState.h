@@ -264,10 +264,18 @@ public:
 
     // Get the aspect ratio skew (x/y, usually 1.0) that is used to exaggerate
     // the y axis of the view.
-    // Ported from: itwinjs-core ViewState.getAspectRatioSkew (ViewState.ts:971-973)。
-    // ViewDetails/aspectRatioSkew 未移植——恒 1.0 = 参考 skew 缺失时的默认行为
-    // (core-common ViewDetails.ts:100 `JsonUtils.asDouble(_json.aspectSkew, 1.0)`)。
-    double getAspectRatioSkew() const noexcept { return 1.0; }
+    // Ported from: itwinjs-core ViewState.getAspectRatioSkew (ViewState.ts:971-973)
+    //              → ViewDetails.aspectRatioSkew getter（ViewDetails.ts:97-101：
+    //              JsonUtils.asDouble(_json.aspectSkew, 1.0) + Geometry.clamp
+    //              [1/maxSkew, maxSkew]——M-W W-p1 清偿恒 1.0 移植缺口）。
+    // 就地承载：值存 m_aspectSkew（props 往返=viewDetailsProps.aspectSkew）。
+    double getAspectRatioSkew() const noexcept;
+    // Set the aspect ratio skew (x/y) for this view. To remove aspect ratio skew,
+    // pass 1.0 for val.
+    // Ported from: itwinjs-core ViewState.setAspectRatioSkew (ViewState.ts:975-977)
+    //              → ViewDetails.aspectRatioSkew setter（ViewDetails.ts:102-104：
+    //              1.0 时置 undefined=不写出 props）。
+    void setAspectRatioSkew(double val) noexcept;
 
     // Determine whether this ViewState has the same coordinate system as another
     // one. They must be from the same iModel, and view a model in common.
@@ -304,6 +312,9 @@ protected:
     // 惰性物化双态——M-P P-B）。
     std::optional<dqGeom::ClipVectorProps> m_clipVectorJson;
     dqGeom::ClipVector::Ptr m_clipVector;
+    // ← ViewDetails._json.aspectSkew（ViewDetails.ts——就地承载，getAspectRatioSkew
+    //   读侧 clamp；nullopt = 参考 undefined = 1.0 默认——M-W W-p1）。
+    std::optional<double> m_aspectSkew;
     // ← EntityProps.id / ViewDefinitionProps.code.value（就地承载，见 GetId/
     // getCodeValue 注——M-O(2) 3h）。
     dqBase::DqId m_id;

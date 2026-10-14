@@ -406,7 +406,26 @@ std::unique_ptr<dqRender::GraphicBuilder> Viewport::createGraphicBuilder(
     if (!m_pipeline)
         return nullptr;
     auto* sys = m_pipeline->renderSystem();
-    return sys ? sys->createGraphicBuilder(options) : nullptr;
+    if (!sys)
+        return nullptr;
+
+    // applyAspectRatioSkew 消费（GraphicBuilder.ts:177-182——skew>1 时 Y 向被拉伸，
+    // 用更小的竖直像素距做弦差容差：pixelSize /= skew）。参考在 GraphicBuilder
+    // ctor 的内建闭包内消费；DanQing 闭包由调用方供给（GraphicBuilderOptions 无
+    // viewport 的 §3.4 适配），消费落在本视口工厂同一职责点。isViewCoordinates
+    // 门 = ViewBackground|ViewOverlay（GraphicAssembler.ts isViewCoordinates）。
+    if (options.applyAspectRatioSkew && options.computeChordTolerance &&
+        options.type != dqRender::GraphicType::ViewBackground &&
+        options.type != dqRender::GraphicType::ViewOverlay) {
+        double const skew = m_view ? m_view->getAspectRatioSkew() : 1.0;
+        if (skew > 1.0) {
+            auto supplied = options.computeChordTolerance;
+            dqRender::GraphicBuilderOptions adjusted = options;
+            adjusted.computeChordTolerance = [supplied, skew]() { return supplied() / skew; };
+            return sys->createGraphicBuilder(adjusted);
+        }
+    }
+    return sys->createGraphicBuilder(options);
 }
 
 // Ported from: Viewport.applyViewState (Viewport.ts:2362-2367).
