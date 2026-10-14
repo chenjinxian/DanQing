@@ -79,3 +79,8 @@ third_party/tile-sample-assets/rpc-dumps/bridge-edit-sweep-v1/files/12.imdl
 saved-views-test/
 output-shaders-test/
 macro-*.macro
+# M-V Camera Paths 测试产物（cwd 相对持久化缝目录——saved-views-test 同族）
+camera-paths*/
+cp-panel*/
+cp-pump*/
+cp-toolbar*/
