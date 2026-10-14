@@ -14,6 +14,7 @@
 #pragma once
 
 #include <cmath>
+#include <cstdint>
 #include <optional>
 
 namespace dqGeom {
@@ -100,6 +101,17 @@ inline double crossProductXYXY(double ux, double uy, double vx, double vy) noexc
 /// Ported from: Geometry.maxAbsXY (Geometry.ts:715-717).
 inline double maxAbsXY(double x, double y) noexcept {
     return std::fmax(std::abs(x), std::abs(y));
+}
+
+/// Ported from: Geometry.split3Way01 (Geometry.ts:741-747)——
+//  x > tolerance → 1；x < -tolerance → -1；否则 0。默认容差 smallMetricDistance
+/// （1.0e-6——Point3d.h 的 kSmallMetricDistance，不重复定义见文件头注记）。
+inline int32_t split3Way01(double x, double tolerance = 1.0e-6) noexcept {
+    if (x > tolerance)
+        return 1;
+    if (x < -tolerance)
+        return -1;
+    return 0;
 }
 
 } // namespace dqGeom

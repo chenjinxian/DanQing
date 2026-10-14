@@ -335,6 +335,192 @@ TEST(PolyfaceAuxDataTest, PolyfaceTransformTransformsAuxData)
     EXPECT_NEAR(beam->Data().points[0].Magnitude(), 30.0 * 10.0, 1.0e-6);  // 环半径 10 → 300
 }
 
-// Ported from: PolyfaceAuxData.test.ts it("Compress") (:155-215) 的 auxData 压缩断言面——
-// 网格源=rhombicosidodecahedron.imjs（经 IModelJson Reader 装载，W-a2 落地后启用本锁；
-// 当前以编译占位锚定）。FB/JSON round-trip sanity 腿（BentleyGeometryFlatBuffer 未移植）省略。
+// ---------------------------------------------------------------------------
+// W-a2：IModelJson Reader/Writer 子集（indexedMesh+auxData）消费锁
+// ---------------------------------------------------------------------------
+
+#include <dqGeom/Geometry.h>
+#include <dqGeom/IModelJson.h>
+
+#include <fstream>
+#include <sstream>
+
+#ifndef DANQING_GEOM_TEST_DATA_DIR
+#define DANQING_GEOM_TEST_DATA_DIR "."
+#endif
+#ifndef DANQING_DTA_ASSETS_DIR
+#define DANQING_DTA_ASSETS_DIR "."
+#endif
+
+namespace {
+
+// 装载 JSON 文本（1:1 参考 GeometryCoreTestIO.jsonFileToIndexedPolyface 的读文件腿）。
+std::string loadTextFile(std::string const& path)
+{
+    std::ifstream ifs(path, std::ios::binary);
+    if (!ifs)
+        return {};
+    std::ostringstream oss;
+    oss << ifs.rdbuf();
+    return oss.str();
+}
+
+}  // namespace
+
+// Ported from: PolyfaceAuxData.test.ts it("testRoundTrip") (:57-68)。
+// 参考经 IModelJson.Writer.emit + Reader.parse 对象级 round-trip（非文本序列化——
+// DanQing 同构：Writer 产 JsonValue DOM、Reader 直消费）。
+TEST(PolyfaceAuxDataTest, TestRoundTrip)
+{
+    auto beam = createCantileverBeamPolyface();
+
+    IModelJson::Writer writer;
+    auto json = writer.emit(*beam);
+    ASSERT_TRUE(json.has_value());
+    auto roundTrippedBeam = IModelJson::Reader::parse(*json);
+    ASSERT_TRUE(roundTrippedBeam.IsValid());
+
+    EXPECT_TRUE(beam->IsAlmostEqual(*roundTrippedBeam, 1.0e-8));
+}
+
+// Ported from: PolyfaceAuxData.test.ts it("Compress") (:155-215) ——
+// 网格源 rhombicosidodecahedron.imjs（ImportedSample.createPolyhedron62 的同文件装载
+// 等价——GeometryCoreTestIO.jsonFileToIndexedPolyface → IModelJson::Reader）。
+// FB 序列化 sanity 腿（BentleyGeometryFlatBuffer）未移植省略；JSON round-trip 腿保留
+// （DanQing IModelJson Writer/Reader 在位）。
+TEST(PolyfaceAuxDataTest, Compress)
+{
+    std::string const path =
+        std::string(DANQING_GEOM_TEST_DATA_DIR) + "/polyface/rhombicosidodecahedron.imjs";
+    std::string const text = loadTextFile(path);
+    ASSERT_FALSE(text.empty()) << "load " << path;
+    auto json = imodeljson::parseJsonDocument(text);
+    ASSERT_TRUE(json.has_value());
+    auto meshQ = IModelJson::Reader::parse(*json);
+    // 顶层为数组包装（jsonFileToIndexedPolyface 语义——取第一个 IndexedPolyface）。
+    if (!meshQ.IsValid() && json->type == imodeljson::JsonValue::Type::Array) {
+        for (auto& g : IModelJson::Reader::parseArray(*json)) {
+            if (g.IsValid() && g->Category() == GeometryCategory::Polyface) {
+                meshQ = g;
+                break;
+            }
+        }
+    }
+    ASSERT_TRUE(meshQ.IsValid());
+    ASSERT_EQ(meshQ->Category(), GeometryCategory::Polyface);
+    auto& mesh = static_cast<IndexedPolyface&>(*meshQ);
+
+    // latitude 通道（z 值——Distance "Latitude"/"Time"）+ octant 通道（split3Way01 —— Vector "Octant"/"Time"）。
+    std::vector<double> latitude;
+    for (auto const& pt : mesh.Data().points)
+        latitude.push_back(pt.z);
+    AuxChannel latitudeChannel({AuxChannelData(0.0, latitude)}, AuxChannelDataType::Distance,
+                               std::string("Latitude"), std::string("Time"));
+
+    std::vector<double> octant;
+    for (auto const& pt : mesh.Data().points) {
+        octant.push_back(static_cast<double>(split3Way01(pt.x)));
+        octant.push_back(static_cast<double>(split3Way01(pt.y)));
+        octant.push_back(static_cast<double>(split3Way01(pt.z)));
+    }
+    AuxChannel octantChannel({AuxChannelData(0.0, octant)}, AuxChannelDataType::Vector,
+                             std::string("Octant"), std::string("Time"));
+
+    // mesh0：单 1D 通道 → auxData 被压缩（13 值）。
+    auto mesh0Q = mesh.clone();
+    auto& mesh0 = static_cast<IndexedPolyface&>(*mesh0Q);
+    mesh0.Data().auxData = PolyfaceAuxData({latitudeChannel.clone()}, mesh0.Data().pointIndex);
+    mesh0.Data().Compress();
+    EXPECT_NE(mesh.Data().pointIndex, mesh0.Data().auxData->indices)
+        << "Single 1D channel AuxData was compressed";
+    EXPECT_EQ(mesh0.Data().auxData->channels[0].valueCount(), 13u)
+        << "Compress leaves expected number of AuxData 1D values";
+
+    // mesh1：单 3D 通道 → auxData 被压缩（20 值）。
+    auto mesh1Q = mesh.clone();
+    auto& mesh1 = static_cast<IndexedPolyface&>(*mesh1Q);
+    mesh1.Data().auxData = PolyfaceAuxData({octantChannel.clone()}, mesh1.Data().pointIndex);
+    mesh1.Data().Compress();
+    EXPECT_NE(mesh.Data().pointIndex, mesh1.Data().auxData->indices)
+        << "Single 3D channel AuxData was compressed";
+    EXPECT_EQ(mesh1.Data().auxData->channels[0].valueCount(), 20u)
+        << "Compress leaves expected number of AuxData 3D values";
+
+    // mesh2：双通道 → auxData 不压缩（60 值、indices 保持原 pointIndex）。
+    auto mesh2Q = mesh.clone();
+    auto& mesh2 = static_cast<IndexedPolyface&>(*mesh2Q);
+    mesh2.Data().auxData = PolyfaceAuxData({latitudeChannel.clone(), octantChannel.clone()},
+                                           mesh2.Data().pointIndex);
+    mesh2.Data().Compress();
+    EXPECT_EQ(mesh.Data().pointIndex, mesh2.Data().auxData->indices)
+        << "Multichannel AuxData indices was untouched by compress";
+    EXPECT_EQ(mesh2.Data().auxData->channels[0].valueCount(), 60u)
+        << "Compress leaves multichannel AuxData 1D values untouched";
+    EXPECT_EQ(mesh2.Data().auxData->channels[1].valueCount(), 60u)
+        << "Compress leaves multichannel AuxData 3D values untouched";
+
+    // sanity check roundtrips（JSON 腿保留——参考 :187-194 的 IModelJson 半）。
+    for (IndexedPolyface* meshWithAuxData : {&mesh0, &mesh1, &mesh2}) {
+        IModelJson::Writer writer;
+        auto jsonOut = writer.emit(*meshWithAuxData);
+        ASSERT_TRUE(jsonOut.has_value());
+        auto meshJson = IModelJson::Reader::parse(*jsonOut);
+        ASSERT_TRUE(meshJson.IsValid());
+        ASSERT_EQ(meshJson->Category(), GeometryCategory::Polyface);
+        EXPECT_TRUE(meshWithAuxData->IsAlmostEqual(static_cast<IndexedPolyface&>(*meshJson), 1.0e-8))
+            << "roundtrip through JSON";
+    }
+}
+
+// Authored: no reference test exists in itwinjs-core for IModelJson.Reader 对
+// Cantilever.ts 资产的消费（参考的 Cantilever 消费面在 display-test-app
+// AnalysisStyleExample.ts:66-77，非 geometry 测试）——截段断言锚定资产键面
+// （W-a2 计划锁：顶点数/索引数/通道计数/输入序列）。
+TEST(PolyfaceAuxDataTest, CantileverAssetLoadsWithAuxData)
+{
+    std::string const path = std::string(DANQING_DTA_ASSETS_DIR) + "/cantilever.imjs";
+    std::string const text = loadTextFile(path);
+    ASSERT_FALSE(text.empty()) << "load " << path;
+    auto json = imodeljson::parseJsonDocument(text);
+    ASSERT_TRUE(json.has_value());
+    auto parsed = IModelJson::Reader::parse(*json);
+    ASSERT_TRUE(parsed.IsValid());
+    ASSERT_EQ(parsed->Category(), GeometryCategory::Polyface);
+    auto& pf = static_cast<IndexedPolyface&>(*parsed);
+
+    // 资产钉值（截段读取断言——值取自资产 JSON 实测）：
+    // 顶点 1424 / facet 1422（pointIndex 无终止符 5688=7110-1422 终止符）/ auxData 2 通道
+    // （Vector "Displacement" 3 帧 input 0/1/2 + Scalar "Stress" 3 帧 input 0/1/2）。
+    EXPECT_EQ(pf.Data().points.size(), 1424u);
+    EXPECT_EQ(pf.Data().pointIndex.size(), 5688u);
+    EXPECT_EQ(pf.FacetCount(), 1422u);
+    ASSERT_TRUE(pf.Data().auxData.has_value());
+    ASSERT_EQ(pf.Data().auxData->channels.size(), 2u);
+    auto const& ch0 = pf.Data().auxData->channels[0];
+    auto const& ch1 = pf.Data().auxData->channels[1];
+    EXPECT_TRUE(ch0.dataType == AuxChannelDataType::Vector);
+    EXPECT_EQ(ch0.name.value_or(""), "Displacement");
+    EXPECT_TRUE(ch1.dataType == AuxChannelDataType::Scalar);
+    EXPECT_EQ(ch1.name.value_or(""), "Stress");
+    ASSERT_EQ(ch0.data.size(), 3u);
+    EXPECT_DOUBLE_EQ(ch0.data[0].input, 0.0);
+    EXPECT_DOUBLE_EQ(ch0.data[1].input, 1.0);
+    EXPECT_DOUBLE_EQ(ch0.data[2].input, 2.0);
+    ASSERT_EQ(ch1.data.size(), 3u);
+    EXPECT_DOUBLE_EQ(ch1.data[0].input, 0.0);
+    EXPECT_DOUBLE_EQ(ch1.data[1].input, 1.0);
+    EXPECT_DOUBLE_EQ(ch1.data[2].input, 2.0);
+    // 通道值数 = 顶点数 × entriesPerValue：
+    EXPECT_EQ(ch0.data[0].values.size(), 1424u * 3u);
+    EXPECT_EQ(ch1.data[0].values.size(), 1424u);
+    // auxData.indices parallel to pointIndex（无终止符）：
+    EXPECT_EQ(pf.Data().auxData->indices.size(), pf.Data().pointIndex.size());
+
+    // zero-based 转换对账（round-trip 语义腿）：writer 写回 → reader 重读 → 全等。
+    IModelJson::Writer writer;
+    auto jsonOut = writer.emit(pf);
+    ASSERT_TRUE(jsonOut.has_value());
+    auto reparsed = IModelJson::Reader::parse(*jsonOut);
+    ASSERT_TRUE(reparsed.IsValid());
+    EXPECT_TRUE(pf.IsAlmostEqual(*reparsed, 1.0e-8));
+}

@@ -50,6 +50,7 @@ target_sources(dqGeom
         src/polyface/PolyfaceQuery.cpp
         src/polyface/PolyfaceBuilder.cpp
         src/polyface/PolyfaceData.cpp
+        src/serialization/IModelJson.cpp
 )
 
 # 公开头以 PUBLIC 暴露（其他模块 #include <dqGeom/Point3d.h>）
@@ -98,13 +99,19 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/ClipUtilsLoopsTest.cpp # M-P P-A：loops/rangeOf/does 族（ClipUtilities.test.ts 子集）
         tests/YawPitchRollAnglesTest.cpp  # angles→rotation 链（M-H Task 3：ViewState3d 构造的 angles 应用面）
         # A-lane 锚（M-W 起——A 道代理只在此锚下追加测试注册；勿动他区）
-        tests/PolyfaceAuxDataTest.cpp  # M-W W-a1：AuxData.ts（PolyfaceAuxData.test.ts 子集）
+        tests/PolyfaceAuxDataTest.cpp  # M-W W-a1/W-a2：AuxData.ts + IModelJson 子集（PolyfaceAuxData.test.ts 子集）
     )
     target_link_libraries(dqGeomTest
         PRIVATE
             dqGeom
             GTest::gtest_main
             danqing_compile_options
+    )
+    # A-lane（M-W W-a2）：PolyfaceAuxDataTest 资产路径
+    # （rhombicosidodecahedron.imjs 测试数据 + samples 侧 cantilever.imjs 资产）
+    target_compile_definitions(dqGeomTest PRIVATE
+        DANQING_GEOM_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data"
+        DANQING_DTA_ASSETS_DIR="${CMAKE_SOURCE_DIR}/samples/DisplayTestApp/assets"
     )
     include(GoogleTest)
     gtest_discover_tests(dqGeomTest)
