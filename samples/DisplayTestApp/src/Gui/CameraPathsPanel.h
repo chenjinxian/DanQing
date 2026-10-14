@@ -22,6 +22,7 @@
 
 #include <dqBase/DqEvent.h>  // DqEventScope（onViewChanged 订阅——:303-310）
 
+#include <QElapsedTimer>
 #include <QObject>
 #include <optional>
 #include <vector>
@@ -29,6 +30,7 @@
 class QLineEdit;
 class QListWidget;
 class QPushButton;
+class QTimer;
 class QWidget;
 
 namespace dqApp {
@@ -56,6 +58,18 @@ public:
     const std::vector<CameraPath>& paths() const noexcept { return m_paths; }
     const CameraPath* selectedPath() const noexcept;  // :266-268
 
+    // --- V-d 录制/播放泵（:516-684） ---
+    void prepareView(bool record);  // :516-529
+    void play(bool record);         // :531-561
+    void stop();                    // :563-589
+    // rAF 回调体（:543-553）——测试缝直驱（真实泵经 QTimer 16ms 喂
+    // QElapsedTimer 毫秒时间戳——E2）。
+    void animateFrame(double timestamp);
+
+    bool isPlaying() const noexcept { return m_isPlaying; }      // :259
+    bool isRecording() const noexcept { return m_isRecording; }  // :260
+    double currentAnimationTime() const noexcept { return m_currentAnimationTime; }  // :264
+
     // QObject：列表 Delete 键（:350-353）
     bool eventFilter(QObject* watched, QEvent* event) override;
 
@@ -69,6 +83,13 @@ private:
     CameraPath* findPath(const std::string& name);
     void selectPath(const CameraPath* path);  // :270-273 setter（含 onStateChanged）
 
+    void computeAnimationFrame();       // :591-606
+    void playAnimationFrame();          // :608-615
+    void recordAnimationFrame();        // :617-642
+    void endAnimation();                // :644-646
+    void setCameraPosition(const Keyframe& keyframe);  // :648-684
+    void queueAnimationFrame();         // rAF → QTimer 单发链（:552/:556）
+
     dqApp::Viewport* m_vp;
     dqApp::IModelConnection* m_imodel = nullptr;     // :252/_imodel（:303-310 变更门）
     std::vector<CameraPath> m_paths;                 // :254 _paths
@@ -77,6 +98,11 @@ private:
 
     bool m_isPlaying = false;                        // :259（泵=V-d）
     bool m_isRecording = false;                      // :260（泵=V-d）
+    double m_currentAnimationTime = 0.0;             // :264 _currentAnimationTime
+    std::optional<double> m_previousAnimationFrame;  // :263（undefined=首帧）
+
+    QTimer* m_animTimer = nullptr;                   // _animID 承载（可取消单发）
+    QElapsedTimer m_elapsedTimer;                    // rAF timestamp 源（E2）
 
     dqBase::DqEventScope m_eventScope;               // onViewChanged（:303-310）
 

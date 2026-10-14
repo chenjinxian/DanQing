@@ -263,3 +263,214 @@ TEST(CameraPathsPanelTest, EmptyPathEntryGreyedWithTooltip)
     EXPECT_TRUE(item->toolTip().contains("empty"));
     EXPECT_NE(item->foreground().color(), QColor(Qt::black));
 }
+
+// --- V-d 录制/播放泵（CameraPaths.ts:516-684） ---
+
+namespace {
+
+// NavigateTest 同形：无窗视口建立真实 frustum（setupViewFromFrustum）
+void setupFrustum(CameraPathsFixture& f)
+{
+    f.view->SetExtents(dqGeom::Vector3d::From(
+        200.0, 200.0 * f.vp->height() / f.vp->width(), 200.0));
+    f.vp->setupViewFromFrustum(f.vp->getFrustum(true));
+}
+
+// 预置两帧透视路径（t=0/t=2000，相机沿 +X 平移 0→100）
+void seedFlyPath(const std::string& key)
+{
+    Gui::CameraPath path;
+    path.name = "fly";
+    path.duration = 2000.0;
+    Gui::Keyframe k0;
+    k0.time = 0.0;
+    k0.location = dqGeom::Point3d::From(0.0, 0.0, 100.0);
+    k0.target = dqGeom::Point3d::From(0.0, 0.0, 0.0);
+    k0.up = dqGeom::Vector3d::From(0.0, 1.0, 0.0);
+    k0.lensAngle = dqGeom::Angle::FromDegrees(60.0);
+    Gui::Keyframe k1 = k0;
+    k1.time = 2000.0;
+    k1.location = dqGeom::Point3d::From(100.0, 0.0, 100.0);
+    k1.target = dqGeom::Point3d::From(100.0, 0.0, 0.0);
+    path.keyframes = {k0, k1};
+    Gui::writeExternalCameraPaths(key, Gui::cameraPathsToJsonString({path}));
+}
+
+}  // namespace
+
+TEST(CameraPathsPumpTest, PlayDrivesCameraAlongPathAndStopsAtDuration)
+{
+    QtEnvCP qt;
+    freshCameraPathsDir("cp-pump-play");
+    CameraPathsFixture f;
+    setupFrustum(f);
+    seedFlyPath(f.conn->GetKey());
+    Gui::CameraPathsPanel panel(f.vp, nullptr);
+    panel.populate();
+    pathsList(panel)->setCurrentRow(0);
+
+    panel.play(false);  // :531-561
+    // :558-560 + :440-443——播放中：play 禁 / stop 可 / 列表禁
+    EXPECT_TRUE(panel.isPlaying());
+    EXPECT_FALSE(panel.isRecording());
+    EXPECT_FALSE(playButton(panel)->isEnabled());
+    EXPECT_TRUE(stopButton(panel)->isEnabled());
+    EXPECT_FALSE(pathsList(panel)->isEnabled());
+
+    // 首帧 elapsed=0（:544 的 previousAnimationFrame=undefined 怪癖）→ t=0 帧
+    panel.animateFrame(1000.0);
+    EXPECT_NEAR(f.view->AsViewState3d()->getEyePoint().x, 0.0, 1e-6);
+    EXPECT_NEAR(f.view->AsViewState3d()->getEyePoint().z, 100.0, 1e-6);
+
+    // 第二帧 elapsed=1000 → t=1000 → 中点插值（:191-203）
+    panel.animateFrame(2000.0);
+    EXPECT_NEAR(f.view->AsViewState3d()->getEyePoint().x, 50.0, 1e-6);
+    EXPECT_NEAR(f.view->AsViewState3d()->getEyePoint().z, 100.0, 1e-6);
+
+    // 越过 duration → endAnimation（:602-603）
+    panel.animateFrame(4500.0);
+    EXPECT_FALSE(panel.isPlaying());
+    EXPECT_TRUE(playButton(panel)->isEnabled());
+    EXPECT_FALSE(stopButton(panel)->isEnabled());
+    EXPECT_TRUE(pathsList(panel)->isEnabled());
+}
+
+TEST(CameraPathsPumpTest, RecordCapturesCameraKeyframes)
+{
+    QtEnvCP qt;
+    freshCameraPathsDir("cp-pump-record");
+    CameraPathsFixture f;
+    setupFrustum(f);
+    Gui::CameraPathsPanel panel(f.vp, nullptr);
+    panel.populate();
+    nameEdit(panel)->setText("rec");
+    emit nameEdit(panel)->returnPressed();
+
+    panel.play(true);  // :531-561 record 形
+    EXPECT_TRUE(panel.isPlaying());
+    EXPECT_TRUE(panel.isRecording());
+
+    panel.animateFrame(100.0);   // t=0
+    panel.animateFrame(600.0);   // t=500
+    const auto& frames = panel.selectedPath()->keyframes;
+    ASSERT_EQ(frames.size(), 2u);
+    EXPECT_DOUBLE_EQ(frames[0].time, 0.0);
+    EXPECT_DOUBLE_EQ(frames[1].time, 500.0);
+    // :626-627——location=npcToWorld(0.5,0.5,1)、target=npcToWorld(0.5,0.5,0)
+    const dqGeom::Point3d expectLoc = f.vp->NpcToWorld(dqGeom::Point3d::From(0.5, 0.5, 1.0));
+    const dqGeom::Point3d expectTgt = f.vp->NpcToWorld(dqGeom::Point3d::From(0.5, 0.5, 0.0));
+    EXPECT_NEAR(frames[0].location.x, expectLoc.x, 1e-6);
+    EXPECT_NEAR(frames[0].location.y, expectLoc.y, 1e-6);
+    EXPECT_NEAR(frames[0].location.z, expectLoc.z, 1e-6);
+    EXPECT_NEAR(frames[0].target.x, expectTgt.x, 1e-6);
+
+    panel.stop();  // :563-589 录制收尾
+    EXPECT_FALSE(panel.isPlaying());
+    // :574——duration 落账 = currentAnimationTime
+    EXPECT_DOUBLE_EQ(panel.selectedPath()->duration, 500.0);
+    // :579——存盘
+    const auto loaded = Gui::parseCameraPathsString(
+        Gui::readExternalCameraPaths(f.conn->GetKey()));
+    ASSERT_EQ(loaded.size(), 1u);
+    EXPECT_DOUBLE_EQ(loaded[0].duration, 500.0);
+    EXPECT_EQ(loaded[0].keyframes.size(), 2u);
+}
+
+TEST(CameraPathsPumpTest, StopRecordingSimplifiesCollinearFrames)
+{
+    QtEnvCP qt;
+    freshCameraPathsDir("cp-pump-simplify");
+    CameraPathsFixture f;
+    setupFrustum(f);
+    Gui::CameraPathsPanel panel(f.vp, nullptr);
+    panel.populate();
+    nameEdit(panel)->setText("rec4");
+    emit nameEdit(panel)->returnPressed();
+
+    panel.play(true);
+    // 静止录制 4 帧（t=0/500/1000/1500——位姿全同 → 中帧皆可插值重建）
+    panel.animateFrame(100.0);
+    panel.animateFrame(600.0);
+    panel.animateFrame(1100.0);
+    panel.animateFrame(1600.0);
+    ASSERT_EQ(panel.selectedPath()->keyframes.size(), 4u);
+    panel.stop();
+    // :577——simplifies(0.005, 1°, 0.01)：中间两帧删
+    const auto& frames = panel.selectedPath()->keyframes;
+    ASSERT_EQ(frames.size(), 2u);
+    EXPECT_DOUBLE_EQ(frames[0].time, 0.0);
+    EXPECT_DOUBLE_EQ(frames[1].time, 1500.0);
+    EXPECT_DOUBLE_EQ(panel.selectedPath()->duration, 1500.0);
+}
+
+TEST(CameraPathsPumpTest, PlayWithoutSelectionDoesNotStart)
+{
+    QtEnvCP qt;
+    freshCameraPathsDir("cp-pump-nosel");
+    CameraPathsFixture f;
+    setupFrustum(f);
+    Gui::CameraPathsPanel panel(f.vp, nullptr);
+    panel.populate();
+    panel.play(false);  // :538-539 早退
+    EXPECT_FALSE(panel.isPlaying());
+}
+
+TEST(CameraPathsPumpTest, OrthoKeyframeAppliesExtentsAndTurnsCameraOff)
+{
+    QtEnvCP qt;
+    freshCameraPathsDir("cp-pump-ortho");
+    CameraPathsFixture f;
+    setupFrustum(f);
+    // 正交路径（extents 形态）
+    Gui::CameraPath path;
+    path.name = "ortho";
+    path.duration = 1000.0;
+    Gui::Keyframe k0;
+    k0.time = 0.0;
+    k0.location = dqGeom::Point3d::From(0.0, 0.0, 100.0);
+    k0.target = dqGeom::Point3d::From(0.0, 0.0, 0.0);
+    k0.up = dqGeom::Vector3d::From(0.0, 1.0, 0.0);
+    k0.extents = dqGeom::Vector3d::From(111.0, 55.5, 1.0);
+    Gui::Keyframe k1 = k0;
+    k1.time = 1000.0;
+    path.keyframes = {k0, k1};
+    Gui::writeExternalCameraPaths(f.conn->GetKey(), Gui::cameraPathsToJsonString({path}));
+
+    Gui::CameraPathsPanel panel(f.vp, nullptr);
+    panel.populate();
+    pathsList(panel)->setCurrentRow(0);
+    panel.play(false);  // prepareView :525 turnCameraOn（注释：非透视首帧会关相机）
+    panel.animateFrame(100.0);
+    // :668-680——正交 lookAt；lookAt 的 isPerspective=false → TurnCameraOff
+    // （ViewState.cpp lookAt :1983-1986——参考注释 :523-525 的机制）
+    EXPECT_FALSE(f.view->IsCameraOn());
+    EXPECT_NEAR(f.view->GetExtents().x, 111.0, 1e-6);
+    // lookAt 的 newExtents 经视口纵横比校正（x 保持、y=x/aspect——参考
+    // fixAspectRatio[Viewport.ts:2042，synchWithView→doSetupFromView 链] 同机制）；
+    // 钉住实际语义而非原样 extents.y（容差 1e-4——viewRect aspect 亚像素噪声）。
+    EXPECT_NEAR(f.view->GetExtents().y,
+                111.0 * f.vp->height() / f.vp->width(), 1e-4);
+    panel.stop();
+}
+
+TEST(CameraPathsPumpTest, StopDuringPlayDoesNotPersist)
+{
+    QtEnvCP qt;
+    freshCameraPathsDir("cp-pump-stopplay");
+    CameraPathsFixture f;
+    setupFrustum(f);
+    seedFlyPath(f.conn->GetKey());
+    Gui::CameraPathsPanel panel(f.vp, nullptr);
+    panel.populate();
+    pathsList(panel)->setCurrentRow(0);
+    panel.play(false);
+    panel.animateFrame(1000.0);
+    panel.stop();
+    EXPECT_FALSE(panel.isPlaying());
+    // :570——录制收尾门（isPlaying && isRecording）不满足 → 不动盘
+    const auto loaded = Gui::parseCameraPathsString(
+        Gui::readExternalCameraPaths(f.conn->GetKey()));
+    ASSERT_EQ(loaded.size(), 1u);
+    EXPECT_DOUBLE_EQ(loaded[0].duration, 2000.0);
+    EXPECT_EQ(loaded[0].keyframes.size(), 2u);
+}

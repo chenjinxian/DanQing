@@ -7,13 +7,18 @@
 #include <dqApp/ViewState.h>
 #include <dqApp/Viewport.h>
 
+#include <dqCommon/Camera.h>  // Camera::validateLensAngle（:656）
+
 #include <QEvent>
 #include <QFrame>
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
+#include <QTimer>
 #include <QVBoxLayout>
+
+#include <limits>
 
 namespace Gui {
 
@@ -115,7 +120,18 @@ CameraPathsPanel::CameraPathsPanel(dqApp::Viewport* vp, QWidget* parentWidget)
             writeExternalCameraPaths(m_vp->GetView()->GetIModel()->GetKey(),
                                      cameraPathsToJsonString(m_paths));
     });
-    // Record/Play/Stop 钮 handler = V-d 泵（:394-419）
+    // :394-419——Record/Play/Stop 钮：play(true)/play(false)/stop()
+    QObject::connect(m_recordButton, &QPushButton::clicked, this, [this]() { play(true); });
+    QObject::connect(m_playButton, &QPushButton::clicked, this, [this]() { play(false); });
+    QObject::connect(m_stopButton, &QPushButton::clicked, this, [this]() { stop(); });
+
+    // 泵承载（:543-556 的 rAF 链 → 16ms 单发——E2=M-U E5 先例）
+    m_animTimer = new QTimer(this);
+    m_animTimer->setSingleShot(true);
+    m_animTimer->setInterval(16);
+    QObject::connect(m_animTimer, &QTimer::timeout, this, [this]() {
+        animateFrame(static_cast<double>(m_elapsedTimer.elapsed()));
+    });
 
     // :303-310——onViewChanged：iModel 变更才重 populate（参考 this._imodel !==
     // this._viewport.iModel 门；TimelinePanel 同族订阅面）
@@ -283,6 +299,201 @@ bool CameraPathsPanel::eventFilter(QObject* watched, QEvent* event)
         }
     }
     return QObject::eventFilter(watched, event);
+}
+
+// --- V-d 录制/播放泵（:516-684） ---
+
+void CameraPathsPanel::prepareView(bool record)
+{
+    // :516-529——selectedPath 缺席 throw（:517-518）由调用面 play 的门保证；
+    // C++ 禁异常 → 早退（EQUIVALENCE）
+    if (selectedPath() == nullptr)
+        return;
+    m_vp->setAnimator(nullptr);          // :520
+    if (!record)
+        m_vp->TurnCameraOn();            // :525（防正交无视史 bug——非透视首帧关相机）
+    m_vp->synchWithView();               // :528
+}
+
+void CameraPathsPanel::play(bool record)
+{
+    // :531-561
+    if (m_isPlaying)
+        stop();                          // :532-533
+
+    m_previousAnimationFrame = std::nullopt;  // :535
+    m_currentAnimationTime = 0.0;             // :536
+
+    if (selectedPath() == nullptr)
+        return;                          // :538-539
+
+    findPath(selectedPath()->name)->SortKeyframes();  // :541（对象同一性——selectPath 指 m_paths 内）
+
+    prepareView(record);                 // :555
+    m_elapsedTimer.restart();            // rAF timestamp 源（E2）
+    queueAnimationFrame();               // :556
+
+    m_isPlaying = true;                  // :558
+    m_isRecording = record;              // :559
+    onStateChanged();                    // :560
+}
+
+void CameraPathsPanel::stop()
+{
+    // :563-589
+    m_animTimer->stop();                 // :565-567 cancelAnimationFrame
+
+    // :570-581——录制收尾（isPlaying && isRecording 门）
+    if (m_isPlaying && m_isRecording) {
+        CameraPath* sel = (selectedPath() != nullptr)
+            ? findPath(selectedPath()->name) : nullptr;
+        if (sel == nullptr)
+            return;                      // :571-572 throw → 早退（EQUIVALENCE；契约守卫）
+        sel->duration = m_currentAnimationTime;                    // :574
+        sel->Simplifies(0.005, dqGeom::Angle::FromDegrees(1.0), 0.01);  // :577
+        writeExternalCameraPaths(m_vp->GetView()->GetIModel()->GetKey(),
+                                 cameraPathsToJsonString(m_paths));     // :579
+        populateFromPathList();                                       // :580
+    }
+
+    // :583-587
+    m_isPlaying = false;
+    m_isRecording = false;
+    m_currentAnimationTime = 0.0;
+    m_previousAnimationFrame = std::nullopt;
+    onStateChanged();                    // :588
+}
+
+void CameraPathsPanel::animateFrame(double timestamp)
+{
+    // :543-553——rAF 回调体
+    const double elapsed = m_previousAnimationFrame.has_value()
+        ? timestamp - *m_previousAnimationFrame : 0.0;   // :544（首帧=0 怪癖）
+    m_currentAnimationTime += elapsed;                   // :545
+
+    computeAnimationFrame();                             // :547
+
+    m_previousAnimationFrame = timestamp;                // :549
+    if (m_isPlaying)                                     // :551-552
+        queueAnimationFrame();
+}
+
+void CameraPathsPanel::queueAnimationFrame()
+{
+    // requestAnimationFrame（:552/:556）→ QTimer 单发重启动
+    m_animTimer->start();
+}
+
+void CameraPathsPanel::computeAnimationFrame()
+{
+    // :591-606
+    if (selectedPath() == nullptr) {
+        endAnimation();                  // :593-594
+        return;
+    }
+    if (m_isRecording) {
+        recordAnimationFrame();          // :598
+    } else {
+        playAnimationFrame();            // :600
+        if (m_currentAnimationTime > selectedPath()->duration)
+            endAnimation();              // :602-603
+    }
+}
+
+void CameraPathsPanel::playAnimationFrame()
+{
+    // :608-615
+    CameraPath* sel = (selectedPath() != nullptr)
+        ? findPath(selectedPath()->name) : nullptr;
+    if (sel == nullptr)
+        return;                          // :609-610 throw → 早退（EQUIVALENCE）
+    m_vp->setAnimator(nullptr);          // :612
+    const auto keyframe = sel->GetKeyframeAtTime(m_currentAnimationTime);  // :613
+    if (keyframe.has_value())
+        setCameraPosition(*keyframe);    // :614
+}
+
+void CameraPathsPanel::recordAnimationFrame()
+{
+    // :617-642
+    auto* view = (m_vp->GetView() != nullptr) ? m_vp->GetView()->AsViewState3d() : nullptr;
+    if (view == nullptr || !view->supportsCamera())
+        return;  // :622-623 throw（"Invalid view for camera path"）→ 早退（EQUIVALENCE；
+                 // AsViewState3d nullptr ≡ !is3d()）
+
+    // :625——TODO: Handle global coordinates（参考未处理——原样不落）
+    const dqGeom::Point3d location = m_vp->NpcToWorld(dqGeom::Point3d::From(0.5, 0.5, 1.0));  // :626
+    const dqGeom::Point3d target = m_vp->NpcToWorld(dqGeom::Point3d::From(0.5, 0.5, 0.0));    // :627
+
+    // :630-631——同点帧无效，跳过
+    if (target.Distance(location) <= std::numeric_limits<double>::epsilon())
+        return;
+
+    const dqGeom::Point3d topScreen = m_vp->NpcToWorld(dqGeom::Point3d::From(0.5, 1.0, 0.0));  // :633
+    const auto up = location.UnitVectorTo(topScreen);   // :634
+    if (!up.has_value())
+        return;                                          // :635-636
+
+    // :638-639——isCameraOn 分流：lensAngle（透视）| extents（正交）
+    std::optional<dqGeom::Angle> lensAngle;
+    std::optional<dqGeom::Vector3d> extents;
+    if (view->IsCameraOn())
+        lensAngle = dqGeom::Angle::FromRadians(view->GetLensAngle());
+    else
+        extents = view->GetExtents();
+
+    CameraPath* sel = findPath(selectedPath()->name);
+    if (sel == nullptr)
+        return;
+    Keyframe kf;
+    kf.time = m_currentAnimationTime;
+    kf.location = location;
+    kf.target = target;
+    kf.up = *up;
+    kf.lensAngle = lensAngle;
+    kf.extents = extents;
+    sel->keyframes.push_back(kf);        // :641
+}
+
+void CameraPathsPanel::endAnimation()
+{
+    stop();  // :644-646
+}
+
+void CameraPathsPanel::setCameraPosition(const Keyframe& keyframe)
+{
+    // :648-684
+    auto* view = (m_vp->GetView() != nullptr) ? m_vp->GetView()->AsViewState3d() : nullptr;
+    if (view == nullptr || !view->supportsCamera())
+        return;  // :650-651 throw → 早退（EQUIVALENCE）
+
+    if (keyframe.lensAngle.has_value()) {
+        // :654-666——透视
+        double lensAngle = dqCommon::Camera::validateLensAngle(
+            keyframe.lensAngle->Radians());  // :655-656（clone+validate——值传递等价）
+        dqApp::LookAtArgs args;
+        args.eyePoint = keyframe.location;
+        args.targetPoint = keyframe.target;
+        args.upVector = keyframe.up;
+        args.lensAngleRadians = lensAngle;
+        view->lookAt(args);
+    } else {
+        // :668-680——正交
+        if (!keyframe.extents.has_value())
+            return;  // :669-670 throw → 早退（EQUIVALENCE）
+        dqApp::LookAtArgs args;
+        args.eyePoint = keyframe.location;
+        args.viewDirection = dqGeom::Vector3d::FromStartEnd(keyframe.location, keyframe.target);
+        args.upVector = keyframe.up;
+        // LookAtOrthoArgs.newExtents?: XAndY（ViewState.ts:163）——Vector3d 结构型
+        // 别兼容 {x,y}，z 弃（参考同弃）
+        args.newExtents = dqGeom::Point2d{keyframe.extents->x, keyframe.extents->y};
+        view->lookAt(args);
+    }
+
+    dqApp::ViewChangeOptions opts;       // :683
+    opts.noSaveInUndo = true;
+    m_vp->synchWithView(opts);
 }
 
 }  // namespace Gui
