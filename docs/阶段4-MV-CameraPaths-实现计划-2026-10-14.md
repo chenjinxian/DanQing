@@ -134,8 +134,12 @@ readExternalCameraPaths/writeExternalCameraPaths → **EQUIVALENCE 本地文件*
 
 | 任务 | 提交 | 实绩 |
 |---|---|---|
-| V-a | 待定 |  |
-| V-b | 待定 |  |
-| V-c | 待定 |  |
-| V-d | 待定 |  |
-| V-e | 待定 |  |
+| V-a 数据层 | 68a58380c6 | Keyframe/CameraPath 全量 1:1（interpolate 双 undefined 怪癖[extents :79 回落 other 不对称——参考原样锁]/simplifies 四阈/GetKeyframeAtTime 四分支[空→nullopt=参考 throw EQUIVALENCE]/JSON 对偶[lensAngle=度数 number+缺席省略+%.17g]）+ dqGeom 两小件（Point3d::UnitVectorTo[geometry-core :374 语义，mag≤1e-10→nullopt]/Angle::CreateInterpolate[Angle.ts:78 双分支]）。锁：CameraPathsTest 20 + Point3d/Angle 各 1（Point3dVector3d.test.ts:129-134 语义移植）。一修：判据钉值 "60" 子串 → 度数数值提取（度↔弧度转换链浮点不精确，判据换语义层）。 |
+| V-b 持久化缝 | 152d7fac21 | DtaRpcInterface 外存 RPC → 本地文件（env DANQING_CAMERA_PATHS_DIR 缺省 ./camera-paths，<dir>/<sanitize(key)>.json，I9 同型）+ parseCameraPathsString（JSON.parse 失败/顶层非数组→空表 catch 语义）。锁三例（round-trip/缺席/坏 JSON）。 |
+| V-c 面板 | cfac5abaa3 | CameraPathsPanel（CameraPathsMenu :249-514 1:1）：名框校验三态/列表（空隐藏+空路径灰字 tooltip）/五钮互斥矩阵 :434-448 全态/onViewChanged iModel 变更门/Enter 追加即存盘。**参考怪癖实锤+双锁**：列表 Delete 键删不存盘（:350-353）vs Delete 钮删+存盘（:384-388）。锁 8 例。 |
+| V-d 泵 | d14cbd150e | prepareView/play/stop/computeAnimationFrame/record/playAnimationFrame/setCameraPosition 全量（:516-684）+ QTimer 16ms 可取消单发=rAF（E2=M-U E5）+ QElapsedTimer 时间戳。判据订正一录：正交帧 extents.y 断言 55.5→x/aspect（fixAspectRatio Viewport.ts:2042 链实锤——先核参考语义再设判据）。锁 6 例（播放驱动眼点/录制捕获/静止录制 simplifies 4→2/无选中不起播/正交帧+TurnCameraOff/播放中 stop 不动盘）。 |
+| V-e 激活+E2E+收口 | 49d54972fe+d6093b08c8 | item 8 addEmptyDropDown→CameraPathsPanel 实面板（Viewer.ts:306-311 同形）；接线锁（RED openDropDownCount=0→GREEN 三钉）；E2E 像素锁（NpcToWorld 捕获 k0→+X 平移 k1→真 QTimer 泵自然停→渲染质心×WorldToNpc 投影差双向对账[方向+量值带]+内容存活+y 稳定）。**取证教训二录**：①WA_DeleteOnClose 面板 deleteLater 须事件循环落地先于 vp 析构（DqEventScope 退订死 DqEvent=UB 挂死——[CP-DIAG] 探针三段定位：click 完成/挂点在 close 后生命周期序）；②僵尸测试进程持 exe→LNK1168 跑旧二进制假象（M-P 同族，先清杀再重建）。**TD-29 实录**：全量轮 9 例败（ViewClip×2/ImdlSilhouette/Mirukuru/Instances60/DumpOpenChain×2/DumpBrowse/TiledGraphics）逐例隔离复跑 ×2 全绿归因。E2E 取景订正：LookAtVolume 收紧至 (-3,-3,-1)-(3,3,12)+TurnCameraOn 先行（同透视制式三段一致）。 |
+
+**EQUIVALENCE 终态**：E1（本地文件持久化）/E2（QTimer=rAF+QElapsedTimer）/E3（select→QListWidget、灰字 tooltip、style.color→styleSheet）/E4（global coordinates 参考未处理原样）全部落实；另增 E5（throw 四处→nullopt/早退——契约守卫面）/E6（_selectedPath 对象→下标）/E7（DOM 全量重建→Qt 持久件刷新）/E8（lookAt newExtents XAndY 型别 z 弃）。
+
+**M-V 终态门禁（2026-10-14，Debug）**：**全量 ctest 2793 项 = 100% 通过、0 失败**（976s；TD-26/TD-29 环境态族本轮自然全过——V-e 期间满载轮的 9 例败经逐例隔离 ×2 全绿归因，门禁轮负载回落后零复发）。
