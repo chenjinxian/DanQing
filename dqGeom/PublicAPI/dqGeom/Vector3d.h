@@ -11,8 +11,10 @@
 #pragma once
 
 #include "Point3d.h"
+#include "Geometry.h"   // kSmallFraction（Point3d::UnitVectorTo 的归一化失败阈）
 
 #include <cmath>
+#include <optional>
 
 BEGIN_DQ_GEOM_NAMESPACE
 
@@ -370,6 +372,19 @@ inline void Point3d::SumOf(const Point3d& origin, const Vector3d& v0, double s0,
     x = origin.x + s0 * v0.x + s1 * v1.x + s2 * v2.x;
     y = origin.y + s0 * v0.y + s1 * v1.y + s2 * v2.y;
     z = origin.z + s0 * v0.z + s1 * v1.z + s2 * v2.z;
+}
+// Ported from: itwinjs-core geometry-core Point3d.unitVectorTo (Point3dVector3d.ts:374
+//   = vectorTo(target).normalize()) + Vector3d.normalize (:963 = normalizeWithLength().v，
+//   :950-958：mag 经 correctSmallFraction[|m|<=smallFraction→0，Geometry.ts:327]
+//   再 safeDivideOrNull[0→undefined]）。geometry-core 语义面（区别于本头 Normalize
+//   的 GeomLibs 零向量→(1,0,0) 语义）。
+inline std::optional<Vector3d> Point3d::UnitVectorTo(const Point3d& target) const noexcept {
+    const double dx = target.x - x, dy = target.y - y, dz = target.z - z;
+    const double mag = std::sqrt(dx * dx + dy * dy + dz * dz);
+    const double corrected = mag <= kSmallFraction ? 0.0 : mag;  // correctSmallFraction（smallFraction=1e-10）
+    if (corrected == 0.0) return std::nullopt;                   // safeDivideOrNull(0)→undefined
+    const double inv = 1.0 / corrected;
+    return Vector3d::From(dx * inv, dy * inv, dz * inv);
 }
 
 END_DQ_GEOM_NAMESPACE

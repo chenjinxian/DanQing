@@ -87,6 +87,20 @@ TEST(AngleTest, IsAlmostEqual)
 }
 
 // Ported from: imodel-native iModelCore/GeomLibs/PublicAPI/Geom/Angle.h
+// Authored: no reference test exists in geometry-core for Angle.createInterpolate
+//           （行为锚 = Angle.ts:78 createInterpolate = Geometry.interpolate(radians)
+//           + Geometry.ts:1040 双分支公式 f<=0.5 / f>0.5）
+TEST(AngleTest, CreateInterpolateInterpolatesRadiansOnBothFractionHalves)
+{
+    const Angle a = Angle::FromDegrees(0.0);
+    const Angle b = Angle::FromDegrees(90.0);
+    EXPECT_NEAR(Angle::CreateInterpolate(a, 0.25, b).Degrees(), 22.5, 1.0e-10);  // f<=0.5 支
+    EXPECT_NEAR(Angle::CreateInterpolate(a, 0.5, b).Degrees(), 45.0, 1.0e-10);
+    EXPECT_NEAR(Angle::CreateInterpolate(a, 0.75, b).Degrees(), 67.5, 1.0e-10);  // f>0.5 支
+    EXPECT_NEAR(Angle::CreateInterpolate(a, 0.0, b).Degrees(), 0.0, 1.0e-10);
+    EXPECT_NEAR(Angle::CreateInterpolate(a, 1.0, b).Degrees(), 90.0, 1.0e-10);
+}
+
 TEST(AngleTest, StaticUtilities)
 {
     EXPECT_NEAR(Angle::DegreesToRadians(180.0), Angle::kPi, 1.0e-10);

@@ -15,6 +15,7 @@
 #include "DqGeom.h"
 
 #include <cmath>
+#include <optional>
 
 BEGIN_DQ_GEOM_NAMESPACE
 
@@ -329,6 +330,11 @@ struct DQ_GEOM_EXPORT Point3d {
     void Subtract(const Vector3d& vector) noexcept;
     void Subtract(const Point3d& other) noexcept;                       // this -= other
     void DifferenceOf(const Point3d& point1, const Point3d& point2) noexcept; // this = point1 - point2
+    // Ported from: itwinjs-core geometry-core Point3d.unitVectorTo
+    //   (Point3dVector3d.ts:374 = vectorTo(target).normalize()；normalize :963 的
+    //   失败阈 = Geometry.smallFraction——geometry-core 语义面，区别于本头
+    //   Normalize 的 GeomLibs 语义）。距离过小 → nullopt（参考 undefined）。
+    std::optional<Vector3d> UnitVectorTo(const Point3d& target) const noexcept;
     void SumOf(const Point3d& origin, const Vector3d& vector) noexcept;
     void SumOf(const Point3d& origin, const Vector3d& vector, double scaleFactor) noexcept;
     void SumOf(const Point3d& origin, const Vector3d& v0, double s0, const Vector3d& v1, double s1) noexcept;

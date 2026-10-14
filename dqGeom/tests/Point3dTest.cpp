@@ -227,6 +227,28 @@ TEST(Point3dTest, SubtractAndSumOf) {
 }
 
 // Ported from: t_DPoint3d.cpp TEST(DPoint3d, AngleTo)
+// Ported from: itwinjs-core core/geometry/src/test/geometry3d/Point3dVector3d.test.ts:129-134
+//              （unitVectorTo：结果与 vectorTo 平行、unit·vectorTo == distance；
+//              normalize 失败阈 = Geometry.smallFraction=1e-10 归 undefined）
+TEST(Point3dTest, UnitVectorToMatchesGeometryCoreSemantics)
+{
+    const Point3d p0 = Point3d::From(1.0, 2.0, 3.0);
+    const Point3d p1 = Point3d::From(4.0, 6.0, 3.0);
+    const auto unit = p0.UnitVectorTo(p1);
+    ASSERT_TRUE(unit.has_value());
+    const Vector3d v01 = Vector3d::From(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z);
+    EXPECT_NEAR(unit->Magnitude(), 1.0, kTol);
+    EXPECT_NEAR(unit->DotProduct(v01), p0.Distance(p1), kTol);
+    // 归一化失败阈：距离 <= 1e-10 → nullopt（geometry-core normalize→undefined）
+    const Point3d pTooSmall = Point3d::From(p0.x + 1.0e-11, p0.y, p0.z);
+    EXPECT_FALSE(p0.UnitVectorTo(pTooSmall).has_value());
+    // 阈上 → 有值且为单位向
+    const Point3d pEdge = Point3d::From(p0.x + 2.0e-10, p0.y, p0.z);
+    const auto edge = p0.UnitVectorTo(pEdge);
+    ASSERT_TRUE(edge.has_value());
+    EXPECT_NEAR(edge->Magnitude(), 1.0, kTol);
+}
+
 TEST(Point3dTest, Angles) {
     const Point3d p0 = Point3d::From(1.0, 0.0, 0.0);
     const Point3d p1 = Point3d::From(0.0, 1.0, 0.0);

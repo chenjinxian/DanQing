@@ -33,6 +33,13 @@ public:
     static Angle FromAtan2(double y, double x) noexcept { return Angle(std::atan2(y, x)); }
     static Angle Zero() noexcept { return Angle(0.0); }
     static Angle FullCircle() noexcept { return Angle(k2Pi); }
+    // Ported from: itwinjs-core geometry-core Angle.createInterpolate (Angle.ts:78
+    //   = Geometry.interpolate(a.radians, f, b.radians)；Geometry.ts:1040 双分支
+    //   f<=0.5: a+f*(b-a) / f>0.5: b-(1-f)*(b-a)——geometry-core 语义面）
+    static Angle CreateInterpolate(const Angle& a, double fraction, const Angle& b) noexcept {
+        return Angle(fraction <= 0.5 ? a.m_radians + fraction * (b.m_radians - a.m_radians)
+                                     : b.m_radians - (1.0 - fraction) * (b.m_radians - a.m_radians));
+    }
 
     // --- Accessors ---
     double Radians() const noexcept { return m_radians; }
