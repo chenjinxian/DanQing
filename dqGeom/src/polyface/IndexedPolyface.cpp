@@ -3,6 +3,7 @@
 // Ported from: itwinjs-core core/geometry/src/polyface/Polyface.ts
 //              imodel-native iModelCore/GeomLibs/PublicAPI/Geom/Polyface.h
 #include "dqGeom/IndexedPolyface.h"
+#include "dqGeom/AuxData.h"
 #include "dqGeom/GeometryHandler.h"
 #include "dqGeom/PolyfaceVisitor.h"
 
@@ -39,6 +40,11 @@ bool IndexedPolyface::TryTransformInPlace(Transform const& transform)
     for (auto& n : m_data.normals) {
         n = transform.MultiplyVector(n);
     }
+    // Ported from: PolyfaceData.ts:584-585（tryTransformInPlace 的 auxData 联动腿——
+    // 参考 IndexedPolyface.tryTransformInPlace Polyface.ts:187-192 → data.tryTransformInPlace
+    // → auxData.tryTransformInPlace；逐型变换语义见 AuxData.ts:252-292）。
+    if (m_data.auxData)
+        m_data.auxData->tryTransformInPlace(transform);
     return true;
 }
 
@@ -112,6 +118,11 @@ bool IndexedPolyface::IsAlmostEqual(GeometryQuery const& other, double tol) cons
     for (size_t i = 0; i < a.edgeVisible.size(); ++i) {
         if (a.edgeVisible[i] != b.edgeVisible[i]) return false;
     }
+    // Ported from: PolyfaceData.ts:201（isAlmostEqual 的 auxData 比较腿——双 undefined
+    // 捕获由 nullptr 承载；容差走 PolyfaceAuxData 默认 1.0e-8，与参考不传 tol 同构）。
+    if (!PolyfaceAuxData::isAlmostEqual(a.auxData ? &*a.auxData : nullptr,
+                                        b.auxData ? &*b.auxData : nullptr))
+        return false;
     if (a.twoSided != b.twoSided) return false;
     if (a.expectedClosure != b.expectedClosure) return false;
     return true;
