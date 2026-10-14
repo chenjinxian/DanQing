@@ -26,6 +26,8 @@
 #include <dqApp/tile/DumpTileTreeProps.h>  // dumpjson
 
 #include <cmath>
+#include <cstdlib>
+#include <filesystem>
 #include <string>
 
 using namespace Gui;
@@ -36,6 +38,16 @@ using dqGeom::Vector3d;
 namespace {
 
 constexpr double kTol = 1.0e-9;
+
+// SavedViewsTest freshStoreDir 同型（cwd 下自建目录 + 测试隔离清空 + env 门控）
+std::string freshCameraPathsDir(const char* sub)
+{
+    std::error_code ec;
+    const std::string dir = (std::filesystem::current_path(ec) / sub).string();
+    std::filesystem::remove_all(dir, ec);
+    _putenv_s("DANQING_CAMERA_PATHS_DIR", dir.c_str());
+    return dir;
+}
 
 Keyframe makePerspectiveFrame(double time, double lx, double tx, double lensDeg)
 {
@@ -366,4 +378,47 @@ TEST(CameraPathsTest, CameraPathFromJsonNullReturnsEmpty)
     EXPECT_EQ(path.name, "");
     EXPECT_DOUBLE_EQ(path.duration, 0.0);
     EXPECT_TRUE(path.keyframes.empty());
+}
+
+// --- V-b 持久化缝（CameraPaths.ts:490-508——DtaRpcInterface 外存 RPC →
+//     EQUIVALENCE 本地文件，I9 Saved Views 同型 env 门控目录） ---
+
+TEST(CameraPathsTest, PersistenceRoundTripPreservesPaths)
+{
+    freshCameraPathsDir("camera-paths-rt");
+
+    CameraPath path;
+    path.name = "rt-path";
+    path.duration = 4000.0;
+    path.keyframes.push_back(makePerspectiveFrame(0.0, 0.0, 10.0, 60.0));
+    path.keyframes.push_back(makeOrthoFrame(4000.0, 8.5, 18.5, 42.25));
+    writeExternalCameraPaths("test-key", cameraPathsToJsonString({path}));
+
+    const std::vector<CameraPath> loaded = parseCameraPathsString(readExternalCameraPaths("test-key"));
+    ASSERT_EQ(loaded.size(), 1u);
+    EXPECT_EQ(loaded[0].name, "rt-path");
+    EXPECT_DOUBLE_EQ(loaded[0].duration, 4000.0);
+    ASSERT_EQ(loaded[0].keyframes.size(), 2u);
+    EXPECT_TRUE(loaded[0].keyframes[0].lensAngle.has_value());
+    ASSERT_TRUE(loaded[0].keyframes[1].extents.has_value());
+    EXPECT_DOUBLE_EQ(loaded[0].keyframes[1].extents->x, 42.25);
+}
+
+TEST(CameraPathsTest, PersistenceMissingFileReturnsEmpty)
+{
+    freshCameraPathsDir("camera-paths-missing");
+    // 参考：readExternalCameraPaths 缺席 → 串解析失败 → catch → _paths=[]
+    // （:494-498）；本缝=空串 → parseCameraPathsString 空表
+    EXPECT_TRUE(parseCameraPathsString(readExternalCameraPaths("never-written-key")).empty());
+}
+
+TEST(CameraPathsTest, PersistenceCorruptJsonReturnsEmptyList)
+{
+    freshCameraPathsDir("camera-paths-corrupt");
+    writeExternalCameraPaths("corrupt-key", "{ this is not json !!!");
+    // 参考 try/catch（:494-498）：JSON.parse 失败 → _paths=[]
+    EXPECT_TRUE(parseCameraPathsString(readExternalCameraPaths("corrupt-key")).empty());
+    // 顶层非数组同样空表（JSON.parse 成功但 .map 崩溃 → catch 同径）
+    writeExternalCameraPaths("corrupt-key", "{\"notAnArray\":1}");
+    EXPECT_TRUE(parseCameraPathsString(readExternalCameraPaths("corrupt-key")).empty());
 }

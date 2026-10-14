@@ -6,7 +6,12 @@
 #include <dqApp/tile/DumpTileTreeProps.h>  // dumpjson
 
 #include <cmath>
+#include <cctype>
 #include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 
 namespace Gui {
 
@@ -289,6 +294,76 @@ void CameraPath::ToJSON(std::string& out) const
         kf.ToJSON(out);
     }
     out += "]}";
+}
+
+// --- 持久化缝（CameraPaths.ts:490-508——EQUIVALENCE 见 CameraPaths.h 头注） ---
+
+namespace {
+
+// I9 SavedViewsPanel savedViewsDir/sanitizeKey 同型
+std::string cameraPathsDir()
+{
+    if (const char* env = std::getenv("DANQING_CAMERA_PATHS_DIR"))
+        return env;
+    return "./camera-paths";
+}
+
+std::string sanitizeKey(std::string const& key)
+{
+    std::string out;
+    for (char c : key)
+        out.push_back(std::isalnum(static_cast<unsigned char>(c)) ? c : '_');
+    return out;
+}
+
+}  // namespace
+
+std::string readExternalCameraPaths(std::string const& filename)
+{
+    const std::string path = cameraPathsDir() + "/" + sanitizeKey(filename) + ".json";
+    std::ifstream ifs(path, std::ios::binary);
+    if (!ifs)
+        return "";
+    return std::string((std::istreambuf_iterator<char>(ifs)),
+                       std::istreambuf_iterator<char>());
+}
+
+void writeExternalCameraPaths(std::string const& filename,
+                              std::string const& cameraPathsString)
+{
+    std::error_code ec;
+    std::filesystem::create_directories(cameraPathsDir(), ec);
+    const std::string path = cameraPathsDir() + "/" + sanitizeKey(filename) + ".json";
+    std::ofstream ofs(path, std::ios::binary | std::ios::trunc);
+    if (ofs)
+        ofs << cameraPathsString;
+}
+
+std::vector<CameraPath> parseCameraPathsString(std::string const& json)
+{
+    // :494-498——JSON.parse 失败/顶层非数组 → 空表（参考 try/catch）
+    auto doc = dqApp::dumpjson::parseJsonDocument(json);
+    std::vector<CameraPath> paths;
+    if (!doc || doc->type != dqApp::dumpjson::JsonValue::Type::Array)
+        return paths;
+    for (const auto& elem : doc->arr)
+        paths.push_back(CameraPath::FromJSON(&elem));
+    return paths;
+}
+
+std::string cameraPathsToJsonString(std::vector<CameraPath> const& paths)
+{
+    // :506——JSON.stringify(paths.map(toJSON))
+    std::string out = "[";
+    bool first = true;
+    for (const auto& path : paths) {
+        if (!first)
+            out += ',';
+        first = false;
+        path.ToJSON(out);
+    }
+    out += ']';
+    return out;
 }
 
 }  // namespace Gui

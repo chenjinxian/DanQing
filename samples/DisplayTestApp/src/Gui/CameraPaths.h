@@ -80,4 +80,21 @@ public:
     void ToJSON(std::string& out) const;
 };
 
+// --- 持久化缝（CameraPaths.ts:490-508） ---
+// EQUIVALENCE（§11.10）：参考源 = DtaRpcInterface.readExternalCameraPaths/
+//   writeExternalCameraPaths(filename=viewport.view.iModel.key) 的后端外存
+//   RPC——本仓零网络（§8.2），落本地文件：dir = env DANQING_CAMERA_PATHS_DIR，
+//   缺省 "./camera-paths"；文件 = <dir>/<sanitize(filename)>.json
+//   （sanitize=非字母数字→'_'，I9 SavedViewsPanel 同型）。
+// readExternalCameraPaths（:492——缺席/不可读 = 空串）。
+std::string readExternalCameraPaths(std::string const& filename);
+// writeExternalCameraPaths（:507）。
+void writeExternalCameraPaths(std::string const& filename,
+                              std::string const& cameraPathsString);
+// loadPathsFromExternalFile 的解析腿（:494-498）：JSON.parse 失败/顶层非数组
+// → 空表（参考 try/catch 语义）。
+std::vector<CameraPath> parseCameraPathsString(std::string const& json);
+// savePathsToExternalFile 的序列化腿（:506——JSON.stringify(map(toJSON))）。
+std::string cameraPathsToJsonString(std::vector<CameraPath> const& paths);
+
 }  // namespace Gui
