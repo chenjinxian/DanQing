@@ -1,0 +1,1 @@
+[{"name":"walk","duration":2000,"keyframes":[{"time":0,"location":{"x":0,"y":0,"z":10},"target":{"x":0,"y":0,"z":0},"up":{"x":0,"y":1,"z":0},"lensAngle":59.999999999999993},{"time":2000,"location":{"x":10,"y":0,"z":10},"target":{"x":0,"y":0,"z":0},"up":{"x":0,"y":1,"z":0},"lensAngle":59.999999999999993}]}]

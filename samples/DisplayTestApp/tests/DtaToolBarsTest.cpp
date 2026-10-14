@@ -4,6 +4,8 @@
 //           Surface.ts:122-178 (app toolbar) + Viewer.ts:238-446 (main toolbar 26
 //           items) + ToolBar.ts:122-197 (drop-down interaction contract).
 #include <gtest/gtest.h>
+#include <QLineEdit>
+#include <QListWidget>
 #include <QMainWindow>
 #include <QToolBar>
 #include <QToolButton>
@@ -12,6 +14,9 @@
 #include <QStringList>
 #include <QWidgetAction>
 #include "DtaToolBars.h"
+
+#include <cstdlib>
+#include <filesystem>
 
 #include <dqApp/Application.h>
 #include <dqApp/BlankConnection.h>
@@ -77,7 +82,8 @@ TEST(DtaToolBarsSet, NoToolbarsUntilViewportFocused)
 
 // 主工具栏 26 项严格序（Viewer.ts:238-446）+ Measure/Walk 激活（M-R——引擎
 // 已移植 [M-O(3) P1/P2]，此前置灰）+ Animation 激活（M-U U-f TimelinePanel）
-// + 置灰面（hub/CameraPaths/Classification/PointCloud/Contours/FormatSet）。
+// + Camera Paths 激活（M-V CameraPathsPanel）+ 置灰面（hub/Classification/
+// PointCloud/Contours/FormatSet）。
 TEST(DtaToolBarsMain, TwentySixItemsInDtaOrder)
 {
     QMainWindow mw;
@@ -96,8 +102,8 @@ TEST(DtaToolBarsMain, TwentySixItemsInDtaOrder)
         << "Walk (engine ported M-O(3) P1; hidden via only3d at construction)";
     EXPECT_TRUE(acts[19]->isEnabled()) << "Sectioning (M-P P-G)";
 
-    // 置灰面（大件未移植/零网络）。
-    // Camera Paths 为可点空下拉（DTA blank 语义——面板空非置灰）。
+    // 置灰面（大件未移植/零网络）。Camera Paths 已激活（M-V——独立锁
+    // CameraPathsButtonOpensLivePanel）。
     for (int i : { 2 /*Open Hub*/, 20 /*Classification*/, 22 /*PointCloud*/,
                    23 /*Contours*/, 24 /*Format Set*/ })
         EXPECT_FALSE(acts[i]->isEnabled()) << kMainTexts[i];
@@ -166,6 +172,48 @@ TEST(DtaToolBarsDropDowns, OpenIsMutuallyExclusiveAndCloseClosesAll)
     bars.closeOpenDropDowns();
     EXPECT_EQ(bars.openDropDownCount(), 0);
     EXPECT_TRUE(panelB.isHidden());
+}
+
+// Camera Paths 激活（M-V V-e——Viewer.ts:306-311 的 CameraPathsMenu：点击开
+// 面板[cameraPathsMenu 构件 + txt_pathName 名框 + pathsList 列表]，替代
+// addEmptyDropDown 空下拉占位）。
+TEST(DtaToolBarsMain, CameraPathsButtonOpensLivePanel)
+{
+    // 持久化缝 env（面板 populate 读——CameraPathsTest 同型隔离）
+    std::error_code ec;
+    const std::string dir = (std::filesystem::current_path(ec) / "cp-toolbar-wiring").string();
+    std::filesystem::remove_all(dir, ec);
+    _putenv_s("DANQING_CAMERA_PATHS_DIR", dir.c_str());
+
+    QMainWindow mw;
+    Gui::DtaToolBarSet bars(&mw);
+
+    // 活动视口（populate 的 iModel.key 面——Only3d 锁同形）
+    dqApp::BlankConnectionProps props;
+    props.extents = dqGeom::Range3d(-1000, -1000, -100, 1000, 1000, 100);
+    auto conn = dqApp::BlankConnection::create(props);
+    auto view = dqApp::ViewList::create(conn.Get()).getDefaultView(conn.Get());
+    auto* vp = dqApp::Viewport::Create(nullptr, view);
+    dqApp::Application::Get().GetViewManager().AddViewport(vp);
+
+    QAction* a = bars.mainToolBar()->actions()[7];  // 位 8 = Camera Paths
+    auto* btn = qobject_cast<QToolButton*>(bars.mainToolBar()->widgetForAction(a));
+    ASSERT_NE(btn, nullptr);
+    emit btn->clicked();  // InstantPopup 无菜单——直发信号驱动 handler
+    EXPECT_EQ(bars.openDropDownCount(), 1);
+    QWidget* panelWidget = btn->findChild<QWidget*>(QStringLiteral("cameraPathsMenu"));
+    ASSERT_NE(panelWidget, nullptr);
+    EXPECT_NE(panelWidget->findChild<QLineEdit*>(QStringLiteral("txt_pathName")), nullptr);
+    EXPECT_NE(panelWidget->findChild<QListWidget*>(QStringLiteral("pathsList")), nullptr);
+
+    bars.closeOpenDropDowns();
+    // WA_DeleteOnClose 的 deleteLater 需事件循环落地（widget destroyed→delete
+    // panel→DqEventScope 退订 vp->onViewChanged）——须在 vp 析构前完成，
+    // 否则 panel 退订阅死 DqEvent = UB（挂死实锤，[CP-DIAG] 探针定位）。
+    QCoreApplication::processEvents();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    dqApp::Application::Get().GetViewManager().DropViewport(vp);
+    delete vp;
 }
 
 // only3d 显隐（ToolBar.onViewChanged :192-193——is3d ? block : none）：

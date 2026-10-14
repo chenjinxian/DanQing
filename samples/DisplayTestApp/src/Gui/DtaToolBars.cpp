@@ -35,6 +35,7 @@
 #include "FeatureOverridesPanel.h"   // M-O(2) I10 Overrides 弹出面板
 #include "SectionsPanel.h"           // M-P P-G Sectioning 弹出面板
 #include "TimelinePanel.h"           // M-U U-f Animation/Timeline 弹出面板
+#include "CameraPathsPanel.h"        // M-V Camera Paths 弹出面板
 #include "SavedViewsPanel.h"         // M-O(2) I9 Saved Views 弹出面板
 #include "MainWindow.h"               // M-O(1) R2 addPanelToggle（dock 面板开关）
 #include "View3DInventor.h"
@@ -483,8 +484,31 @@ void DtaToolBarSet::buildMainToolBar(QMainWindow* mw)
         sva->setIcon(dtaGlyphIcon(0xe90d));
     }
 
-    // ── 8. Saved camera paths（:306-315——大件未移植置灰）──
-    addEmptyDropDown(tb, QStringLiteral("Camera Paths"), 0xe932, QStringLiteral("Saved camera paths"));
+    // ── 8. Saved camera paths（:306-315——M-V live：CameraPathsPanel）──
+    {
+        auto* btn = new QToolButton(tb);
+        btn->setText(QStringLiteral("Camera Paths"));
+        btn->setIcon(dtaGlyphIcon(0xe932));
+        btn->setToolTip(QStringLiteral("Saved camera paths"));
+        btn->setPopupMode(QToolButton::InstantPopup);
+        DtaToolBarSet* self = this;
+        QObject::connect(btn, &QToolButton::clicked, btn, [btn, self]() {
+            auto* vp = activeViewport();
+            if (!vp)
+                return;
+            auto* panel = new Gui::CameraPathsPanel(vp, btn);
+            panel->populate();  // Viewer.ts:310——createDropDown 构造后 populate
+            // 生命周期绑定（Timeline item 19 同形）：widget 关闭 → panel 删除
+            QObject::connect(panel->widget(), &QObject::destroyed, btn,
+                             [panel] { delete panel; });
+            panel->widget()->setAttribute(Qt::WA_DeleteOnClose);
+            panel->widget()->move(btn->mapToGlobal(QPoint(0, btn->height())));
+            self->openDropDown(panel->widget());
+        });
+        QAction* cpa = tb->addWidget(btn);
+        cpa->setText(QStringLiteral("Camera Paths"));
+        cpa->setIcon(dtaGlyphIcon(0xe932));
+    }
 
     // ── 9. Element selection（:316-320——zoom.svg 图按钮）──
     {

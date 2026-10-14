@@ -282,6 +282,7 @@ if(TARGET gtest_main AND TARGET dqApp)
         tests/TimelineE2ETest.cpp      # M-U U-g：setSunTime 顶面 luma 序像素锁 + schedule 模型级 override 接线锁（注册在 TimelinePanelTest 后）
         tests/CameraPathsTest.cpp       # M-V V-a：相机路径数据层锁（Keyframe/CameraPath——Authored）
         tests/CameraPathsPanelTest.cpp  # M-V V-c：CameraPathsPanel 面板状态机锁（Authored）
+        tests/CameraPathsE2ETest.cpp    # M-V V-e：播放泵驱动真视口的内容位移方向像素锁（Authored——注册在 TimelineE2ETest 之后：同族真窗 harness）
         tests/RenderingStylesTest.cpp   # M-Q Q-b 14 预设表完整性锁 + applyRenderingStyle
         tests/ThematicDisplayEditorTest.cpp  # M-S S-g：Thematic 编辑器五锁
         tests/JoesHouseColorTest.cpp    # JoesHouse 管线蓝/红回归像素锁（M-I Task 3 色表顶点色——注册在 PickDumpSceneTest 之后：同因 fetcher 替换不回溢）

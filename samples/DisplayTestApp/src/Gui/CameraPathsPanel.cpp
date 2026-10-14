@@ -37,8 +37,9 @@ QFrame* makeHRule(QWidget* parent)
 CameraPathsPanel::CameraPathsPanel(dqApp::Viewport* vp, QWidget* parentWidget)
     : QObject(parentWidget), m_vp(vp)
 {
-    // :290-296——toolMenu 容器（300px）
+    // :290-296——toolMenu 容器（300px；className "toolMenu" → objectName）
     m_widget = new QWidget(parentWidget);
+    m_widget->setObjectName(QStringLiteral("cameraPathsMenu"));
     m_widget->setMinimumWidth(300);
     auto* layout = new QVBoxLayout(m_widget);
     layout->setContentsMargins(3, 3, 3, 3);
