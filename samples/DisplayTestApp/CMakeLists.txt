@@ -61,6 +61,8 @@ add_executable(DisplayTestApp WIN32
     src/Gui/TimelinePanel.h            # MOC needs this for Q_OBJECT
     src/Gui/CameraPaths.cpp            # M-V：Camera Paths 数据层+面板（CameraPaths.ts）
     src/Gui/CameraPaths.h
+    src/Gui/CameraPathsPanel.cpp       # M-V V-c：Camera Paths 下拉面板（CameraPathsMenu）
+    src/Gui/CameraPathsPanel.h         # MOC needs this for Q_OBJECT
     src/Gui/RenderingStyles.cpp        # Rendering Style 14 预设表（M-Q Q-b——ViewAttributes.ts:31-268）
     src/Gui/RenderingStyles.h
     src/Gui/ThematicDisplayEditor.cpp  # M-S S-g：Thematic Display 编辑区（ViewSettingsPanel 末节——ViewAttributes.ts:327 宿主位）
@@ -279,6 +281,7 @@ if(TARGET gtest_main AND TARGET dqApp)
         tests/TimelinePanelTest.cpp     # M-U U-f Timeline 面板锁（provider 矩阵/映射/状态机——Authored）
         tests/TimelineE2ETest.cpp      # M-U U-g：setSunTime 顶面 luma 序像素锁 + schedule 模型级 override 接线锁（注册在 TimelinePanelTest 后）
         tests/CameraPathsTest.cpp       # M-V V-a：相机路径数据层锁（Keyframe/CameraPath——Authored）
+        tests/CameraPathsPanelTest.cpp  # M-V V-c：CameraPathsPanel 面板状态机锁（Authored）
         tests/RenderingStylesTest.cpp   # M-Q Q-b 14 预设表完整性锁 + applyRenderingStyle
         tests/ThematicDisplayEditorTest.cpp  # M-S S-g：Thematic 编辑器五锁
         tests/JoesHouseColorTest.cpp    # JoesHouse 管线蓝/红回归像素锁（M-I Task 3 色表顶点色——注册在 PickDumpSceneTest 之后：同因 fetcher 替换不回溢）
@@ -307,6 +310,8 @@ if(TARGET gtest_main AND TARGET dqApp)
         src/Gui/TimelinePanel.h            # MOC needs this for Q_OBJECT
         src/Gui/CameraPaths.cpp            # M-V：Camera Paths 数据层+面板（被测面）
         src/Gui/CameraPaths.h
+        src/Gui/CameraPathsPanel.cpp       # M-V V-c：Camera Paths 面板（wiring 锁被测面）
+        src/Gui/CameraPathsPanel.h         # MOC needs this for Q_OBJECT
         src/Gui/RenderingStyles.cpp        # M-Q Q-b：14 预设表（表完整性锁被测面）
         src/Gui/RenderingStyles.h
         src/Gui/NamedViews.cpp            # M-O(2) I9：NamedVSPS 载体（SavedViews 链锁被测面）
