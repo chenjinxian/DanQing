@@ -104,6 +104,7 @@ add_executable(DisplayTestApp WIN32
     src/Mod/Start/Gui/FlowLayout.cpp
     src/Mod/Start/Gui/NewFileButton.cpp
     # A-lane 锚（M-W 起——A 道代理只在此锚下追加 app src 注册；勿动他区）
+    src/Gui/AnalysisStyleExample.cpp  # M-W W-a6：AnalysisStyleExample.ts（分析样式演示宿主件）
     # B-lane 锚（M-W 起——B 道代理只在此锚下追加 app src 注册；勿动他区）
 )
 
@@ -168,6 +169,12 @@ target_compile_definitions(DisplayTestApp PRIVATE
     # M-H(4)：Start 页双模型入口的 dump 包根（与 DtaTest 同宏同路径——
     # main.cpp dumpPackageForModel 消费；运行时 DANQING_RPC_DUMP env 覆写）。
     DANQING_TILE_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/tile-sample-assets"
+)
+
+# M-W W-a6：DTA 演示资产目录（cantilever.imjs——AnalysisStyleExample 的 createCantilever
+# 消费面；E5 资产入库位）。
+target_compile_definitions(DisplayTestApp PRIVATE
+    DANQING_DTA_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets"
 )
 
 if(APPLE)
@@ -369,6 +376,8 @@ if(TARGET gtest_main AND TARGET dqApp)
         src/Gui/View.cpp              # BaseView（MDIView 基类）
         src/Gui/MenuManager.cpp       # MenuItem + MenuManager::setup（Workbench::activate）
         # A-lane 锚（M-W 起——A 道代理只在此锚下追加[注册序尾=dump 族序敏感安全位]；勿动他区）
+        tests/AnalysisStyleE2ETest.cpp  # M-W W-a6：分析样式 E2E 像素锁（Authored §5(g)）
+        src/Gui/AnalysisStyleExample.cpp  # M-W W-a6：被测面双注册（app+DtaTest 双目标，M-M(6) 先例）
         # B-lane 锚（M-W 起——B 道代理只在此锚下追加[注册序尾]；勿动他区）
         resources.qrc                 # DTA 图标资源（字体 + SVG——图标断言测试需要）
     )
@@ -390,6 +399,9 @@ if(TARGET gtest_main AND TARGET dqApp)
         DANQING_CURSOR_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/itwinjs-cursors"
         # TileTreeRenderTest 的离线 3D Tiles 资产（tileset.json + root.b3dm，DanQing-authored）
         DANQING_TILE_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/tile-sample-assets"
+        # M-W W-a6：DTA 演示资产目录（与 app 目标同宏同路径——AnalysisStyleExample 的
+        # cantilever.imjs 消费面，E5）。
+        DANQING_DTA_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets"
     )
     target_link_libraries(DisplayTestAppDtaTest PRIVATE
         gtest_main Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Svg dqApp dqRender dqCommon dqGeom dqBase danqing_compile_options

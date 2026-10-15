@@ -276,12 +276,15 @@ public:
 
     // Ported from: IModelJsonSchema.ts:1991-2001 emit（GeometryQuery 分派面——
     // 本子集仅支持 IndexedPolyface，其余返回 nullopt == 参考 undefined）。
-    std::optional<imodeljson::JsonValue> emit(GeometryQuery const& data);
+    // §3.4 碰撞例外：参考方法名 `emit` 撞 Qt 关键字宏（QT_NO_KEYWORDS 在
+    // DanQing 刻意未定义——samples/DisplayTestApp/CMakeLists.txt:155-156 注记），
+    // 故以 `emitJson` 落名（最小可区分后缀）。
+    std::optional<imodeljson::JsonValue> emitJson(GeometryQuery const& data);
     // Ported from: IModelJsonSchema.ts:2003-2006 toIModelJson。
     static std::optional<imodeljson::JsonValue> toIModelJson(GeometryQuery const& data)
     {
         Writer writer;
-        return writer.emit(data);
+        return writer.emitJson(data);
     }
 
     // Ported from: IModelJsonSchema.ts:1753-1868 handleIndexedPolyface。

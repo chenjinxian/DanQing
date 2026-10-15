@@ -324,8 +324,8 @@ std::optional<PolyfaceAuxData> Reader::parsePolyfaceAuxData(JsonValue const& dat
 // Writer
 // ---------------------------------------------------------------------------
 
-// Ported from: IModelJsonSchema.ts:1991-2001 emit。
-std::optional<JsonValue> Writer::emit(GeometryQuery const& data)
+// Ported from: IModelJsonSchema.ts:1991-2001 emit（§3.4 碰撞例外——emitJson，见头注）。
+std::optional<JsonValue> Writer::emitJson(GeometryQuery const& data)
 {
     if (data.Category() == GeometryCategory::Polyface)
         return handleIndexedPolyface(static_cast<IndexedPolyface const&>(data));

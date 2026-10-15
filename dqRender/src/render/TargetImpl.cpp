@@ -11,6 +11,7 @@
 #include "RenderGraphicAdapter.h"
 #include "gl/GL.h"
 
+#include <dqCommon/Gradient.h>
 #include <dqCommon/PackedFeatureTable.h>
 
 #include <cstdio>
@@ -152,12 +153,50 @@ TargetImpl::~TargetImpl()
     // (BackgroundMapDrape::dispose, SceneCompositor::destroyOitResources).
     if (m_canvasContext)
         m_canvasContext->dispose(m_system.getDriver());
+    if (m_analysisTexture != rhi::TextureHandle{})
+        m_system.getDriver().destroyTexture(m_analysisTexture);
     if (m_pickTarget) {
         m_system.getDriver().destroyRenderTarget(m_pickTarget);
     }
     if (m_renderTarget) {
         m_system.getDriver().destroyRenderTarget(m_renderTarget);
     }
+}
+
+// ---------------------------------------------------------------------------
+// updateAnalysisTexture — analysisTexture 重建（M-W W-a6）
+// Ported from: itwinjs-core RenderPlan.ts:143-144（`analysisStyle?.thematic ?
+// target.renderSystem.getGradientTexture(analysisStyle.thematic.gradient, vp.iModel)
+// : undefined`）+ ThematicUniforms.cpp createGradientTexture 的纹理创建机制
+//（GradientSymb::createThematic + getThematicImageForRenderer 1×N 列向 + NEAREST）。
+// DanQing 承载点=setAnalysisStyle（changeRenderPlan 的消费面——Target.ts:516）。
+// ---------------------------------------------------------------------------
+void TargetImpl::updateAnalysisTexture()
+{
+    if (m_analysisTexture != rhi::TextureHandle{}) {
+        m_system.getDriver().destroyTexture(m_analysisTexture);
+        m_analysisTexture = rhi::TextureHandle{};
+    }
+    if (m_analysisStyle == nullptr || !m_analysisStyle->scalar.has_value())
+        return;
+
+    // AnalysisStyleThematic.gradient 的懒建缓存面（AnalysisStyle.ts:95 的 _gradient）。
+    auto const& symb = m_analysisStyle->scalar->gradient();
+    auto image = symb.getThematicImageForRenderer(8192);  // ThematicUniforms 的 kDefaultGradientDimension
+    if (!image.has_value())
+        return;
+    auto const& img = *image;
+    uint32_t const height = static_cast<uint32_t>(img.getHeight());
+    auto& driver = m_system.getDriver();
+    m_analysisTexture = driver.createTexture(
+        rhi::SamplerType::SAMPLER_2D, 1, rhi::TextureFormat::RGBA8, 1, height, 1,
+        rhi::TextureUsage::DEFAULT);
+    if (m_analysisTexture == rhi::TextureHandle{})
+        return;
+    rhi::PixelBufferDescriptor pbd(img.data.data(), img.data.size(), 0, 0, 0, 1, 0, 0,
+                                   1, height, 1);
+    driver.setTextureData(m_analysisTexture, 0, 0, 0, 0, 1, height, 0, std::move(pbd));
+    driver.setTextureFilters(m_analysisTexture, 0x2600, 0x2600);  // NEAREST（ThematicUniforms 同族）
 }
 
 // ---------------------------------------------------------------------------

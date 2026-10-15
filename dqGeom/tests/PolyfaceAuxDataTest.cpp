@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // DanQing dqGeom — PolyfaceAuxData tests
 // Ported from: itwinjs-core core/geometry/src/test/polyface/PolyfaceAuxData.test.ts
 #include <gtest/gtest.h>
@@ -375,7 +375,7 @@ TEST(PolyfaceAuxDataTest, TestRoundTrip)
     auto beam = createCantileverBeamPolyface();
 
     IModelJson::Writer writer;
-    auto json = writer.emit(*beam);
+    auto json = writer.emitJson(*beam);
     ASSERT_TRUE(json.has_value());
     auto roundTrippedBeam = IModelJson::Reader::parse(*json);
     ASSERT_TRUE(roundTrippedBeam.IsValid());
@@ -462,7 +462,7 @@ TEST(PolyfaceAuxDataTest, Compress)
     // sanity check roundtrips（JSON 腿保留——参考 :187-194 的 IModelJson 半）。
     for (IndexedPolyface* meshWithAuxData : {&mesh0, &mesh1, &mesh2}) {
         IModelJson::Writer writer;
-        auto jsonOut = writer.emit(*meshWithAuxData);
+        auto jsonOut = writer.emitJson(*meshWithAuxData);
         ASSERT_TRUE(jsonOut.has_value());
         auto meshJson = IModelJson::Reader::parse(*jsonOut);
         ASSERT_TRUE(meshJson.IsValid());
@@ -518,7 +518,7 @@ TEST(PolyfaceAuxDataTest, CantileverAssetLoadsWithAuxData)
 
     // zero-based 转换对账（round-trip 语义腿）：writer 写回 → reader 重读 → 全等。
     IModelJson::Writer writer;
-    auto jsonOut = writer.emit(pf);
+    auto jsonOut = writer.emitJson(pf);
     ASSERT_TRUE(jsonOut.has_value());
     auto reparsed = IModelJson::Reader::parse(*jsonOut);
     ASSERT_TRUE(reparsed.IsValid());

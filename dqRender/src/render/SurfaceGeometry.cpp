@@ -78,7 +78,8 @@ SurfaceGeometry::~SurfaceGeometry()
 // BackgroundFill/OverrideRgb/ConstantLod* remain for their feature passes.
 int const* SurfaceGeometry::computeSurfaceFlags(CachedGeometry const& geom,
                                                 bool displayNormalMaps,
-                                                ViewFlags const& viewFlags)
+                                                ViewFlags const& viewFlags,
+                                                TargetImpl const* target)
 {
     using GL::SurfaceBitIndex;
     thread_local int s_flags[static_cast<size_t>(SurfaceBitIndex::Count)] = {};
@@ -91,6 +92,16 @@ int const* SurfaceGeometry::computeSurfaceFlags(CachedGeometry const& geom,
     bool translucent = false;
     if (mesh != nullptr) {
         hasTexture = mesh->hasTextures();
+        // M-W W-a6：scalar 动画的 HasTexture 门（SurfaceGeometry.ts:389-391
+        // wantTextures——`hasScalarAnimation && undefined !== target.analysisTexture
+        // → true`）：scalar 通道的渐变纹理经 s_texture 消费（sampleSurfaceTexture
+        // 的 HasTexture 门）。
+        if (!hasTexture) {
+            auto const* surf = const_cast<CachedGeometry&>(geom).asSurface();
+            if (surf != nullptr && surf->hasScalarAnimation() && target != nullptr
+                && target->getAnalysisTexture() != rhi::TextureHandle{})
+                hasTexture = true;
+        }
         SurfaceType const st = mesh->getSurfaceType();
         uint8_t const ffBits = static_cast<uint8_t>(mesh->getFillFlags());
         applyLighting = (st != SurfaceType::Unknown) ||

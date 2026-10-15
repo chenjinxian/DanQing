@@ -35,6 +35,7 @@
 #include <dqBase/DqTypes.h>      // DqVector
 #include <dqCommon/ColorDef.h>
 #include <dqGeom/Point3d.h>
+#include <dqGeom/Range3d.h>
 
 #include <cstdint>
 
@@ -66,6 +67,12 @@ struct BuiltVertexTable {
     bool hasNonUniformColor = false;        // false for ACS uniform color path
     // uniformColor is resolved by the caller via u_color; not stored in the
     // table for the uniform path (matches reference `uniformColor: colorIndex.uniform`).
+
+    // M-W W-a6：网格表新增（Unquantized.MeshBuilder——VertexTableBuilder.ts:437-438
+    // qparams getter）。参考 build() 的返回面 VertexTable.qparams（:196）。
+    float qOrigin[3] = {0.0f, 0.0f, 0.0f};
+    float qScale[3] = {1.0f, 1.0f, 1.0f};
+    bool isLit = false;  // LitMeshBuilder（:614-628——带法线）vs Unlit（MeshBuilder 基类）
 };
 
 // Ported from: itwinjs-core VertexTableBuilder.ts class VertexTableBuilder
@@ -91,6 +98,20 @@ public:
     static BuiltVertexTable buildFromPolylines(dqGeom::Point3d const* points, uint32_t numVertices,
                                                dqCommon::ColorDef const& uniformColor,
                                                uint32_t maxDimension = 2048u);
+
+    // M-W W-a6：网格顶点表打包（分析装饰链的 LUT 源）。
+    // Ported from: itwinjs-core VertexTableBuilder.ts Unquantized.MeshBuilder
+    //              (:529-566 基类 + :614-628 LitMeshBuilder) + createMeshBuilder
+    //              (:631-636——DanQing Mesh 的 points 恒 Point3dList=非量化分支)
+    //              + build (:178-208)。
+    // 布局（5 texels=20B/顶点）：texel 0-3=位置 xyz 转置 SoA + featureId（:455-479），
+    // texel 4=colorIndex u16 @0x10 + （Lit）normal u16 @0x12 /（Unlit）未用。
+    // `points`/`normals` 逐顶点并行；normals 非空 → Lit 形态（isLit=true）。
+    // `range` 供 qparams（QParams3d.fromRange——Unquantized.SimpleBuilder ctor :430）。
+    static BuiltVertexTable buildFromMesh(dqGeom::Point3d const* points, uint32_t numVertices,
+                                          dqGeom::Range3d const& range,
+                                          uint16_t const* octNormals, uint32_t numNormals,
+                                          uint32_t maxDimension = 2048u);
 
     // Ported from: VertexTable.ts computeDimensions (:53-81).
     // Picks (width, height) so width*height >= nEntries*nRgbaPerEntry + nExtraRgba

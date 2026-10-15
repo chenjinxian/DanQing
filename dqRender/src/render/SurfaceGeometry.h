@@ -224,7 +224,8 @@ public:
     /// field access — ViewFlags.h :36).
     static int const* computeSurfaceFlags(CachedGeometry const& geom,
                                           bool displayNormalMaps,
-                                          ViewFlags const& viewFlags);
+                                          ViewFlags const& viewFlags,
+                                          TargetImpl const* target = nullptr);  // W-a6：scalar 动画 HasTexture 门（SurfaceGeometry.ts:390-391）
 
 private:
     rhi::Driver& m_driver;
