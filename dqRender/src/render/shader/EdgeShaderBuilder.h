@@ -28,8 +28,11 @@ enum class EdgeBuilderType : uint8_t {
 
 /// Create a ProgramBuilder for edge rendering.
 /// Ported from: itwinjs-core Edge.ts createEdgeBuilder() (line 306)
+/// M-W W-a5（TD-28④ 清偿）：isAnimated 形参归位（Edge.ts:306 createEdgeBuilder
+/// 的 `isAnimated: IsAnimated` 形参链——:274-277 的 `if (isAnimated) addAnimation
+/// (vert, false)` 门）。
 ProgramBuilder createEdgeProgramBuilder(EdgeBuilderType type, FeatureMode featureMode,
-                                        PositionType posType);
+                                        PositionType posType, bool isAnimated = false);
 
 /// Create a ProgramBuilder for segment edge rendering (convenience).
 inline ProgramBuilder createEdgeProgramBuilder(FeatureMode featureMode, PositionType posType)

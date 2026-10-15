@@ -8,9 +8,13 @@
 // MeshList; PR F routes each Mesh through RenderSystem::createMeshGraphics into a GraphicBranch.
 #include "PrimitiveBuilder.h"
 
+#include "AuxChannelLut.h"
+#include "AuxChannelTable.h"
 #include "DisplayParams.h"
 #include "Graphic.h"
 #include "MeshGraphic.h"
+#include "SurfaceGeometry.h"
+#include "VertexTableBuilder.h"
 
 #include "dqRender/RenderSystem.h"
 
@@ -28,19 +32,125 @@
 
 BEGIN_DQ_RENDER_NAMESPACE
 
+namespace {
+
+// M-W W-a6：auxData 网格的 LUT 表面生产（PrimitiveBuilder::finish 的 auxChannels 分支
+// ——参考 PrimitiveBuilder.ts:115 的 createMeshGraphics → createTriMesh →
+// createMeshParams（VertexTableBuilder.ts:78-102）→ MeshData.create（MeshData.ts:97-100）
+// → MeshGeometry 链的 DanQing 落形：Mesh 顶点表打包（buildFromMesh）+ auxChannels
+// 打包（fromChannels）+ SurfaceGeometry LUT 形态 + AuxChannelLUT）。
+// 参考的 a_qPosition=24-bit 索引流承载三角索引（SurfaceGeometry.ts:378-387 +
+// drawArrays :150-162——无 element buffer）。
+std::unique_ptr<MeshGraphic> createLutMeshGraphic(rhi::Driver& driver, Mesh const& mesh)
+{
+    auto const* tris = mesh.triangles();
+    if (tris == nullptr || tris->indices().empty() || mesh.points().length() == 0)
+        return nullptr;
+
+    // 顶点表（Unquantized.MeshBuilder/LitMeshBuilder——VertexTableBuilder.ts）。
+    auto const& pts = mesh.points().points;
+    auto const& normals = mesh.normals();
+    uint32_t const numVertices = static_cast<uint32_t>(pts.size());
+    // OctEncodedNormal → u16 值流（dqCommon OctEncodedNormal::value——16 位参考格式）。
+    std::vector<uint16_t> octNormals;
+    uint16_t const* octPtr = nullptr;
+    if (!normals.empty() && normals.size() >= pts.size()) {
+        octNormals.reserve(normals.size());
+        for (auto const& n : normals)
+            octNormals.push_back(static_cast<uint16_t>(n.value));
+        octPtr = octNormals.data();
+    }
+    auto table = VertexTableBuilder::buildFromMesh(pts.data(), numVertices, mesh.points().range,
+                                                   octPtr,
+                                                   static_cast<uint32_t>(octNormals.size()));
+
+    // LUT 纹理（线上字节原样上传——VertexLUT.ts:93-99 的 createFromVertexTable 等价面；
+    // 纹理维度=computeDimensions 产出，VertexLutTexture::create 契约面）。
+    VertexLutTexture lut;
+    if (!lut.create(driver, table.data.data(), table.width, table.height, table.numVertices,
+                    table.numRgbaPerVertex))
+        return nullptr;
+    lut.setQuantization(table.qOrigin[0], table.qOrigin[1], table.qOrigin[2],
+                        table.qScale[0], table.qScale[1], table.qScale[2]);
+
+    // a_qPosition 24-bit 索引流（三角角点索引 → UBYTE3，ImdlGraphics.cpp:528-558
+    // 同型面）。
+    auto const& triIndices = tris->indices();
+    std::vector<uint8_t> idxBytes(static_cast<size_t>(triIndices.size()) * 3u);
+    for (size_t i = 0; i < triIndices.size(); ++i) {
+        uint32_t const idx = triIndices[i];
+        idxBytes[i * 3 + 0] = static_cast<uint8_t>(idx & 0xFFu);
+        idxBytes[i * 3 + 1] = static_cast<uint8_t>((idx >> 8) & 0xFFu);
+        idxBytes[i * 3 + 2] = static_cast<uint8_t>((idx >> 16) & 0xFFu);
+    }
+    auto const idxBo = driver.createBufferObject(static_cast<uint32_t>(idxBytes.size()),
+                                                 rhi::BufferObjectBinding::VERTEX,
+                                                 rhi::BufferUsage::STATIC);
+    rhi::BufferDescriptor idxDesc(idxBytes.data(), idxBytes.size());
+    driver.updateBufferObject(idxBo, std::move(idxDesc), 0);
+    uint32_t const numIndices = static_cast<uint32_t>(triIndices.size());
+
+    // a_qPosition VAO（UBYTE3@0——SurfaceVariantCompiler 量化变体 attribute map；
+    // ImdlGraphics.cpp:546-558 同型）。
+    rhi::AttributeArray attrs = {};
+    attrs[0].buffer = 0;
+    attrs[0].offset = 0;
+    attrs[0].type = rhi::ElementType::UBYTE3;
+    auto const lutVbih = driver.createVertexBufferInfo(1, 1, attrs);
+    auto const lutVbh = driver.createVertexBuffer(numIndices, lutVbih);
+    driver.setVertexBufferObject(lutVbh, 0, idxBo);
+    auto const primitive = driver.createRenderPrimitive(lutVbh, rhi::IndexBufferHandle{},
+                                                        rhi::PrimitiveType::TRIANGLES);
+
+    // SurfaceType：Lit 位由法线在场性驱动（VertexTableBuilder.ts:541 的 isLit 判据——
+    // SurfaceType.Lit↔DanQing SurfaceType::Opaque[光照面]/Unlit 未在场 →
+    // 既有两形态面：Opaque=Lit 等价）；无纹理 → 非 Textured 族。
+    bool const isLit = table.isLit;
+    auto const surfaceType = isLit ? SurfaceType::Opaque : SurfaceType::Unknown;
+
+    auto geom = std::make_unique<SurfaceGeometry>(driver, std::move(lut), idxBo, numIndices,
+                                                  surfaceType, mesh.isPlanar(),
+                                                  /*hasTextures*/ false, lutVbh, lutVbih);
+    geom->setPrimitive(primitive);
+    // 非量化 LUT 表（numRgba=5）——TD-27 变体轴（usesQuantizedPositions=false +
+    // usesVertexLut=true → TechniqueFlags.isLutUnquantized）。
+    geom->setUsesUnquantizedLut();
+
+    // auxChannels → AuxChannelTable → AuxChannelLUT（AuxChannelTable.ts:186-371 +
+    // VertexLUT.ts:21-110；createMeshParams 的 :93 同参直调面）。
+    if (mesh.auxChannels().has_value()) {
+        if (auto auxTable = AuxChannelTable::fromChannels(*mesh.auxChannels(), numVertices, 2048)) {
+            if (auto auxLut = AuxChannelLUT::create(driver, *auxTable))
+                geom->setAuxChannels(std::move(auxLut));
+        }
+    }
+
+    auto graphic = std::make_unique<MeshGraphic>(driver);
+    graphic->addSurface(std::move(geom));
+    return graphic;
+}
+
+}  // namespace
+
 // ---------------------------------------------------------------------------
 // PrimitiveBuilder
 // ---------------------------------------------------------------------------
 
 // 1:1 PrimitiveBuilder constructor (PrimitiveBuilder.ts:31-36) + GraphicAssembler ctor (L80-96) which
-// builds the GeometryAccumulator. DanQing has no viewport/analysisStyle, so the accumulator options carry
+// builds the GeometryAccumulator. DanQing has no viewport, so the accumulator options carry
 // only the initial feature (pickable path) — pickable lands with the activateFeature wiring.
+// M-W W-a4：analysisStyleDisplacement 转接归位（GraphicAssembler.ts:90——accumulator 的
+// analysisStyleDisplacement = options.analysisStyle?.displacement）。
 PrimitiveBuilder::PrimitiveBuilder(RenderSystem& system, rhi::Driver& driver, GraphicBuilderOptions const& options)
     : GraphicBuilder(options)
     , m_system(system)
     , m_driver(driver)
     , m_computeChordTolerance(options.computeChordTolerance)
 {
+    if (options.analysisStyle.has_value() && options.analysisStyle->displacement.has_value())
+        m_accumulator = GeometryAccumulator(GeometryAccumulatorOptions{
+            .analysisStyleDisplacement = options.analysisStyle->displacement,
+        });
 }
 
 // 1:1 GraphicAssembler.addLineString (GraphicAssembler.ts:159-164).
@@ -150,6 +260,16 @@ RenderGraphic* PrimitiveBuilder::finish()
         if (!haveOrigin) {
             transformOrigin = mesh->points().range.Center();
             haveOrigin = true;
+        }
+        // M-W W-a6：auxChannels 在场的网格 → LUT 表面路径（参考 PrimitiveBuilder
+        // createMeshGraphics 的 createTriMesh→MeshGeometry LUT 链——分析位移/scalar
+        // 动画需 LUT 形态 + auxChannels 纹理；无 auxChannels → 既有 MeshRenderGeometry
+        // VBO 路径不变）。
+        if (mesh->auxChannels().has_value()) {
+            if (auto lg = createLutMeshGraphic(m_driver, *mesh)) {
+                array->add(std::move(lg));
+                continue;
+            }
         }
         auto mg = MeshRenderGeometry::create(m_driver, *mesh);
         if (mg)

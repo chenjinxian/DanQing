@@ -79,6 +79,55 @@ size_t Mesh::addVertex(const VertexKeyProps& props)
     return m_points.length() - 1;
 }
 
+// 1:1 Mesh.addAuxChannels (MeshPrimitives.ts:189-220)——失配 bail 怪癖原样。
+void Mesh::addAuxChannels(std::vector<dqGeom::AuxChannel> const& channels, size_t srcIndex)
+{
+    // The native version of this function appears to assume that all polyfaces added to the
+    // Mesh will have the same number + type of aux channels.
+    // ###TODO We should really produce a separate Mesh for each unique combination. For now
+    // just bail on mismatch.（参考 :190-192 注释原样）
+    if (m_auxChannels) {
+        if (m_auxChannels->size() != channels.size())
+            return;
+
+        for (size_t i = 0; i < channels.size(); i++) {
+            auto const& src = channels[i];
+            auto const& dst = (*m_auxChannels)[i];
+            if (src.dataType != dst.dataType || src.name != dst.name || src.inputName != dst.inputName)
+                return;
+        }
+    }
+
+    if (!m_auxChannels) {
+        // Copy the channels, leaving each AuxData's values array empty.（:205-208）
+        std::vector<dqGeom::AuxChannel> skeleton;
+        skeleton.reserve(channels.size());
+        for (auto const& x : channels) {
+            std::vector<dqGeom::AuxChannelData> emptyData;
+            emptyData.reserve(x.data.size());
+            for (auto const& y : x.data)
+                emptyData.emplace_back(y.input, std::vector<double>{});
+            skeleton.emplace_back(std::move(emptyData), x.dataType, x.name, x.inputName);
+        }
+        m_auxChannels = std::move(skeleton);
+    }
+
+    // Append the value at srcIndex from each source channel's data to our channels.（:210-219）
+    for (size_t channelIndex = 0; channelIndex < channels.size(); channelIndex++) {
+        auto const& srcChannel = channels[channelIndex];
+        auto& dstChannel = (*m_auxChannels)[channelIndex];
+        size_t const dstIndex = dstChannel.valueCount();
+        for (size_t dataIndex = 0; dataIndex < srcChannel.data.size(); dataIndex++) {
+            auto& dstData = dstChannel.data[dataIndex];
+            // DanQing 承载注记：dstData.values 需按块扩到 dstIndex+1——参考的 JS 数组写入
+            // 越界自动延展；C++ vector 显式 resize（copyValues 的块写要求容量在位）。
+            dstData.values.resize((dstIndex + 1) * dstChannel.entriesPerValue(), 0.0);
+            dstData.copyValues(srcChannel.data[dataIndex], dstIndex, srcIndex,
+                               dstChannel.entriesPerValue());
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Mesh::Features
 // ---------------------------------------------------------------------------

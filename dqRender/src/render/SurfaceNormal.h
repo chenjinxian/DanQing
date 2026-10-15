@@ -58,7 +58,7 @@ BEGIN_DQ_RENDER_NAMESPACE
 //   Fragment: g_normal global + FinalizeNormal component (flip + return)
 // ---------------------------------------------------------------------------
 inline void addNormal(ProgramBuilder& builder, bool quantized = false, bool instanced = false,
-                      bool lutUnquant = false)
+                      bool lutUnquant = false, bool animated = false)
 {
     auto& vert = builder.getVertexBuilder();
     auto& frag = builder.getFragmentBuilder();
@@ -125,9 +125,35 @@ inline void addNormal(ProgramBuilder& builder, bool quantized = false, bool inst
 
     // v_n computed varying — eye-space normal passed to fragment.
     // Ported from: itwinjs-core Surface.ts addNormal() (line 535)
-    builder.addFunctionComputedVarying("v_n", VariableType::Vec3,
-                                        "computeLightingNormal",
-                                        "  return computeSurfaceNormal();");
+    // W-a5：animated 形参归位（Surface.ts:750 `addNormal(builder, flags.isAnimated)`
+    // 的 :535 animated 分流）——animated 时体=getComputeAnimatedNormal（:448-454：
+    // u_animNormalParams.x>=0 → MAT_NORM * computeAnimationNormal(...)）。
+    if (animated) {
+        // EQUIVALENCE：参考 getComputeAnimatedNormal 恒用 MAT_NORM（:451）；DanQing
+        // 的 instanced 路径以 in-shader nmx 承载 MAT_NORM 等价（transpose(inverse(
+        // mat3(g_mv)))——Vertex.ts:162-166 的 DanQing 落点，与 :80-85 的既有分支
+        // 同构）；非 instanced 恒 MAT_NORM=u_normalMatrix。
+        // 发散=instanced×animated 组合的法线矩阵源（参考无此分叉——其 MAT_NORM
+        // 在 instanced 下有独立定义）；验证法=本组合无消费面（AnalysisStyle 资产
+        // 非 instanced）+ 源级锁 SurfaceAnimatedVariantHasAllThreeStages。
+        std::string const animNormalBody = instanced
+            ? std::string("  if (u_animNormalParams.x >= 0.0) {\n"
+                          "    mat3 nmx = transpose(inverse(mat3(g_mv)));\n"
+                          "    return normalize(nmx * computeAnimationNormal(u_animNormalParams.x, u_animNormalParams.y, u_animNormalParams.z));\n"
+                          "  }\n"
+                          "\n"
+                          "  return computeSurfaceNormal();\n")
+            : std::string("  if (u_animNormalParams.x >= 0.0)\n"
+                          "    return normalize(MAT_NORM * computeAnimationNormal(u_animNormalParams.x, u_animNormalParams.y, u_animNormalParams.z));\n"
+                          "\n"
+                          "  return computeSurfaceNormal();\n");
+        builder.addFunctionComputedVarying("v_n", VariableType::Vec3,
+            "computeLightingNormal", animNormalBody);
+    } else {
+        builder.addFunctionComputedVarying("v_n", VariableType::Vec3,
+                                            "computeLightingNormal",
+                                            "  return computeSurfaceNormal();");
+    }
 
     // Fragment g_normal global + FinalizeNormal (prelude + normalMap + postlude).
     // Ported from: itwinjs-core Surface.ts addNormal() (line 537-557)

@@ -373,8 +373,16 @@ public:
     void setAnalysisStyle(dqCommon::AnalysisStyle const* style) noexcept
     {
         m_analysisStyle = style;
+        // M-W W-a6：analysisTexture 归位（RenderPlan.ts:143-144——
+        // `analysisStyle?.thematic ? target.renderSystem.getGradientTexture(
+        // analysisStyle.thematic.gradient, ...) : undefined` 的 DanQing 承载点：
+        // changeRenderPlan 的消费面=本 setter；渐变纹理经 GradientSymb 链重建）。
+        updateAnalysisTexture();
     }
 
+    // analysisTexture：scalar 通道的渐变纹理（Surface.ts:602 的 s_texture 源——
+    // `params.geometry.hasAnimation && params.target.analysisTexture` 门）。
+    rhi::TextureHandle getAnalysisTexture() const noexcept { return m_analysisTexture; }
     // --- Animation transform node filtering（Target.ts:1160-1176）---
     // currentAnimationTransformNodeId 的 holder（绘制 batch 时的变换过滤
     // 面——逐 batch 消费随烘焙瓦落地，E1 登记；holder 语义原样）。
@@ -499,6 +507,10 @@ public:
 
 private:
     bool glTimerActive() const noexcept;            // isGLTimerSupported + resultsCallback
+
+    // M-W W-a6：analysisTexture 重建（setAnalysisStyle 调用）——RenderPlan.ts:143-144
+    // 的 getGradientTexture 承载点；scalar.themeticSettings → GradientSymb → 1×N 纹理。
+    void updateAnalysisTexture();
 
     /// Begin paint — push FBO to framebuffer stack, set up render target.
     /// Ported from: itwinjs-core Target._beginPaint()
@@ -635,6 +647,9 @@ private:
     // analysisFraction[:137]字段面——plan 载体消费；E2/E7 登记见 setter 注）。
     dqCommon::AnalysisStyle const* m_analysisStyle = nullptr;
     float m_analysisFraction = 0.0f;
+    // M-W W-a6：analysisTexture（RenderPlan.ts:143-144——scalar 通道渐变纹理，
+    // Surface.ts:602 的 s_texture 源）。setAnalysisStyle 时经 updateAnalysisTexture 重建。
+    rhi::TextureHandle m_analysisTexture;
     // ← Target._currentAnimationTransformNodeId（Target.ts:1163-1166——
     // <0 = 无过滤态；E1 登记）。
     int32_t m_currentAnimationTransformNodeId = -1;

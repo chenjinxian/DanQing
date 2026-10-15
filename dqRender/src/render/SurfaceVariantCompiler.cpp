@@ -76,9 +76,10 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
     createCommon(builder, instanced, quantized, lutUnquant);
 
     // --- Animation displacement ---
-    // Ported from: itwinjs-core Surface.ts addAnimation() (line 760-762)
+    // Ported from: itwinjs-core Surface.ts createCommon 的动画门（:271-272
+    // `if (animated) addAnimation(vert, true)`——isSurface=true）。
     if (animated) {
-        addAnimation(builder.getVertexBuilder());
+        addAnimation(builder.getVertexBuilder(), true);
     }
 
     // --- Shader flags (u_shaderFlags[5] + kShaderBit_* constants) ---
@@ -98,7 +99,9 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
     // (true) :396-406), no a_normal attribute. Instanced: the normal matrix
     // is computed in-shader from g_mv (Vertex.ts:162-166 — includes the
     // per-instance rotation; M-M(1)).
-    addNormal(builder, quantized, instanced, lutUnquant);
+    // M-W W-a5：animated 形参归位（Surface.ts:750 `addNormal(builder,
+    // flags.isAnimated)`——animated 时 v_n 体=getComputeAnimatedNormal）。
+    addNormal(builder, quantized, instanced, lutUnquant, animated);
 
     // --- Surface texture ---
     // Ported from: itwinjs-core Surface.ts addTexture() (line 571-687)
@@ -111,7 +114,10 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
     // Quantized: v_texCoord decoded from the LUT (g_vertLutData3 u16 qUV pairs +
     // unquantize2d(u_qTexCoordParams), getComputeTexCoord(true) :460-467), no
     // a_texCoord attribute.
-    addTexture(builder, quantized);
+    // M-W W-a5：animated 形参归位（Surface.ts:760 `addTexture(builder,
+    // flags.isAnimated, ...)`——animated 时 v_texCoord 体=getComputeAnimatedTexCoord
+    // :469-476，scalar 通道覆写 texcoord 喂 M-S thematic 渐变）。
+    addTexture(builder, quantized, animated);
 
     // NOTE: finalizeNormal's full body (prelude + normalMap TBN + postlude) and
     // getSurfaceColor are now owned by addNormal / addTexture respectively (their
@@ -480,7 +486,9 @@ void EdgeVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags const
     FeatureMode featureMode = flags.featureMode;
     PositionType posType = flags.positionType;
 
-    auto builder = createEdgeProgramBuilder(m_type, featureMode, posType);
+    // M-W W-a5（TD-28④）：isAnimated 穿透（Edge.ts:306 createEdgeBuilder 形参链——
+    // Technique.ts:514/518 的 `flags.isAnimated` 供给）。
+    auto builder = createEdgeProgramBuilder(m_type, featureMode, posType, flags.isAnimated);
 
     std::string vert = builder.getVertexBuilder().buildSourceWithComponents();
     std::string frag = builder.getFragmentBuilder().buildSourceWithComponents();

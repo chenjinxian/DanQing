@@ -14,6 +14,7 @@
 
 #include <dqBase/DqTypes.h>
 #include <dqCommon/ColorDef.h>
+#include <dqCommon/QPoint.h>  // QParams3d（W-a6 buildFromMesh 的 qparams 段）
 #include <dqGeom/Point3d.h>
 
 #include <cmath>
@@ -207,6 +208,93 @@ BuiltVertexTable VertexTableBuilder::buildFromPolylines(dqGeom::Point3d const* p
     // Reference: this.appendColorTable(colorIndex) (:190) -- for uniform color
     // (colorIndex.nonUniform === undefined) the table is empty, no bytes
     // appended. hasNonUniformColor stays false.
+
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// M-W W-a6：网格顶点表打包（Unquantized.MeshBuilder + LitMeshBuilder）
+// Ported from: itwinjs-core VertexTableBuilder.ts :529-566（MeshBuilder 基类）+
+//              :614-628（LitMeshBuilder）+ :631-636（createMeshBuilder 选择——
+//              DanQing Mesh 的 points 恒 Point3dList → 非量化分支）+ :178-208（build）。
+// ---------------------------------------------------------------------------
+BuiltVertexTable VertexTableBuilder::buildFromMesh(dqGeom::Point3d const* points,
+                                                   uint32_t numVertices,
+                                                   dqGeom::Range3d const& range,
+                                                   uint16_t const* octNormals,
+                                                   uint32_t numNormals,
+                                                   uint32_t maxDimension)
+{
+    // Lit 门（:541——isLit = normals 非空）：法线数组与顶点并行。
+    const bool isLit = (octNormals != nullptr) && numNormals >= numVertices && numVertices > 0u;
+
+    BuiltVertexTable result;
+    result.numVertices = numVertices;
+    result.isLit = isLit;
+    // numRgbaPerVertex=5（:437 SimpleBuilder 基类——Lit 同为 5：texel4 = colorIndex
+    // u16 @0x10 + normal u16 @0x12，LitMeshBuilder 的 appendColorIndex 覆写不 advance(2)
+    // 抵消基类的 +2）。
+    result.numRgbaPerVertex = 5u;
+    result.usesUnquantizedPositions = true;
+    result.hasNonUniformColor = false;
+
+    // qparams（:430 SimpleBuilder ctor——QParams3d.fromRange(points.range)；
+    // Unquantized 位置读不经量化（computeUnquantizedPositionFromLUT 直读 f32——
+    // TD-27 路径），qparams 供 u_qOrigin/u_qScale 注册面完整。
+    {
+        auto const qparams = dqCommon::QParams3d::fromRange(range);
+        result.qOrigin[0] = static_cast<float>(qparams.origin.x);
+        result.qOrigin[1] = static_cast<float>(qparams.origin.y);
+        result.qOrigin[2] = static_cast<float>(qparams.origin.z);
+        result.qScale[0] = static_cast<float>(qparams.scale.x);
+        result.qScale[1] = static_cast<float>(qparams.scale.y);
+        result.qScale[2] = static_cast<float>(qparams.scale.z);
+    }
+
+    // build (:178-208)：computeDimensions(numVertices, 5, numColors=0, maxDimension)。
+    const uint32_t numColors = 0u;  // uniform color path（colorIndex.isUniform → 0）
+    uint32_t width = 0u, height = 0u;
+    computeDimensions(numVertices, result.numRgbaPerVertex, numColors, maxDimension, width, height);
+    result.width = width;
+    result.height = height;
+    result.data.assign(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u, 0u);
+
+    Cursor cursor(result.data);
+    for (uint32_t v = 0u; v < numVertices; ++v) {
+        // appendTransposePosAndFeatureNdx（:455-479——与 buildFromPolylines 同体）。
+        const dqGeom::Point3d pt = points[v];
+        const uint32_t x = convertFloat32(static_cast<float>(pt.x));
+        const uint32_t y = convertFloat32(static_cast<float>(pt.y));
+        const uint32_t z = convertFloat32(static_cast<float>(pt.z));
+        const uint32_t featID = 0u;  // uniform feature path（featureIDs 缺席 → 0）
+
+        cursor.append8(static_cast<uint8_t>(x & 0x000000ffu));
+        cursor.append8(static_cast<uint8_t>(y & 0x000000ffu));
+        cursor.append8(static_cast<uint8_t>(z & 0x000000ffu));
+        cursor.append8(static_cast<uint8_t>(featID & 0x000000ffu));
+        cursor.append8(static_cast<uint8_t>((x >> 8) & 0x000000ffu));
+        cursor.append8(static_cast<uint8_t>((y >> 8) & 0x000000ffu));
+        cursor.append8(static_cast<uint8_t>((z >> 8) & 0x000000ffu));
+        cursor.append8(static_cast<uint8_t>((featID >> 8) & 0x000000ffu));
+        cursor.append8(static_cast<uint8_t>((x >> 16) & 0x000000ffu));
+        cursor.append8(static_cast<uint8_t>((y >> 16) & 0x000000ffu));
+        cursor.append8(static_cast<uint8_t>((z >> 16) & 0x000000ffu));
+        cursor.append8(static_cast<uint8_t>((featID >> 16) & 0x000000ffu));
+        cursor.append8(static_cast<uint8_t>((x >> 24) & 0x000000ffu));
+        cursor.append8(static_cast<uint8_t>((y >> 24) & 0x000000ffu));
+        cursor.append8(static_cast<uint8_t>((z >> 24) & 0x000000ffu));
+        cursor.append8(static_cast<uint8_t>((featID >> 24) & 0x000000ffu));
+
+        // colorIndex（:495-505——uniform → advance(2)；Lit 覆写不再 advance(2)，
+        // Unlit 基类 appendColorIndex = _appendColorIndex + advance(2)）。
+        if (isLit) {
+            cursor.advance(2u);  // _appendColorIndex 的 uniform 臂（advance(2)）
+            // LitMeshBuilder::appendVertex 尾（:624-627）：法线 u16。
+            cursor.append16(octNormals[v]);
+        } else {
+            cursor.advance(4u);  // Unlit 基类 appendColorIndex 全臂（advance(4)）
+        }
+    }
 
     return result;
 }

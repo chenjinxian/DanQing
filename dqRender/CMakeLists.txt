@@ -78,6 +78,7 @@ target_sources(dqRender
         src/render/MeshBuilder.cpp
         src/render/MeshBuilderMap.cpp
         src/render/GeometryAccumulator.cpp
+        src/render/AuxChannelTable.cpp  # M-W W-a3：fromChannels 打包器（骨架补登记——此前未编入）
         src/render/CachedGeometry.cpp
         src/render/IndexedGeometry.cpp
         src/render/RenderState.cpp
@@ -350,6 +351,9 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/OrientationGroundTruthTest.cpp
         tests/PlanarGridRenderTest.cpp
         # A-lane 锚（M-W 起——A 道代理只在此锚下追加测试注册；勿动他区）
+        tests/AuxChannelTableTest.cpp      # M-W W-a3：AuxChannelTableBuilder 打包器（AuxChannelTable.ts:186-371）
+        tests/MeshBuilderAuxDataTest.cpp   # M-W W-a4：auxData 消费链（MeshBuilder.test.ts:407-501 + GeometryAccumulator.ts:101-115）
+        tests/AnimationShaderTest.cpp      # M-W W-a5：glsl/Animation.ts 归位（变体键/三段出场/Edge 门 TD-28④/computeAnimParams 怪癖）
     )
     # SurfaceCompileTest + PolylineRenderTest include GlslCompileHarness.h, which
     # uses the deprecated macOS OpenGL/CGL API (-Werror is on project-wide).

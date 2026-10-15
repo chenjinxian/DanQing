@@ -49,6 +49,12 @@ public:
     void AddCurveStroke(CurvePrimitive const& curve);
     void AddCurveStroke(CurvePrimitive const& curve, StrokeOptions const& options);
 
+    // Ported from: PolyfaceBuilder.ts:1044-1074 addBetweenTransformedLineStrings ——
+    // LineString3d → 逐边 quad（(A0,A1,B1,B0) 非 reversed 序，:699-715）；CurveCollection →
+    // 逐 child 递归（注意参考怪癖 :1071：递归不传 addClosure——子线串恒不闭合）。
+    void AddBetweenTransformedLineStrings(GeometryQuery const& curves, Transform const& transformA,
+                                          Transform const& transformB, bool addClosure = false);
+
     // --- UV 网格体（平滑法线 + 距离参数） ---
     // Ported from: PolyfaceBuilder.ts addUVGridBody (:1887-1984)。按 (numU+1)×(numV+1)
     // 网格采样 surface.UVFractionToPointAndTangents：点共享（每格点一次 AddPoint），

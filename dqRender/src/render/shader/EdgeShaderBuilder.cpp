@@ -210,7 +210,7 @@ static constexpr char const* kInitializeIndexed = R"(
 // Ported from: itwinjs-core Edge.ts createBase() (line 218-303)
 // ---------------------------------------------------------------------------
 static ProgramBuilder createBase(EdgeBuilderType type, FeatureMode /*featureMode*/,
-                                 PositionType /*posType*/)
+                                 PositionType /*posType*/, bool isAnimated)
 {
     bool isSilhouette = (type == EdgeBuilderType::Silhouette);
     bool isIndexed = (type == EdgeBuilderType::IndexedEdge);
@@ -323,15 +323,22 @@ static ProgramBuilder createBase(EdgeBuilderType type, FeatureMode /*featureMode
         // Fragment: override render order
         frag.setFragmentComponent(FragmentShaderComponent::OverrideRenderOrder,
             "    return v_renderOrder;\n");
-
-        // Animation displacement support
-        // Ported from: itwinjs-core Edge.ts createBase() (line 274-277)
-        addAnimation(vert);
-        vert.addInitializer(
-            "g_otherPos.xyz += computeAnimationDisplacement(g_otherIndex, u_animDispParams.x, u_animDispParams.y, u_animDispParams.z, u_qAnimDispOrigin, u_qAnimDispScale);");
     } else {
         // Non-indexed: decode other endpoint from attribute
         vert.addInitializer(kDecodeEndPointAndQuadIndices);
+    }
+
+    // --- Animation displacement（TD-28④ 清偿：M-W W-a5 归位）---
+    // Ported from: itwinjs-core Edge.ts createBase() (line 274-277)——
+    // `if (isAnimated) { addAnimation(vert, false); vert.addInitializer(animateEndPoint); }`：
+    // 门在 isIndexed if/else **之外**（参考 :270-272 的 else 段之后）——DanQing 存量误置
+    // isIndexed 分支内且恒调（行为中性零位移：无动画几何时 uniform 缺省全 0，帧索引
+    // 0/0/0 → computeAnimationDisplacement 早退 vec3(0)——但白付采样+违背变体语义）。
+    if (isAnimated) {
+        addAnimation(vert, false);
+        // animateEndPoint（Edge.ts:38）。
+        vert.addInitializer(
+            "g_otherPos.xyz += computeAnimationDisplacement(g_otherIndex, u_animDispParams.x, u_animDispParams.y, u_animDispParams.z, u_qAnimDispOrigin, u_qAnimDispScale);");
     }
 
     // --- Line code globals ---
@@ -398,9 +405,9 @@ static ProgramBuilder createBase(EdgeBuilderType type, FeatureMode /*featureMode
 // Ported from: itwinjs-core Edge.ts createEdgeBuilder() (line 306-313)
 // ---------------------------------------------------------------------------
 ProgramBuilder createEdgeProgramBuilder(EdgeBuilderType type, FeatureMode featureMode,
-                                        PositionType posType)
+                                        PositionType posType, bool isAnimated)
 {
-    auto builder = createBase(type, featureMode, posType);
+    auto builder = createBase(type, featureMode, posType, isAnimated);
 
     // Shader flags (u_shaderFlags[5] + kShaderBit_* constants)
     addShaderFlags(builder);

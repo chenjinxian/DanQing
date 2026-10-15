@@ -19,6 +19,10 @@ IndexedPolyfaceVisitor::IndexedPolyfaceVisitor(const IndexedPolyface& polyface, 
     , m_facetOrdinal(kBeforeFirst)
     , m_requireNormals(!polyface.Data().normalIndex.empty())
 {
+    // 1:1 IndexedPolyfaceVisitor ctor :34-35——polyface 有 auxData 则建 visitor 空骨架
+    // （createForVisitor：值数组留空、indices 空——AuxData.ts:233-245）。
+    if (polyface.Data().auxData.has_value())
+        m_facetAuxData = polyface.Data().auxData->createForVisitor();
 }
 
 void IndexedPolyfaceVisitor::LoadCurrentFacet()
@@ -54,6 +58,58 @@ void IndexedPolyfaceVisitor::LoadCurrentFacet()
             m_facetNormalIndex.push_back(m_facetNormalIndex[src]);
         if (src < m_facetEdgeVisible.size())
             m_facetEdgeVisible.push_back(m_facetEdgeVisible[src]);
+    }
+
+    // Ported from: PolyfaceData.ts:386-408 gatherIndexedData 的 auxData 腿——逐通道逐帧把
+    // facet 顶点的通道值搬进 facet-local 数组（copyValues 块拷贝），indices 直拷贝父段。
+    // DanQing 父 auxData.indices 为 signed 1-based → 数据块下标 = abs(idx)-1（AuxData.h
+    // 文件头 EQUIVALENCE——参考为 0-based 直读）。
+    if (m_facetAuxData.has_value() && m_polyface->Data().auxData.has_value()) {
+        auto& localAux = *m_facetAuxData;
+        auto const& parentAux = *m_polyface->Data().auxData;
+        if (localAux.channels.size() == parentAux.channels.size()) {
+            for (size_t iChannel = 0; iChannel < localAux.channels.size(); iChannel++) {
+                auto& thisChannel = localAux.channels[iChannel];
+                auto const& otherChannel = parentAux.channels[iChannel];
+                size_t const blockSize = thisChannel.entriesPerValue();
+                if (thisChannel.data.size() == otherChannel.data.size()) {
+                    for (size_t iData = 0; iData < thisChannel.data.size(); iData++) {
+                        auto& thisData = thisChannel.data[iData];
+                        auto const& otherData = otherChannel.data[iData];
+                        thisData.values.resize(m_pointCount * blockSize);
+                        for (size_t i = 0; i < m_pointCount; i++) {
+                            size_t const edgePos = facetStart + i;
+                            if (edgePos >= parentAux.indices.size())
+                                break;
+                            size_t const srcBlock =
+                                static_cast<size_t>(std::abs(parentAux.indices[edgePos])) - 1;
+                            thisData.copyValues(otherData, i, srcBlock, blockSize);
+                        }
+                        // copy wrapped auxData（:398-399——numWrap 复制品回写 facet-local 槽；
+                        // 消费面 MeshBuilder 恒 numWrap=0，本腿形态随参考原样）
+                        for (int i = 0; i < m_numWrap && m_pointCount > 0; ++i) {
+                            size_t const src = static_cast<size_t>(i) % m_pointCount;
+                            size_t const edgePos = facetStart + src;
+                            if (edgePos >= parentAux.indices.size())
+                                break;
+                            size_t const dstBlock =
+                                static_cast<size_t>(std::abs(parentAux.indices[edgePos])) - 1;
+                            if (dstBlock * blockSize < thisData.values.size())
+                                thisData.copyValues(thisData, dstBlock, src, blockSize);
+                        }
+                    }
+                }
+            }
+            // copy auxData index（:403-407——父段直拷贝 + wrap 复制）
+            localAux.indices.clear();
+            for (size_t i = 0; i < m_pointCount; i++) {
+                size_t const edgePos = facetStart + i;
+                if (edgePos < parentAux.indices.size())
+                    localAux.indices.push_back(parentAux.indices[edgePos]);
+            }
+            for (int i = 0; i < m_numWrap && m_pointCount > 0; ++i)
+                localAux.indices.push_back(localAux.indices[static_cast<size_t>(i) % m_pointCount]);
+        }
     }
 }
 

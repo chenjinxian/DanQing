@@ -56,6 +56,69 @@ TEST(OctEncodedNormalTest, Equality)
     EXPECT_NE(a, c);
 }
 
+// Ported from: itwinjs-core core/common/src/test/OctEncodedNormal.test.ts
+//              ("OctEncodedNormal tests from native source")——roundTrip 全 10 腿
+//              （容差 0.005/0.012/0.01/0.03 原样；value 恒等断言 = rep.value === oen.value）。
+namespace {
+void expectSignsEqualXYZ(dqGeom::Vector3d const& a, dqGeom::Vector3d const& b)
+{
+    if (a.x != 0.0) EXPECT_EQ(a.x < 0, b.x < 0);
+    if (a.y != 0.0) EXPECT_EQ(a.y < 0, b.y < 0);
+    if (a.z != 0.0) EXPECT_EQ(a.z < 0, b.z < 0);
+}
+void roundTripOct(dqGeom::Vector3d vec, bool normalized = true, double tolerance = 0.005)
+{
+    if (!normalized)
+        vec.Normalize();
+    auto const oen = OctEncodedNormal::fromVector(vec);
+    auto const out = oen.decode();
+    EXPECT_TRUE(vec.IsEqual(out, tolerance));
+    expectSignsEqualXYZ(vec, out);
+    auto const rep = OctEncodedNormal::fromVector(out);
+    EXPECT_EQ(rep.value, oen.value);
+}
+}  // namespace
+
+TEST(OctEncodedNormalTest, NativeSourceRoundTrips)
+{
+    roundTripOct(dqGeom::Vector3d::From(1.0, 0.0, 0.0));
+    roundTripOct(dqGeom::Vector3d::From(0.0, 1.0, 0.0));
+    roundTripOct(dqGeom::Vector3d::From(0.0, 0.0, 1.0));
+
+    roundTripOct(dqGeom::Vector3d::From(-1.0, 0.0, 0.0));
+    roundTripOct(dqGeom::Vector3d::From(0.0, -1.0, 0.0));
+    roundTripOct(dqGeom::Vector3d::From(0.0, 0.0, -1.0));
+
+    roundTripOct(dqGeom::Vector3d::From(0.5, 2.5, 0.0), false);
+    roundTripOct(dqGeom::Vector3d::From(-25.0, 25.0, 5.0), false, 0.012);
+    roundTripOct(dqGeom::Vector3d::From(0.0001, -1900.0, 22.5), false, 0.01);
+    roundTripOct(dqGeom::Vector3d::From(-1.0, -1.0, -1.0), false, 0.03);
+}
+
+// Authored: 参考测试（OctEncodedNormal.test.ts）只锁容差 round-trip、不钉编码值——
+// 本锁钉 16 位参考格式（OctEncodedNormal.ts:62 `clampUint8(ry) << 8 | clampUint8(rx)`，
+// 手工从参考算法计算）——DanQing 存量 32 位格式（ix|iy<<16）下本锁即 RED（M-W W-a3
+// 前置归位，主会话裁决 2026-10-15）。
+TEST(OctEncodedNormalTest, EncodesReference16BitValues)
+{
+    // (0,0,1)：rx=ry=0 → clampUint8(0)=truncate(0.5+127.5)=128 → 128<<8|128 = 0x8080。
+    EXPECT_EQ(OctEncodedNormal::encode(dqGeom::Vector3d::From(0.0, 0.0, 1.0)), 0x8080u);
+    // (1,0,0)：rx=1 → 255；ry=0 → 128 → 128<<8|255 = 0x80FF。
+    EXPECT_EQ(OctEncodedNormal::encode(dqGeom::Vector3d::From(1.0, 0.0, 0.0)), 0x80FFu);
+    // (0,1,0)：rx=0 → 128；ry=1 → 255 → 255<<8|128 = 0xFF80。
+    EXPECT_EQ(OctEncodedNormal::encode(dqGeom::Vector3d::From(0.0, 1.0, 0.0)), 0xFF80u);
+    // (0,0,-1)：nz<0 折叠 rx=ry=1 → 255<<8|255 = 0xFFFF。
+    EXPECT_EQ(OctEncodedNormal::encode(dqGeom::Vector3d::From(0.0, 0.0, -1.0)), 0xFFFFu);
+    // (-1,0,0)：rx=-1 → clampUint8(-1)=truncate(0.5+0)=0；ry=0 → 128 → 0x8000。
+    EXPECT_EQ(OctEncodedNormal::encode(dqGeom::Vector3d::From(-1.0, 0.0, 0.0)), 0x8000u);
+    // 解码对偶：0x8080 → ex=ey=128/255*2-1≈0.00392，ez=1-2*0.00392≈0.992 → ≈(0,0,1)。
+    auto const up = OctEncodedNormal::decodeValue(0x8080);
+    EXPECT_NEAR(up.z, 1.0, 0.01);
+    // 0xFFFF 解回 (0,0,-1)（折叠腿）。
+    auto const down = OctEncodedNormal::decodeValue(0xFFFF);
+    EXPECT_NEAR(down.z, -1.0, 0.01);
+}
+
 // ---------------------------------------------------------------------------
 // ElementMesh
 // ---------------------------------------------------------------------------

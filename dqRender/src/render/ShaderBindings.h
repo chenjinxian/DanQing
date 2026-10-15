@@ -97,6 +97,36 @@ void wireAnimDispScale(ShaderBuilder& vert);
 /// Ported from: itwinjs-core Animation.ts addAnimation() (line 244-254)
 void wireAnimDispOrigin(ShaderBuilder& vert);
 
+// --- Animation isSurface 半（W-a5——Animation.ts:256-303）---
+
+/// Wire u_animNormalParams（动画法线帧索引+fraction——:265-274）。
+void wireAnimNormalParams(ShaderBuilder& vert);
+
+/// Wire u_animScalarParams（动画 scalar 帧索引+fraction——:276-285）。
+void wireAnimScalarParams(ShaderBuilder& vert);
+
+/// Wire u_animScalarQParams（scalar 量化参数——:287-303：margin+contentRange 归一映射，
+/// 复用 M-S thematic 渐变机制）。
+void wireAnimScalarQParams(ShaderBuilder& vert);
+
+// 动画通道计算 helpers（Animation.ts:145-184——getDisplacementChannel/getNormalChannel/
+// getScalarChannel/computeAnimParams；detail 面暴露供 AnimationShaderTest 锁定
+// computeAnimParams 的 :178 运算符优先级怪癖）。输入通道=打包后的 AuxChannelTable
+// 通道族（dqRender::AuxChannel 携带 inputs/indices）。
+class DrawParams;
+class AuxChannel;
+class AuxDisplacementChannel;
+class AuxParamChannel;
+namespace detail {
+
+// Ported from: Animation.ts:171-184 computeAnimParams——inputValue=fraction×末 input；
+// 逐区间 [inputs[i], inputs[i+1]) 取 indices 对 + fraction；尾段溢出 → 末帧对 + 0。
+// **:178 运算符优先级怪癖原样**：`inputValue - inputs[i] / (inputs[i+1] - inputs[i])`
+// ——除法先于减法（参考疑似 bug，照抄锁定，勿"修正"）。
+void computeAnimParams(float* params, AuxChannel const& channel, float fraction);
+
+}  // namespace detail
+
 /// Wire the full view-clip fragment path（M-P P-D）。
 /// Ported from: itwinjs-core glsl/Clipping.ts addClipping (:136-208)：
 /// u_outsideRgba/u_insideRgba（graphic ← clipStack 颜色）+ u_clipParams[3]

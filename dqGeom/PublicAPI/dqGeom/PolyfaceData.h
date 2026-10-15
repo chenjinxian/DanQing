@@ -10,6 +10,8 @@
 // 替代 Qt QVector，底层用 std::vector。
 #pragma once
 
+#include "AuxData.h"   // PolyfaceAuxData（参考 PolyfaceData.ts:68 `auxData?: PolyfaceAuxData`
+                       // 的 C++ 承载——optional 值成员需完整类型；AuxData.h 不反向依赖本头，无环）
 #include "Point2d.h"
 #include "Point3d.h"
 #include "Vector3d.h"
@@ -17,6 +19,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 BEGIN_DQ_GEOM_NAMESPACE
@@ -41,6 +44,10 @@ struct DQ_GEOM_EXPORT PolyfaceData {
     // --- Properties ---
     bool twoSided = false;
     uint32_t expectedClosure = 0;   // 0=unknown, 1=sheet, 2=solid
+
+    // --- Auxiliary analysis data channels (1:1 PolyfaceData.ts:68 `auxData?: PolyfaceAuxData`) ---
+    // 值语义承载：PolyfaceData 拷贝即深拷贝（== 参考 clone 的 :172-173 auxData.clone() 腿）。
+    std::optional<PolyfaceAuxData> auxData;
 
     // --- Count accessors ---
     size_t PointCount() const noexcept { return points.size(); }

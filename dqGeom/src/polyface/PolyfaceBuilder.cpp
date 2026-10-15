@@ -320,6 +320,67 @@ void PolyfaceBuilder::AddCurveStroke(CurvePrimitive const& curve, StrokeOptions 
     m_polyface->TerminateFacet();
 }
 
+// Ported from: PolyfaceBuilder.ts:382-387 findOrAddPointInLineStringUnchecked ——
+// 参考的 priorIndex 去重参数在 addBetweenTransformedLineStrings 调用面不使用（:1050-1058
+// 只传 ls/index/transform），故不移植该形参；去重由 ClaimPolyface 的 Compress 兜底（参考同）。
+static int32_t FindOrAddPointInLineStringUnchecked(IndexedPolyface& polyface, LineString3d const& ls,
+                                                   size_t index, Transform const& transform)
+{
+    Point3d q = ls.Points()[index];
+    q = transform.MultiplyPoint3d(q);
+    return polyface.AddPoint(q);
+}
+
+// Ported from: PolyfaceBuilder.ts:699-715 addIndexedQuadPointIndexes 的非 reversed 分支
+// （DanQing builder 无 _reversed 旗标——参考 :702-706 的 reversed 序 (A0,B0,B1,A1) 不移植，
+// EQUIVALENCE：本仓全部调用面 _reversed 恒 false；发散=无）。
+static void AddIndexedQuadPointIndexes(IndexedPolyface& polyface, int32_t indexA0, int32_t indexA1,
+                                       int32_t indexB0, int32_t indexB1)
+{
+    polyface.AddPointIndex(indexA0, true);
+    polyface.AddPointIndex(indexA1, true);
+    polyface.AddPointIndex(indexB1, true);
+    polyface.AddPointIndex(indexB0, true);
+    polyface.TerminateFacet();
+}
+
+// Ported from: PolyfaceBuilder.ts:1044-1074 addBetweenTransformedLineStrings。
+void PolyfaceBuilder::AddBetweenTransformedLineStrings(GeometryQuery const& curves,
+                                                       Transform const& transformA,
+                                                       Transform const& transformB,
+                                                       bool addClosure)
+{
+    if (!m_polyface) return;
+    if (curves.Category() == GeometryCategory::CurvePrimitive
+        && static_cast<CurvePrimitive const&>(curves).GetCurveType() == CurveType::LineString) {
+        auto const& ls = static_cast<LineString3d const&>(curves);
+        size_t const numPoints = ls.PointCount();
+        if (numPoints > 1) {
+            int32_t indexA0 = FindOrAddPointInLineStringUnchecked(*m_polyface, ls, 0, transformA);
+            int32_t indexB0 = FindOrAddPointInLineStringUnchecked(*m_polyface, ls, 0, transformB);
+            int32_t const indexA00 = indexA0;
+            int32_t const indexB00 = indexB0;
+            for (size_t i = 1; i < numPoints; i++) {
+                int32_t const indexA1 = FindOrAddPointInLineStringUnchecked(*m_polyface, ls, i, transformA);
+                int32_t const indexB1 = FindOrAddPointInLineStringUnchecked(*m_polyface, ls, i, transformB);
+                AddIndexedQuadPointIndexes(*m_polyface, indexA0, indexA1, indexB0, indexB1);
+                indexA0 = indexA1;
+                indexB0 = indexB1;
+            }
+            if (addClosure && numPoints > 2)
+                AddIndexedQuadPointIndexes(*m_polyface, indexA0, indexA00, indexB0, indexB00);
+        }
+    } else if (curves.Category() == GeometryCategory::CurveCollection) {
+        // just send the children individually; final compress will fix things??
+        // （参考怪癖 :1071 原样：递归不传 addClosure——子线串恒 addClosure=false）
+        auto const& chain = static_cast<CurveChain const&>(curves);
+        for (auto const& child : chain.Curves()) {
+            if (child)
+                AddBetweenTransformedLineStrings(*child, transformA, transformB);
+        }
+    }
+}
+
 // Ported from: itwinjs-core PolyfaceBuilder.addUVGridBody (:1887-1984) — UV 网格体：
 // (numU+1)×(numV+1) 采样 UVSurface.UVFractionToPointAndTangents，点每格点一次
 // AddPoint（行间共享），needNormals → vectorU×vectorV 单位法线逐顶点，needParams →

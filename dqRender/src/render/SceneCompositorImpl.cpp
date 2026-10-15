@@ -2000,6 +2000,19 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                                 };
                                 params.setVec4("u_color", surfColorRgba);
                             }
+                            // M-W W-a6：auxChannels LUT 纹理绑定（u_animLUT 的纹理源——
+                            // 参考 Animation.ts:196-198 的 channels.texture.bindSampler
+                            // (uniform, TextureUnit.AuxChannelLUT) 的 dispatch 侧等价；
+                            // DanQing UniformHandle 面无 driver[W-a5 EQUIVALENCE]，
+                            // 纹理在 compositor 绑定 + 单元号经 wireAnimLUT 的
+                            // GraphicUniform 置位）。仅动画几何（auxChannels 在场）绑定。
+                            if (auto const* auxLut = surfGeom->auxChannels()) {
+                                if (auxLut->texture() != rhi::TextureHandle{}) {
+                                    driver.bindTexture(
+                                        static_cast<uint32_t>(GL::TextureUnit::AuxChannelLUT),
+                                        auxLut->texture());
+                                }
+                            }
                         }
                         // TD-25：实例化 surface 的 per-draw uniform 组。
                         // Ported from: itwinjs-core BranchUniforms.bindModelViewMatrix
@@ -2572,7 +2585,7 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     // texture-on-screen regression, GltfTexturePixelTest).
                     int const* surfaceFlags = SurfaceGeometry::computeSurfaceFlags(
                         *geometry, m_target.displayNormalMaps,
-                        m_target.getCurrentViewFlags());
+                        m_target.getCurrentViewFlags(), &m_target);
                     drawParams.setSurfaceFlags(surfaceFlags);
                     // Normal matrix: transpose(inverse(mat3(mv))) for u_normalMatrix.
                     // Ported from: itwinjs-core Vertex.ts addNormalMatrix() —
@@ -2597,8 +2610,7 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     // 同值同序）。发散=未发现；验证法=S-d E2E 像素锁（纹理面
                     // housemodel 的 thematic 覆盖)。
                     rhi::TextureHandle const surfTex = geometry->getSurfaceTexture();
-                    if (flags.isThematic) {
-                        rhi::TextureHandle const gradTex =
+                    if (flags.isThematic) {                        rhi::TextureHandle const gradTex =
                             m_target.getUniforms().thematic.getGradientTexture();
                         if (gradTex) {
                             driver.bindTexture(0, gradTex);
@@ -2633,6 +2645,14 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                             }
                         }
                     } else if (surfTex != rhi::TextureHandle{}) {
+                        // M-W W-a6：scalar 动画的 analysisTexture 优先（Surface.ts:602——
+                        // `hasAnimation && target.analysisTexture ? analysisTexture :
+                        // surfGeom.texture`）：scalar 通道渐变纹理接管 s_texture。
+                        rhi::TextureHandle const analysisTex = m_target.getAnalysisTexture();
+                        if (geometry->hasAnimation() && analysisTex != rhi::TextureHandle{}) {
+                            driver.bindTexture(0, analysisTex);
+                            params.setInt("s_texture", 0);
+                        } else {
                         driver.bindTexture(0, surfTex);
                         params.setInt("s_texture", 0);
                         // TEMP-DIAG（U 翻转 saga）：绘制时纹理实际 wrap 状态。
@@ -2644,6 +2664,7 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                                 dqglGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, &wt);
                                 printf("[WRAP] wrapS=0x%04x wrapT=0x%04x (REPEAT=0x2901 MIRRORED=0x8370 CLAMP=0x812F)\n", ws, wt);
                             }
+                        }
                         }
                     }
                     // Normal map (s_normalMap): bind when the HasNormalMap bit is
