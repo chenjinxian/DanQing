@@ -18,6 +18,8 @@
 #define END_DQ_RENDER_NAMESPACE }
 #endif
 
+namespace dqGeom { class AuxChannel; }
+
 BEGIN_DQ_RENDER_NAMESPACE
 
 namespace rhi { class Driver; }
@@ -113,6 +115,14 @@ public:
         std::vector<AuxChannel> normals,
         std::vector<AuxParamChannel> params);
 
+    /// Ported from: AuxChannelTable.ts:186-188 fromChannels → AuxChannelTableBuilder.
+    /// buildAuxChannelTable（:209-237）。
+    /// 从 dqGeom PolyfaceAuxData 的通道族打包（量化+交错+texel 对齐怪癖）；
+    /// 全通道合计字节数为零 → nullptr（:211-212 的 undefined 语义）。
+    static std::unique_ptr<AuxChannelTable> fromChannels(
+        std::vector<dqGeom::AuxChannel> const& channels, uint32_t numVertices,
+        uint32_t maxDimension);
+
     /// Create the GPU RGBA8 texture from packed data.
     rhi::TextureHandle createLutTexture(rhi::Driver& driver) const;
 
@@ -140,7 +150,7 @@ private:
     std::vector<AuxDisplacementChannel> m_displacements;
     std::vector<AuxChannel> m_normals;
     std::vector<AuxParamChannel> m_params;
-    rhi::TextureHandle m_texture;
+    mutable rhi::TextureHandle m_texture;  // 懒建缓存（createLutTexture const 语义）
 };
 
 END_DQ_RENDER_NAMESPACE
