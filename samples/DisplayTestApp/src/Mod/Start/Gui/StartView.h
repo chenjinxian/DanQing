@@ -62,6 +62,7 @@ Q_SIGNALS:
     void requestCesiumExample();                  // Surface.ts:167-177 entry（b87a96a960 删 appToolBar 时
                                                   // 误失的 UI 入口恢复——M-O(4) P8 陈列馆当时仅剩 keyin）
     void requestOpenDumpModel(QString modelId);   // M-H(4)："joeshouse"/"instances60"；M-K(2)：+"housemodel"/"baytown"/"bridge-edit"
+    void requestAnalysisStyleExample();           // Surface.ts:143-154 entry（M-W W-a6 宿主集成）
 
 protected:
     void changeEvent(QEvent* e) override;

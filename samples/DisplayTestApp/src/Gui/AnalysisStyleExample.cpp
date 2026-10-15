@@ -399,6 +399,12 @@ void openAnalysisStyleExample(dqApp::Viewport& viewport, QWidget* toolbarParent)
     // E2：双 DOM select → 双 QComboBox（toolbarParent 承载）。
     auto* meshPicker = new QComboBox(toolbarParent);
     auto* stylePicker = new QComboBox(toolbarParent);
+    // 宿主定位（E2 续——参考 appendChild 进 toolbar 流式排布；DanQing 叠放
+    // 视口左上角纵排——主会话集成接线段）。
+    meshPicker->move(4, 4);
+    stylePicker->move(4, 4 + meshPicker->sizeHint().height() + 4);
+    meshPicker->show();
+    stylePicker->show();
 
     // decorator 的共享指针（双 combo 的 lambda 共用；参考的 `let decorator` 语义）。
     auto decoratorHolder = std::make_shared<AnalysisDecorator*>(nullptr);

@@ -68,6 +68,7 @@ static LONG WINAPI dtaCrashPrinter(EXCEPTION_POINTERS* ep)
 #include "src/Gui/TileTreePanel.h"
 #include "src/Gui/CategoriesPanel.h"
 #include "src/Gui/CesiumDecorator.h"   // Start 页 Cesium 卡片直装（D-1 裁决后，陈列馆保留）
+#include "src/Gui/AnalysisStyleExample.h"  // M-W W-a6：Start 页 Analysis Style 卡片入口
 #include "src/Gui/View3DInventor.h"
 #include "src/Gui/DecorationGeometryExample.h"
 #include "src/Gui/Command.h"
@@ -252,6 +253,17 @@ int main(int argc, char** argv)
                                      Gui::CesiumDecorator::start(imodel);
                          }
                          mainWindow->showStatus(0, QObject::tr("Cesium Renderer Example opened"));
+                     });
+    // "Analysis Style Example"（Surface.ts:143-154——M-W W-a6）：新建 blank
+    // connection → openAnalysisStyleExample（双 combo 叠放视口左上角 + Iso +
+    // zoomToVolume + SolidFill + 双色天空盒——AnalysisStyleExample.ts:242-299）。
+    QObject::connect(startView, &StartGui::StartView::requestAnalysisStyleExample,
+                     mainWindow, [mainWindow]() {
+                         auto* mdView = Gui::Application::Instance()->newDocument();
+                         if (auto* view3d = qobject_cast<Gui::View3DInventor*>(mdView))
+                             if (auto* vp = view3d->getUeViewport())
+                                 dta::openAnalysisStyleExample(*vp, view3d);
+                         mainWindow->showStatus(0, QObject::tr("Analysis Style Example opened"));
                      });
     // M-H(4)：双模型打开入口（2026-09-28 用户指令——"点击直接进行渲染视图"）。
     // Start 页模型卡片 → 新建 MDI 视图（newDocument 工厂 = blank connection

@@ -185,6 +185,13 @@ void StartView::configureExampleButtons(QLayout* layout)
          tr("Opens a blank connection with the Cesium decorator gallery"),
          {}, dtaIcons, QChar(0xe9f4)}  // Surface.ts:172 "gis"（appToolBar 旧钮同 glyph）
     );
+    // M-W W-a6：Analysis Style Example（Surface.ts:143-154——polyface auxData
+    // 位移/scalar 通道演示；blank connection + openAnalysisStyleExample 两步合一）。
+    auto analysisStyle = new NewFileButton(
+        {tr("Analysis Style Example"),
+         tr("Opens a blank connection with analysis style meshes (displacement/scalar channels)"),
+         {}, dtaIcons, QChar(0xea32)}  // Surface.ts:144 "play"
+    );
 
     // Open Blank Connection 是真功能（Surface.ts:137-139 → openBlankConnection()；
     // DanQing 对应 requestBlankConnection → Gui::Application::newDocument）。
@@ -199,10 +206,12 @@ void StartView::configureExampleButtons(QLayout* layout)
     // 陈列馆装饰入口；点击新建 blank connection 后激活 CesiumExampleTool——
     // appToolBar 旧钮 Create+SetActiveTool 同一语义，b87a96a960 删钮后恢复）。
     connect(cesiumRenderer, &QPushButton::clicked, this, &StartView::requestCesiumExample);
+    connect(analysisStyle, &QPushButton::clicked, this, &StartView::requestAnalysisStyleExample);
 
     layout->addWidget(openBlank);
     layout->addWidget(decorationGeometry);
     layout->addWidget(cesiumRenderer);
+    layout->addWidget(analysisStyle);
 }
 
 bool StartView::onHasMsg(const char* pMsg) const
