@@ -354,6 +354,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/AuxChannelTableTest.cpp      # M-W W-a3：AuxChannelTableBuilder 打包器（AuxChannelTable.ts:186-371）
         tests/MeshBuilderAuxDataTest.cpp   # M-W W-a4：auxData 消费链（MeshBuilder.test.ts:407-501 + GeometryAccumulator.ts:101-115）
         tests/AnimationShaderTest.cpp      # M-W W-a5：glsl/Animation.ts 归位（变体键/三段出场/Edge 门 TD-28④/computeAnimParams 怪癖）
+        tests/AnalysisStyleLutRenderTest.cpp # M-W W-a6 回修：E2E 零内容离屏复现锁（s_texture analysisTexture 臂 + animated 变体真机编译锁）
     )
     # SurfaceCompileTest + PolylineRenderTest include GlslCompileHarness.h, which
     # uses the deprecated macOS OpenGL/CGL API (-Werror is on project-wide).

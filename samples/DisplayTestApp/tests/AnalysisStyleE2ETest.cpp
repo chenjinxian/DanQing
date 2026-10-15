@@ -156,7 +156,7 @@ TEST(AnalysisStyleE2E, FlatWavesDisplaceUpwardWithFractionAndRecolor)
 
     // analysisStyle：Animated Radial Displacement（scale=1）+ Animated Radial Height
     // scalar（渐变着色——populateAnalysisStyles 的同构产出面，AnalysisStyleExample.ts
-    // :36-62：配套通道同 inputName "Radial: Time"）。
+    // :36-62：配套通道同 inputName "Radial: Time"；scalar range=通道实测 scalarRange）。
     {
         dqCommon::AnalysisStyle style;
         dqCommon::AnalysisStyleDisplacement disp;
@@ -165,7 +165,17 @@ TEST(AnalysisStyleE2E, FlatWavesDisplaceUpwardWithFractionAndRecolor)
         style.displacement = disp;
         dqCommon::AnalysisStyleThematic scalar;
         scalar.channelName = "Animated Radial Height";
-        scalar.range = dqGeom::Range1d(0.0, 12.5);  // maxHeight = radius/4 = 12.5
+        // 通道实测 scalarRange（populateAnalysisStyles :46-52 的 channel.scalarRange 面）。
+        dqGeom::Range1d scalarRange = dqGeom::Range1d::CreateNull();
+        for (auto const& ch : mesh.polyface->Data().auxData->channels) {
+            if (ch.name.has_value() && *ch.name == "Animated Radial Height" && ch.isScalar()) {
+                auto const r = ch.scalarRange();
+                ASSERT_TRUE(r.has_value());
+                scalarRange = *r;
+            }
+        }
+        ASSERT_FALSE(scalarRange.isNull());
+        scalar.range = scalarRange;
         style.scalar = scalar;
         vp->GetView()->GetDisplayStyle().setAnalysisStyle(style);
     }

@@ -17,6 +17,9 @@
 #include "render/SurfaceVariantCompiler.h"
 #include "render/TechniqueImpl.h"
 
+#include <cstdio>
+#include <cstdlib>
+#include <fstream>
 #include <string>
 
 using namespace dqRender;
@@ -33,8 +36,34 @@ void buildSurfaceSources(TechniqueFlags const& flags, std::string& vertOut, std:
     fragOut = prog.getFragSource();
 }
 
-}  // namespace
-
+// TEMP-DIAG（M-W W-a6 零片元取证所加，env 门控保留面）：落盘 animated+
+// unquantizedLUT 变体源（DANQING_AS_DUMP_DIR=dir 时生效，否则跳过）——
+// 变体源肉眼/离线审查的取样口（M-W 取证即经本口落盘后定位属性表缺口）。
+TEST(AnimationShaderTest, ZDumpAnimatedUnquantizedLutVariant)
+{
+    auto* dumpDir = std::getenv("DANQING_AS_DUMP_DIR");
+    if (!dumpDir)
+        GTEST_SKIP() << "set DANQING_AS_DUMP_DIR to dump";
+    TechniqueFlags flags;
+    flags.reset(FeatureMode::None, false, false, false, PositionType::Unquantized);
+    flags.setAnimated(true);
+    flags.isLutUnquantized = true;
+    SurfaceVariantCompiler compiler;
+    ShaderProgram prog;
+    compiler.buildProgram(prog, flags);
+    std::string const vert = prog.getVertSource();
+    std::string const frag = prog.getFragSource();
+    std::string const vp = std::string(dumpDir) + "/as-anim-unquant.vert.glsl";
+    std::string const fp = std::string(dumpDir) + "/as-anim-unquant.frag.glsl";
+    {
+        std::ofstream ov(vp, std::ios::binary);
+        ov << vert;
+        std::ofstream of(fp, std::ios::binary);
+        of << frag;
+    }
+    std::fprintf(stderr, "[AS-DUMP] wrote %s (%zu) + %s (%zu)\n", vp.c_str(), vert.size(),
+                 fp.c_str(), frag.size());
+}
 // Ported from: TechniqueFlags.ts isAnimated 位全链（:59 字段/:93 init 置位/:132 reset/
 // :145 setAnimated/:169 equals/:186 buildDescription）+ Technique.ts:415 的
 // _kAnimated 变体维（DanQing MultiVariantTechnique::computeShaderIndex bit 6 同位面）。
@@ -173,3 +202,6 @@ TEST(AnimationShaderTest, ComputeAnimParamsLocksReferenceSemantics)
     EXPECT_FLOAT_EQ(params[1], 4.0f);
     EXPECT_FLOAT_EQ(params[2], 0.0f);
 }
+
+}  // namespace
+
