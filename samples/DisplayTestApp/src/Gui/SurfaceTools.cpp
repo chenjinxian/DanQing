@@ -5,10 +5,12 @@
 #include "SurfaceTools.h"
 
 #include <dqApp/Application.h>
+#include <dqApp/IModelConnection.h>  // GetKey（ReopenIModelTool——E-Y7）
 #include <dqApp/ParseArgs.h>
 #include <dqApp/ViewManager.h>
 #include <dqApp/Viewport.h>
 
+#include "../DumpOpenHelper.h"  // dta::modelIdForIModelKey/dumpPackageForModel/openDumpIModel/注册表（Y-b2）
 #include "MainWindow.h"
 #include "View3DInventor.h"
 
@@ -27,34 +29,39 @@ namespace {
 // 测试缝（Surface::setMdiAreaForTest）。
 QMdiArea* s_mdiAreaForTest = nullptr;
 
-// E-Y6 激活序追踪器状态：逐 mdiArea 的焦点序窗表（QPointer 防悬垂）。
-std::unordered_map<QMdiArea*, std::vector<QPointer<QMdiSubWindow>>>& activationOrders()
+// E-Y6 激活序追踪器状态：逐 mdiArea 的焦点序**窗内容件**表（QPointer 防悬垂）。
+// 追踪 widget 而非子窗壳（二跑取证实锤：QMdiSubWindow 的 WA_DeleteOnClose 与
+// 内容件析构不同步——子窗可从 area 摘除而壳对象残存，壳的 widget() 悬垂；
+// QPointer<内容件> 在内容件析构时精确置空）。
+std::unordered_map<QMdiArea*, std::vector<QPointer<QObject>>>& activationOrders()
 {
-    static std::unordered_map<QMdiArea*, std::vector<QPointer<QMdiSubWindow>>> s_orders;
+    static std::unordered_map<QMdiArea*, std::vector<QPointer<QObject>>> s_orders;
     return s_orders;
 }
 
 // 追踪器懒装（本层首次触及该 area 时接线 subWindowActivated——参考
 // Surface.focus 的 _windows 提前语义 :331-332）。
-std::vector<QPointer<QMdiSubWindow>>& activationOrderFor(QMdiArea* area)
+std::vector<QPointer<QObject>>& activationOrderFor(QMdiArea* area)
 {
     auto& orders = activationOrders();
     auto it = orders.find(area);
     if (it == orders.end()) {
-        it = orders.emplace(area, std::vector<QPointer<QMdiSubWindow>>{}).first;
+        it = orders.emplace(area, std::vector<QPointer<QObject>>{}).first;
+        // 注意：subWindowActivated 的参数子窗其 parentWidget() 是 area 的
+        // viewport 而非 area 自身（首跑红旗实锤）——lambda 直捕 area（连接
+        // context=area，area 析构后不再发射，无悬垂）。
         QObject::connect(area, &QMdiArea::subWindowActivated, area,
-                         [](QMdiSubWindow* sub) {
-                             auto* parent = sub ? sub->parentWidget() : nullptr;
-                             auto* mdia = qobject_cast<QMdiArea*>(parent);
-                             if (mdia == nullptr || sub == nullptr)
+                         [area](QMdiSubWindow* sub) {
+                             if (sub == nullptr || sub->widget() == nullptr)
                                  return;
-                             auto& vec = activationOrders()[mdia];
+                             QPointer<QObject> const tracked(sub->widget());
+                             auto& vec = activationOrders()[area];
                              for (auto vit = vec.begin(); vit != vec.end(); ++vit)
-                                 if (vit->data() == sub) {
+                                 if (vit->data() == tracked.data()) {
                                      vec.erase(vit);
                                      break;
                                  }
-                             vec.insert(vec.begin(), QPointer<QMdiSubWindow>(sub));
+                             vec.insert(vec.begin(), tracked);
                          });
     }
     return it->second;
@@ -129,10 +136,10 @@ Gui::View3DInventor* Surface::firstViewer()
     QMdiArea* area = mdiArea();
     if (area == nullptr)
         return nullptr;
-    // 激活序优先（追踪器懒装）。
+    // 激活序优先（追踪器懒装；QPointer<内容件>——死引用自动置空）。
     for (auto const& ptr : activationOrderFor(area))
         if (!ptr.isNull())
-            if (auto* view = qobject_cast<Gui::View3DInventor*>(ptr->widget()))
+            if (auto* view = qobject_cast<Gui::View3DInventor*>(ptr.data()))
                 return view;
     // 未追踪 viewer 创建序补位（E-Y6 发散注）。
     for (auto* sub : area->subWindowList())
@@ -489,6 +496,68 @@ bool DockWindowTool::parseAndRun(std::vector<std::string> const& args)
                               args.size() > 1 ? std::optional<std::string>(args[1])
                                               : std::nullopt));  // :593
     return true;  // :595
+}
+
+// ---------------------------------------------------------------------------
+// CloseIModelTool（Surface.ts:645-652）
+// ---------------------------------------------------------------------------
+
+// Ported from: run (:648-651——closeAllViewers 恒 true）。
+bool CloseIModelTool::run()
+{
+    Surface::closeAllViewers();  // :649
+    return true;                 // :650
+}
+
+// ---------------------------------------------------------------------------
+// ReopenIModelTool（Surface.ts:654-665）
+// ---------------------------------------------------------------------------
+
+// Ported from: run (:657-664——`const viewer = Surface.instance.firstViewer;
+// if (undefined !== viewer) await viewer.openFile(viewer.viewport.iModel.key);
+// return true`）。E-Y7：openFile(key) 的 DanQing 承载 = key→modelId→包映射
+// → 同一视图 openDumpIModel 重开（参考 resetIModel 的同 viewer 换绑语义，
+// Viewer.ts:545-552/571-580）。
+bool ReopenIModelTool::run()
+{
+    auto* viewer = Surface::firstViewer();  // :659
+    if (viewer == nullptr)
+        return true;                        // :660-661 否臂（无 viewer 不动）
+
+    auto* vp = viewer->getUeViewport();
+    std::string const key = (vp != nullptr && vp->GetIModel() != nullptr)
+                                ? vp->GetIModel()->GetKey()
+                                : std::string();  // :660 viewport.iModel.key
+
+    bool opened = false;
+    if (auto const modelId = dta::modelIdForIModelKey(key)) {
+        if (auto pkg = dta::dumpPackageForModel(*modelId)) {
+            // 旧 provider 先摘（Viewport.dropTiledGraphicsProvider
+            // :1738-1740）再卸注册——次序防悬垂（旧 DumpOpenResult 删除即
+            // provider 死；参考 resetIModel 同序：旧 iModel 先关）。
+            if (auto* old = dta::findOpenedDump(viewer))
+                vp->DropTiledGraphicsProvider(old->provider.get());
+            dta::forgetOpenedDump(viewer);
+            // registerOpenedDump 为 emplace 不覆盖（DumpOpenHelper.cpp:276）
+            // ——先卸后装是同视图重开的必要序。
+            auto result = dta::openDumpIModel(*viewer, *pkg);
+            if (result.has_value()) {
+                dta::registerOpenedDump(
+                    viewer,
+                    std::make_unique<dta::DumpOpenResult>(std::move(*result)));
+                opened = true;
+            }
+        }
+    }
+    if (!opened) {
+        // 参考 openIModel 失败 catch → alert("Error - could not open file.")
+        //（Viewer.ts:577-582）的等价消息面（E-Y7/E-Y8——未映射 key/blank
+        // 空键/打开失败同路；MainWindow 缺席[测试态]则静默）。
+        if (auto* mw = MainWindow::getInstance())
+            mw->showStatus(MainWindow::Err,
+                           QObject::tr("Error - could not open file."));
+    }
+    return true;  // :663
 }
 
 }  // namespace Gui

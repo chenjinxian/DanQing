@@ -126,6 +126,14 @@ void registerDtaTools()
     registry.Register("DockWindow",
                       []() -> dqApp::InteractiveTool* { return new DockWindowTool(); },
                       "win dock");
+    // M-Y Y-b2：CloseIModel/ReopenIModel（Surface.ts:645-665——SVTTools.json
+    // :106-111 en 键）。
+    registry.Register("CloseIModel",
+                      []() -> dqApp::InteractiveTool* { return new CloseIModelTool(); },
+                      "dta file close");
+    registry.Register("ReopenIModel",
+                      []() -> dqApp::InteractiveTool* { return new ReopenIModelTool(); },
+                      "dta file reopen");
 }
 
 void setupDtaStatusBar(MainWindow* mainWindow)

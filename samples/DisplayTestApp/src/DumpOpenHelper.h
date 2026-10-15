@@ -41,6 +41,8 @@
 
 #include <dqGeom/Range3d.h>  // TreeEntry.worldRange（隔离 step-fit 取景域）
 
+#include <QString>  // dumpPackageForModel/modelIdForIModelKey 形参（M-Y Y-b2）
+
 #include <memory>
 #include <optional>
 #include <string>
@@ -183,6 +185,18 @@ struct DumpOpenResult {
 // modelSelector 引用的树不在 dump 域 / fetcher 无效）→ nullopt。
 std::optional<DumpOpenResult> openDumpIModel(Gui::View3DInventor& view,
                                              DumpOpenPackage const& pkg);
+
+// ─── 模型↔包映射（M-Y Y-b2：自 main.cpp 匿名命名空间迁出——ReopenIModelTool 与
+// Start 页入口同源消费）───
+// 模型→包根映射表（M-H(4) Step 2 一处集中；joeshouse/instances60/housemodel/
+// baytown/bridge-edit 五键域；与 DumpOpenChainTest.cpp 各锁的包定义一致）。
+// 未知 id → nullopt。
+std::optional<DumpOpenPackage> dumpPackageForModel(QString const& modelId);
+
+// iModel key（dump = 源 bim 绝对路径——imodel.json connection.rpcProps.key
+// 回放）→ modelId：basename 提取（正/反斜杠双形态）+ 大小写不敏比对。
+// 未映射/空键 → nullopt（E-Y8 no-op 腿——SurfaceTools.h 头注）。
+std::optional<QString> modelIdForIModelKey(std::string const& key);
 
 // ─── 打开产物生命周期注册表（M-L(2)：main.cpp 迁入——Models/瓦树面板同源消费）───
 // DumpOpenResult 持有 trees/provider（viewport 注册的是 provider 裸指针——上方

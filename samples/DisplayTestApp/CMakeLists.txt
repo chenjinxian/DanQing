@@ -380,6 +380,7 @@ if(TARGET gtest_main AND TARGET dqApp)
         tests/WindowToolsTest.cpp         # M-Y Y-b1：窗口 keyin 族七件锁（裸 QMdiArea 无头面）
         src/Gui/SurfaceTools.cpp          # M-Y Y-b1/Y-b2 被测面
         src/Gui/SurfaceTools.h            # include-path parity
+        tests/IModelFileToolsTest.cpp     # M-Y Y-b2：CloseIModel/ReopenIModel 状态机 + key↔包映射锁（无头面）
         resources.qrc                 # DTA 图标资源（字体 + SVG——图标断言测试需要）
     )
     target_include_directories(DisplayTestAppDtaTest PRIVATE

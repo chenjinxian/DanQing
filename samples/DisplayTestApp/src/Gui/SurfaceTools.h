@@ -247,4 +247,28 @@ public:
     bool parseAndRun(std::vector<std::string> const& args) override;
 };
 
+// ---------------------------------------------------------------------------
+// CloseIModelTool — Ported from: Surface.ts:645-652（minArgs/maxArgs 未覆写
+// = Tool 默认 0/0）。
+// ---------------------------------------------------------------------------
+class CloseIModelTool final : public dqApp::InteractiveTool {
+public:
+    const char* getToolId() const override { return "CloseIModel"; }  // :646
+    std::string englishKeyin() const override { return "dta file close"; }
+    // Ported from: run (:648-651——Surface.instance.closeAllViewers()）。
+    bool run() override;
+};
+
+// ---------------------------------------------------------------------------
+// ReopenIModelTool — Ported from: Surface.ts:654-665（`firstViewer.openFile(
+// firstViewer.viewport.iModel.key)`——E-Y7/E-Y8 见头注）。
+// ---------------------------------------------------------------------------
+class ReopenIModelTool final : public dqApp::InteractiveTool {
+public:
+    const char* getToolId() const override { return "ReopenIModel"; }  // :655
+    std::string englishKeyin() const override { return "dta file reopen"; }
+    // Ported from: run (:657-664)。
+    bool run() override;
+};
+
 }  // namespace Gui
