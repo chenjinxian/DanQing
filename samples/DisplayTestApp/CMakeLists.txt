@@ -107,6 +107,8 @@ add_executable(DisplayTestApp WIN32
     # B-lane 锚（M-W 起——B 道代理只在此锚下追加 app src 注册；勿动他区）
     src/Gui/PathDecorationTest.cpp   # M-W W-b1：Path 装饰测试（PathDecorationTest.ts）
     src/Gui/PathDecorationTest.h
+    src/Gui/SurfaceTools.cpp         # M-Y Y-b1/Y-b2：Surface 窗口 keyin 族 + Close/ReopenIModel（Surface.ts）
+    src/Gui/SurfaceTools.h
 )
 
 target_include_directories(DisplayTestApp PRIVATE
@@ -375,6 +377,9 @@ if(TARGET gtest_main AND TARGET dqApp)
         tests/PathDecorationTestLock.cpp  # M-W W-b1：几何/toggle/拾取/canvas 占位锁 + 真窗像素锁（主会话收口跑）
         src/Gui/PathDecorationTest.cpp    # M-W W-b1 被测面
         src/Gui/PathDecorationTest.h      # include-path parity
+        tests/WindowToolsTest.cpp         # M-Y Y-b1：窗口 keyin 族七件锁（裸 QMdiArea 无头面）
+        src/Gui/SurfaceTools.cpp          # M-Y Y-b1/Y-b2 被测面
+        src/Gui/SurfaceTools.h            # include-path parity
         resources.qrc                 # DTA 图标资源（字体 + SVG——图标断言测试需要）
     )
     target_include_directories(DisplayTestAppDtaTest PRIVATE

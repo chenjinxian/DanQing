@@ -37,6 +37,7 @@
 #include "GltfDecorationTool.h"
 #include "OutputShadersTool.h"        // M-O(2) 3d OutputShaders 工具注册
 #include "PathDecorationTest.h"       // M-W W-b1：TogglePathDecoration 工具注册
+#include "SurfaceTools.h"             // M-Y Y-b1/Y-b2：Surface 窗口 keyin 族 + Close/ReopenIModel 注册
 #include "TiledGraphics.h"            // M-O(2) I11 第二 iModel 叠加工具注册
 #include "MacroTool.h"                // M-O(4) P9 Macro 播放器注册
 
@@ -102,6 +103,29 @@ void registerDtaTools()
     registry.Register("TogglePathDecoration",
                       []() -> dqApp::InteractiveTool* { return new PathDecorationTestTool(); },
                       "dta path decoration");
+    // M-Y Y-b1：Surface 窗口 keyin 族七件（Surface.ts:451-598——SVTTools.json
+    // :25-50 en 键；MDI 承载与 EQUIVALENCE 见 SurfaceTools.h 头注）。
+    registry.Register("CreateWindow",
+                      []() -> dqApp::InteractiveTool* { return new CreateWindowTool(); },
+                      "win create");
+    registry.Register("FocusWindow",
+                      []() -> dqApp::InteractiveTool* { return new FocusWindowTool(); },
+                      "win focus");
+    registry.Register("MaximizeWindow",
+                      []() -> dqApp::InteractiveTool* { return new MaximizeWindowTool(); },
+                      "win max");
+    registry.Register("RestoreWindow",
+                      []() -> dqApp::InteractiveTool* { return new RestoreWindowTool(); },
+                      "win restore");
+    registry.Register("CloseWindow",
+                      []() -> dqApp::InteractiveTool* { return new CloseWindowTool(); },
+                      "win close");
+    registry.Register("ResizeWindow",
+                      []() -> dqApp::InteractiveTool* { return new ResizeWindowTool(); },
+                      "win resize");
+    registry.Register("DockWindow",
+                      []() -> dqApp::InteractiveTool* { return new DockWindowTool(); },
+                      "win dock");
 }
 
 void setupDtaStatusBar(MainWindow* mainWindow)
