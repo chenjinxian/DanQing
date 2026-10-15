@@ -264,12 +264,14 @@ std::unique_ptr<MeshGraphic> MeshRenderGeometry::create(
         v.pos[1] = static_cast<float>(pts[i].y);
         v.pos[2] = static_cast<float>(pts[i].z);
 
-        // Decode oct (ix|iy<<16, 16+16 per dqCommon::OctEncodedNormal) → unit float3.
+        // Decode oct (16 位参考格式：ex=val&0xff、ey=(val>>8)&0xff、/255——
+        // dqCommon::OctEncodedNormal M-W 归位 OctEncodedNormal.ts:76-101 的 decodeValue
+        // 同构；此块系该 decode 的 CPU float 内联（折叠用折叠前原值）。
         if (haveNormals && i < normals.size()) {
             const uint32_t val = normals[i].value;
-            const float scale = 1.0f / 65535.0f;
-            float nx = static_cast<float>(val & 0xFFFF) * scale * 2.0f - 1.0f;
-            float ny = static_cast<float>((val >> 16) & 0xFFFF) * scale * 2.0f - 1.0f;
+            const float scale = 1.0f / 255.0f;
+            float nx = static_cast<float>(val & 0xFF) * scale * 2.0f - 1.0f;
+            float ny = static_cast<float>((val >> 8) & 0xFF) * scale * 2.0f - 1.0f;
             float nz = 1.0f - std::abs(nx) - std::abs(ny);
             if (nz < 0.0f) {
                 float tx = (1.0f - std::abs(ny)) * (nx >= 0.0f ? 1.0f : -1.0f);
