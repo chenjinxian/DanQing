@@ -96,6 +96,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/CategorySelectorStateTest.cpp
         tests/ModelSelectorStateTest.cpp
         tests/FrustumPlaneIntersectionTest.cpp
+        tests/EnvironmentAtmosphereTest.cpp  # M-W 集成面：Environment.atmosphere 载体（Environment.ts atmosphere 段）
         # A-lane 锚（M-W 起——A 道代理只在此锚下追加测试注册；勿动他区）
     )
     target_link_libraries(dqCommonTest

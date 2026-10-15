@@ -95,7 +95,9 @@ namespace Atmosphere {
             return s;
         }
 
-        Props toJSON() const
+        // Ported from: itwinjs-core Atmosphere.Settings.toJSON(display?)（Atmosphere.ts:172-185——
+        // display 仅在场时写出；M-W 集成面补 display 形参）。
+        Props toJSON(std::optional<bool> display = std::nullopt) const
         {
             Props p;
             p.atmosphereHeightAboveEarth = atmosphereHeightAboveEarth;
@@ -106,6 +108,8 @@ namespace Atmosphere {
             p.numSunRaySamples = numSunRaySamples;
             p.scatteringStrength = scatteringStrength;
             p.wavelengths = {wavelengths.r, wavelengths.g, wavelengths.b};
+            if (display.has_value())
+                p.display = display;
             return p;
         }
 
@@ -113,6 +117,7 @@ namespace Atmosphere {
         {
             return atmosphereHeightAboveEarth == rhs.atmosphereHeightAboveEarth &&
                    exposure == rhs.exposure && densityFalloff == rhs.densityFalloff &&
+                   depthBelowEarthForMaxDensity == rhs.depthBelowEarthForMaxDensity &&
                    numViewRaySamples == rhs.numViewRaySamples &&
                    numSunRaySamples == rhs.numSunRaySamples &&
                    scatteringStrength == rhs.scatteringStrength &&
