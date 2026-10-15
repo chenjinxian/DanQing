@@ -8,6 +8,7 @@
 #include <dqApp/tile/SpatialTileTreeReferences.h>  // setCreateOverride（frontend-tiles 缝）
 
 #include <map>
+#include <cstdlib>  // std::getenv（DANQING_RPC_DUMP——dumpPackageForModel）
 #include <dqRender/tile/ImdlTileTree.h>
 #include <dqRender/tile/TileAdmin.h>
 
@@ -260,6 +261,88 @@ std::optional<DumpOpenResult> openDumpIModel(Gui::View3DInventor& view,
     out.fetcher = static_cast<dqApp::DumpTileFetcher*>(
         &dqRender::TileAdmin::instance().getFetcher());
     return out;
+}
+
+// ─── 模型↔包映射（M-Y Y-b2：自 main.cpp 匿名命名空间迁出——ReopenIModelTool
+// 与 Start 页入口同源消费；包定义逐字未动）───
+
+// 模型→包根映射表（一处集中，M-H(4) Step 2）：
+//   joeshouse   = imodel joeshouse-v1/imodel.json + tiles [joeshouse-v1]
+//                 + fallback [joeshouse-drill-v1（drill 域外键补字节，M-H Task 2）,
+//                             joeshouse-drill-v2（M-I(5) P2c——缩远态 depth-1 键补字节）]
+//   instances60 = imodel instances60-imodel-v1/imodel.json + tiles [instances60-v1]
+//                 + fallback [instances60-drill-v1]
+//   housemodel  = imodel housemodel-v1/imodel.json + tiles [housemodel-v1]
+//                 + fallback [housemodel-drill-v1]（M-K(1)——House_Model.bim，
+//                 首个 cameraOn=true 透视默认视图）
+//   baytown     = imodel baytown-v1/imodel.json + tiles [baytown-v1]
+//                 + fallback [baytown-drill-v1]（M-K(1)——Baytown.bim）
+//   bridge-edit = imodel bridge-edit-v1/imodel.json + tiles [bridge-edit-v1]
+//                 + fallback [bridge-edit-drill-v1（M-K(1)——编辑大桥测试.bim，
+//                             ASCII 目录名映射；默认视图空域坑 24 → frameToWorldContent）,
+//                             bridge-edit-sweep-v1（M-M(5)——全树 sweep 380,738 瓦/
+//                             4.96GB[用户解除存储限制]；400k 瓦预算 cap 触顶，
+//                             浏览深度界扩至 sweep 域；>100MB 大瓦本地持有）]
+// （与 DumpOpenChainTest.cpp 各锁的包定义一致。）
+std::optional<DumpOpenPackage> dumpPackageForModel(QString const& modelId)
+{
+    std::string dumpRoot = std::string(DANQING_TILE_ASSETS_DIR) + "/rpc-dumps";
+    if (char const* env = std::getenv("DANQING_RPC_DUMP"))
+        dumpRoot = env;
+    DumpOpenPackage pkg;
+    if (modelId == QLatin1String("joeshouse")) {
+        pkg.imodelRoot = dumpRoot + "/joeshouse-v1";
+        pkg.tileRoots = {dumpRoot + "/joeshouse-v1", dumpRoot + "/joeshouse-drill-v1",
+                         dumpRoot + "/joeshouse-drill-v2"};
+    }
+    else if (modelId == QLatin1String("instances60")) {
+        pkg.imodelRoot = dumpRoot + "/instances60-imodel-v1";
+        pkg.tileRoots = {dumpRoot + "/instances60-v1", dumpRoot + "/instances60-drill-v1"};
+    }
+    else if (modelId == QLatin1String("housemodel")) {
+        pkg.imodelRoot = dumpRoot + "/housemodel-v1";
+        pkg.tileRoots = {dumpRoot + "/housemodel-v1", dumpRoot + "/housemodel-drill-v1"};
+    }
+    else if (modelId == QLatin1String("baytown")) {
+        pkg.imodelRoot = dumpRoot + "/baytown-v1";
+        pkg.tileRoots = {dumpRoot + "/baytown-v1", dumpRoot + "/baytown-drill-v1"};
+    }
+    else if (modelId == QLatin1String("bridge-edit")) {
+        pkg.imodelRoot = dumpRoot + "/bridge-edit-v1";
+        pkg.tileRoots = {dumpRoot + "/bridge-edit-v1", dumpRoot + "/bridge-edit-drill-v1",
+                         dumpRoot + "/bridge-edit-sweep-v1"};
+        // 坑 24：默认视图 0x99 指向原点附近空域（不含几何——直接回放=白屏
+        // 零请求，README"默认视图空域"节）→ 打开链取景到世界域几何
+        // contentRange（DumpOpenHelper 的 zoomToVolume 应用面）。
+        pkg.frameToWorldContent = true;
+    }
+    else {
+        return std::nullopt;
+    }
+    return pkg;
+}
+
+// iModel key → modelId（E-Y7——ReopenIModelTool 的 openFile(key) 等价面）。
+// key 实态 = 各 dump imodel.json 的 connection.rpcProps.key（源 bim 绝对
+// 路径，2026-10-15 五包实测）：basename（正/反斜杠双形态）+ 大小写不敏比对。
+std::optional<QString> modelIdForIModelKey(std::string const& key)
+{
+    if (key.empty())
+        return std::nullopt;
+    size_t const sep = key.find_last_of("/\\");
+    std::string const base = key.substr(sep == std::string::npos ? 0 : sep + 1);
+    QString const lower = QString::fromStdString(base).toLower();
+    if (lower == QLatin1String("joeshouse.bim"))
+        return QStringLiteral("joeshouse");
+    if (lower == QLatin1String("properties_60instanceswithurl2.ibim"))
+        return QStringLiteral("instances60");
+    if (lower == QLatin1String("house_model.bim"))
+        return QStringLiteral("housemodel");
+    if (lower == QLatin1String("baytown.bim"))
+        return QStringLiteral("baytown");
+    if (lower == QString::fromUtf8("编辑大桥测试.bim"))
+        return QStringLiteral("bridge-edit");
+    return std::nullopt;
 }
 
 // ─── 打开产物生命周期注册表（M-L(2)：main.cpp 迁入——Models/瓦树面板同源消费）───

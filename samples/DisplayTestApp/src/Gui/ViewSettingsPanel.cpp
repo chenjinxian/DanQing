@@ -12,15 +12,18 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QRadioButton>
 #include <QSlider>
 #include <cmath>
+#include <cstdlib>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSignalBlocker>
 #include <QSlider>
 #include <QSpinBox>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -721,6 +724,152 @@ ViewSettingsPanel::ViewSettingsPanel(QWidget* parent)
         connect(groundCb, &QCheckBox::toggled, this,
                 [this](bool on) { setEnvironmentDisplay(/*sky=*/false, on); });
         layout->addWidget(groundCb);
+
+        // ── Atmosphere 子区（M-Z B 道——Atmosphere.ts:11-321 全量；
+        // EnvironmentEditor.ts:62-67 的内嵌菜单段 = 本分区末节）。渲染深链
+        // render-dead 登记在案（gating 需 isGeoLocated+背景地图——dump 架构
+        // 缺席）；本区只做设置编辑面，像素锁不写（无可断）。──
+        {
+            // 嵌套菜单三层（createNestedMenu :33-47——容器 div ⊃ header +
+            // body；body ⊃ Enable 复选[:49-56] + 控件区 controlsDiv[:58/:270]；
+            // 展开门控 body、Enable 门控控件区——嵌套可见性自然组合）。
+            // 展开态 = 类静态 s_expandAtmosphereEditor 跨实例保持[:16/:40-44]。
+            m_atmosphereMenu = new QWidget(this);
+            m_atmosphereMenu->setObjectName(QStringLiteral("atmosphere_menu"));
+            auto* ml = new QVBoxLayout(m_atmosphereMenu);
+            ml->setContentsMargins(0, 0, 0, 0);
+
+            auto* headerRow = new QWidget(m_atmosphereMenu);
+            auto* hl = new QHBoxLayout(headerRow);
+            hl->setContentsMargins(0, 0, 0, 0);
+            hl->addWidget(new QLabel(QStringLiteral("Atmosphere"), headerRow));
+            auto* expandBtn = new QToolButton(headerRow);
+            expandBtn->setObjectName(QStringLiteral("atmosphere_menu_header"));
+            expandBtn->setCheckable(true);
+            expandBtn->setChecked(s_expandAtmosphereEditor);  // :40 读静态
+            expandBtn->setText(s_expandAtmosphereEditor
+                                   ? QStringLiteral("-") : QStringLiteral("+"));  // :52/:59 ±
+            hl->addWidget(expandBtn, 0, Qt::AlignRight);
+            ml->addWidget(headerRow);
+
+            // 菜单体（:47 初态 display 随展开态）。
+            auto* menuBody = new QWidget(m_atmosphereMenu);
+            menuBody->setObjectName(QStringLiteral("atmosphere_body"));
+            auto* bbl = new QVBoxLayout(menuBody);
+            bbl->setContentsMargins(0, 0, 0, 0);
+            menuBody->setVisible(s_expandAtmosphereEditor);
+            ml->addWidget(menuBody);
+
+            connect(expandBtn, &QToolButton::toggled, this,
+                    [menuBody, expandBtn](bool expanded) {
+                        s_expandAtmosphereEditor = expanded;  // :42 写静态
+                        expandBtn->setText(expanded ? QStringLiteral("-")
+                                                    : QStringLiteral("+"));  // :59
+                        menuBody->setVisible(expanded);       // :58 体显隐
+                    });
+
+            // Enable Atmosphere 复选（:49-56——菜单体首部）。
+            m_atmosphereEnable =
+                new QCheckBox(QStringLiteral("Enable Atmosphere"), menuBody);
+            m_atmosphereEnable->setObjectName(QStringLiteral("cbx_Atmosphere"));
+            connect(m_atmosphereEnable, &QCheckBox::toggled, this,
+                    [this](bool on) { enableAtmosphere(on); });
+            bbl->addWidget(m_atmosphereEnable);
+
+            // 控件区（:58 atmosphereControlsDiv——Enable 门控显隐；初态随
+            // 当前 enable 位[syncFromViewport 回读覆写]）。
+            m_atmosphereControls = new QWidget(menuBody);
+            m_atmosphereControls->setObjectName(QStringLiteral("atmosphere_controls"));
+            auto* bl = new QVBoxLayout(m_atmosphereControls);
+            bl->setContentsMargins(0, 0, 0, 0);
+            m_atmosphereControls->setVisible(false);  // 缺省关（载体 displayAtmosphere=false）
+            bbl->addWidget(m_atmosphereControls);
+
+            // Reset 钮（:71-77——控件区首位）。
+            auto* resetBtn = new QPushButton(QStringLiteral("Reset"), m_atmosphereControls);
+            resetBtn->setObjectName(QStringLiteral("atmosphere_reset"));
+            connect(resetBtn, &QPushButton::clicked, this,
+                    [this]() { resetAtmosphere(); });
+            bl->addWidget(resetBtn, 0, Qt::AlignHCenter);  // :77 textAlign center
+
+            // 十数值输入（:82-255——min/max/step 为参考原文；文本输入承载
+            // [EQUIVALENCE 见 applyAtmosphereProps 注——QDoubleSpinBox 会钳
+            // 显示值而参考 input[type=number] 不钳（carrier 默认 depth=-2000
+            // < min 0 实锤发散点]，故 QLineEdit+strtod]）。
+            // 行布局 = 参考 span 分组（:79-255）。
+            auto* rowIntensity = new QWidget(m_atmosphereControls);
+            auto* ri = new QHBoxLayout(rowIntensity);
+            ri->setContentsMargins(0, 0, 0, 0);
+            ri->addWidget(new QLabel(QStringLiteral("Exposure: "), rowIntensity));
+            ri->addWidget(makeAtmosphereInput(rowIntensity, "atmosphere_exposure",
+                                              2.0, 0.0, 1000.0, 0.1, true,
+                                              &dqCommon::Atmosphere::Props::exposure));
+            bl->addWidget(rowIntensity);
+
+            auto* rowScale = new QWidget(m_atmosphereControls);
+            auto* rs = new QHBoxLayout(rowScale);
+            rs->setContentsMargins(0, 0, 0, 0);
+            rs->addWidget(new QLabel(QStringLiteral("Atmosphere Height Above Earth: "),
+                                     rowScale));
+            rs->addWidget(makeAtmosphereInput(
+                rowScale, "atmosphere_atmosphereHeightAboveEarth", 100000.0, 0.0,
+                1000000.0, 10000.0, true,
+                &dqCommon::Atmosphere::Props::atmosphereHeightAboveEarth));
+            rs->addWidget(new QLabel(QStringLiteral("Depth Below Earth For Max Density"),
+                                     rowScale));
+            rs->addWidget(makeAtmosphereInput(
+                rowScale, "atmosphere_depthBelowEarthForMaxDensity", 0.0, 0.0,
+                1000000.0, 10000.0, true,
+                &dqCommon::Atmosphere::Props::depthBelowEarthForMaxDensity));
+            bl->addWidget(rowScale);
+
+            auto* rowScatter = new QWidget(m_atmosphereControls);
+            auto* rc = new QHBoxLayout(rowScatter);
+            rc->setContentsMargins(0, 0, 0, 0);
+            rc->addWidget(new QLabel(QStringLiteral("Scattering Strength: "), rowScatter));
+            rc->addWidget(makeAtmosphereInput(rowScatter, "atmosphere_scatteringStrength",
+                                              100.0, 0.0, 1000.0, 1.0, true,
+                                              &dqCommon::Atmosphere::Props::scatteringStrength));
+            rc->addWidget(new QLabel(QStringLiteral("Wavelength R: "), rowScatter));
+            rc->addWidget(makeAtmosphereInput(rowScatter, "atmosphere_wavelengthR",
+                                              700.0, 0.0, 1000.0, 10.0, true,
+                                              nullptr, 'r'));
+            rc->addWidget(new QLabel(QStringLiteral("G: "), rowScatter));
+            rc->addWidget(makeAtmosphereInput(rowScatter, "atmosphere_wavelengthG",
+                                              530.0, 0.0, 1000.0, 10.0, true,
+                                              nullptr, 'g'));
+            rc->addWidget(new QLabel(QStringLiteral("B: "), rowScatter));
+            rc->addWidget(makeAtmosphereInput(rowScatter, "atmosphere_wavelengthB",
+                                              400.0, 0.0, 1000.0, 10.0, true,
+                                              nullptr, 'b'));
+            bl->addWidget(rowScatter);
+
+            auto* rowDensity = new QWidget(m_atmosphereControls);
+            auto* rd = new QHBoxLayout(rowDensity);
+            rd->setContentsMargins(0, 0, 0, 0);
+            rd->addWidget(new QLabel(QStringLiteral("Density Falloff: "), rowDensity));
+            rd->addWidget(makeAtmosphereInput(rowDensity, "atmosphere_densityFalloff",
+                                              10.0, 0.0, 1000.0, 1.0, true,
+                                              &dqCommon::Atmosphere::Props::densityFalloff));
+            bl->addWidget(rowDensity);
+
+            auto* rowSamples = new QWidget(m_atmosphereControls);
+            auto* rp = new QHBoxLayout(rowSamples);
+            rp->setContentsMargins(0, 0, 0, 0);
+            rp->addWidget(new QLabel(QStringLiteral("# Samples per View Ray: "),
+                                     rowSamples));
+            rp->addWidget(makeAtmosphereInput(rowSamples, "atmosphere_numViewRaySamples",
+                                              10.0, 1.0, 40.0, 1.0, false,
+                                              &dqCommon::Atmosphere::Props::numViewRaySamples));
+            rp->addWidget(new QLabel(QStringLiteral("# Samples per Sun Ray: "),
+                                     rowSamples));
+            rp->addWidget(makeAtmosphereInput(rowSamples, "atmosphere_numSunRaySamples",
+                                              5.0, 1.0, 40.0, 1.0, false,
+                                              &dqCommon::Atmosphere::Props::numSunRaySamples));
+            bl->addWidget(rowSamples);
+
+            layout->addWidget(m_atmosphereMenu);
+        }
     }
 
     // ── Ambient Occlusion 分区（M-T T-f——display-test-app AmbientOcclusion.ts
@@ -939,6 +1088,179 @@ void ViewSettingsPanel::setEnvironmentDisplay(bool sky, bool enabled)
     else
         style.toggleGroundPlane(enabled);
     vp->synchWithView();   // 同 V-7：入撤销栈
+}
+
+// ---------------------------------------------------------------------------
+// Atmosphere 子区（M-Z B 道——display-test-app Atmosphere.ts:11-321 全量）
+// ---------------------------------------------------------------------------
+
+// Ported from: Atmosphere.ts:16 `_expandAtmosphereEditor`（类静态——跨面板
+// 实例保持展开态，参考注释 :39）。
+bool ViewSettingsPanel::s_expandAtmosphereEditor = false;
+
+// 数值输入工厂（createLabeledNumericInput :79-101 + createNumericInput
+// :29-62——文本输入 + min/max/step 属性记载[文本输入不钳——EQUIVALENCE 见
+// 分区构建段注] + onchange handler[parseFloat/parseInt + isNaN 门]）。
+// fieldFloat = Props 的 double 成员指针；waveChannel ∈ {0,'r','g','b'} 走
+// wavelengths 三通道（:151-205 的 props.wavelengths! 分支）。
+QLineEdit* ViewSettingsPanel::makeAtmosphereInput(
+    QWidget* parent, char const* objectName, double initial, double lo, double hi,
+    double step, bool parseAsFloat,
+    std::optional<double> dqCommon::Atmosphere::Props::* fieldFloat,
+    char waveChannel)
+{
+    auto* le = new QLineEdit(parent);
+    le->setObjectName(QString::fromLatin1(objectName));
+    le->setText(QString::number(initial, 'g'));  // :32 value.toString()
+    // min/max/step 属性记载（:48-53——spinner UX 提示语义，文本输入不钳）。
+    le->setProperty("minimum", lo);
+    le->setProperty("maximum", hi);
+    le->setProperty("singleStep", step);
+    connect(le, &QLineEdit::editingFinished, this,
+            [this, le, parseAsFloat, fieldFloat, waveChannel]() {
+                // :34-42 onchange——parse（NaN 门）→ updateAtmosphere。
+                std::string const text = le->text().toStdString();
+                char* end = nullptr;
+                double const value = parseAsFloat
+                    ? std::strtod(text.c_str(), &end)   // parseFloat（前导浮点段）
+                    : std::strtol(text.c_str(), &end, 10);  // parseInt（前导整数段）
+                if (end == text.c_str())
+                    return;  // NaN——:37 isNaN 门不落 handler
+                auto* vp = activeViewport();
+                auto* v3d = (vp != nullptr && vp->GetView() != nullptr)
+                    ? vp->GetView()->AsViewState3d() : nullptr;
+                if (v3d == nullptr)
+                    return;  // :282/:307 assert(view.is3d()) 门
+                // getAtmosphereSettingsProps（:286-288——现值 toJSON 全字段）。
+                dqCommon::Atmosphere::Props props =
+                    v3d->GetDisplayStyle().getEnvironment().atmosphere.toJSON();
+                if (waveChannel != 0) {
+                    // :157-160/:176-179/:194-197——wavelengths! 通道写。
+                    if (!props.wavelengths.has_value())
+                        props.wavelengths = dqCommon::Atmosphere::WavelengthsProps{};
+                    if (waveChannel == 'r')
+                        props.wavelengths->r = value;
+                    else if (waveChannel == 'g')
+                        props.wavelengths->g = value;
+                    else
+                        props.wavelengths->b = value;
+                } else if (fieldFloat != nullptr) {
+                    props.*fieldFloat = value;
+                } else {
+                    return;  // 无字段——不达（构造域内不可能）
+                }
+                applyAtmosphereProps(props);
+            });
+    return le;
+}
+
+// 整型字段重载（numViewRaySamples/numSunRaySamples——Props 的 int 成员）。
+QLineEdit* ViewSettingsPanel::makeAtmosphereInput(
+    QWidget* parent, char const* objectName, double initial, double lo, double hi,
+    double step, bool /*parseAsFloat*/,
+    std::optional<int> dqCommon::Atmosphere::Props::* fieldInt)
+{
+    auto* le = new QLineEdit(parent);
+    le->setObjectName(QString::fromLatin1(objectName));
+    le->setText(QString::number(static_cast<long long>(initial)));
+    le->setProperty("minimum", lo);
+    le->setProperty("maximum", hi);
+    le->setProperty("singleStep", step);
+    connect(le, &QLineEdit::editingFinished, this,
+            [this, le, fieldInt]() {
+                // 整面 = 参考无 parseAsFloat 分支（:227-255——parseInt 前导
+                // 整数语义：strtol 等价，ParseArgs.cpp:70-76 先例）。
+                std::string const text = le->text().toStdString();
+                char* end = nullptr;
+                long const value = std::strtol(text.c_str(), &end, 10);
+                if (end == text.c_str())
+                    return;  // NaN 门（:37）
+                auto* vp = activeViewport();
+                auto* v3d = (vp != nullptr && vp->GetView() != nullptr)
+                    ? vp->GetView()->AsViewState3d() : nullptr;
+                if (v3d == nullptr || fieldInt == nullptr)
+                    return;
+                dqCommon::Atmosphere::Props props =
+                    v3d->GetDisplayStyle().getEnvironment().atmosphere.toJSON();
+                props.*fieldInt = static_cast<int>(value);
+                applyAtmosphereProps(props);
+            });
+    return le;
+}
+
+// Ported from: Atmosphere.ts:64-69 enableAtmosphere（environment.clone({
+// displayAtmosphere}) + showHideControls + sync）。
+void ViewSettingsPanel::enableAtmosphere(bool enabled)
+{
+    auto* vp = activeViewport();
+    auto* v3d = (vp != nullptr && vp->GetView() != nullptr)
+        ? vp->GetView()->AsViewState3d() : nullptr;
+    if (v3d == nullptr)
+        return;
+    // :65-66——environment 整替（DanQing Environment::clone()=值拷贝 + 字段
+    // 赋值 = 参考 clone({displayAtmosphere}) 段合并同语义）。
+    dqCommon::Environment env = v3d->GetDisplayStyle().getEnvironment().clone();
+    env.displayAtmosphere = enabled;
+    v3d->GetDisplayStyle().setEnvironment(env);
+    if (m_atmosphereControls != nullptr)
+        m_atmosphereControls->setVisible(enabled);  // :67 showHideControls
+    vp->synchWithView();  // :68 sync（:318-320——synchWithView 无参）
+}
+
+// Ported from: Atmosphere.ts:305-312 updateAtmosphere（props 全字段 →
+// Settings.fromJSON → environment 替换 + sync + UI 回读）。
+void ViewSettingsPanel::applyAtmosphereProps(dqCommon::Atmosphere::Props const& props)
+{
+    auto* vp = activeViewport();
+    auto* v3d = (vp != nullptr && vp->GetView() != nullptr)
+        ? vp->GetView()->AsViewState3d() : nullptr;
+    if (v3d == nullptr)
+        return;
+    dqCommon::Environment env = v3d->GetDisplayStyle().getEnvironment().clone();
+    env.atmosphere = dqCommon::Atmosphere::Settings::fromJSON(&props);  // :309
+    v3d->GetDisplayStyle().setEnvironment(env);
+    vp->synchWithView();  // :310
+    updateAtmosphereUI();  // :311
+}
+
+// Ported from: Atmosphere.ts:314-316 resetAtmosphere（defaults 整替）。
+void ViewSettingsPanel::resetAtmosphere()
+{
+    applyAtmosphereProps(dqCommon::Atmosphere::Settings::defaults().toJSON());
+}
+
+// Ported from: Atmosphere.ts:290-303 updateAtmosphereUI（十输入框读当前
+// 设置——QSignalBlocker 防回写再触发）。
+void ViewSettingsPanel::updateAtmosphereUI()
+{
+    auto* vp = activeViewport();
+    auto* v3d = (vp != nullptr && vp->GetView() != nullptr)
+        ? vp->GetView()->AsViewState3d() : nullptr;
+    if (v3d == nullptr)
+        return;
+    auto const& s = v3d->GetDisplayStyle().getEnvironment().atmosphere;
+    auto setField = [this](char const* id, double value) {
+        if (auto* le = findChild<QLineEdit*>(QString::fromLatin1(id))) {
+            QSignalBlocker const b(le);
+            le->setText(QString::number(value, 'g'));
+        }
+    };
+    auto setFieldInt = [this](char const* id, int value) {
+        if (auto* le = findChild<QLineEdit*>(QString::fromLatin1(id))) {
+            QSignalBlocker const b(le);
+            le->setText(QString::number(value));
+        }
+    };
+    setField("atmosphere_atmosphereHeightAboveEarth", s.atmosphereHeightAboveEarth);
+    setField("atmosphere_depthBelowEarthForMaxDensity", s.depthBelowEarthForMaxDensity);
+    setField("atmosphere_densityFalloff", s.densityFalloff);
+    setField("atmosphere_scatteringStrength", s.scatteringStrength);
+    setField("atmosphere_wavelengthR", s.wavelengths.r);
+    setField("atmosphere_wavelengthG", s.wavelengths.g);
+    setField("atmosphere_wavelengthB", s.wavelengths.b);
+    setFieldInt("atmosphere_numViewRaySamples", s.numViewRaySamples);
+    setFieldInt("atmosphere_numSunRaySamples", s.numSunRaySamples);
+    setField("atmosphere_exposure", s.exposure);
 }
 
 // ---------------------------------------------------------------------------
@@ -1237,6 +1559,24 @@ void ViewSettingsPanel::syncFromViewport()
             syncAoEnabledState(on);
             if (on)
                 updateAmbientOcclusionUI();
+        }
+
+        // ── Atmosphere 回读（M-Z B 道——Atmosphere.ts:257-268 的 _update
+        // 闭包语义：is3d 显隐门[DanQing 恒 3d——:32 isAtmosphereSupported] +
+        // checkbox=displayAtmosphere 位[:33/:263] + 控件显隐[:265] +
+        // 十框回读[:267→updateAtmosphereUI]）──
+        {
+            if (m_atmosphereMenu != nullptr)
+                m_atmosphereMenu->setVisible(true);
+            auto const& env = v3d->GetDisplayStyle().getEnvironment();
+            bool const on = env.displayAtmosphere;
+            if (m_atmosphereEnable != nullptr) {
+                QSignalBlocker const b(m_atmosphereEnable);
+                m_atmosphereEnable->setChecked(on);
+            }
+            if (m_atmosphereControls != nullptr)
+                m_atmosphereControls->setVisible(on);
+            updateAtmosphereUI();
         }
     }
 }

@@ -5,14 +5,17 @@
 #include <QFrame>
 
 #include <functional>
+#include <optional>
 
 #include <dqCommon/HiddenLine.h>   // HiddenLineSettingsProps（P6 overrideEdgeSettings）
 #include <dqCommon/SkyBox.h>       // SkyBoxProps（P7 updateSkyEnvironment）
+#include <dqCommon/Atmosphere.h>   // Atmosphere::Props（M-Z B 道 applyAtmosphereProps）
 #include <dqCommon/ViewFlags.h>   // ViewFlagsProperties（applyFlags 签名；Step 4 备注批准）
 
 class QCheckBox;
 class QComboBox;
 class QColor;
+class QLineEdit;
 class QPushButton;
 class QSlider;
 class QSpinBox;
@@ -83,6 +86,24 @@ private:
     // 全量；DTA 内序在 Thematic 前[ViewAttributes.ts:326-327]）。
     QCheckBox* m_aoCheckbox = nullptr;
     QWidget* m_aoControls = nullptr;
+    // Atmosphere 子区成员（M-Z B 道——Atmosphere.ts；嵌套菜单展开态 =
+    // 类静态[:16 _expandAtmosphereEditor——跨实例保持]）。
+    QWidget* m_atmosphereMenu = nullptr;
+    QCheckBox* m_atmosphereEnable = nullptr;
+    QWidget* m_atmosphereControls = nullptr;
+    static bool s_expandAtmosphereEditor;
+    // 数值输入工厂（createLabeledNumericInput+createNumericInput——
+    // Atmosphere.ts:82-255 十字段；两重载 = double/int 成员指针两族，
+    // waveChannel ∈ {0,'r','g','b'} 走 wavelengths 三分量）。
+    QLineEdit* makeAtmosphereInput(QWidget* parent, char const* objectName,
+                                   double initial, double lo, double hi, double step,
+                                   bool parseAsFloat,
+                                   std::optional<double> dqCommon::Atmosphere::Props::* fieldFloat,
+                                   char waveChannel = 0);
+    QLineEdit* makeAtmosphereInput(QWidget* parent, char const* objectName,
+                                   double initial, double lo, double hi, double step,
+                                   bool parseAsFloat,
+                                   std::optional<int> dqCommon::Atmosphere::Props::* fieldInt);
 public:
     // 测试/宿主访问面（面板内控件直读防呆——锁内用）。
     ThematicDisplayEditor* thematicEditor() const noexcept { return m_thematicEditor; }
@@ -99,5 +120,19 @@ public:
     void updateAmbientOcclusionUI();
     // 开关态回读（_update 闭包 :164-172——checkbox=vf 位+显隐）。
     void syncAoEnabledState(bool enabled);
+
+    // ── Atmosphere 子区（M-Z B 道——display-test-app Atmosphere.ts:11-321 全量；
+    // 宿主 = Environment 分区末节[EnvironmentEditor.ts:62-67 内嵌菜单段]；
+    // 渲染深链 render-dead 登记在案——gating 需 isGeoLocated+背景地图，dump
+    // 架构缺席；本区只做设置编辑面）──
+    // Enable 复选（:64-69——environment.displayAtmosphere 位 + 控件显隐 + sync）。
+    void enableAtmosphere(bool enabled);
+    // 字段写（:82-255 十 handler 同体——toJSON 现值+改单字段→fromJSON→
+    // environment 替换+sync+UI 回读[:305-312]）。
+    void applyAtmosphereProps(dqCommon::Atmosphere::Props const& props);
+    // Reset（:71-77/:314-316——Atmosphere.Settings.defaults 整替）。
+    void resetAtmosphere();
+    // UI 回读（:290-303 updateAtmosphereUI——十输入框读当前设置）。
+    void updateAtmosphereUI();
 };
 }  // namespace Gui
