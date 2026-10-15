@@ -257,4 +257,41 @@ TogglePathDecoration 工具注册+_getPath 几何。锁=路径几何钉值（100
 
 ## 5. 完成实录（回填区）
 
-（收口时回填：提交笔数/钉值/门禁数/偏离登记。）
+**M-W 收口（2026-10-15）——双代理并行编排首里程碑**：
+
+**提交账**（主干序）：41edb1b15d（W-p0 锚点+W-p1 skew 缝，主会话）→ A 道七笔
+（021721c6c9 W-a1 / ee0b7e329c W-a2 / c7d997cdd0 OctEncodedNormal 16 位归位 /
+360cd043a8 W-a3 / 8b1c635ae4 W-a4 / f0ab37bc59 W-a5 / 379269d0e2 W-a6）→ B 道五笔
+（412a509b04 W-b1 / 0df94b2d20 Y-b1 / 487dbd91b2 Y-b2 / da2b122f10 merge /
+a8d7a37951 Atmosphere 编辑器）→ 8692f30480（Atmosphere 载体，主会话）→
+32be522692/7bcb0c8f0c（双道合并）→ 0d6fa0d662（Start 卡片集成接线）→
+bf3977a81f（B 道 PathDecorationPixel 仪器回修）→ 136ccac298（.claude 误纳回退）→
+9db113daa5（A 道 E2E 回修合并 408ef9ae8e）。
+
+**门禁**（2026-10-15，Debug）：全量 ctest **2865 项 = 2836 通过 + 27 跳过 + 2 失败**
+（TD-26 AcsDisc 呈现分裂签名 fboBlues=48/screenBlues=0 隔离 ×2 同败归因维持[FBO 逐位
+存活=引擎无损直接证据]；TD-29 Baytown 隔离 ×2 绿归因维持）。目标面：dqGeomTest 303 /
+dqCommonTest 512 / dqRenderTest 768 / dqAppTest 454 全绿；DtaTest 新锁全绿
+（PathDecorationTestLock 5+真窗 1 / SurfaceWindowTools 9 / SurfaceFileTools 6+E2E 1 /
+AtmosphereEditor 6 / AnalysisStyleE2E 真窗转绿）。
+
+**集成回修两案**（主会话真窗首跑 RED→双道回修 GREEN）：
+1. PathDecorationPixel 占位零像素——B 道取证=**判据仪器两层错位**（dpr=2 设备像素
+   未换算 + GL bottom-up 行序漏翻转），引擎绘制链取证后判无缺陷（§11.11 仪器纪律案例）。
+2. AnalysisStyleE2E 基线零内容+SEH——A 道离屏真 GL 复现建立（RenderSmokeTest 路径），
+   **三根因链归位**：①变体属性表轴错（unquantized-LUT 走属性臂→全顶点退化——同一缺口
+   覆盖 TD-27 瓦路径像素面）；②u_animLUT 纹理单元 GL 枚举值 vs 单元下标双错位
+   （Texture.ts:462 换算归位）；③analysisTexture 臂嵌套缺口（Surface.ts:601-602 门归位）。
+   +宿主侧 AnalysisDecorator destroyed 无 context 悬垂 lambda UAF 修复。
+
+**计划外变化实录**：
+- W-b2（AspectRatioSkewDecorator）**挂起**：B 道实锤 dqGeom 零 BSpline 实现（计划 §0.3
+  勘察失误订正——"全在位"判词错误）→ 裁决=A 道续排 BSplineCurve3d+KnotVector 子集
+  移植，落地后 B 道回做（就绪清单在 B 道报告）。
+- W-p1 skew 缝前置落主干（B 道跨道依赖解法——裁决前置件模式定型）。
+- B 道 M-Y 轻量批三件插入（Y-b1/Y-b2/Y-b3 spike）；空间分类深化勘察 spike 产出
+  模型-模型体积分类可行判定（Z-c1~c4 排期待裁）。
+- 裁决落账：Background Map/.bim/Fence/Markup/AccuDraw 面板结案；Format Set 不排期；
+  点云=引擎链 only（D 面板结案）；TimePointComparison/ModelClip/DisplayTransform 排期。
+- TD-28④ 清偿勾销；TD-32 新登记（computeShaderIndex 缺 isLutUnquantized 维——A 道
+  回修遗留建议）；§13.1 探针 +2（DANQING_AS_TRACE/DANQING_AS_DUMP_DIR）。
