@@ -84,3 +84,6 @@ camera-paths*/
 cp-panel*/
 cp-pump*/
 cp-toolbar*/
+
+# Claude Code 会话件（worktree 检出/本地设置——2026-10-15 误入库后登记）
+.claude/
