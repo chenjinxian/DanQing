@@ -352,6 +352,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/PlanarGridRenderTest.cpp
         # A-lane 锚（M-W 起——A 道代理只在此锚下追加测试注册；勿动他区）
         tests/AuxChannelTableTest.cpp      # M-W W-a3：AuxChannelTableBuilder 打包器（AuxChannelTable.ts:186-371）
+        tests/MeshBuilderAuxDataTest.cpp   # M-W W-a4：auxData 消费链（MeshBuilder.test.ts:407-501 + GeometryAccumulator.ts:101-115）
     )
     # SurfaceCompileTest + PolylineRenderTest include GlslCompileHarness.h, which
     # uses the deprecated macOS OpenGL/CGL API (-Werror is on project-wide).

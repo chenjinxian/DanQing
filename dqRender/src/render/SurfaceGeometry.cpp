@@ -64,6 +64,8 @@ SurfaceGeometry::~SurfaceGeometry()
     m_driver.destroyIndexBuffer(m_ibh);
     m_driver.destroyRenderPrimitive(m_primitive);
     m_lut.destroy(m_driver);
+    if (m_auxChannels)
+        m_auxChannels->destroy(m_driver);
     m_driver.destroyVertexBuffer(m_lutVertexBuffer);
     m_driver.destroyVertexBufferInfo(m_lutVertexBufferInfo);
     m_driver.destroyBufferObject(m_lutIndexBuffer);

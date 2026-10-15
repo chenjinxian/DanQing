@@ -11,6 +11,7 @@ GeometryAccumulator::GeometryAccumulator(const GeometryAccumulatorOptions& optio
     , m_surfacesOnly(options.surfacesOnly)
     , m_tileRange(options.tileRange)
     , m_currentFeature(options.feature)
+    , m_analysisDisplacement(options.analysisStyleDisplacement)
 {
 }
 
@@ -65,17 +66,53 @@ bool GeometryAccumulator::addPath(const dqBase::RefPtr<dqGeom::Path>& path, cons
     return addGeometry(Geometry::createFromPath(path, xform, range, displayParams, disjoint, m_currentFeature));
 }
 
-// 1:1 addPolyface (GeometryAccumulator.ts:101-124). Analysis-displacement branch is Phase-N (omitted);
-// range is taken directly from getPrimitiveRange.
+// 1:1 addPolyface (GeometryAccumulator.ts:101-124)——含 analysisStyleDisplacement 位移域
+// range 扩展腿（:104-117，M-W W-a4 归位）。
 bool GeometryAccumulator::addPolyface(const dqBase::RefPtr<dqGeom::IndexedPolyface>& pf,
                                       const DisplayParams& displayParams, const dqGeom::Transform& transform)
 {
-    auto rangeOpt = getPrimitiveRange(pf);
-    if (!rangeOpt)
-        return false;
-    dqGeom::Range3d range = *rangeOpt;
-    const dqGeom::Transform xform = calculateTransform(transform, range);
-    return addGeometry(Geometry::createFromPolyface(pf, xform, range, displayParams, m_currentFeature));
+    // Adjust the mesh range based on displacements applied to vertices by analysis style,
+    // if applicable.（:102-117）
+    std::optional<dqGeom::Range3d> range;
+    if (m_analysisDisplacement.has_value()) {
+        // :106——channels.find(x => x.name === analysisDisplacement.channelName)；
+        // DanQing name 为 optional<string>（参考 name? 语义）——缺席名不命中。
+        dqGeom::AuxChannel const* channel = nullptr;
+        if (pf->Data().auxData.has_value()) {
+            for (auto const& x : pf->Data().auxData->channels) {
+                if (x.name.has_value() && *x.name == m_analysisDisplacement->channelName) {
+                    channel = &x;
+                    break;
+                }
+            }
+        }
+        if (channel != nullptr) {
+            dqGeom::Range3d const displacementRange =
+                channel->computeDisplacementRange(m_analysisDisplacement->scale);
+            if (!displacementRange.isNull()) {
+                dqGeom::Range3d extended = dqGeom::Range3d::CreateNull();
+                for (auto const& pt : pf->Data().points) {
+                    extended.ExtendPoint(dqGeom::Point3d::From(pt.x + displacementRange.low.x,
+                                                               pt.y + displacementRange.low.y,
+                                                               pt.z + displacementRange.low.z));
+                    extended.ExtendPoint(dqGeom::Point3d::From(pt.x + displacementRange.high.x,
+                                                               pt.y + displacementRange.high.y,
+                                                               pt.z + displacementRange.high.z));
+                }
+                range = extended;
+            }
+        }
+    }
+
+    if (!range.has_value()) {
+        auto rangeOpt = getPrimitiveRange(pf);
+        if (!rangeOpt)
+            return false;
+        range = *rangeOpt;
+    }
+    dqGeom::Range3d rangeVal = *range;
+    const dqGeom::Transform xform = calculateTransform(transform, rangeVal);
+    return addGeometry(Geometry::createFromPolyface(pf, xform, rangeVal, displayParams, m_currentFeature));
 }
 
 // 1:1 addSolidPrimitive (GeometryAccumulator.ts:126-133).

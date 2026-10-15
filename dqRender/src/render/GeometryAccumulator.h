@@ -20,6 +20,7 @@
 #include "MeshPrimitives.h"
 #include "Primitives.h"
 
+#include <dqCommon/AnalysisStyle.h>
 #include <dqCommon/FeatureTable.h>
 #include <dqGeom/IndexedPolyface.h>
 #include <dqGeom/Loop.h>
@@ -39,13 +40,17 @@
 
 BEGIN_DQ_RENDER_NAMESPACE
 
-// 1:1 GeometryAccumulator ctor options (GeometryAccumulator.ts:33-45). analysisStyleDisplacement omitted
-// (Phase-N — analysis displacement / auxData deferred).
+// 1:1 GeometryAccumulator ctor options (GeometryAccumulator.ts:33-45).
 struct GeometryAccumulatorOptions {
     bool surfacesOnly = false;
     dqGeom::Transform transform = dqGeom::Transform::CreateIdentity();
     dqGeom::Range3d tileRange;  // default null (Range3d default ctor is null)
     std::optional<dqCommon::Feature> feature;
+    // 1:1 options.analysisStyleDisplacement（:37——M-W W-a4 归位；供 addPolyface 的
+    // 位移域 range 扩展腿 :101-115）。供源=GraphicAssembler.ts:90 的
+    // analysisStyle?.displacement（PrimitiveBuilder ctor 经 GraphicBuilderOptions.
+    // analysisStyle 转接）。
+    std::optional<dqCommon::AnalysisStyleDisplacement> analysisStyleDisplacement;
 };
 
 // 1:1 GeometryAccumulator (GeometryAccumulator.ts:19-164).
@@ -79,7 +84,8 @@ public:
     // 1:1 addPath (GeometryAccumulator.ts:92-99).
     bool addPath(const dqBase::RefPtr<dqGeom::Path>& path, const DisplayParams& displayParams,
                  const dqGeom::Transform& transform, bool disjoint);
-    // 1:1 addPolyface (GeometryAccumulator.ts:101-124). Analysis-displacement branch is Phase-N.
+    // 1:1 addPolyface (GeometryAccumulator.ts:101-124)——含 analysisStyleDisplacement 的
+    // 位移域 range 扩展腿（:104-117，M-W W-a4 归位）。
     bool addPolyface(const dqBase::RefPtr<dqGeom::IndexedPolyface>& pf, const DisplayParams& displayParams,
                      const dqGeom::Transform& transform);
     // 1:1 addSolidPrimitive (GeometryAccumulator.ts:126-133).
@@ -131,6 +137,9 @@ private:
     dqGeom::Range3d m_tileRange;
     GeometryList m_geometries;
     std::optional<dqCommon::Feature> m_currentFeature;
+    // 1:1 GeometryAccumulator._analysisDisplacement（:22——ctor 自 options
+    // .analysisStyleDisplacement :43）。
+    std::optional<dqCommon::AnalysisStyleDisplacement> m_analysisDisplacement;
 };
 
 END_DQ_RENDER_NAMESPACE

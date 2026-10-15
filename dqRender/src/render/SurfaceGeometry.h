@@ -10,6 +10,7 @@
 #include "MeshGeometry.h"
 #include "ViewFlags.h"
 #include "dqRender/RenderMemory.h"
+#include "AuxChannelLut.h"
 #include "VertexLutTexture.h"
 #include "dqRender/rhi/Driver.h"
 #include "dqRender/rhi/Handle.h"
@@ -113,6 +114,23 @@ public:
     VertexLutTexture const& getLut() const noexcept { return m_lut; }
     // a_qPosition 24-bit 索引流句柄（VAO 绑定于创建点 Task 5）。
     rhi::BufferObjectHandle getLutIndexBuffer() const noexcept { return m_lutIndexBuffer; }
+
+    // 1:1 VertexLUT.auxChannels 的 DanQing 承载点（VertexLUT.ts:80——参考挂在
+    // VertexLUT[MeshData.lut] 上；DanQing 的 per-geometry LUT 持有者是 SurfaceGeometry
+    // ——AuxChannelLut.h 文件头裁决注记）。W-a5 的 addAnimation 消费面（Animation.ts
+    // :150/:159/:167/:196 的 params.geometry.asLUT/asMesh lut.auxChannels 读面）。
+    void setAuxChannels(std::unique_ptr<AuxChannelLUT> auxChannels)
+    {
+        m_auxChannels = std::move(auxChannels);
+    }
+    AuxChannelLUT const* auxChannels() const noexcept { return m_auxChannels.get(); }
+    // 1:1 VertexLUT.hasAnimation（VertexLUT.ts:82）。
+    bool hasAnimation() const noexcept { return m_auxChannels != nullptr; }
+    // 1:1 VertexLUT.hasScalarAnimation（:83）。
+    bool hasScalarAnimation() const noexcept
+    {
+        return m_auxChannels != nullptr && m_auxChannels->hasScalarAnimation();
+    }
 
     // u_color（量化路径均匀色）：量化 Surface shader 无 a_color attribute，
     // v_color 取自 u_color uniform（Color.ts:51-60 ← lutGeom.getColor(target)）。
@@ -227,6 +245,7 @@ private:
     dqCommon::ColorDef m_color = dqCommon::ColorDef::create();  // u_color 均匀色（默认黑——对齐 ColorDef.create()）
     bool m_nonUniformColor = false;  // 色表形态位（ColorInfo.createNonUniform——见 isNonUniformColor 注）
     std::unique_ptr<RenderMaterialInternal> m_materialInfo;  // M-M(1)：surface 材质（无则 null → Material.default）
+    std::unique_ptr<AuxChannelLUT> m_auxChannels;  // M-W W-a4：aux 通道 LUT（VertexLUT.ts:80 承载点）
 };
 
 // ---------------------------------------------------------------------------

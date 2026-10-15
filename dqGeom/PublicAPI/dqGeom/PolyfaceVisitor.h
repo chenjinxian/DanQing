@@ -18,6 +18,7 @@
 // 越过 polyface 存活——CreateVisitor 返回的 RefPtr 在 addFromPolyface 局部作用域内用毕即弃。
 #pragma once
 
+#include "AuxData.h"
 #include "IndexedPolyface.h"
 #include "Point3d.h"
 #include "Vector3d.h"
@@ -26,6 +27,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 BEGIN_DQ_GEOM_NAMESPACE
@@ -68,6 +70,12 @@ public:
     virtual size_t ClientPointIndex(size_t i) const = 0;
     // Edge visibility of facet-edge i. 1:1 visitor.edgeVisible[i].
     virtual bool EdgeVisible(size_t i) const = 0;
+
+    // 当前 facet 的 auxData（facet-local 聚合形态——PolyfaceData.gatherIndexedData 的
+    // auxData 腿 :386-408；createForVisitor 骨架 + 逐 facet 装载）。1:1 PolyfaceVisitor
+    // 接口的 auxData 面（Polyface.ts:714 族——参考 visitor extends PolyfaceData 直持
+    // auxData 字段，DanQing 以访问器承载）。无 auxData 的 polyface → nullptr。
+    virtual PolyfaceAuxData const* AuxData() const noexcept { return nullptr; }
 };
 
 // IndexedPolyfaceVisitor — concrete visitor over an IndexedPolyface (1:1 Polyface.ts IndexedPolyfaceVisitor).
@@ -90,6 +98,11 @@ public:
     size_t ClientPointIndex(size_t i) const override;
     bool EdgeVisible(size_t i) const override;
 
+    PolyfaceAuxData const* AuxData() const noexcept override
+    {
+        return m_facetAuxData.has_value() ? &*m_facetAuxData : nullptr;
+    }
+
 private:
     IndexedPolyfaceVisitor(const IndexedPolyface& polyface, int numWrap);
 
@@ -106,6 +119,9 @@ private:
     std::vector<int32_t> m_facetPointIndex;  // current facet's 1-based point indices (signed: +/-visible)
     std::vector<int32_t> m_facetNormalIndex; // current facet's 1-based normal indices (parallel)
     std::vector<bool> m_facetEdgeVisible;    // current facet's per-edge visibility (parallel)
+    // 当前 facet 的 auxData 聚合（参考 IndexedPolyfaceVisitor ctor :34-35 的
+    // createForVisitor + gatherIndexedData :386-408 的 auxData 腿）。空骨架逐 facet 重装。
+    std::optional<PolyfaceAuxData> m_facetAuxData;
 
     static constexpr size_t kBeforeFirst = static_cast<size_t>(-1);
 };

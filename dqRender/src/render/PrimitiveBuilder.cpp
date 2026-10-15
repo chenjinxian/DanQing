@@ -33,14 +33,20 @@ BEGIN_DQ_RENDER_NAMESPACE
 // ---------------------------------------------------------------------------
 
 // 1:1 PrimitiveBuilder constructor (PrimitiveBuilder.ts:31-36) + GraphicAssembler ctor (L80-96) which
-// builds the GeometryAccumulator. DanQing has no viewport/analysisStyle, so the accumulator options carry
+// builds the GeometryAccumulator. DanQing has no viewport, so the accumulator options carry
 // only the initial feature (pickable path) — pickable lands with the activateFeature wiring.
+// M-W W-a4：analysisStyleDisplacement 转接归位（GraphicAssembler.ts:90——accumulator 的
+// analysisStyleDisplacement = options.analysisStyle?.displacement）。
 PrimitiveBuilder::PrimitiveBuilder(RenderSystem& system, rhi::Driver& driver, GraphicBuilderOptions const& options)
     : GraphicBuilder(options)
     , m_system(system)
     , m_driver(driver)
     , m_computeChordTolerance(options.computeChordTolerance)
 {
+    if (options.analysisStyle.has_value() && options.analysisStyle->displacement.has_value())
+        m_accumulator = GeometryAccumulator(GeometryAccumulatorOptions{
+            .analysisStyleDisplacement = options.analysisStyle->displacement,
+        });
 }
 
 // 1:1 GraphicAssembler.addLineString (GraphicAssembler.ts:159-164).

@@ -26,6 +26,7 @@
 #include <dqCommon/FeatureIndex.h>
 #include <dqCommon/FeatureTable.h>
 #include <dqCommon/OctEncodedNormal.h>
+#include <dqGeom/AuxData.h>
 #include <dqGeom/Point2d.h>
 #include <dqGeom/Range3d.h>
 
@@ -156,6 +157,19 @@ public:
 
     const std::optional<Features>& features() const noexcept { return m_features; }
 
+    // 1:1 Mesh.auxChannels getter（MeshPrimitives.ts:185-187）。
+    std::optional<std::vector<dqGeom::AuxChannel>> const& auxChannels() const noexcept
+    {
+        return m_auxChannels;
+    }
+
+    // 1:1 Mesh.addAuxChannels（MeshPrimitives.ts:189-220）——**失配 bail 怪癖原样**：
+    // 已有通道集与传入通道数/逐通道 dataType+name+inputName 不合即静默丢弃（参考注释
+    // "We should really produce a separate Mesh for each unique combination. For now just
+    // bail on mismatch."）；首建=空值骨架拷贝（:205-208）；其后 copyValues 逐帧追加
+    // （:210-219——dstIndex=dstChannel.valueCount）。
+    void addAuxChannels(std::vector<dqGeom::AuxChannel> const& channels, size_t srcIndex);
+
     // 1:1 Mesh.toFeatureIndex — delegate to features if present.
     void toFeatureIndex(dqCommon::FeatureIndex& index) const
     {
@@ -184,6 +198,8 @@ private:
     ColorMap m_colorMap;  // 1:1 colorMap (was "ColorTable")
     std::vector<uint32_t> m_colors;
     std::optional<Features> m_features;
+    // 1:1 Mesh._auxChannels（MeshPrimitives.ts——undefined ↔ nullopt）。
+    std::optional<std::vector<dqGeom::AuxChannel>> m_auxChannels;
     DisplayParams m_displayParams;
     MeshPrimitiveType m_type = MeshPrimitiveType::Mesh;
     bool m_is2d = false;

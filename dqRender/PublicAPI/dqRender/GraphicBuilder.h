@@ -10,6 +10,7 @@
 #include "GraphicPrimitive.h"
 #include "RenderGraphic.h"
 
+#include <dqCommon/AnalysisStyle.h>
 #include <dqCommon/ColorDef.h>
 #include <dqCommon/GraphicParams.h>
 
@@ -75,6 +76,13 @@ struct GraphicBuilderOptions {
     // GraphicBuilder.ts:114）——DanQing 无 viewport 的等价面=非 Viewport::
     // createGraphicBuilder 路径不消费本旗标。
     bool applyAspectRatioSkew = false;
+    // 1:1 GraphicAssemblerOptions.analysisStyle（GraphicAssembler.ts:34——@alpha）。
+    // 消费点=GraphicAssembler ctor :90（accumulator 的 analysisStyleDisplacement 供
+    // addPolyface 位移域 range 扩展腿 GeometryAccumulator.ts:101-115；PrimitiveBuilder
+    // ctor 转接）。**供源注记**：参考侧无任何生产代码填充本字段（全仓检索实证——
+    // createGraphicBuilder/createGraphic 链均不携带；Viewport 的 analysisStyle 经
+    // RenderPlan.ts:126 进 target 供 draw 期动画消费，与本字段正交）。
+    std::optional<dqCommon::AnalysisStyle> analysisStyle;
 };
 
 // Abstract base class for building RenderGraphics.

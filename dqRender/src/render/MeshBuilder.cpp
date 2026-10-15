@@ -124,15 +124,24 @@ std::optional<Triangle> MeshBuilder::createTriangle(size_t triangleIndex, dqGeom
 
     // 1:1 vertices.forEach: assign each triangle index to the vertex-key index from the map.
     std::array<uint32_t, 3> indices{};
+    auto const* visitorAuxData = visitor.AuxData();
     for (size_t i = 0; i < 3; ++i) {
-        // 1:1: auxData branch (no dedup) is Phase-N; D′ always takes the addVertex dedup path.
-        const int vertexKeyIndex = addVertex((*vertices)[i]);
+        // 1:1 MeshBuilder.ts:181-189 的 auxData 分支（无去重——"No deduplication with
+        // auxData (for now...)"）：mesh.addVertex 直调 + addAuxChannels(channels,
+        // sourceIndex)；无 auxData → addVertex 去重路（顶点 map）。
+        const size_t sourceIndex = (0 == i) ? 0 : triangleIndex + i;
+        int vertexKeyIndex;
+        if (visitorAuxData) {
+            vertexKeyIndex = static_cast<int>(m_mesh->addVertex((*vertices)[i]));
+            m_mesh->addAuxChannels(visitorAuxData->channels, sourceIndex);
+        } else {
+            vertexKeyIndex = addVertex((*vertices)[i]);
+        }
         indices[i] = (vertexKeyIndex < 0) ? 0 : static_cast<uint32_t>(vertexKeyIndex);
 
         // 1:1: if currentPolyface, map vertexKeyIndex → visitor.clientPointIndex(sourceIndex).
         // D′ never builds a currentPolyface (wantEdges=false); kept faithful for the Phase-N edge path.
         if (m_currentPolyface) {
-            const size_t sourceIndex = (0 == i) ? 0 : triangleIndex + i;
             m_currentPolyface->vertexIndexMap()[indices[i]] =
                 static_cast<uint32_t>(visitor.ClientPointIndex(sourceIndex));
         }
