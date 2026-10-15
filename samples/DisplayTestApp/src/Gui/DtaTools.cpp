@@ -36,6 +36,7 @@
 #include "Application.h"
 #include "GltfDecorationTool.h"
 #include "OutputShadersTool.h"        // M-O(2) 3d OutputShaders 工具注册
+#include "PathDecorationTest.h"       // M-W W-b1：TogglePathDecoration 工具注册
 #include "TiledGraphics.h"            // M-O(2) I11 第二 iModel 叠加工具注册
 #include "MacroTool.h"                // M-O(4) P9 Macro 播放器注册
 
@@ -96,6 +97,11 @@ void registerDtaTools()
     registry.Register("Macro",
                       []() -> dqApp::InteractiveTool* { return new MacroTool(); },
                       "dta macro");
+    // M-W W-b1：PathDecorationTestTool（PathDecorationTest.ts:74-82——toolId
+    // "TogglePathDecoration"；keyin "dta path decoration"＝SVTTools.json:67-68）。
+    registry.Register("TogglePathDecoration",
+                      []() -> dqApp::InteractiveTool* { return new PathDecorationTestTool(); },
+                      "dta path decoration");
 }
 
 void setupDtaStatusBar(MainWindow* mainWindow)

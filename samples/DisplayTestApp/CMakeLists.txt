@@ -105,6 +105,8 @@ add_executable(DisplayTestApp WIN32
     src/Mod/Start/Gui/NewFileButton.cpp
     # A-lane 锚（M-W 起——A 道代理只在此锚下追加 app src 注册；勿动他区）
     # B-lane 锚（M-W 起——B 道代理只在此锚下追加 app src 注册；勿动他区）
+    src/Gui/PathDecorationTest.cpp   # M-W W-b1：Path 装饰测试（PathDecorationTest.ts）
+    src/Gui/PathDecorationTest.h
 )
 
 target_include_directories(DisplayTestApp PRIVATE
@@ -370,6 +372,9 @@ if(TARGET gtest_main AND TARGET dqApp)
         src/Gui/MenuManager.cpp       # MenuItem + MenuManager::setup（Workbench::activate）
         # A-lane 锚（M-W 起——A 道代理只在此锚下追加[注册序尾=dump 族序敏感安全位]；勿动他区）
         # B-lane 锚（M-W 起——B 道代理只在此锚下追加[注册序尾]；勿动他区）
+        tests/PathDecorationTestLock.cpp  # M-W W-b1：几何/toggle/拾取/canvas 占位锁 + 真窗像素锁（主会话收口跑）
+        src/Gui/PathDecorationTest.cpp    # M-W W-b1 被测面
+        src/Gui/PathDecorationTest.h      # include-path parity
         resources.qrc                 # DTA 图标资源（字体 + SVG——图标断言测试需要）
     )
     target_include_directories(DisplayTestAppDtaTest PRIVATE
