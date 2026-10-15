@@ -4,6 +4,7 @@
 #pragma once
 
 #include "Export.h"
+#include "Atmosphere.h"
 #include "GroundPlane.h"
 #include "SkyBox.h"
 #include "DqCommon.h"
@@ -17,6 +18,8 @@ BEGIN_DQ_COMMON_NAMESPACE
 struct EnvironmentProps {
     std::optional<GroundPlaneProps> ground;
     std::optional<SkyBoxProps> sky;
+    // ← EnvironmentProps.atmosphere（Environment.ts:25——M-W 集成面载体）。
+    std::optional<Atmosphere::Props> atmosphere;
 };
 
 // Scene environment (sky + ground).
@@ -25,8 +28,14 @@ class DQ_COMMON_EXPORT Environment {
 public:
     bool displaySky = false;
     bool displayGround = false;
+    // ← Environment.displayAtmosphere（Environment.ts:53——true 时大气显示并覆盖
+    //   sky box 颜色信息；M-W 集成面）。
+    bool displayAtmosphere = false;
     SkyBox sky;
     GroundPlane ground;
+    // ← Environment.atmosphere（Environment.ts:63——Atmosphere.Settings.defaults
+    //   缺省，ctor :71）。
+    Atmosphere::Settings atmosphere;
 
     static const Environment& defaults() noexcept
     {
@@ -46,6 +55,12 @@ public:
             env.sky = SkyBox::fromJSON(&*props->sky);
             env.displaySky = props->sky->display;
         }
+        // ← Environment.fromJSON atmosphere 腿（Environment.ts:113-120——
+        //   displayAtmosphere 读 props.atmosphere.display）。
+        if (props->atmosphere) {
+            env.atmosphere = Atmosphere::Settings::fromJSON(&*props->atmosphere);
+            env.displayAtmosphere = props->atmosphere->display.value_or(false);
+        }
         return env;
     }
 
@@ -54,6 +69,8 @@ public:
         EnvironmentProps p;
         p.ground = ground.toJSON(displayGround);
         p.sky = sky.toJSON(displaySky);
+        // ← Environment.toJSON（Environment.ts:100-106——atmosphere 恒携 display 写出）。
+        p.atmosphere = atmosphere.toJSON(displayAtmosphere);
         return p;
     }
 
