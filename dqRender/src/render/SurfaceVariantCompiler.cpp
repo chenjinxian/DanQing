@@ -411,21 +411,26 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
 
     // Explicit attribute locations — bound via glBindAttribLocation BEFORE link
     // (Program::attributeLocation → ShaderProgram::compile → OpenGLProgram::compile).
-    // Quantized LUT geometry carries a single 24-bit vertex-index attribute
-    // ("a_qPosition", the addVertexTable default — VertexTable.h); all other
-    // channels arrive via the u_vertLUT texture (Task 4's VAO binds location 0
-    // to the index VBO). Non-quantized matches PolyfaceGraphic's VAO
-    // (0=pos,1=normal,2=color,3=texCoord,4=featureId). Without this, GL
+    // LUT geometry（量化 + TD-27/M-W unquantized-LUT 两形态）carries a single
+    // 24-bit vertex-index attribute ("a_qPosition", the addVertexTable default —
+    // VertexTable.h); all other channels arrive via the u_vertLUT texture (the
+    // VAO binds location 0 to the index VBO). Non-LUT matches PolyfaceGraphic's
+    // VAO (0=pos,1=normal,2=color,3=texCoord,4=featureId). Without this, GL
     // auto-assigns locations unpredictably and the cube's a_color reads the
     // wrong VBO slot (invisible cube). Ported from: itwinjs-core AttributeMap
     // (explicit per-technique attribute name→location mapping; LUT-based
     // techniques use the DEFAULT map — AttributeMap.ts :64 posOnly =
     // [["a_pos", 0, Vec3]], a single index attribute at location 0).
+    // M-W W-a6 回修（E2E 零内容根因）：门从 `quantized` 归位 **LUT 形态轴**
+    // （quantized || lutUnquant）——此前 unquantized-LUT 变体走属性臂
+    // {a_position,…}，源内 `in vec3 a_qPosition` 无绑定 → 自动指派到无 VBO 的
+    // 位置 → 恒读 (0,0,0) → 全顶点折叠到 LUT 行 0 → 三角形全退化零片元
+    // （离屏复现锁 AnalysisStyleLutRenderTest RED→GREEN 双向验证）。
     // INSTANCED 变体（TD-25）：a_pos@0 之后追加实例组（AttributeMap.ts:36-51
     // instanced 追加序——Row0/1/2、Overrides、Rgba、featureId；patternX/Y 随
     // area pattern 变体落后续位，surface 未用）——draw 侧 InstancedGeometry::
     // draw 经同一 AttributeMap 取位绑定，两边必须一致。
-    if (quantized) {
+    if (quantized || lutUnquant) {
         if (instanced) {
             prog.setAttributeMap({
                 {"a_qPosition", 0},

@@ -1666,6 +1666,14 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                 // 切变体（instances60 根瓦 prim0 非实例 + prim1 实例同帧）。
                 flags.isInstanced = (geometry->asInstanced() != nullptr);
 
+                // Animation is per-geometry（M-W W-a6 修复——本补丁面此前缺
+                // isAnimated 维：装饰 auxChannels 网格的动画变体永不选中）。
+                // Ported from: itwinjs-core DrawCommand.ts:212（`const isAnimated
+                // = this.primitive.hasAnimation ? IsAnimated.Yes : IsAnimated.No`——
+                // Primitive.ts:109 hasAnimation ← cachedGeometry.hasAnimation ←
+                // CachedGeometry.ts:210 LUTGeometry.hasAnimation ← lut.hasAnimation）。
+                flags.isAnimated = geometry->hasAnimation();
+
                 // Thematic per-draw decision（M-S S-d——G21 清偿：
                 // PrimitiveCommand::execute 无调用方[ported-but-uncalled]，
                 // 本重建面此前丢 isThematic 维 → 变体永不选）。
@@ -1762,6 +1770,7 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     flags.isClassified == m_cachedTechniqueFlags.isClassified &&
                     flags.isThematic == m_cachedTechniqueFlags.isThematic &&
                     flags.isInstanced == m_cachedTechniqueFlags.isInstanced &&
+                    flags.isAnimated == m_cachedTechniqueFlags.isAnimated &&
                     flags.positionType == m_cachedTechniqueFlags.positionType &&
                     flags.isLutUnquantized == m_cachedTechniqueFlags.isLutUnquantized &&
                     flags.numClipPlanes == m_cachedTechniqueFlags.numClipPlanes &&
@@ -2006,11 +2015,20 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                             // DanQing UniformHandle 面无 driver[W-a5 EQUIVALENCE]，
                             // 纹理在 compositor 绑定 + 单元号经 wireAnimLUT 的
                             // GraphicUniform 置位）。仅动画几何（auxChannels 在场）绑定。
+                            // 单元换算（M-W 回修）：GL::TextureUnit 枚举持 **GL 枚举值**
+                            // （Zero=0x84C0——参考 RenderFlags.ts 同形）；driver.
+                            // bindTexture 的 unit 形参是**单元下标**（OpenGLState::
+                            // activeTexture 的 GL_TEXTURE0+unit——bindTexture(0x84C6)
+                            // 曾致 glActiveTexture 越界 GL_INVALID_ENUM、纹理从未绑定）。
+                            // 参考换算=bindSampler 的 `unit - TextureUnit.Zero`
+                            // （Texture.ts:462）——同式。
+                            constexpr uint32_t kAuxChannelLutUnit =
+                                static_cast<uint32_t>(GL::TextureUnit::AuxChannelLUT)
+                                - static_cast<uint32_t>(GL::TextureUnit::Zero);
                             if (auto const* auxLut = surfGeom->auxChannels()) {
                                 if (auxLut->texture() != rhi::TextureHandle{}) {
-                                    driver.bindTexture(
-                                        static_cast<uint32_t>(GL::TextureUnit::AuxChannelLUT),
-                                        auxLut->texture());
+                                    driver.bindTexture(kAuxChannelLutUnit,
+                                                       auxLut->texture());
                                 }
                             }
                         }
@@ -2505,6 +2523,11 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     // overrides with the legacy map values during the transition.
                     DrawParams drawParams;
                     drawParams.setTarget(&m_target);
+                    // M-W W-a6：geometry 入 DrawParams（DrawCommand.ts 的 DrawParams.init
+                    // 等价面——动画绑定的 channel 查找读 params.geometry[asSurface
+                    // ->auxChannels]，Animation.ts:150/:159/:167/:196-210；本面此前缺
+                    // geometry → 动画绑定读不到通道）。
+                    drawParams.init(&params, geometry);
 
                     // Update BranchUniforms for this geometry (handles instanced/VIO/viewCoords).
                     // Ported from: itwinjs-core BranchUniforms.update() (line 181-257)
@@ -2644,27 +2667,44 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                                 }
                             }
                         }
-                    } else if (surfTex != rhi::TextureHandle{}) {
-                        // M-W W-a6：scalar 动画的 analysisTexture 优先（Surface.ts:602——
-                        // `hasAnimation && target.analysisTexture ? analysisTexture :
-                        // surfGeom.texture`）：scalar 通道渐变纹理接管 s_texture。
+                    } else {
+                        // M-W W-a6 回修（E2E 零内容根因）：门从 `surfTex 非空` 归位
+                        // 参考 useTexture 门（Surface.ts:601——surfGeom?.useTexture
+                        // (params) → SurfaceGeometry.ts:389-391 wantTextures 首臂
+                        // `hasScalarAnimation && undefined !== target.analysisTexture
+                        // → true`——**无自有纹理的 scalar 动画网格也走绑定臂**；
+                        // 此前嵌套在 surfTex 非空分支内 → 无纹理动画网格的 s_texture
+                        // 永不绑定，而 computeSurfaceFlags 的 scalar 门已置
+                        // HasTexture=1 → sampleSurfaceTexture 读未绑 unit 0 的
+                        // 残留/空纹理 → textureWeight=1.0 全混 → 黑网格 on 黑背景
+                        // =E2E flatStats.count=0 根因）。
+                        auto const* surfGeomForTex = geometry->asSurface();
                         rhi::TextureHandle const analysisTex = m_target.getAnalysisTexture();
-                        if (geometry->hasAnimation() && analysisTex != rhi::TextureHandle{}) {
-                            driver.bindTexture(0, analysisTex);
+                        bool const useTexture =
+                            (surfGeomForTex != nullptr && surfGeomForTex->hasScalarAnimation()
+                             && analysisTex != rhi::TextureHandle{})
+                            || surfTex != rhi::TextureHandle{};
+                        if (useTexture) {
+                            // analysisTexture 优先臂（Surface.ts:602——
+                            // `hasAnimation && target.analysisTexture ? analysisTexture
+                            // : surfGeom.texture`）：scalar 通道渐变纹理接管 s_texture。
+                            if (geometry->hasAnimation() && analysisTex != rhi::TextureHandle{}) {
+                                driver.bindTexture(0, analysisTex);
+                                params.setInt("s_texture", 0);
+                            } else {
+                            driver.bindTexture(0, surfTex);
                             params.setInt("s_texture", 0);
-                        } else {
-                        driver.bindTexture(0, surfTex);
-                        params.setInt("s_texture", 0);
-                        // TEMP-DIAG（U 翻转 saga）：绘制时纹理实际 wrap 状态。
-                        if (getenv("DANQING_WRAP_TRACE")) {
-                            static int n = 0;
-                            if (n++ < 8) {
-                                GLint ws = 0, wt = 0;
-                                dqglGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, &ws);
-                                dqglGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, &wt);
-                                printf("[WRAP] wrapS=0x%04x wrapT=0x%04x (REPEAT=0x2901 MIRRORED=0x8370 CLAMP=0x812F)\n", ws, wt);
+                            // TEMP-DIAG（U 翻转 saga）：绘制时纹理实际 wrap 状态。
+                            if (getenv("DANQING_WRAP_TRACE")) {
+                                static int n = 0;
+                                if (n++ < 8) {
+                                    GLint ws = 0, wt = 0;
+                                    dqglGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, &ws);
+                                    dqglGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, &wt);
+                                    printf("[WRAP] wrapS=0x%04x wrapT=0x%04x (REPEAT=0x2901 MIRRORED=0x8370 CLAMP=0x812F)\n", ws, wt);
+                                }
                             }
-                        }
+                            }
                         }
                     }
                     // Normal map (s_normalMap): bind when the HasNormalMap bit is
@@ -2753,6 +2793,58 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
 
                 if (!skipPrimitiveDraw)
                     geometry->draw(driver);
+
+                    // TEMP-DIAG（M-W W-a6 零内容取证，env 门控 DANQING_AS_TRACE）：
+                    // Surface 图元的绘制点状态——技术/变体/动画/LUT/索引数。
+                    if (getenv("DANQING_AS_TRACE") && techniqueId == TechniqueId::Surface) {
+                        auto* sg = geometry->asSurface();
+                        std::fprintf(stderr,
+                                     "[AS] draw surface: shader=%p anim=%d lutUnquant=%d posType=%d numIdx=%u aux=%d pass=%d\n",
+                                     static_cast<void*>(shader),
+                                     flags.isAnimated ? 1 : 0,
+                                     flags.isLutUnquantized ? 1 : 0,
+                                     static_cast<int>(flags.positionType),
+                                     sg ? sg->getDrawIndexCount() : 0u,
+                                     (sg && sg->auxChannels()) ? 1 : 0,
+                                     static_cast<int>(pass));
+                        // 扩展探针（uniform/属性/纹理单元 GPU 读回——绘制后 = 片元所见态）。
+                        if (flags.isAnimated && sg && sg->auxChannels() && shader) {
+                            GLuint const prog = shader->getGlProgram();
+                            if (prog != 0) {
+                                GLint const locQPos = dqglGetAttribLocation(prog, "a_qPosition");
+                                auto dumpVec = [&](char const* name, int n) {
+                                    GLint const loc = dqglGetUniformLocation(prog, name);
+                                    if (loc < 0) {
+                                        std::fprintf(stderr, "[ASU] %s: <no location>\n", name);
+                                        return;
+                                    }
+                                    GLfloat v[4] = {0, 0, 0, 0};
+                                    dqglGetUniformfv(prog, loc, v);
+                                    std::fprintf(stderr, "[ASU] %s: %.3f %.3f %.3f %.3f\n", name,
+                                                 v[0], v[1], v[2], (n > 3 ? v[3] : 0.0f));
+                                };
+                                dumpVec("u_vertParams", 4);
+                                dumpVec("u_animLUTParams", 3);
+                                dumpVec("u_animDispParams", 3);
+                                dumpVec("u_qAnimDispOrigin", 3);
+                                dumpVec("u_qAnimDispScale", 3);
+                                dumpVec("u_animScalarParams", 3);
+                                dumpVec("u_animScalarQParams", 2);
+                                // 纹理单元绑定态（u_vertLUT=5 / u_animLUT=6 / s_texture=0）。
+                                GLint savedActive = 0;
+                                glGetIntegerv(GL_ACTIVE_TEXTURE, &savedActive);
+                                for (int unit : {0, 5, 6}) {
+                                    glActiveTexture(GL_TEXTURE0 + unit);
+                                    GLint bound = 0;
+                                    glGetIntegerv(GL_TEXTURE_BINDING_2D, &bound);
+                                    std::fprintf(stderr, "[ASU] unit%d boundTex=%d\n", unit, bound);
+                                }
+                                glActiveTexture(static_cast<GLenum>(savedActive));
+                                std::fprintf(stderr, "[ASU] a_qPosition loc=%d glErr=0x%x\n",
+                                             static_cast<int>(locQPos), glGetError());
+                            }
+                        }
+                    }
 
                 break;
             }

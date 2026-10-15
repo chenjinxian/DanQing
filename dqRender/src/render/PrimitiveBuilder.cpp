@@ -125,6 +125,50 @@ std::unique_ptr<MeshGraphic> createLutMeshGraphic(rhi::Driver& driver, Mesh cons
         }
     }
 
+    // TEMP-DIAG（M-W W-a6 零内容取证，env 门控 DANQING_AS_TRACE）：LUT 产出面。
+    if (std::getenv("DANQING_AS_TRACE")) {
+        std::fprintf(stderr,
+                     "[AS] createLutMeshGraphic: numVerts=%u numIdx=%u table=%ux%u rgba=%u anim=%d auxTex=%d\n",
+                     numVertices, numIndices, table.width, table.height,
+                     table.numRgbaPerVertex,
+                     geom->hasAnimation() ? 1 : 0,
+                     geom->auxChannels() ? (geom->auxChannels()->texture() != rhi::TextureHandle{} ? 1 : 0) : -1);
+        if (numVertices > 0) {
+            auto const& p0 = pts[0];
+            std::fprintf(stderr, "[AS] mesh pt0=(%.6f %.6f %.6f) range z=[%.6f %.6f]\n",
+                         p0.x, p0.y, p0.z, mesh.points().range.low.z, mesh.points().range.high.z);
+            // 顶点表首顶点 f32 回译（转置布局对拍——CPU 写入 vs GPU 回读）。
+            auto rdF32 = [&table](uint32_t texelByte) {
+                uint32_t u = static_cast<uint32_t>(table.data[texelByte])
+                    | (static_cast<uint32_t>(table.data[texelByte + 1]) << 8)
+                    | (static_cast<uint32_t>(table.data[texelByte + 2]) << 16)
+                    | (static_cast<uint32_t>(table.data[texelByte + 3]) << 24);
+                float f;
+                std::memcpy(&f, &u, 4);
+                return f;
+            };
+            // 转置：x = data[0],data[4],data[8],data[12]；y = data[1],data[5],...
+            uint32_t ux = static_cast<uint32_t>(table.data[0])
+                | (static_cast<uint32_t>(table.data[4]) << 8)
+                | (static_cast<uint32_t>(table.data[8]) << 16)
+                | (static_cast<uint32_t>(table.data[12]) << 24);
+            uint32_t uy = static_cast<uint32_t>(table.data[1])
+                | (static_cast<uint32_t>(table.data[5]) << 8)
+                | (static_cast<uint32_t>(table.data[9]) << 16)
+                | (static_cast<uint32_t>(table.data[13]) << 24);
+            uint32_t uz = static_cast<uint32_t>(table.data[2])
+                | (static_cast<uint32_t>(table.data[6]) << 8)
+                | (static_cast<uint32_t>(table.data[10]) << 16)
+                | (static_cast<uint32_t>(table.data[14]) << 24);
+            float fx, fy, fz;
+            std::memcpy(&fx, &ux, 4);
+            std::memcpy(&fy, &uy, 4);
+            std::memcpy(&fz, &uz, 4);
+            std::fprintf(stderr, "[AS] table v0=(%.6f %.6f %.6f)\n", fx, fy, fz);
+            (void)rdF32;
+        }
+    }
+
     auto graphic = std::make_unique<MeshGraphic>(driver);
     graphic->addSurface(std::move(geom));
     return graphic;
@@ -274,6 +318,12 @@ RenderGraphic* PrimitiveBuilder::finish()
         auto mg = MeshRenderGeometry::create(m_driver, *mesh);
         if (mg)
             array->add(std::move(mg));  // GraphicsArray owns the MeshGraphic (a Graphic).
+    }
+    // TEMP-DIAG（M-W W-a6 零内容取证，env 门控）：finish 产出面——
+    // 每 mesh 的路由 + 产出。
+    if (std::getenv("DANQING_AS_TRACE")) {
+        std::fprintf(stderr, "[AS] finish: meshes=%zu arraySize=%zu\n",
+                     static_cast<size_t>(0), array->size());
     }
 
     if (array->size() == 0)

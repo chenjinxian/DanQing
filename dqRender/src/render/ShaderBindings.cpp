@@ -321,12 +321,17 @@ static std::optional<ScalarFound> getScalarChannel(DrawParams const& dp)
 // 在绑定内绑纹理；DanQing 的 UniformHandle 面无 driver——纹理由 dispatch 侧在
 // TextureUnit::AuxChannelLUT 单元绑定（与 u_vertLUT 的 DanQing 处理同族），本绑定
 // 仅置单元号。发散=绑定点拆分；验证法=W-a6 E2E 位移像素锁。
+// 单元换算（M-W 回修——E2E 零内容根因之一）：参考 bindSampler 置位
+// `unit - TextureUnit.Zero`（Texture.ts:462——sampler 持单元**下标**）；
+// GL::TextureUnit 枚举持 GL 枚举值（Zero=0x84C0）——本绑定曾直传枚举值
+// （33990）→ shader 采样无效单元。同式换算。
 void wireAnimLUT(ShaderBuilder& vert)
 {
     vert.addUniform("u_animLUT", VariableType::Sampler2D, [](ShaderProgram& prog) {
         prog.addGraphicUniform("u_animLUT", [](UniformHandle& u, DrawParams const& dp) {
             (void)dp;
-            u.setUniform1i(static_cast<int>(GL::TextureUnit::AuxChannelLUT));
+            u.setUniform1i(static_cast<int>(GL::TextureUnit::AuxChannelLUT)
+                           - static_cast<int>(GL::TextureUnit::Zero));
         });
     });
 }

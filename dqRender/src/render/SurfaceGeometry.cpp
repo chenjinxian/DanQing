@@ -211,7 +211,15 @@ void SurfaceGeometry::draw(rhi::Driver& driver)
 {
     if (m_primitive) {
         driver.bindRenderPrimitive(m_primitive);
-        if (m_usesQuantizedPositions)
+        // Ported from: itwinjs-core SurfaceGeometry._draw（:150-163）——LUT 形态
+        // **恒 drawArrays**（a_qPosition 逐角索引流即顶点表下标，无 element
+        // buffer；`system.drawArrays(GL.PrimitiveType.Triangles, 0,
+        // this._numIndices, numInstances)` :162 对量化/非量化 LUT 同一式）。
+        // M-W W-a6 修复：原以 usesQuantizedPositions 分流（非量化 → draw2=
+        // glDrawElements——LUT 形态无 element buffer，零片元/UB）——归位为
+        // usesVertexLut 分流（TD-27 的 unquantized-LUT[numRgba=5] 同为 LUT
+        // 形态，同属 drawArrays）。VBO 形态（属性路径）仍 draw2。
+        if (m_usesVertexLut)
             driver.drawArrays(0, m_numIndices, 0);
         else
             driver.draw2(0, m_numIndices, 0);

@@ -71,7 +71,11 @@ public:
             m_viewport->InvalidateController();
         }));
         // 参考 :199 onDisposed → dispose；DanQing：QWidget destroyed 信号承载。
-        QObject::connect(&viewport, &QObject::destroyed, [this]() {
+        // 连接句柄自持 + 析构断开（M-W 回修——无 context 的连接在 decorator
+        // 先死、viewport 后毁时对悬垂 this 放 lambda → UAF/堆腐蚀；本仓既有
+        // 模式是 connect(sender, destroyed, context, lambda) 经 context 自动
+        // 断开[DtaToolBars.cpp:318 同族]，decorator 非 QObject → 显式断开户）。
+        m_vpDestroyedConn = QObject::connect(&viewport, &QObject::destroyed, [this]() {
             disposeGraphic();
         });
         dqApp::Application::Get().GetViewManager().AddDecorator(this);
@@ -79,6 +83,8 @@ public:
 
     ~AnalysisDecorator() override
     {
+        if (m_vpDestroyedConn)
+            QObject::disconnect(m_vpDestroyedConn);
         dqApp::Application::Get().GetViewManager().DropDecorator(this);
     }
 
@@ -136,6 +142,7 @@ private:
     dqRender::RenderGraphic* m_graphic = nullptr;
     dqRender::RenderGraphicOwner* m_graphicOwner = nullptr;
     dqBase::DqEventScope m_styleScope;  // OnAnalysisStyleChanged 订阅令牌（自持）
+    QMetaObject::Connection m_vpDestroyedConn;  // viewport destroyed 订阅（析构断开——防悬垂 lambda UAF）
 };
 
 }  // namespace
