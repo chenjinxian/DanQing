@@ -48,11 +48,16 @@ BEGIN_DQ_RENDER_NAMESPACE
 // Simplified: sampleSurfaceTexture omits constantLod branch; computeBaseColor
 // omits glyph/whiteOnWhite. TODO follow-up.
 // ---------------------------------------------------------------------------
-inline void addTexture(ProgramBuilder& builder, bool quantized = false)
+inline void addTexture(ProgramBuilder& builder, bool quantized = false, bool animated = false)
 {
     auto& vert = builder.getVertexBuilder();
     auto& frag = builder.getFragmentBuilder();
 
+    // W-a5：animated 形参归位（Surface.ts:760 `addTexture(builder, flags.isAnimated, ...)`
+    // 的 :582 animated 分流）——animated 时 v_texCoord 体 = getComputeAnimatedTexCoord
+    //（:469-476：u_animScalarQParams.x>=0 → computeAnimationParam（scalar→thematic
+    // 渐变 texcoord 覆写——复用 M-S 渐变通道：v_texCoord 即渐变采样坐标）；否则
+    // 回落既有 getComputeTexCoord 体。
     if (quantized) {
         // Quantized LUT path — Ported from: itwinjs-core Surface.ts
         // addTexture() (line 578-582) + getComputeTexCoord(true)
@@ -65,7 +70,12 @@ inline void addTexture(ProgramBuilder& builder, bool quantized = false)
         addChooseVec2WithBitFlagsFunction(vert);
         builder.addFunctionComputedVarying("v_texCoord", VariableType::Vec2,
                                             "computeTexCoord",
-                                            std::string(kComputeTexCoordQuantized));
+                                            animated
+                                                ? std::string("  if (u_animScalarQParams.x >= 0.0)\n"
+                                                              "    return computeAnimationParam(u_animScalarParams.x, u_animScalarParams.y, u_animScalarParams.z, u_animScalarQParams.x, u_animScalarQParams.y);\n"
+                                                              "\n")
+                                                      + std::string(kComputeTexCoordQuantized)
+                                                : std::string(kComputeTexCoordQuantized));
 
         // u_qTexCoordParams uniform — VERTEX stage per the reference
         // (Surface.ts:583-594). (DanQing previously declared it on the
@@ -82,7 +92,12 @@ inline void addTexture(ProgramBuilder& builder, bool quantized = false)
         // unquantize2d; DanQing reads pre-decoded vec2 from a_texCoord. TODO Step 3.
         builder.addFunctionComputedVarying("v_texCoord", VariableType::Vec2,
                                             "computeTexCoord",
-                                            "  return a_texCoord;");
+                                            animated
+                                                ? std::string("  if (u_animScalarQParams.x >= 0.0)\n"
+                                                              "    return computeAnimationParam(u_animScalarParams.x, u_animScalarParams.y, u_animScalarParams.z, u_animScalarQParams.x, u_animScalarQParams.y);\n"
+                                                              "\n"
+                                                              "  return a_texCoord;")
+                                                : std::string("  return a_texCoord;"));
     }
 
     // s_texture sampler (binding wired by draw loop bindTexture + params.setInt,

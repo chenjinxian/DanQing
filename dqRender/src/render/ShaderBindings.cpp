@@ -8,11 +8,17 @@
 // Defined here (not in the header) to avoid pulling ShaderProgramImpl.h /
 // TargetImpl.h into lightweight *Shaders.h headers.
 #include "ShaderBindings.h"
+#include "AuxChannelLut.h"       // AuxChannelLUT（W-a5 动画通道绑定读面）
+#include "AuxChannelTable.h"     // AuxChannel/AuxDisplacementChannel/AuxParamChannel
 #include "DrawParams.h"         // DrawParams (for GraphicUniform bindings)
 #include "ShaderProgramImpl.h"  // ShaderProgram, addProgramUniform, addGraphicUniform, ShaderProgramParams
-#include "TargetImpl.h"         // getUniforms()/getClipStack()
+#include "SurfaceGeometry.h"    // SurfaceGeometry::auxChannels（asSurface 读面）
+#include "TargetImpl.h"         // getUniforms()/getClipStack()/getAnalysisFraction/getAnalysisStyle
 #include "ClipStack.h"          // ClipStack（addClipping）
 #include "shader/ClippingShaders.h"  // kClippingHelpers/kApplyClippingBody/kClipVolumeTextureUnit
+
+#include <dqCommon/ThematicDisplay.h>  // ThematicGradientSettings::margin/contentRange
+#include <dqCommon/AnalysisStyle.h>    // AnalysisStyle（displacement/scalar/normalChannelName）
 
 BEGIN_DQ_RENDER_NAMESPACE
 
@@ -208,29 +214,136 @@ void wireMaterialParams(ShaderBuilder& vert)
 // Animation displacement
 // ==========================================================================
 
+// W-a5：绑定语义归位——参考 lambda 内读 params.geometry 的 auxChannels + target 的
+// analysisStyle/analysisFraction 就地计算（Animation.ts:194-303）；DanQing 桩期的
+// DrawParams 预置指针面（getAnimLutParams 等——从未有喂数方，ported-but-uncalled）
+// 全部退役为就地计算。
+
+namespace detail {
+
+// 几何的 auxChannels 读取缝（参考 params.geometry.asLUT?.lut.auxChannels /
+// asMesh?.lut.auxChannels——Animation.ts:150/:159/:167；asMesh/asLUT 的参考不一致
+// 原样注记：两者对网格几何同指 SurfaceGeometry.auxChannels）。
+static AuxChannelLUT const* geometryAuxChannels(DrawParams const& dp)
+{
+    auto* geom = dp.getGeometry();
+    auto* surface = geom ? geom->asSurface() : nullptr;
+    return surface ? surface->auxChannels() : nullptr;
+}
+
+static float targetAnalysisFraction(DrawParams const& dp)
+{
+    auto* target = dp.getTarget();
+    return target ? target->getAnalysisFraction() : 0.0f;
+}
+
+// Ported from: Animation.ts:171-184 computeAnimParams。
+void computeAnimParams(float* params, AuxChannel const& channel, float fraction)
+{
+    auto const& inputs = channel.inputs();
+    auto const& indices = channel.indices();
+    if (inputs.empty() || indices.empty())
+        return;
+    float const inputValue = fraction * inputs[inputs.size() - 1];
+    for (size_t i = 0; i + 1 < inputs.size(); i++) {
+        if (inputValue >= inputs[i] && inputValue < inputs[i + 1]) {
+            params[0] = static_cast<float>(indices[i]);
+            params[1] = static_cast<float>(indices[i + 1]);
+            // **运算符优先级怪癖原样**（:178）：除法先算——
+            // inputValue - (inputs[i] / (inputs[i+1] - inputs[i]))。
+            params[2] = inputValue - inputs[i] / (inputs[i + 1] - inputs[i]);
+            return;
+        }
+    }
+    params[0] = params[1] = static_cast<float>(indices[inputs.size() - 1]);
+    params[2] = 0.0f;
+}
+
+// Ported from: Animation.ts:145-152 getDisplacementChannel。
+struct DisplacementFound {
+    AuxDisplacementChannel const* channel;
+    dqCommon::AnalysisStyleDisplacement const* displacement;
+};
+static std::optional<DisplacementFound> getDisplacementChannel(DrawParams const& dp)
+{
+    auto* target = dp.getTarget();
+    auto const* style = target ? target->getAnalysisStyle() : nullptr;
+    if (!style || !style->displacement.has_value())
+        return std::nullopt;
+    auto const* aux = geometryAuxChannels(dp);
+    if (!aux)
+        return std::nullopt;
+    auto it = aux->displacements.find(style->displacement->channelName);
+    if (it == aux->displacements.end())
+        return std::nullopt;
+    return DisplacementFound{&it->second, &*style->displacement};
+}
+
+// Ported from: Animation.ts:154-160 getNormalChannel。
+static AuxChannel const* getNormalChannel(DrawParams const& dp)
+{
+    auto* target = dp.getTarget();
+    auto const* style = target ? target->getAnalysisStyle() : nullptr;
+    if (!style || !style->normalChannelName.has_value())
+        return nullptr;
+    auto const* aux = geometryAuxChannels(dp);
+    if (!aux)
+        return nullptr;
+    auto it = aux->normals.find(*style->normalChannelName);
+    return it != aux->normals.end() ? &it->second : nullptr;
+}
+
+// Ported from: Animation.ts:162-169 getScalarChannel。
+struct ScalarFound {
+    AuxParamChannel const* channel;
+    dqCommon::AnalysisStyleThematic const* scalar;
+};
+static std::optional<ScalarFound> getScalarChannel(DrawParams const& dp)
+{
+    auto* target = dp.getTarget();
+    auto const* style = target ? target->getAnalysisStyle() : nullptr;
+    if (!style || !style->scalar.has_value())
+        return std::nullopt;
+    auto const* aux = geometryAuxChannels(dp);
+    if (!aux)
+        return std::nullopt;
+    auto it = aux->params.find(style->scalar->channelName);
+    if (it == aux->params.end())
+        return std::nullopt;
+    return ScalarFound{&it->second, &*style->scalar};
+}
+
+}  // namespace detail
+
 // u_animLUT — animation displacement LUT texture.
 // Ported from: itwinjs-core Animation.ts addAnimation() (line 194-199)
+// EQUIVALENCE：参考经 channels.texture.bindSampler(uniform, TextureUnit.AuxChannelLUT)
+// 在绑定内绑纹理；DanQing 的 UniformHandle 面无 driver——纹理由 dispatch 侧在
+// TextureUnit::AuxChannelLUT 单元绑定（与 u_vertLUT 的 DanQing 处理同族），本绑定
+// 仅置单元号。发散=绑定点拆分；验证法=W-a6 E2E 位移像素锁。
 void wireAnimLUT(ShaderBuilder& vert)
 {
     vert.addUniform("u_animLUT", VariableType::Sampler2D, [](ShaderProgram& prog) {
         prog.addGraphicUniform("u_animLUT", [](UniformHandle& u, DrawParams const& dp) {
-            // Texture binding is handled separately by the compositor
-            // (driver.bindTexture at the appropriate texture unit).
-            // The uniform just needs the texture unit index.
             (void)dp;
             u.setUniform1i(static_cast<int>(GL::TextureUnit::AuxChannelLUT));
         });
     });
 }
 
-// u_animLUTParams — animation LUT texture dimensions (width, height, numRgbaPerVert).
+// u_animLUTParams — animation LUT texture dimensions (width, height, numBytesPerVert/2).
 // Ported from: itwinjs-core Animation.ts addAnimation() (line 202-213)
 void wireAnimLUTParams(ShaderBuilder& vert)
 {
     vert.addUniform("u_animLUTParams", VariableType::Vec3, [](ShaderProgram& prog) {
         prog.addGraphicUniform("u_animLUTParams", [](UniformHandle& u, DrawParams const& dp) {
-            if (float const* p = dp.getAnimLutParams())
-                u.setUniform3fv(p);
+            float array[3] = {0.0f, 0.0f, 0.0f};
+            if (auto const* aux = detail::geometryAuxChannels(dp)) {
+                array[0] = static_cast<float>(aux->width());
+                array[1] = static_cast<float>(aux->height());
+                array[2] = static_cast<float>(aux->numBytesPerVertex()) / 2.0f;
+            }
+            u.setUniform3fv(array);
         });
     });
 }
@@ -241,8 +354,11 @@ void wireAnimDispParams(ShaderBuilder& vert)
 {
     vert.addUniform("u_animDispParams", VariableType::Vec3, [](ShaderProgram& prog) {
         prog.addGraphicUniform("u_animDispParams", [](UniformHandle& u, DrawParams const& dp) {
-            if (float const* p = dp.getAnimDispParams())
-                u.setUniform3fv(p);
+            float animParams[3] = {0.0f, 0.0f, 0.0f};
+            if (auto const disp = detail::getDisplacementChannel(dp))
+                detail::computeAnimParams(animParams, *disp->channel,
+                                          detail::targetAnalysisFraction(dp));
+            u.setUniform3fv(animParams);
         });
     });
 }
@@ -253,8 +369,12 @@ void wireAnimDispScale(ShaderBuilder& vert)
 {
     vert.addUniform("u_qAnimDispScale", VariableType::Vec3, [](ShaderProgram& prog) {
         prog.addGraphicUniform("u_qAnimDispScale", [](UniformHandle& u, DrawParams const& dp) {
-            if (float const* p = dp.getQAnimDispScale())
-                u.setUniform3fv(p);
+            float animParams[3] = {0.0f, 0.0f, 0.0f};
+            if (auto const disp = detail::getDisplacementChannel(dp))
+                for (int i = 0; i < 3; i++)
+                    animParams[i] = disp->channel->qScale()[i]
+                        * static_cast<float>(disp->displacement->scale);
+            u.setUniform3fv(animParams);
         });
     });
 }
@@ -265,8 +385,68 @@ void wireAnimDispOrigin(ShaderBuilder& vert)
 {
     vert.addUniform("u_qAnimDispOrigin", VariableType::Vec3, [](ShaderProgram& prog) {
         prog.addGraphicUniform("u_qAnimDispOrigin", [](UniformHandle& u, DrawParams const& dp) {
-            if (float const* p = dp.getQAnimDispOrigin())
-                u.setUniform3fv(p);
+            float animParams[3] = {0.0f, 0.0f, 0.0f};
+            if (auto const disp = detail::getDisplacementChannel(dp))
+                for (int i = 0; i < 3; i++)
+                    animParams[i] = disp->channel->qOrigin()[i]
+                        * static_cast<float>(disp->displacement->scale);
+            u.setUniform3fv(animParams);
+        });
+    });
+}
+
+// u_animNormalParams — normal channel frame indices + fraction（isSurface 半）。
+// Ported from: itwinjs-core Animation.ts addAnimation() (line 265-274)
+void wireAnimNormalParams(ShaderBuilder& vert)
+{
+    vert.addUniform("u_animNormalParams", VariableType::Vec3, [](ShaderProgram& prog) {
+        prog.addGraphicUniform("u_animNormalParams", [](UniformHandle& u, DrawParams const& dp) {
+            float animParams[3] = {-1.0f, -1.0f, -1.0f};
+            if (auto const* channel = detail::getNormalChannel(dp))
+                detail::computeAnimParams(animParams, *channel,
+                                          detail::targetAnalysisFraction(dp));
+            u.setUniform3fv(animParams);
+        });
+    });
+}
+
+// u_animScalarParams — scalar channel frame indices + fraction（isSurface 半）。
+// Ported from: itwinjs-core Animation.ts addAnimation() (line 276-285)
+void wireAnimScalarParams(ShaderBuilder& vert)
+{
+    vert.addUniform("u_animScalarParams", VariableType::Vec3, [](ShaderProgram& prog) {
+        prog.addGraphicUniform("u_animScalarParams", [](UniformHandle& u, DrawParams const& dp) {
+            float animParams[3] = {-1.0f, -1.0f, -1.0f};
+            if (auto const scalars = detail::getScalarChannel(dp))
+                detail::computeAnimParams(animParams, *scalars->channel,
+                                          detail::targetAnalysisFraction(dp));
+            u.setUniform3fv(animParams);
+        });
+    });
+}
+
+// u_animScalarQParams — scalar 量化参数（margin+contentRange 归一映射——
+// ThematicGradientSettings.margin/contentRange，M-S 渐变机制复用）。
+// Ported from: itwinjs-core Animation.ts addAnimation() (line 287-303)
+void wireAnimScalarQParams(ShaderBuilder& vert)
+{
+    vert.addUniform("u_animScalarQParams", VariableType::Vec2, [](ShaderProgram& prog) {
+        prog.addGraphicUniform("u_animScalarQParams", [](UniformHandle& u, DrawParams const& dp) {
+            float animParams[2] = {1.0f, 1.0f};
+            if (auto const scalars = detail::getScalarChannel(dp)) {
+                auto const& range = scalars->scalar->range;
+                double rangeScale = range.high - range.low;
+                if (rangeScale == 0.0)
+                    rangeScale = 1.0;
+
+                animParams[0] = static_cast<float>(
+                    dqCommon::ThematicGradientSettings::margin()
+                    + (scalars->channel->qOrigin() - range.low) / rangeScale);
+                animParams[1] = static_cast<float>(
+                    dqCommon::ThematicGradientSettings::contentRange()
+                    * scalars->channel->qScale() / rangeScale);
+            }
+            u.setUniform2fv(animParams);
         });
     });
 }

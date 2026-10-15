@@ -46,6 +46,11 @@ public:
     rhi::TextureHandle texture() const noexcept { return m_texture; }
     uint32_t numVertices() const noexcept { return m_numVertices; }
     uint32_t numBytesPerVertex() const noexcept { return m_numBytesPerVertex; }
+    // 纹理维度（u_animLUTParams 的 width/height 源——Animation.ts:208-209 读
+    // auxChannels.texture.width/height；EQUIVALENCE：参考读纹理对象维度，本类存
+    // 打包表维度（createForData 的宽高即表宽高——同源等值）。
+    uint32_t width() const noexcept { return m_width; }
+    uint32_t height() const noexcept { return m_height; }
 
     // 1:1 hasScalarAnimation（:54——params 表存在性）。
     bool hasScalarAnimation() const noexcept { return !params.empty(); }
@@ -60,6 +65,8 @@ public:
             return nullptr;
         lut->m_numVertices = table.numVertices();
         lut->m_numBytesPerVertex = table.numBytesPerVertex();
+        lut->m_width = table.width();
+        lut->m_height = table.height();
         // initChannels 泛型（:39-51——逐族填图；空族 → 空 map 保持缺席语义）。
         for (auto const& channel : table.displacements())
             lut->displacements.emplace(channel.name(), channel);
@@ -83,6 +90,8 @@ private:
     rhi::TextureHandle m_texture;
     uint32_t m_numVertices = 0;
     uint32_t m_numBytesPerVertex = 0;
+    uint32_t m_width = 0;
+    uint32_t m_height = 0;
 };
 
 END_DQ_RENDER_NAMESPACE
