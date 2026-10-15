@@ -357,14 +357,28 @@ TEST(PathDecorationPixel, ToggleOnShowsPathAndCanvasPlaceholder)
     printf("[PATHDECO] diffOn=%zu w=%u h=%u\n", diffOn, w, h);
     EXPECT_GT(diffOn, 500u) << "path decoration produced no visible change";
 
-    // 判据 2（canvas 占位——WHERE）：(256,256) 占位框区近白像素新增
-    //（框 ≈ 269×14≈3766 px；GL_LINES 栅格化后端按线族落——保守下界 200）。
-    // 设备像素 == CSS 像素（测试 harness dpr=1——DecoGeometryPixel 先例同假设）。
-    uint32_t const bx0 = 256 - 140, bx1 = 256 + 140, by0 = 256 - 10, by1 = 256 + 10;
-    size_t const whiteBefore = countNearWhite(baseline, w, h, bx0, by0, bx1, by1);
-    size_t const whiteAfter = countNearWhite(decorated, w, h, bx0, by0, bx1, by1);
-    printf("[PATHDECO] placeholder white before=%zu after=%zu\n", whiteBefore, whiteAfter);
-    EXPECT_GT(whiteAfter, whiteBefore + 200)
+    // 判据 2（canvas 占位——WHERE）：(256,256) 占位框区近白像素新增。
+    // **设备像素 ≠ 逻辑像素**：canvas 坐标为逻辑 px，帧为设备 px——dpr 由
+    // 实测帧宽/逻辑窗宽推（本 harness 窗 1000×700 逻辑；dpr=2 桌面把框投到
+    // 设备 (512,512)——M-T T-e"逻辑 vs 设备像素"同族陷阱）。**FBO 回读行序
+    // = GL bottom-up**（readPixels 无翻转——CursorStateTest.cpp:339/
+    // ZoomBlackBoxSeqTest.cpp:113 同款 `h-1-y` 惯例；回修取证实锤：框落
+    // 缓冲行 874-901=视图行 512 的 bottom-up 编码，绘制链全程正确）。
+    double const dpr = (w > 0) ? static_cast<double>(w) / 1000.0 : 1.0;
+    uint32_t const bx0 = static_cast<uint32_t>(std::max(0.0, std::floor((256.0 - 140.0) * dpr)));
+    uint32_t const bx1 = static_cast<uint32_t>(std::ceil((256.0 + 140.0) * dpr));
+    uint32_t const by0 = static_cast<uint32_t>(std::max(0.0, std::floor((256.0 - 10.0) * dpr)));
+    uint32_t const by1 = static_cast<uint32_t>(std::ceil((256.0 + 10.0) * dpr));
+    // 框 ≈ 269×14 逻辑 px（GL 三角扇实填充）→ 设备 px ≈ ×dpr²；阈值随 dpr
+    // 缩放并留半余量。探测域按 bottom-up 翻转到缓冲行（h-by1 .. h-by0）。
+    size_t const expectFill = static_cast<size_t>(3763.0 * dpr * dpr);
+    size_t const whiteBefore = countNearWhite(baseline, w, h, bx0, h - by1, bx1, h - by0);
+    size_t const whiteAfter = countNearWhite(decorated, w, h, bx0, h - by1, bx1, h - by0);
+    printf("[PATHDECO] placeholder white before=%zu after=%zu dpr=%.2f expectFill=%zu\n",
+           whiteBefore, whiteAfter, dpr, expectFill);
+    EXPECT_GT(whiteAfter, expectFill / 2)
+        << "canvas placeholder absent at (256,256)*dpr";
+    EXPECT_GT(whiteAfter, whiteBefore + expectFill / 4)
         << "canvas placeholder produced no new white pixels at (256,256)";
 
     // Toggle 拆装饰（:69-70）→ 占位区回落。
@@ -376,7 +390,8 @@ TEST(PathDecorationPixel, ToggleOnShowsPathAndCanvasPlaceholder)
     vp->RenderFrame();
     std::vector<uint8_t> restored;
     ASSERT_TRUE(vp->ReadFrameForTest(restored, w, h));
-    size_t const whiteRestored = countNearWhite(restored, w, h, bx0, by0, bx1, by1);
+    size_t const whiteRestored =
+        countNearWhite(restored, w, h, bx0, h - by1, bx1, h - by0);  // 同 bottom-up 翻转
     printf("[PATHDECO] placeholder white restored=%zu\n", whiteRestored);
     EXPECT_LE(whiteRestored, whiteBefore + 50)
         << "canvas placeholder did not disappear after toggle off";
