@@ -189,6 +189,8 @@ target_sources(dqRender
         src/tile/ImdlGraphics.cpp
         src/tile/ImdlTileTree.cpp
         src/tile/NullTileFetcher.cpp
+        src/tile/ImdlParser.cpp        # P-1b P-b2：imdl 解析分缝（ImdlParser.ts 承载）
+        src/tile/WorkerProxy.cpp       # P-1b P-b1：单 worker 线程载体（WorkerProxy.ts 承载）
 )
 
 # 平台后端按目标平台纳入（PlatformCocoaGl.mm 仅 APPLE——MSVC 无法编译
@@ -351,6 +353,9 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/OrientationGroundTruthTest.cpp
         tests/PlanarGridRenderTest.cpp
         # A-lane 锚（M-W 起——A 道代理只在此锚下追加测试注册；勿动他区）
+        tests/WorkerProxyTest.cpp          # P-1b P-b1：WorkerProxy 载体合同锁（E1/E2/E3——WorkerProxy.ts 移植面）
+        tests/ImdlParserTest.cpp           # P-1b P-b2：解析分缝两路对账（ImdlParser.ts 移植面）
+        tests/AsyncImdlContentTest.cpp     # P-1b P-b3：异步交付帧序/取消/清扫/降级锁（TileRequest.ts:156-195 面）
         tests/AuxChannelTableTest.cpp      # M-W W-a3：AuxChannelTableBuilder 打包器（AuxChannelTable.ts:186-371）
         tests/MeshBuilderAuxDataTest.cpp   # M-W W-a4：auxData 消费链（MeshBuilder.test.ts:407-501 + GeometryAccumulator.ts:101-115）
         tests/AnimationShaderTest.cpp      # M-W W-a5：glsl/Animation.ts 归位（变体键/三段出场/Edge 门 TD-28④/computeAnimParams 怪癖）

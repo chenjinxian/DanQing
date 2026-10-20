@@ -11,7 +11,7 @@
 #include <dqBase/DqEvent.h>
 
 // Forward declare — §7.2: PublicAPI contains zero Qt types
-namespace dqRender { class ITileFetcher; class LRUTileList; }
+namespace dqRender { class ITileFetcher; class LRUTileList; class PendingImdlParses; }
 
 #include <cstdint>
 #include <functional>
@@ -236,6 +236,13 @@ public:
     // Ported from: TileAdmin.ts:770-773 onTileContentDisposed.
     void onTileContentDisposed(Tile& tile);
 
+    // The pending imdl-parse registry (P-1b P-b3): in-flight worker parses
+    // whose finisher delivers on the main thread at the next process()'s
+    // drain. Producer = ImdlTile::readContentAsync; scrubbed per tile at
+    // onTileContentDisposed. Internal type (dqRender/src/tile/ImdlParser.h) —
+    // the PublicAPI holds only the pimpl, same convention as LRUTileList.
+    PendingImdlParses& pendingImdlParses() noexcept { return *m_pendingImdlParses; }
+
     // --- Completion sink (polling-fetcher model) ---
     // The fetcher delivers content bytes here; the request is settled with its
     // channel, then bytes → tile.readContent → tile.setContent.
@@ -342,6 +349,9 @@ private:
     // LRUTileList type is internal (dqRender/src/tile), the PublicAPI header
     // only forward-declares it.
     std::unique_ptr<LRUTileList> m_lruList;
+    // P-1b P-b3: in-flight imdl parses awaiting their main-thread delivery
+    // (the PendingImdlParses type is internal — pimpl, see the accessor).
+    std::unique_ptr<PendingImdlParses> m_pendingImdlParses;
     // Per-user external-tile statistics (TileAdmin.ts _externalTiles —
     // addExternalTilesForUser storage).
     std::unordered_map<TileUser const*, ExternalTileStatistics> m_externalTiles;

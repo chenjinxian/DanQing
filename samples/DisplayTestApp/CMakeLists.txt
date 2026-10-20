@@ -391,6 +391,7 @@ if(TARGET gtest_main AND TARGET dqApp)
         src/Gui/SurfaceTools.h            # include-path parity
         tests/IModelFileToolsTest.cpp     # M-Y Y-b2：CloseIModel/ReopenIModel 状态机 + key↔包映射锁（无头面）
         tests/AtmosphereEditorTest.cpp    # M-Z B 道：Atmosphere 编辑器子区锁（无头面——渲染深链 render-dead 登记在案，无像素锁）
+        tests/AsyncOpenChainTest.cpp      # P-1b P-b4：异步打开链终态对账 + 提交不阻塞锁（E5；真窗族规程=主会话收口跑）
         resources.qrc                 # DTA 图标资源（字体 + SVG——图标断言测试需要）
     )
     target_include_directories(DisplayTestAppDtaTest PRIVATE

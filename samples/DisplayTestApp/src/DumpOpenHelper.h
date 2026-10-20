@@ -43,6 +43,7 @@
 
 #include <QString>  // dumpPackageForModel/modelIdForIModelKey 形参（M-Y Y-b2）
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -183,8 +184,27 @@ struct DumpOpenResult {
 
 // 打开链装配（流程①-⑤，见文件头）。失败（imodel.json 坏 / 树 props 不可达 /
 // modelSelector 引用的树不在 dump 域 / fetcher 无效）→ nullopt。
+// P-1b P-b4 起实现 = 两段：重解析段（imodel.json + manifest——M-I(1) 的
+// 2.87s 热点）在 openDumpStage1（worker 可下放的纯 CPU 段），视图/树装配段
+// 在 finishDumpOpen（主线程——触碰 viewport/RenderSystem）。本同步入口 =
+// 两段 inline 串行（既有调用方——DtaToolBars/SurfaceTools/各测试——零变化）。
 std::optional<DumpOpenResult> openDumpIModel(Gui::View3DInventor& view,
                                              DumpOpenPackage const& pkg);
+
+// P-1b P-b4 异步打开入口：重解析段 submit dqRender 的 WorkerProxy 单例
+// （dqRender/WorkerProxy.h——参考 defaultParser 单例的公开承载），完成经
+// TileAdmin::process 的帧内 drain 回主线程续 stage 2 → onOpened。
+// Ported from: itwinjs-core 打开链的 async 面（Snapshot/Briefcase
+// openFile await——视图装载在 RPC 数据面就绪后进行；Viewer.openUi 的
+// onOpened 续体语义）。
+// EQUIVALENCE E5（§11.10）：参考 openFile async/await → 完成回调回主线程；
+// 点击即时回显（状态栏 "Opening..."）+ 完成后确认 = 交互语义等价面。
+// noWorker（env DANQING_NO_WORKER=1）→ 两段 inline 同步执行后回调（E3）。
+// 线程合同：onOpened 在主线程（TileAdmin::process 的 drain 点）跑；pkg 按
+// 值捕获进闭包；view 的存活由调用方保证至回调（main.cpp 入口同点持
+// QPointer 守卫——View3DInventor 是 QObject，析构即置空）。
+void openDumpIModelAsync(Gui::View3DInventor& view, DumpOpenPackage const& pkg,
+                         std::function<void(std::optional<DumpOpenResult>)>&& onOpened);
 
 // ─── 模型↔包映射（M-Y Y-b2：自 main.cpp 匿名命名空间迁出——ReopenIModelTool 与
 // Start 页入口同源消费）───
