@@ -60,11 +60,16 @@ std::optional<PlanarGridPolygon> BuildPlanarGridPolygon(
     // 与数据 [min,max] 错位，min 侧被 clamp 成 q=0、UV 覆盖只剩一半（v_texCoord
     // 跨度减半 → 线间距加倍、负半无相位），2026-09-14 初始网格间距 bug 根因。
     double const gridsPerRef = std::max(1.0, grid.gridsPerRef);
-    double minX = 1e300, maxX = -1e300, minY = 1e300, maxY = -1e300;
-    for (auto const& uv : rawUvs) {
-        minX = std::min(minX, uv.x); maxX = std::max(maxX, uv.x);
-        minY = std::min(minY, uv.y); maxY = std::max(maxY, uv.y);
-    }
+    // UV range：参考在 QPoint2dList.fromPoints 内部求（本文件头 TODO——量化延期
+    // 登记的同域）。polygon->size() >= 3 已由上方门保证，直接 min/max 扫描无需
+    // 哨兵常量（±1e300 形态在 MSVC /O2 常量折叠下触发 C4756——Release 构建实录，
+    // 2026-10-18）；语义与原扫描等价。
+    auto const mmX = std::minmax_element(rawUvs.begin(), rawUvs.end(),
+                                         [](dqGeom::Point2d const& a, dqGeom::Point2d const& b) { return a.x < b.x; });
+    auto const mmY = std::minmax_element(rawUvs.begin(), rawUvs.end(),
+                                         [](dqGeom::Point2d const& a, dqGeom::Point2d const& b) { return a.y < b.y; });
+    double const minX = mmX.first->x, maxX = mmX.second->x;
+    double const minY = mmY.first->y, maxY = mmY.second->y;
     double const originX = std::fmod(minX, gridsPerRef);
     double const originY = std::fmod(minY, gridsPerRef);
     double const extentX = maxX - minX;
