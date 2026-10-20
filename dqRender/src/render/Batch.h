@@ -12,6 +12,7 @@
 
 #include <dqCommon/FeatureOverrides.h>  // M-O(2) I10——updateAppearanceOverrides
 #include <dqCommon/FeatureTable.h>
+#include <dqCommon/PackedFeatureTable.h>  // 参考 Batch.featureTable: RenderFeatureTable
 #include "FeatureOverrideLUT.h"
 #include "ThematicSensors.h"  // M-S S-e：逐 batch 传感器缓存
 
@@ -50,7 +51,15 @@ public:
     /// @param featureCount Number of features in this batch.
     explicit Batch(uint32_t featureCount);
 
-    /// Construct with a feature table.
+    /// Construct with a packed feature table (the reference's Batch form —
+    /// Graphic.ts:237 `featureTable: RenderFeatureTable`). Packed rows are the
+    /// O(1) access face every per-feature LUT path consumes (getFeature), and
+    /// the same row indices the GPU feature IDs address.
+    Batch(uint32_t featureCount, std::unique_ptr<dqCommon::PackedFeatureTable> featureTable);
+
+    /// Convenience overload for front-end-built tables (glTF/decorations and
+    /// tests): packs via PackedFeatureTable::pack — the reference callers'
+    /// `createBatch(graphic, PackedFeatureTable.pack(featureTable), range)`.
     Batch(uint32_t featureCount, std::unique_ptr<dqCommon::FeatureTable> featureTable);
 
     /// Set the child graphic (the geometry to render under this batch).
@@ -84,12 +93,11 @@ public:
     uint32_t getFeatureCount() const noexcept { return m_featureCount; }
 
     /// Get the feature table (may be nullptr).
-    dqCommon::FeatureTable const* getFeatureTable() const noexcept { return m_featureTable.get(); }
+    dqCommon::PackedFeatureTable const* getFeatureTable() const noexcept { return m_featureTable.get(); }
 
-    /// Set the feature table.
-    void setFeatureTable(std::unique_ptr<dqCommon::FeatureTable> table) {
-        m_featureTable = std::move(table);
-    }
+    /// Set the feature table (front-end-build convenience — packs, mirroring
+    /// PackedFeatureTable.pack at the reference's batch creation points).
+    void setFeatureTable(std::unique_ptr<dqCommon::FeatureTable> table);
 
     /// Set the batch's content range (used by unionRange).
     /// Ported from: itwinjs-core Batch constructor range (Graphic.ts:262-267)
@@ -209,7 +217,11 @@ public:
 
 private:
     std::unique_ptr<Graphic> m_child;
-    std::unique_ptr<dqCommon::FeatureTable> m_featureTable;
+    // 参考 Batch.featureTable: RenderFeatureTable（Graphic.ts:237）——packed
+    // 行访问 O(1)。此前持 unpacked FeatureTable 并以 findFeature(i)（线性扫）
+    // 逐特征读取 → O(n²)：bridge-edit 108,778 特征 PUSH 实测 4.86s/次
+    // （2026-10-20 UI 卡顿根因；TD-33 清偿面）。
+    std::unique_ptr<dqCommon::PackedFeatureTable> m_featureTable;
     std::unique_ptr<FeatureOverrideLUT> m_featureOverrideLUT;
     std::optional<ThematicSensors> m_thematicSensors;      // M-S S-e：逐 batch 传感器缓存
     dqCommon::ThematicDisplaySensorSettings const* m_thematicSensorSettings = nullptr;  // 缓存失效判据（指针同一性）

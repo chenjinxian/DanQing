@@ -1744,6 +1744,13 @@ void Viewport::RenderFrame()
     if (!swapchain || !swapchain->isValid()) return;
     swapchain->acquire();
 
+    // 帧内分段计时（2026-10-20 bridge-edit 交互卡顿取证——§13.1
+    // DANQING_UI_TRACE）：>40ms 帧落一行，拆分 scene（CreateScene）/
+    // prep（控制器+plan+装饰）/ draw（drawFrame+canvas）/ present。
+    bool const uiTraceFrame = std::getenv("DANQING_UI_TRACE") != nullptr;
+    auto const tFrame0 = std::chrono::steady_clock::now();
+    double sceneMs = 0.0;
+
     // Step 1: Capture and clear change flags
     ChangeFlags changeFlags = m_changeFlags;
     if (changeFlags.HasChanges())
@@ -1941,10 +1948,13 @@ void Viewport::RenderFrame()
 
     // Step 10: Scene creation
     if (!m_sceneValid && !m_freezeScene) {
+        auto const tScene0 = std::chrono::steady_clock::now();
         CreateScene();
         if (m_renderTarget) {
             m_renderTarget->changeScene(m_scene);
         }
+        sceneMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - tScene0).count();
         isRedrawNeeded = true;
     }
     m_sceneValid = true;
@@ -2019,6 +2029,10 @@ void Viewport::RenderFrame()
         }
     }
 
+    auto const tPrep = std::chrono::steady_clock::now();
+    auto tDraw0 = tPrep;
+    auto tDraw1 = tPrep;
+
     // Step 14: Pre-render hook
     // Ported from: itwinjs-core Viewport.ts step 14 (lines 2654-2658)
     if (m_renderTarget) {
@@ -2050,6 +2064,7 @@ void Viewport::RenderFrame()
         if (std::getenv("DANQING_DP_TRACE"))
             fprintf(stderr, "[DP] drawFrame (decorations canvDecs=%zu)\n",
                     GetDecorations().canvasDecorations.size());
+        tDraw0 = std::chrono::steady_clock::now();
         m_renderTarget->drawFrame();
 
         // 2D canvas decorations — rasterized INSIDE the GL frame, after the scene
@@ -2062,6 +2077,7 @@ void Viewport::RenderFrame()
         // An empty list draws nothing — GL frames are redrawn wholesale each
         // drawn frame (the scene pass clears), so no explicit clear is needed.
         m_renderTarget->drawCanvasDecorations(GetDecorations().canvasDecorations);
+        tDraw1 = std::chrono::steady_clock::now();
 
         // Present the Swapchain (swap buffers to display on screen).
         // This must happen after all rendering commands are complete.
@@ -2074,6 +2090,23 @@ void Viewport::RenderFrame()
                 fprintf(stderr, "[PRES] #%d %ux%u\n", m_dbgPresentCount,
                         static_cast<unsigned>(width() * devicePixelRatioF()),
                         static_cast<unsigned>(height() * devicePixelRatioF()));
+        }
+    }
+
+    if (uiTraceFrame) {
+        auto const tEnd = std::chrono::steady_clock::now();
+        auto const ms = [](auto a, auto b) {
+            return std::chrono::duration<double, std::milli>(b - a).count();
+        };
+        double const total = ms(tFrame0, tEnd);
+        if (total > 40.0) {
+            fprintf(stderr,
+                    "[FRAME] total=%.1f prep=%.1f scene=%.1f draw=%.1f present=%.1f"
+                    " redraw=%d w=%d h=%d\n",
+                    total, ms(tFrame0, tPrep) - sceneMs, sceneMs,
+                    ms(tDraw0, tDraw1), ms(tDraw1, tEnd), isRedrawNeeded ? 1 : 0,
+                    width(), height());
+            fflush(stderr);
         }
     }
 

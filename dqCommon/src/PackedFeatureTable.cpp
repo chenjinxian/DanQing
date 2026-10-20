@@ -72,7 +72,15 @@ PackedFeatureTable PackedFeatureTable::pack(const FeatureTable& table)
         uint32_t subCatIndex = subCatMap[feature.subCategoryId.GetValue()];
         uint32_t geoClass = static_cast<uint32_t>(feature.geometryClass) & 0xFF;
 
-        size_t base = 3 * i;
+        // 行号 = 条目 index（PackedFeatureTable.ts:79 `const index = iv.index *
+        // 3`）——**不是数组位置**：FeatureTable 的数组按 Feature.compare 排序，
+        // 而 GPU featureId / LUT 行以 index 为域；按数组位置写会丢失映射
+        //（2026-10-20 bridge-edit 取证修正）。越界 index 在参考 TS 里是越界
+        // TypedArray 写入（静默忽略）——C++ 显式跳过等价。
+        int const featureIndex = array[i].index;
+        if (featureIndex < 0 || static_cast<uint32_t>(featureIndex) >= result.m_numFeatures)
+            continue;
+        size_t const base = 3 * static_cast<size_t>(featureIndex);
         result.m_data[base + 0] = elemLower;
         result.m_data[base + 1] = elemUpper;
         result.m_data[base + 2] = (subCatIndex & 0x00FFFFFF) | (geoClass << 24);

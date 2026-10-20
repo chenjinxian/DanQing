@@ -10,6 +10,9 @@
 #include <QCoreApplication>
 #include <QTimer>
 
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <memory>
 
 namespace dqApp {
@@ -204,14 +207,35 @@ void Application::EventLoop()
     // Ported from: itwinjs-core ToolAdmin.processEvent (ToolAdmin.ts:831-843).
     // 滚轮合并（Chromium 等价层，见 ToolAdmin::coalesceWheelEvents 实现注）：
     // 参考的浏览器在派发前已按帧合并滚轮，DanQing 在帧首补齐同一契约。
+    bool const uiTrace = std::getenv("DANQING_UI_TRACE") != nullptr;
+    auto const tLoop0 = std::chrono::steady_clock::now();
+
     GetToolAdmin().coalesceWheelEvents();
     GetToolAdmin().processEvent();
+    auto const tTool = std::chrono::steady_clock::now();
 
     // Render all viewports (:621).
     m_viewManager.RenderLoop();
+    auto const tRender = std::chrono::steady_clock::now();
 
     // Process tile admin (tile request scheduling, :622).
     dqRender::TileAdmin::instance().process();
+
+    // 帧内三段计时（2026-10-20 bridge-edit 交互卡顿取证——§13.1
+    // DANQING_UI_TRACE）：仅当本帧总耗时 >40ms 落一行（含 tileAdmin 内的
+    // 瓦完成/解析完成/graphics 创建——阶段归属由该三段拆分）。
+    if (uiTrace) {
+        auto const tEnd = std::chrono::steady_clock::now();
+        auto const ms = [](auto a, auto b) {
+            return std::chrono::duration<double, std::milli>(b - a).count();
+        };
+        double const total = ms(tLoop0, tEnd);
+        if (total > 40.0) {
+            fprintf(stderr, "[LOOP] total=%.1f tool=%.1f render=%.1f tiles=%.1f\n",
+                    total, ms(tLoop0, tTool), ms(tTool, tRender), ms(tRender, tEnd));
+            fflush(stderr);
+        }
+    }
 }
 
 }  // namespace dqApp

@@ -9,8 +9,10 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <system_error>
 #include <utility>
 
 BEGIN_DQ_APP_NAMESPACE
@@ -192,41 +194,76 @@ void DumpTileFetcher::fetch(std::string const& url, dqRender::Tile& tile,
     record.contentId = contentId;
 
     // manifest 查表（哈希索引——M-I(1)；大 dump 线性扫 1.8ms/键 → O(1)）。
-    // 多根合并查找序不变：主根 → fallback[0] → fallback[1]…，首命中即服务
-    //（索引按根各建一份、按序逐根查；索引 emplace 首写不覆盖 = 线性扫
-    // 首条目命中同语义；字节读自命中根目录，命中源记 record.hitRoot——
-    // 0=主根，i+1=fallbackRoots()[i]）。
-    DumpManifestTileEntry const* tileEntry = nullptr;
-    std::string const* hitFileRoot = nullptr;
+    // 多根合并查找序：主根 → fallback[0] → fallback[1]…；**源的可用性门** =
+    // 文件存在且大小 == manifest byteLength（metadata 检查，微秒级；读盘仍
+    // 异步）——首命中文件缺失时继续下一根（2026-10-20 bridge-edit 取证：
+    // `-b-2-0-0-0-1` 在主根/drill 的 manifest 有键但 134MB 瓦文件本地未
+    // 持有，首命中即报错会吞掉 sweep 根的有效副本 → 该 LOD 层整片缺失）。
+    // EQUIVALENCE（多根为宿主回放缝，参考单后端）：验证法 =
+    // DumpTileFetcherTest.MissingPrimaryFileFallsBackToNextRoot。
+    // 命中源记 record.hitRoot——0=主根，i+1=fallbackRoots()[i]。
+    struct Candidate {
+        DumpManifestTileEntry const* entry;
+        std::string const* root;
+        size_t hitRoot;
+    };
+    std::vector<Candidate> candidates;
     std::string const key = tileKey(treeId, contentId);
-    if (auto const it = m_primaryIndex.find(key); it != m_primaryIndex.end()) {
-        tileEntry = it->second;
-        hitFileRoot = &m_dumpRoot;
-        record.hitRoot = 0;
-    } else {
-        for (size_t i = 0; i < m_fallbacks.size(); ++i) {
-            if (auto const fb = m_fallbacks[i].index.find(key);
-                fb != m_fallbacks[i].index.end()) {
-                tileEntry = fb->second;
-                hitFileRoot = &m_fallbacks[i].root;
-                record.hitRoot = i + 1;
-                break;
-            }
-        }
+    if (auto const it = m_primaryIndex.find(key); it != m_primaryIndex.end())
+        candidates.push_back({it->second, &m_dumpRoot, 0});
+    for (size_t i = 0; i < m_fallbacks.size(); ++i) {
+        if (auto const fb = m_fallbacks[i].index.find(key);
+            fb != m_fallbacks[i].index.end())
+            candidates.push_back({fb->second, &m_fallbacks[i].root, i + 1});
     }
-    if (!tileEntry) {
+    if (candidates.empty()) {
         // NotFound 语义（前端请求键未采集进 dump——上层瓦片按请求失败处置）。
         record.outcome = DumpFetchOutcome::NotFound;
         entry.ok = false;
         entry.error = "DumpTileFetcher: content not found in dump manifest: "
                       + treeId + "/" + contentId;
+        if (std::getenv("DANQING_TILE_TIME")) {
+            std::fprintf(stderr, "[TT] fetchMiss %s/%s\n",
+                         treeId.c_str(), contentId.c_str());
+            std::fflush(stderr);
+        }
+        m_requestLog.push_back(std::move(record));
+        m_completed.push_back(std::move(entry));
+        return;
+    }
+    Candidate const* chosen = nullptr;
+    for (auto const& candidate : candidates) {
+        std::string const candidatePath =
+            *candidate.root + "/" + candidate.entry->file;
+        std::error_code ec;
+        auto const size = std::filesystem::file_size(candidatePath, ec);
+        if (!ec && size == candidate.entry->byteLength) {
+            chosen = &candidate;
+            break;
+        }
+    }
+    if (chosen == nullptr) {
+        // 全候选源的字节均不可用（文件缺失/大小不符）——Error（dump 资产
+        // 自洽性破口），hitRoot 记首候选保持轨迹可读。
+        record.outcome = DumpFetchOutcome::Error;
+        record.hitRoot = candidates.front().hitRoot;
+        entry.ok = false;
+        entry.error = "DumpTileFetcher: no readable source for " + treeId + "/"
+                      + contentId + " (" + std::to_string(candidates.size())
+                      + " roots declare the key; none has the exact byteLength)";
+        if (std::getenv("DANQING_TILE_TIME")) {
+            std::fprintf(stderr, "[TT] fetchError %s/%s (%zu roots, none readable)\n",
+                         treeId.c_str(), contentId.c_str(), candidates.size());
+            std::fflush(stderr);
+        }
         m_requestLog.push_back(std::move(record));
         m_completed.push_back(std::move(entry));
         return;
     }
 
-    std::string const filePath = *hitFileRoot + "/" + tileEntry->file;
-    size_t const expectedBytes = tileEntry->byteLength;
+    record.hitRoot = chosen->hitRoot;
+    std::string const filePath = *chosen->root + "/" + chosen->entry->file;
+    size_t const expectedBytes = chosen->entry->byteLength;
 
     // -------------------------------------------------------------------
     // 读盘下放（2026-10-20 bridge-edit 卡顿取证续：fetch 读盘 30-94ms/大瓦
@@ -307,6 +344,12 @@ void DumpTileFetcher::fetch(std::string const& url, dqRender::Tile& tile,
                     e.ok = true;
                     e.data = std::move(slot->bytes);
                 }
+                if (!e.ok && std::getenv("DANQING_TILE_TIME")) {
+                    std::fprintf(stderr, "[TT] fetchError %s/%s %s\n",
+                                 treeIdCopy.c_str(), contentIdCopy.c_str(),
+                                 e.error.c_str());
+                    std::fflush(stderr);
+                }
                 self->m_requestLog.push_back(std::move(rec));
                 self->m_completed.push_back(std::move(e));
             });
@@ -329,9 +372,9 @@ void DumpTileFetcher::fetch(std::string const& url, dqRender::Tile& tile,
     }
     if (!readOk) {
         entry.ok = false;
-        entry.error = "DumpTileFetcher: cannot open " + tileEntry->file
-                      + " (dump root: " + *hitFileRoot + ")";
-    } else if (bytes.size() != tileEntry->byteLength) {
+        entry.error = "DumpTileFetcher: cannot open " + chosen->entry->file
+                      + " (dump root: " + *chosen->root + ")";
+    } else if (bytes.size() != chosen->entry->byteLength) {
         // 完整性下界（brief Step 3 决策点登记）：manifest.sha256 由采集侧
         // collector 已算（danqing-rpc-tools，Task 1 入库前全量复算一致）；
         // dqBase 仅有 imodel-native 移植的 SHA1/MD5、无 SHA256（自实现属 §7
@@ -339,7 +382,7 @@ void DumpTileFetcher::fetch(std::string const& url, dqRender::Tile& tile,
         // 一致 + 文件存在性；字节同一性由测试的磁盘直读逐字节比对钉死。
         entry.ok = false;
         entry.error = "DumpTileFetcher: byteLength mismatch for " + treeId + "/"
-                      + contentId + " (manifest " + std::to_string(tileEntry->byteLength)
+                      + contentId + " (manifest " + std::to_string(chosen->entry->byteLength)
                       + ", disk " + std::to_string(bytes.size()) + ")";
     } else {
         record.outcome = DumpFetchOutcome::Completed;

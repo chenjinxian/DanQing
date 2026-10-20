@@ -3,6 +3,8 @@
 // Ported from: filament backend/src/opengl/OpenGLContext.cpp
 #include "OpenGLContext.h"
 
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 BEGIN_DQ_RENDER_NAMESPACE
@@ -18,6 +20,15 @@ void OpenGLContext::initialize()
     renderer = reinterpret_cast<char const*>(glGetString(GL_RENDERER));
     version = reinterpret_cast<char const*>(glGetString(GL_VERSION));
     shaderVersion = reinterpret_cast<char const*>(glGetString(GL_SHADING_LANGUAGE_VERSION));
+
+    // 渲染器身份轨迹（2026-10-20 bridge-edit 大瓦 draw 卡顿取证——§13.1
+    // DANQING_GL_TRACE）：硬件 vs 软件/远程会话回退的分辨面。
+    if (std::getenv("DANQING_GL_TRACE")) {
+        fprintf(stderr, "[GLINFO] vendor=%s renderer=%s version=%s glsl=%s\n",
+                vendor.c_str(), renderer.c_str(), version.c_str(),
+                shaderVersion.c_str());
+        fflush(stderr);
+    }
 
     // Query GL limits
     glGetIntegerv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &gets.maxAnisotropy);

@@ -2,6 +2,7 @@
 // DanQing dqRender — OpenGL program compilation and linking
 // Ported from: filament backend/src/opengl/OpenGLProgram.cpp
 #include "OpenGLProgram.h"
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -24,6 +25,11 @@ bool OpenGLProgram::compile(char const* vertSource, char const* fragSource,
                             std::string const& programName,
                             std::vector<std::pair<std::string, uint8_t>> const& attributeLocations)
 {
+    // 着色器编译耗时探针（2026-10-20 bridge-edit 大瓦首绘卡顿取证——§13.1
+    // DANQING_UI_TRACE）：draw=秒级卡顿的驱动侧编译嫌疑面。
+    bool const shaderTrace = getenv("DANQING_UI_TRACE") != nullptr;
+    auto const tCompile0 = std::chrono::steady_clock::now();
+
     // Compile vertex shader
     GLuint vertShader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vertShader, 1, &vertSource, nullptr);
@@ -120,6 +126,14 @@ bool OpenGLProgram::compile(char const* vertSource, char const* fragSource,
     // Clean up shaders (they're retained by the program)
     glDeleteShader(vertShader);
     glDeleteShader(fragShader);
+
+    if (shaderTrace) {
+        auto const ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - tCompile0).count();
+        fprintf(stderr, "[SHADER] %s compile+link %.1fms\n",
+                programName.c_str(), ms);
+        fflush(stderr);
+    }
 
     name = programName;
     return true;

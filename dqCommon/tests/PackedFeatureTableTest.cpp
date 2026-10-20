@@ -260,3 +260,37 @@ TEST(PackedFeatureTableTest, ConstructFromWireWords)
     dqCommon::FeatureTable unpacked = table.unpack();
     EXPECT_EQ(unpacked.getSize(), 2);
 }
+
+// ---------------------------------------------------------------------------
+// pack() 行映射锁（PackedFeatureTable.ts:77-88 `const index = iv.index * 3`）：
+// packed 行 = FeatureTable 条目的 index（GPU featureId / override LUT 行同域），
+// 不是数组位置（数组按 Feature.compare 排序）。2026-10-20 bridge-edit 取证修正
+// （按位置写会丢失映射；unpack 往返同样保持 index）。
+// Authored: no reference test exists for the index→row mapping invariant
+//           (PackedFeatureTable.ts:77-79 是实现锚)。
+// ---------------------------------------------------------------------------
+TEST(PackedFeatureTableTest, PackPreservesFeatureIndexAsRow)
+{
+    // 插入序 index 0/1/2，elementId 5/3/4 → 排序后数组序 [3,4,5] ≠ index 序。
+    FeatureTable table(3);
+    table.insert(Feature(DqId(5), DqId(1), GeometryClass::Primary));
+    table.insert(Feature(DqId(3), DqId(1), GeometryClass::Primary));
+    table.insert(Feature(DqId(4), DqId(1), GeometryClass::Primary));
+
+    PackedFeatureTable packed = PackedFeatureTable::pack(table);
+    ASSERT_EQ(packed.getNumFeatures(), 3u);
+    EXPECT_EQ(packed.getFeature(0).elementId, 5u);  // row = index 0
+    EXPECT_EQ(packed.getFeature(1).elementId, 3u);  // row = index 1
+    EXPECT_EQ(packed.getFeature(2).elementId, 4u);  // row = index 2
+
+    FeatureTable roundTrip = packed.unpack();
+    auto const f0 = roundTrip.findFeature(0);
+    auto const f1 = roundTrip.findFeature(1);
+    auto const f2 = roundTrip.findFeature(2);
+    ASSERT_TRUE(f0.has_value());
+    ASSERT_TRUE(f1.has_value());
+    ASSERT_TRUE(f2.has_value());
+    EXPECT_EQ(f0->elementId.GetValue(), 5u);
+    EXPECT_EQ(f1->elementId.GetValue(), 3u);
+    EXPECT_EQ(f2->elementId.GetValue(), 4u);
+}

@@ -67,8 +67,11 @@ public:
     //
     // 多根合并（M-H Task 2——instances60 sweep∪drill 联合域）：fallbackRoots
     // 为有序只读备根清单（默认空 = 单根现状零行为变化）。查找序 primary →
-    // fallback[0] → fallback[1]…，首命中即服务（字节读自命中根目录，命中源记
-    // requestLog 的 hitRoot——outcome 语义不变）。树 props 仍仅取自主根
+    // fallback[0] → fallback[1]…，**首个"文件存在且大小 == byteLength"的候选
+    // 源即服务**（首命中文件缺失/大小不符时继续下一根——bridge-edit
+    // `-b-2-0-0-0-1` 主根 134MB 瓦本地未持有、sweep 根有副本的实态；全候选
+    // 不可用 → Error）。字节读自命中根目录，命中源记 requestLog 的 hitRoot
+    // ——outcome 语义不变。树 props 仍仅取自主根
     // （DumpTileTreeProps 不动——同 treeId 语义单源；getTreeCount/
     // getTileCount 同为主根计数）。fallback 根 manifest 缺失/坏 → 记
     // fallbackWarnings() 不致命（主根语义：isValid 只看主根），不进查找域。

@@ -811,6 +811,96 @@ TEST(DumpTileFetcherTest, DuplicateKeysServeFirstEntryUnderIndex)
 }
 
 // ---------------------------------------------------------------------------
+// 多根源可用性门（2026-10-20 bridge-edit 缺瓦取证）：主根 manifest 有键但
+// 文件缺失/大小不符时，继续下一根取有效副本；全候选不可用才 Error。
+// 资产实态：bridge-edit `-b-2-0-0-0-1`（134MB）v1/drill manifest 均声明，
+// 本地未持有；sweep 根 files/12.imdl 有同字节副本。
+// Authored: no reference test exists（多根源选择为宿主回放缝——参考单后端）。
+// ---------------------------------------------------------------------------
+TEST(DumpTileFetcherTest, MissingOrMismatchedPrimaryFileFallsBackToNextRoot)
+{
+    namespace fs = std::filesystem;
+    fs::path const base = fs::temp_directory_path() / "danqing-dump-rootfallback-test";
+    fs::remove_all(base);
+    fs::path const primary = base / "primary";
+    fs::path const fallback = base / "fallback";
+    fs::create_directories(primary / "files");
+    fs::create_directories(fallback / "files");
+    {
+        std::ofstream out(primary / "files" / "0.json");
+        out << R"({"id":"tree-0","rootTile":{"contentId":"0/0/0/0/1","range":{"low":[0,0,0],"high":[1,1,1]}}})";
+    }
+    // 主根：键声明 byteLength=3，但 files/missing.imdl 不存在。
+    {
+        std::ofstream out(primary / "manifest.json");
+        out << R"({"stats":{"trees":1,"tiles":1},"trees":[{"treeId":"tree-0","propsFile":"files/0.json"}],)"
+               R"("tiles":[{"treeId":"tree-0","contentId":"-b-0-0-0-0-1","byteLength":3,"file":"files/missing.imdl"}]})";
+    }
+    // fallback：同键，有效副本 "abc"。
+    {
+        std::ofstream out(fallback / "files" / "ok.imdl", std::ios::binary);
+        out << "abc";
+    }
+    {
+        std::ofstream out(fallback / "manifest.json");
+        out << R"({"stats":{"tiles":1},"trees":[],)"
+               R"("tiles":[{"treeId":"tree-0","contentId":"-b-0-0-0-0-1","byteLength":3,"file":"files/ok.imdl"}]})";
+    }
+
+    StubTree stubTree;
+    std::vector<uint8_t> const expected{'a', 'b', 'c'};
+
+    // ① 主根文件缺失 → fallback 服务（hitRoot=1）。
+    {
+        dqApp::DumpTileFetcher fetcher(primary.string(), {fallback.string()});
+        ASSERT_TRUE(fetcher.isValid());
+        StubTile tile(stubTree);
+        FetchResult got;
+        fetchAndWait(fetcher, "tree-0/-b-0-0-0-0-1", tile, got);
+        ASSERT_TRUE(got.completed) << got.error;
+        EXPECT_EQ(expected, got.data);
+        ASSERT_EQ(1u, fetcher.requestLog().size());
+        EXPECT_EQ(dqApp::DumpTileFetcher::DumpFetchOutcome::Completed,
+                  fetcher.requestLog()[0].outcome);
+        EXPECT_EQ(1u, fetcher.requestLog()[0].hitRoot);
+    }
+
+    // ② 主根文件存在但截断（2 != 3）→ 仍回退。
+    {
+        std::ofstream out(primary / "files" / "missing.imdl", std::ios::binary);
+        out << "ab";
+    }
+    {
+        dqApp::DumpTileFetcher fetcher(primary.string(), {fallback.string()});
+        ASSERT_TRUE(fetcher.isValid());
+        StubTile tile(stubTree);
+        FetchResult got;
+        fetchAndWait(fetcher, "tree-0/-b-0-0-0-0-1", tile, got);
+        ASSERT_TRUE(got.completed) << got.error;
+        EXPECT_EQ(expected, got.data);
+        ASSERT_EQ(1u, fetcher.requestLog().size());
+        EXPECT_EQ(1u, fetcher.requestLog()[0].hitRoot);
+    }
+
+    // ③ 全候选不可用（fallback 文件删除）→ Error，首候选 hitRoot 留痕。
+    fs::remove(fallback / "files" / "ok.imdl");
+    {
+        dqApp::DumpTileFetcher fetcher(primary.string(), {fallback.string()});
+        ASSERT_TRUE(fetcher.isValid());
+        StubTile tile(stubTree);
+        FetchResult miss;
+        fetchAndWait(fetcher, "tree-0/-b-0-0-0-0-1", tile, miss);
+        EXPECT_FALSE(miss.completed);
+        EXPECT_TRUE(miss.errored);
+        ASSERT_EQ(1u, fetcher.requestLog().size());
+        EXPECT_EQ(dqApp::DumpTileFetcher::DumpFetchOutcome::Error,
+                  fetcher.requestLog()[0].outcome);
+        EXPECT_EQ(0u, fetcher.requestLog()[0].hitRoot);
+    }
+    fs::remove_all(base);
+}
+
+// ---------------------------------------------------------------------------
 // 零网络结构锁（§8.2 + TD-24 清退回归锁）。
 //
 // Authored: no reference test exists（参考的取数在宿主 TS 侧）；本锁钉的是

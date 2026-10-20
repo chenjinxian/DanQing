@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -703,6 +704,13 @@ void SceneCompositor::draw(RenderCommands& commands)
 {
     auto& driver = m_target.getDriver();
 
+    // 合成阶段计时（2026-10-20 bridge-edit 大瓦首绘卡顿取证——§13.1
+    // DANQING_UI_TRACE）：>40ms 帧落一行，拆分 pre/opaque/rest。
+    bool const compTrace = std::getenv("DANQING_UI_TRACE") != nullptr;
+    auto const tComp0 = std::chrono::steady_clock::now();
+    auto tPre = tComp0;
+    auto tOpaque = tComp0;
+
     // Step -1: Seed the branch-stack base with the target's view/projection.
     // Reference: itwinjs BranchUniforms.update computes u_mv = frustum.viewMatrix·model
     // at draw time (BranchUniforms.ts:215-226); DanQing's dispatch uploads branch-stack
@@ -791,9 +799,11 @@ void SceneCompositor::draw(RenderCommands& commands)
     m_target.endPerfMetricRecord();
 
     // Step 8: Render opaque geometry
+    tPre = std::chrono::steady_clock::now();
     m_target.beginPerfMetricRecord("Render Opaque");  // 参考同名
     renderOpaque(commands, compositeFlags, false);
     m_target.endPerfMetricRecord();
+    tOpaque = std::chrono::steady_clock::now();
 
     // Step 9: Render translucent layers
     m_target.beginPerfMetricRecord("Render Translucent Layers");  // 参考同名
@@ -908,6 +918,20 @@ void SceneCompositor::draw(RenderCommands& commands)
     // 滞留 in-use program——target 重建后新 compositor 首帧 use() 同一 program
     // 即重入断言（resize 风暴崩溃，View3DResizeTest 复现）。
     deactivateProgram(driver);
+
+    if (compTrace) {
+        auto const tEnd = std::chrono::steady_clock::now();
+        auto const ms = [](auto a, auto b) {
+            return std::chrono::duration<double, std::milli>(b - a).count();
+        };
+        double const total = ms(tComp0, tEnd);
+        if (total > 40.0) {
+            fprintf(stderr, "[COMP] total=%.1f pre=%.1f opaque=%.1f rest=%.1f\n",
+                    total, ms(tComp0, tPre), ms(tPre, tOpaque),
+                    ms(tOpaque, tEnd));
+            fflush(stderr);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1641,6 +1665,14 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                 auto* primCmd = static_cast<PrimitiveCommand*>(cmd.get());
                 auto* geometry = primCmd->getGeometry();
                 if (!geometry) break;
+
+                // 逐图元绘制计时（2026-10-20 bridge-edit 大瓦首绘卡顿取证——
+                // §13.1 DANQING_UI_TRACE）：>50ms 落一行，拆分 shader 绑定段 /
+                // geometry->draw（GL 提交）。
+                static bool const s_primTrace =
+                    std::getenv("DANQING_UI_TRACE") != nullptr;
+                auto const tPrim0 = std::chrono::steady_clock::now();
+                double shaderBindMs = 0.0;
 
                 auto techniqueId = geometry->getTechniqueId();
                 TechniqueFlags flags = m_branchStack.getCurrentTechniqueFlags();
@@ -2751,7 +2783,12 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                         //   CommonShaders 的 ProgramUniform 绑定，须在此显式上传）。
                         params.setVec3("u_frustum", m_target.getFrustumUniforms().getFrustumData());
                     }
-                    shader->draw(drawParams);
+                    {
+                        auto const tBind0 = std::chrono::steady_clock::now();
+                        shader->draw(drawParams);
+                        shaderBindMs = std::chrono::duration<double, std::milli>(
+                            std::chrono::steady_clock::now() - tBind0).count();
+                    }
 
                     // [LIGHT] 取证探针（M-M(1) 方向光缺失 saga）：draw 之后读回 GL
                     // 程序实际收到的光照/材质 uniform 值（GraphicUniform 派发已发生
@@ -2791,8 +2828,26 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     shader->uploadUniforms(driver, params);
                 }
 
+                auto const tGeom0 = std::chrono::steady_clock::now();
                 if (!skipPrimitiveDraw)
                     geometry->draw(driver);
+                double const geomMs = std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - tGeom0).count();
+
+                if (s_primTrace) {
+                    auto const ms = std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - tPrim0).count();
+                    if (ms > 50.0) {
+                        auto* sg = geometry->asSurface();
+                        fprintf(stderr,
+                                "[PRIM] pass=%d technique=%d indexes=%u bind=%.1f"
+                                " geom=%.1f total=%.1f\n",
+                                static_cast<int>(pass), static_cast<int>(techniqueId),
+                                sg ? sg->getDrawIndexCount() : 0u, shaderBindMs,
+                                geomMs, ms);
+                        fflush(stderr);
+                    }
+                }
 
                     // TEMP-DIAG（M-W W-a6 零内容取证，env 门控 DANQING_AS_TRACE）：
                     // Surface 图元的绘制点状态——技术/变体/动画/LUT/索引数。
@@ -2865,6 +2920,10 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                 m_branchStack.pop();
                 break;
             case DrawCommandType::PushBatch: {
+                // 批次推送计时（2026-10-20 bridge-edit 大瓦首绘卡顿取证——
+                // §13.1 DANQING_UI_TRACE）：特征级惰性重算（hilite/子类可见性/
+                // appearance LUT）的耗时归属面。
+                auto const tPush0 = std::chrono::steady_clock::now();
                 // Ported from: itwinjs-core DrawCommand.ts PushBatchCommand.execute()
                 // Look up the batch from BatchState using the batchId.
                 auto* batchCmd = static_cast<PushBatchCommand*>(cmd.get());
@@ -2935,6 +2994,19 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                                 driver.bindTexture(1, lut->getTextureHandle());
                             }
                         }
+                    }
+                }
+                if (std::getenv("DANQING_UI_TRACE")) {
+                    auto const ms = std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - tPush0).count();
+                    if (ms > 20.0) {
+                        fprintf(stderr, "[BATCH] push %u %.1fms features=%u\n",
+                                batchId, ms,
+                                batch ? batch->getFeatureTable()
+                                            ? batch->getFeatureTable()->getNumFeatures()
+                                            : 0u
+                                      : 0u);
+                        fflush(stderr);
                     }
                 }
                 break;

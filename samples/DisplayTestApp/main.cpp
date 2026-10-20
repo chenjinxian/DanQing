@@ -13,6 +13,8 @@
 #include <QTimer>
 
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <map>
 #include <memory>
 #include <optional>
@@ -477,6 +479,26 @@ int main(int argc, char** argv)
             }
             mainWindow->showStatus(statusType, QString::fromStdString(details.briefMessage));
         });
+
+    // UI 心跳探针（2026-10-20 bridge-edit 交互卡顿取证——§13.1 DANQING_UI_TRACE）：
+    // 主线程事件循环停顿时延（用户报告的"UI 卡死"的客观量）。50ms 周期；
+    // 阻塞期间 timer 不触发，恢复后第一跳报告实际间隔——>100ms 落一行。
+    if (std::getenv("DANQING_UI_TRACE")) {
+        auto* heartbeat = new QTimer(&app);
+        auto last = std::make_shared<std::chrono::steady_clock::time_point>(
+            std::chrono::steady_clock::now());
+        QObject::connect(heartbeat, &QTimer::timeout, &app, [last]() {
+            auto const now = std::chrono::steady_clock::now();
+            double const gapMs =
+                std::chrono::duration<double, std::milli>(now - *last).count();
+            if (gapMs > 100.0) {
+                fprintf(stderr, "[UI] stall %.0fms\n", gapMs);
+                fflush(stderr);
+            }
+            *last = now;
+        });
+        heartbeat->start(50);
+    }
 
     // 9. Event loop
     //    Ported from: itwinjs-core DisplayTestApp.ts — app.exec() / IModelApp.eventLoop()

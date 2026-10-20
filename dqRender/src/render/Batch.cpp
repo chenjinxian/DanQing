@@ -16,10 +16,29 @@ Batch::Batch(uint32_t featureCount)
 {
 }
 
-Batch::Batch(uint32_t featureCount, std::unique_ptr<dqCommon::FeatureTable> featureTable)
+Batch::Batch(uint32_t featureCount, std::unique_ptr<dqCommon::PackedFeatureTable> featureTable)
     : m_featureTable(std::move(featureTable))
     , m_featureCount(featureCount)
 {
+}
+
+Batch::Batch(uint32_t featureCount, std::unique_ptr<dqCommon::FeatureTable> featureTable)
+    : m_featureCount(featureCount)
+{
+    // 参考调用方形态（ParticleCollectionBuilder.ts:252 / System.createBatch）：
+    // 前端表先 pack 再入 Batch。pack 保留 FeatureTable 条目的 index 为行号
+    // （PackedFeatureTable.ts:77-88）——LUT 行与 GPU featureId 同域。
+    if (featureTable)
+        m_featureTable = std::make_unique<dqCommon::PackedFeatureTable>(
+            dqCommon::PackedFeatureTable::pack(*featureTable));
+}
+
+void Batch::setFeatureTable(std::unique_ptr<dqCommon::FeatureTable> table)
+{
+    m_featureTable = table
+        ? std::make_unique<dqCommon::PackedFeatureTable>(
+              dqCommon::PackedFeatureTable::pack(*table))
+        : nullptr;
 }
 
 FeatureOverrideLUT* Batch::getOrCreateFeatureOverrideLUT()
@@ -32,9 +51,8 @@ FeatureOverrideLUT* Batch::getOrCreateFeatureOverrideLUT()
         if (!m_featureTable)
             return nullptr;
         m_featureOverrideLUT = std::make_unique<FeatureOverrideLUT>();
-        // Initialize LUT from the feature table.
-        dqCommon::PackedFeatureTable packed = dqCommon::PackedFeatureTable::pack(*m_featureTable);
-        m_featureOverrideLUT->initialize(packed);
+        // Initialize LUT from the (already packed) batch feature table.
+        m_featureOverrideLUT->initialize(*m_featureTable);
     }
     return m_featureOverrideLUT.get();
 }
@@ -58,18 +76,17 @@ void Batch::updateFeatureStates(std::vector<uint32_t> const& hiliteElementIds,
     FeatureOverrideLUT* lut = getOrCreateFeatureOverrideLUT();
     if (!lut)
         return;
-    int const n = m_featureTable->getSize();
-    for (int i = 0; i < n; ++i) {
-        auto const feature = m_featureTable->findFeature(i);
-        uint32_t elemId = 0u;
-        if (feature) {
-            elemId = static_cast<uint32_t>(feature->elementId.GetValue());
-        }
+    // packed 行访问 O(1)（参考 map.iterable 的 RenderFeatureTable 面——
+    // 此前 unpacked FeatureTable::findFeature(i) 的线性扫是 O(n²)）。
+    uint32_t const n = m_featureTable->getNumFeatures();
+    for (uint32_t i = 0; i < n; ++i) {
+        uint32_t const elemId =
+            static_cast<uint32_t>(m_featureTable->getFeature(i).elementId);
         bool const hilited = std::find(hiliteElementIds.begin(), hiliteElementIds.end(),
                                        elemId) != hiliteElementIds.end();
         bool const flashed = (flashedElementId != 0u) && (elemId == flashedElementId);
-        lut->setFeatureHilited(static_cast<uint32_t>(i), hilited);
-        lut->setFeatureFlashed(static_cast<uint32_t>(i), flashed);
+        lut->setFeatureHilited(i, hilited);
+        lut->setFeatureFlashed(i, flashed);
     }
 }
 
@@ -88,17 +105,16 @@ void Batch::applySubCategoryVisibility(std::set<uint64_t> const& invisibleSubCat
     FeatureOverrideLUT* lut = getOrCreateFeatureOverrideLUT();
     if (!lut)
         return;
-    int const n = m_featureTable->getSize();
+    uint32_t const n = m_featureTable->getNumFeatures();
     // TEMP-DIAG（M-N(1)）：特征表 subCategoryId 实态探针。
     static bool const s_catTrace = std::getenv("DANQING_CAT_TRACE") != nullptr;
     std::set<uint64_t> traceIds;
-    for (int i = 0; i < n; ++i) {
-        auto const feature = m_featureTable->findFeature(i);
-        uint64_t subCatId = feature ? feature->subCategoryId.GetValue() : 0u;
+    for (uint32_t i = 0; i < n; ++i) {
+        uint64_t const subCatId = m_featureTable->getFeature(i).subCategoryId;
         if (s_catTrace)
             traceIds.insert(subCatId);
         bool const visible = invisibleSubCategories.find(subCatId) == invisibleSubCategories.end();
-        lut->setFeatureVisibility(static_cast<uint32_t>(i), visible);
+        lut->setFeatureVisibility(i, visible);
     }
     if (s_catTrace) {
         std::fprintf(stderr, "[CAT] batch=%u features=%d invisibleSet=%zu subCats:",
@@ -126,14 +142,14 @@ void Batch::updateAppearanceOverrides(dqCommon::FeatureOverrides const& ovrs)
     if (!lut)
         return;
 
-    dqBase::DqId const& modelId = m_featureTable->getModelId();
-    uint32_t const modelLo = dqBase::Id64::GetLowerUint32(modelId);
-    uint32_t const modelHi = dqBase::Id64::GetUpperUint32(modelId);
-    int const n = m_featureTable->getSize();
-    for (int i = 0; i < n; ++i) {
-        auto const feature = m_featureTable->findFeature(i);
-        if (!feature)
-            continue;
+    uint32_t const modelLo = m_featureTable->getModelIdLower();
+    uint32_t const modelHi = m_featureTable->getModelIdUpper();
+    uint32_t const n = m_featureTable->getNumFeatures();
+    for (uint32_t i = 0; i < n; ++i) {
+        dqCommon::PackedFeatureTable::PackedFeature const packedFeature =
+            m_featureTable->getFeature(i);
+        dqBase::DqId const featureElementId(packedFeature.elementId);
+        dqBase::DqId const featureSubCategoryId(packedFeature.subCategoryId);
         // 读-保-写：Hilited/Flashed/Visibility 位归 hilite/visibility 路径。
         FeatureOverrideData data = lut->getFeatureData(static_cast<uint32_t>(i));
         dqCommon::OvrFlag const keepFlags = dqCommon::OvrFlag::Flashed;
@@ -152,11 +168,11 @@ void Batch::updateAppearanceOverrides(dqCommon::FeatureOverrides const& ovrs)
         data.lineAlpha = 255;
 
         auto const appearance = ovrs.getAppearance(
-            dqBase::Id64::GetLowerUint32(feature->elementId),
-            dqBase::Id64::GetUpperUint32(feature->elementId),
-            dqBase::Id64::GetLowerUint32(feature->subCategoryId),
-            dqBase::Id64::GetUpperUint32(feature->subCategoryId),
-            feature->geometryClass, modelLo, modelHi,
+            dqBase::Id64::GetLowerUint32(featureElementId),
+            dqBase::Id64::GetUpperUint32(featureElementId),
+            dqBase::Id64::GetLowerUint32(featureSubCategoryId),
+            dqBase::Id64::GetUpperUint32(featureSubCategoryId),
+            packedFeature.geometryClass, modelLo, modelHi,
             dqCommon::BatchType::Primary, /*animationNodeId=*/0);
         if (appearance.has_value()) {
             if (auto const& rgb = appearance->getRgb()) {
@@ -396,11 +412,11 @@ uint64_t BatchState::getElementId(uint32_t featureId) const
         return 0;
 
     uint32_t featureIndex = featureId - batch->getBatchId();
-    auto feature = table->findFeature(static_cast<int>(featureIndex));
+    auto feature = table->findFeature(featureIndex);  // packed O(1)
     if (!feature.has_value())
         return 0;
 
-    return feature->elementId.GetValue();
+    return feature->elementId;
 }
 
 // ---------------------------------------------------------------------------
@@ -418,11 +434,13 @@ bool BatchState::getFeature(uint32_t featureId, dqCommon::Feature& result) const
         return false;
 
     uint32_t featureIndex = featureId - batch->getBatchId();
-    auto feature = table->findFeature(static_cast<int>(featureIndex));
+    auto feature = table->findFeature(featureIndex);  // packed O(1)
     if (!feature.has_value())
         return false;
 
-    result = feature.value();
+    result = dqCommon::Feature(dqBase::DqId(feature->elementId),
+                               dqBase::DqId(feature->subCategoryId),
+                               feature->geometryClass);
     return true;
 }
 
