@@ -94,10 +94,11 @@ C++ 规范：`docs/DanQing-C++代码规范.md`（从属格式参考）
 - **裁决落账**（2026-10-15）：Background Map/.bim 直开/Fence/Markup/AccuDraw 面板
   五件架构外结案；Format Set 不排期（等消费面捆绑）；点云=引擎链 only（A-C 排 A 道，
   D 面板/E reality 结案）；TimePointComparison/ModelClip/DisplayTransform 三件排期
-  （引擎缝列 A 道队列）；空间分类 spike 判定=模型-模型体积分类可行（排期待裁）。
-  **余量 = 大件 8**（M-X 起续排：Contour/空间分类/文本装饰/IncidentMarker[序贯]/
+  （引擎缝列 A 道队列）；空间分类 spike 判定=模型-模型体积分类可行（**暂不排期**——
+  用户 2026-10-18 裁决，队列清完再裁）。
+  **余量 = 大件 8**（M-X 起续排：Contour/文本装饰/IncidentMarker[序贯]/
   AspectRatioSkew[W-b2 挂起待 BSpline]+点云引擎链/TimePointComparison/ModelClip/
-  DisplayTransform——后五件为裁决转化项）。
+  DisplayTransform——后四件为裁决转化项；空间分类挂起待裁）。
 - **➖9 项已结案**（用户 2026-10-01 确认：Hub/OIDC/Push·Pull/编辑写入族/
   CreateSectionDrawing/Reality data 网络瓦/地图 provider/GenerateTileContent/
   InvokeFrontendIpc——登记架构外不做引擎实现，后续里程碑不再排期）。
