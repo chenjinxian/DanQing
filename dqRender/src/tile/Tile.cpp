@@ -140,6 +140,15 @@ Tile::~Tile()
         TileAdmin::instance().onTileContentDisposed(*this);
 }
 
+bool Tile::readContentAsync(std::vector<uint8_t>&& /*data*/)
+{
+    // P-1b P-b3 default: NOT taken over — the caller (TileAdmin::
+    // deliverTileContent) keeps the synchronous readContent face (GltfTile/
+    // RealityTile and test stubs unchanged). See the declaration's EQUIVALENCE
+    // E4 note (Tile.h).
+    return false;
+}
+
 void Tile::setContent(TileContent content)
 {
     // Ported from: itwinjs-core Tile.ts setContent

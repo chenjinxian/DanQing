@@ -297,42 +297,54 @@ int main(int argc, char** argv)
                                  1, QObject::tr("Open %1 failed: no 3D view").arg(modelId));
                              return;
                          }
-                         auto opened = dta::openDumpIModel(*view3d, *pkg);
-                         if (!opened.has_value()) {
-                             mainWindow->showStatus(
-                                 1, QObject::tr("Open %1 failed: dump package unreadable "
-                                                "(assets root: %2)")
-                                        .arg(modelId)
-                                        .arg(QString::fromStdString(pkg->imodelRoot)));
-                             return;
-                         }
-                         if (openTrace) {
-                             auto const ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                 std::chrono::steady_clock::now() - tOpen0).count();
-                             fprintf(stderr, "[OPEN] %s chain-done ms=%lld trees=%zu\n",
-                                     modelId.toUtf8().constData(),
-                                     static_cast<long long>(ms), opened->treeLoadLog.size());
-                             fflush(stderr);
-                         }
-                         // M-O(2) 3h：app 标题（Title.ts:9-15 setTitle——
-                         // `${prefix}${imodel.key} - Display Test App`；R/W
-                         // prefix 为编辑态面，DanQing 只读回放不适用）。
-                         // 中文名映射（M-K(2)）从 MDI 子窗标题迁主窗——子窗
-                         // 标题让位给视口标题格式（Viewer.updateTitle）。
-                         // EQUIVALENCE: 参考源=Title.ts:14（imodel.key=文件
-                         // 路径）；发散=DanQing 以 modelId 的中文显示名为 key
-                         // 形；验证法=DumpOpenChain 视口标题格式锁。
-                         mainWindow->setWindowTitle(QStringLiteral("%1 - Display Test App")
-                                                        .arg(windowTitleForModel(modelId)));
-                         QString const treeSummary = QString::fromStdString(
-                             std::to_string(opened->treeLoadLog.size()));
-                         dta::registerOpenedDump(view3d,
-                             std::make_unique<dta::DumpOpenResult>(std::move(*opened)));
-                         QObject::connect(view3d, &QObject::destroyed, mainWindow,
-                                          [view3d]() { dta::forgetOpenedDump(view3d); });
+                         // P-1b P-b4 异步打开（E5——参考 openFile 的 async 面）：
+                         // 点击即时回显（状态栏 "Opening..."）→ 重解析段下放
+                         // WorkerProxy（manifest 解析不再冻结 UI）→ 完成回主
+                         // 线程（TileAdmin::process 的 drain 点）→ 原确认面。
                          mainWindow->showStatus(
-                             0, QObject::tr("Opened %1 (%2 tile trees) — saved view rendered")
-                                    .arg(modelId, treeSummary));
+                             0, QObject::tr("Opening %1...").arg(modelId));
+                         QString const assetsRoot =
+                             QString::fromStdString(pkg->imodelRoot);
+                         dta::openDumpIModelAsync(
+                             *view3d, *pkg,
+                             [mainWindow, view3d, modelId, assetsRoot, tOpen0, openTrace](
+                                 std::optional<dta::DumpOpenResult>&& opened) {
+                                 if (!opened.has_value()) {
+                                     mainWindow->showStatus(
+                                         1, QObject::tr("Open %1 failed: dump package unreadable "
+                                                        "(assets root: %2)")
+                                                .arg(modelId)
+                                                .arg(assetsRoot));
+                                     return;
+                                 }
+                                 if (openTrace) {
+                                     auto const ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                         std::chrono::steady_clock::now() - tOpen0).count();
+                                     fprintf(stderr, "[OPEN] %s chain-done ms=%lld trees=%zu\n",
+                                             modelId.toUtf8().constData(),
+                                             static_cast<long long>(ms), opened->treeLoadLog.size());
+                                     fflush(stderr);
+                                 }
+                                 // M-O(2) 3h：app 标题（Title.ts:9-15 setTitle——
+                                 // `${prefix}${imodel.key} - Display Test App`；R/W
+                                 // prefix 为编辑态面，DanQing 只读回放不适用）。
+                                 // 中文名映射（M-K(2)）从 MDI 子窗标题迁主窗——子窗
+                                 // 标题让位给视口标题格式（Viewer.updateTitle）。
+                                 // EQUIVALENCE: 参考源=Title.ts:14（imodel.key=文件
+                                 // 路径）；发散=DanQing 以 modelId 的中文显示名为 key
+                                 // 形；验证法=DumpOpenChain 视口标题格式锁。
+                                 mainWindow->setWindowTitle(QStringLiteral("%1 - Display Test App")
+                                                                .arg(windowTitleForModel(modelId)));
+                                 QString const treeSummary = QString::fromStdString(
+                                     std::to_string(opened->treeLoadLog.size()));
+                                 dta::registerOpenedDump(view3d,
+                                     std::make_unique<dta::DumpOpenResult>(std::move(*opened)));
+                                 QObject::connect(view3d, &QObject::destroyed, mainWindow,
+                                                  [view3d]() { dta::forgetOpenedDump(view3d); });
+                                 mainWindow->showStatus(
+                                     0, QObject::tr("Opened %1 (%2 tile trees) — saved view rendered")
+                                            .arg(modelId, treeSummary));
+                             });
                      });
 
     // DTA 功能分类工具栏区（替代原 FreeCAD 6 条 + 临时 2 条）。

@@ -18,6 +18,9 @@
 #include "dqRender/tile/ITileFetcher.h"
 #include "dqRender/tile/TileAdmin.h"
 
+#include "ImdlParser.h"   // parseImdlContent/acquireImdlParser（P-1b P-b2）
+#include "dqRender/WorkerProxy.h"  // noWorker 门（P-1b P-b3）
+
 #include "render/Graphic.h"               // Branch（location 包裹——M-H Task 3）
 #include "render/RenderGraphicAdapter.h"  // OwningRenderGraphicAdapter（同上）
 
@@ -600,60 +603,86 @@ bool ImdlTile::requestContent()
 
 TileContent ImdlTile::readContent(uint8_t const* data, size_t dataSize)
 {
-    // Ported from: IModelTile.readContent (IModelTile.ts:90-131) + ImdlReader
-    // (.ts:104-123 — decode → convertFeatureTable → createBatch). DanQing
-    // synchronous subset: no worker/async; rtcCenter not consumed this pass
-    // (the offline fixtures carry none — JSON scene has no rtcCenter field;
-    // TODO: rtcCenter branch, ImdlReader.ts:126-130).
+    // Ported from: IModelTile.readContent (IModelTile.ts:90-131) — the
+    // synchronous (noWorker) face: parse then graphics on this thread
+    // (ImdlReader.ts:60-99). The two-phase split: parseImdlContent (the CPU
+    // half, P-1b P-b2) → createContentGraphics (the GL half, main thread).
+    // rtcCenter not consumed this pass (the offline fixtures carry none —
+    // JSON scene has no rtcCenter field; TODO: rtcCenter branch,
+    // ImdlReader.ts:126-130).
+    return createContentGraphics(parseImdlContent(data, dataSize));
+}
+
+bool ImdlTile::readContentAsync(std::vector<uint8_t>&& data)
+{
+    // Ported from: IModelTile.readContent's decoder.decode two-phase split
+    // (IModelTile.ts:99-121 → ImdlDecoder.ts:66-80 — parse off-thread via the
+    // acquired parser, graphics on the main thread) + the noWorker gate
+    // (acquireImdlParser's args.noWorker branch, ImdlParser.ts:39-47 — the
+    // DanQing env face = WorkerProxy::instance().isNoWorker()).
+    if (WorkerProxy::instance().isNoWorker())
+        return false;  // E3 降级：调用方走同步 readContent 旧路（全同步旧路）
+
+    // The completion (finisher) is registered in TileAdmin's pending-parse
+    // registry — scrubbed when this tile dies (~Tile →
+    // onTileContentDisposed, the TD-22 liveness adaptation), so the raw
+    // `this` capture is safe: the closure cannot outlive the tile.
+    // EQUIVALENCE: 参考源=TileRequest.handleResponse 的 readContent 续体
+    //   （TileRequest.ts:177-186——await 后 setContent）+ readImdlContent 的
+    //   post-parse isCanceled 门（ImdlReader.ts:85-86）；isCanceled 实参 =
+    //   IModelTile.readContent 的默认 `() => !this.isLoading`
+    //   （IModelTile.ts:95-96——DanQing 面 = tile 的 LoadStatus==Loading）。
+    //   发散=DanQing 以 TileAdmin 注册表承载续体（无 promise）——验证法=
+    //   AsyncImdlContentTest 三锁。
+    // The shared slot: the parse completion writes it (main thread, at the
+    // WorkerProxy drain), the pending-parse registry reads it (later in the
+    // same process() call) to invoke the finisher below.
+    auto slot = std::make_shared<std::optional<ImdlParsedContent>>();
+    TileAdmin::instance().pendingImdlParses().push(
+        this, slot,
+        [this](ImdlParsedContent&& parsed) {
+            // isCanceled gate at the completion (main thread): a tile no
+            // longer loading (canceled request before data arrival / unloaded
+            // content) does not build graphics — 取消的瓦不建 graphics。
+            if (getLoadStatus() != TileLoadStatus::Loading)
+                return;
+            setContent(createContentGraphics(std::move(parsed)));
+        });
+
+    // Parse off-thread (E2 defaultParser). The parse leg touches nothing but
+    // the shared slot — the worker never references the tile.
+    acquireImdlParser(AcquireImdlParserArgs{})->parse(
+        std::move(data),
+        [slot](ImdlParsedContent&& parsed) {
+            // Main thread (WorkerProxy::drainCompleted) — the slot write.
+            *slot = std::move(parsed);
+        });
+    return true;
+}
+
+TileContent ImdlTile::createContentGraphics(ImdlParsedContent&& parsed)
+{
+    // Ported from: readImdlContent's graphics legs (ImdlReader.ts:88-123 —
+    // decodeImdlGraphics + convertFeatureTable + createBatch); main thread
+    // only (RenderSystem/GL). The former ImdlTile::readContent back half,
+    // moved verbatim.
     TileContent content;
-    if (!data || dataSize < 4)
-        return content;
-    if (DetectTileFormat(data, dataSize) != TileFormat::IModel)
-        return content;
-
-    ImdlByteStream stream(data, dataSize);
-    auto const header = ImdlHeader::readFrom(stream);
-    if (!header.isValid())
-        return content;
-
-    // Feature table: read the 12-byte header + the packed words (3×u32/feature
-    // + 2×u32/subcategory tail) instead of skipping them — the stream ends up
-    // at the same position as the reference's skip-then-seek-back.
-    // Ported from: ParseImdlDocument.ts:1278-1284 (ftStartPos +
-    // FeatureTableHeader.readFrom + seek to ftStartPos + length) +
-    // FeatureTableHeader.ts layout (length includes the 12-byte header).
-    ImdlFeatureTableHeader ftHeader;
-    if (!ImdlFeatureTableHeader::readFrom(stream, ftHeader))
-        return content;  // InvalidFeatureTable (ParseImdlDocument.ts:1281-1282)
-    std::vector<uint32_t> featureWords;
-    size_t const ftBodyBytes = ftHeader.length >= ImdlFeatureTableHeader::sizeInBytes
-        ? ftHeader.length - ImdlFeatureTableHeader::sizeInBytes : 0;
-    if (ftBodyBytes > 0) {
-        featureWords.resize(ftBodyBytes / sizeof(uint32_t));
-        stream.readBytes(featureWords.data(), featureWords.size() * sizeof(uint32_t));
-        if (stream.isPastTheEnd())
-            return content;
-    }
-
-    // Header-only description (the caller consumed the feature table — the
-    // leaf heuristic derives purely from the imdl header).
-    auto const desc = decodeImdlContentDescriptionHeaderOnly(header);
-    if (!desc.has_value())
-        return content;
-    content.contentRange = desc->contentRange;
-    content.isLeaf = desc->isLeaf;
+    // Desc fields first — a parse failure after the description succeeded
+    // still carries them (the former early-return shape, ImdlTile
+    // readContent:640-651).
+    content.contentRange = parsed.description.contentRange;
+    content.isLeaf = parsed.description.isLeaf;
     // decode 产物的全字段接线：sizeMultiplier/emptySubRangeMask 经 TileContent
     // 进 setContent 的 :134-148 消费（M-F(1) 根因修复——此前丢失，根瓦恒
     // m_sizeMultiplier=0，放大-细分混合树走错分支）。desc 语义对齐参考
     // decodeTileContentDescription 的 `sizeMultiplier?: number`
     //（TileMetadata.ts:875——0.0 = undefined，DanQing 约定）。
-    content.sizeMultiplier = desc->sizeMultiplier;
-    content.emptySubRangeMask = desc->emptySubRangeMask;
-
-    auto doc = parseImdlDocument(stream, &ftHeader, &featureWords);
-    if (!doc.has_value())
+    content.sizeMultiplier = parsed.description.sizeMultiplier;
+    content.emptySubRangeMask = parsed.description.emptySubRangeMask;
+    if (!parsed.valid)
         return content;
 
+    ImdlDocument const& doc = parsed.document;
     RenderSystem* system = getTree().getRenderSystem();
     if (!system)
         return content;
@@ -666,12 +695,12 @@ TileContent ImdlTile::readContent(uint8_t const* data, size_t dataSize)
     //   LutPathUploadsVertexTableVerbatim 的字节级直传断言。
     std::vector<RenderGraphic*> graphics;
     if (system->driver()) {
-        graphics = createImdlLutGraphics(*doc, *system);
+        graphics = createImdlLutGraphics(doc, *system);
     } else {
         // 无 GL 桩系统（dqRenderTest 的 ReadContentStubSystem）回退：polyface
         // 形态保留为对照/调试通道（旧 decodeImdlGraphics——ImdlGraphics 既有
         // 测试亦直接测它）。
-        auto meshes = decodeImdlGraphics(*doc);
+        auto meshes = decodeImdlGraphics(doc);
         for (auto& polyface : meshes) {
             if (auto* graphic = system->createGraphicFromPolyface(polyface.Get(), 0xFFFFFFFFu, 0))
                 graphics.push_back(graphic);
@@ -690,11 +719,11 @@ TileContent ImdlTile::readContent(uint8_t const* data, size_t dataSize)
     // path below (registered, mirrors the reference's branch at
     // ParseImdlDocument.ts:1260-1262).
     bool const multiModel =
-        0 != (static_cast<uint32_t>(header.flags)
+        0 != (parsed.imdlFlags
               & static_cast<uint32_t>(ImdlFlags::MultiModelFeatureTable));
-    if (!multiModel && doc->featureCount > 0 && !doc->featureData.empty()) {
-        dqCommon::PackedFeatureTable packed(doc->featureData, /*modelId*/ 0,
-                                            doc->featureCount,
+    if (!multiModel && doc.featureCount > 0 && !doc.featureData.empty()) {
+        dqCommon::PackedFeatureTable packed(doc.featureData, /*modelId*/ 0,
+                                            doc.featureCount,
                                             dqCommon::BatchType::Primary);
         content.featureTable =
             std::make_unique<dqCommon::FeatureTable>(packed.unpack());

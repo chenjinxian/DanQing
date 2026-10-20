@@ -3,8 +3,10 @@
 // Ported from: itwinjs-core core/frontend/src/tile/TileAdmin.ts
 #include "dqRender/tile/TileAdmin.h"
 #include "dqRender/tile/ITileFetcher.h"
+#include "ImdlParser.h"      // PendingImdlParses（P-1b P-b3）
 #include "NullTileFetcher.h"
 #include "LRUTileList.h"
+#include "dqRender/WorkerProxy.h"     // worker 完成项 drain（P-1b P-b1）
 
 #include <dqCommon/FeatureTable.h>  // TileContent::featureTable unique_ptr 析构需完整类型
 #include <dqRender/RenderGraphic.h>  // TileContent::graphic unique_ptr 析构需完整类型
@@ -23,6 +25,7 @@ std::optional<double> TileAdmin::s_nowOverride = std::nullopt;  // test clock ov
 TileAdmin::TileAdmin()
     : m_fetcher(std::make_unique<NullTileFetcher>())
     , m_lruList(std::make_unique<LRUTileList>())
+    , m_pendingImdlParses(std::make_unique<PendingImdlParses>())
 {
     sInstance = this;
 }
@@ -30,6 +33,7 @@ TileAdmin::TileAdmin()
 TileAdmin::TileAdmin(DefaultInstanceTag)
     : m_fetcher(std::make_unique<NullTileFetcher>())
     , m_lruList(std::make_unique<LRUTileList>())
+    , m_pendingImdlParses(std::make_unique<PendingImdlParses>())
 {
     // Non-registering: see DefaultInstanceTag in the header. instance()
     // registers this object itself, only when no live instance exists.
@@ -65,6 +69,18 @@ void TileAdmin::process()
 {
     // Ported from: itwinjs-core TileAdmin.ts process()
     // Called each frame from Application::EventLoop
+
+    // 0. P-1b P-b3: run the worker's queued completions (the parse-leg slot
+    //    writes), then deliver the imdl parses that finished — the same
+    //    pre-dispatch point as step 1's fetcher drain, so the M-F(1) ordering
+    //    invariant is preserved for the async path too: a parse submitted
+    //    during frame N's dispatch (step 3) can only be delivered at the
+    //    earliest at frame N+1's drain here, i.e. >=1 selection pass after
+    //    the dispatch (see step 1's EQUIVALENCE note).
+    //    noWorker（env DANQING_NO_WORKER=1）下单例为直通模式——完成队列恒空、
+    //    无线程孵化（E3）。
+    WorkerProxy::instance().drainCompleted();
+    m_pendingImdlParses->drain();
 
     // 1. Process completed async fetches (deliver data to tiles).
     //    EQUIVALENCE（参考可观察排序不变量）：参考的 fetch 经网络异步完成——
@@ -442,6 +458,19 @@ void TileAdmin::deliverTileContent(Tile& tile, std::vector<uint8_t> const& data)
         recordCompleted();
     }
 
+    // P-1b P-b3: the async face — ImdlTile takes over (worker parse; delivery
+    // at a later frame's step-0 drain). All other tile types (and the
+    // noWorker degradation inside readContentAsync) keep the synchronous
+    // readContent face below, unchanged.
+    // EQUIVALENCE（transferable 拷贝面）: 参考把 data.buffer transferable 移交
+    //   worker（ImdlParser.ts:53 `[options.data.buffer]`——零拷贝）；DanQing 的
+    //   轮询 fetcher 完成契约是 const&（TileAdmin.h deliverTileContent）——
+    //   此处拷贝一次后 move 进 worker 任务（拷贝 O(bytes)，远小于解析本体；
+    //   worker 内部零再拷贝）。验证法=ImdlParserTest.WorkerParseEqualsSync
+    //   ParseByteForByte。
+    if (tile.readContentAsync(std::vector<uint8_t>(data)))
+        return;
+
     TileContent content = tile.readContent(data.data(), data.size());
     tile.setContent(std::move(content));
 }
@@ -473,6 +502,13 @@ void TileAdmin::onTileContentDisposed(Tile& tile)
     // Ported from: TileAdmin.ts:770-773（LRU drop——内容处置的标准钩子）。
     if (m_lruList)
         m_lruList->drop(tile);
+
+    // P-1b P-b3: dying (or unloaded) tile drops its pending imdl parses — the
+    // finisher closures are the only tile referents in the async chain, and
+    // this is the point the tile tells us it is going away (TD-22 liveness
+    // adaptation family: the reference's JS closure keeps the tile alive,
+    // C++ must drop the entry).
+    m_pendingImdlParses->scrub(&tile);
 
     // TD-22 清偿（C++ 所有权适配——参考 JS GC 语义无此义务，DanQing 的
     // feed 集持裸 Tile*）：清扫本瓦片在所有 user feed 里的残留指针。

@@ -7,8 +7,13 @@
 
 #include <dqApp/tile/SpatialTileTreeReferences.h>  // setCreateOverride（frontend-tiles 缝）
 
+#include <QPointer>
+
 #include <map>
 #include <cstdlib>  // std::getenv（DANQING_RPC_DUMP——dumpPackageForModel）
+#include <chrono>
+#include <cstdio>
+#include <dqRender/WorkerProxy.h>  // P-1b P-b1：worker 载体（参考 WorkerProxy.ts 公开面）
 #include <dqRender/tile/ImdlTileTree.h>
 #include <dqRender/tile/TileAdmin.h>
 
@@ -21,55 +26,94 @@ bool openTrace()
 {
     return std::getenv("DANQING_OPEN_TRACE") != nullptr;
 }
-}  // namespace
 
-std::optional<DumpOpenResult> openDumpIModel(Gui::View3DInventor& view,
-                                             DumpOpenPackage const& pkg)
+// ---------------------------------------------------------------------------
+// P-1b P-b4 两段拆分：stage 1 = 重解析段（纯 CPU 零 GL 零 viewport——worker
+// 可下放；M-I(1) 实测的打开链热点 = manifest 解析 2.87s），stage 2 = 视图/树
+// 装配段（主线程 only——viewport/RenderSystem）。
+// Ported from: itwinjs-core 打开链的 async 面（openFile await RPC 数据面 →
+// views 装载）。
+// ---------------------------------------------------------------------------
+struct DumpOpenStage1 {
+    dqBase::RefPtr<dqApp::DumpIModelConnection> connection;
+    std::optional<dqApp::DumpTileTreeProps> props;
+    std::unique_ptr<dqApp::DumpTileFetcher> fetcher;
+    std::string failReason;  // empty = ok
+};
+
+// Stage 1（worker 可执行——纯 CPU）：①imodel.json 连接面解析 + manifest/树
+// props 解析 + 多根 fetcher 构造（manifest 单次解析共享，M-I(1)）。
+DumpOpenStage1 openDumpStage1(DumpOpenPackage const& pkg)
 {
+    DumpOpenStage1 out;
     if (pkg.imodelRoot.empty() || pkg.tileRoots.empty())
-        return std::nullopt;
+    {
+        out.failReason = "empty package";
+        return out;
+    }
 
     // ① 打开连接（imodel.json——iModelRpc 数据面回放）。
-    auto connection = dqApp::DumpIModelConnection::open(pkg.imodelRoot + "/imodel.json");
-    if (!connection.IsValid())
+    out.connection = dqApp::DumpIModelConnection::open(pkg.imodelRoot + "/imodel.json");
+    if (!out.connection.IsValid())
     {
-        if (openTrace())
-            fprintf(stderr, "[OPEN] fail: imodel.json unreadable (%s)\n",
-                    (pkg.imodelRoot + "/imodel.json").c_str());
-        return std::nullopt;
+        out.failReason = "imodel.json unreadable (" + pkg.imodelRoot + "/imodel.json)";
+        out.connection = nullptr;
+        return out;
     }
 
     // 树 props（主根——PrimaryTreeSupplier 对 requestTileTreeProps 返回树的
     // 逐树 createTileTree（PrimaryTileTree.ts:63-80）的离线对应物，同
     // DumpMount.h 注释）。
-    auto props = dqApp::DumpTileTreeProps::load(pkg.tileRoots[0]);
-    if (!props.has_value())
+    out.props = dqApp::DumpTileTreeProps::load(pkg.tileRoots[0]);
+    if (!out.props.has_value())
     {
-        if (openTrace())
-            fprintf(stderr, "[OPEN] fail: manifest/tree props unreadable (%s)\n",
-                    pkg.tileRoots[0].c_str());
-        return std::nullopt;
+        out.failReason = "manifest/tree props unreadable (" + pkg.tileRoots[0] + ")";
+        out.connection = nullptr;
+        return out;
     }
 
-    // fetcher 注入（TileAdmin DI 缝 §8.4——参考的 TileAdmin RPC 层
-    //（generateTileContent TileAdmin.ts:694-706）在打开链全程就位；
-    // 多根 = drill 域外键补字节，M-H Task 2）。
-    // 单次解析共享（M-I(1)——用户报告的打开长等待主根因）：props 装载的
-    // manifest 移交 fetcher（takeManifest——树条目复制留存 byTreeId，瓦键
-    // 域移交），打开链不再对 59MB manifest 解析两遍（原 DumpOpenHelper
-    // props 一遍 + fetcher 路径构造一遍，Debug 实测 12.1s/遍）。
+    // fetcher 构造（注入留在 stage 2 的 TileAdmin 主线程缝）。多根 = drill
+    // 域外键补字节，M-H Task 2；单次解析共享（M-I(1)——用户报告的打开长等待
+    // 主根因）：props 装载的 manifest 移交 fetcher（takeManifest——树条目
+    // 复制留存 byTreeId，瓦键域移交）。
     std::vector<std::string> fallbacks(pkg.tileRoots.begin() + 1, pkg.tileRoots.end());
-    auto fetcher = std::make_unique<dqApp::DumpTileFetcher>(props->takeManifest(),
-                                                            pkg.tileRoots[0],
-                                                            std::move(fallbacks));
-    if (!fetcher->isValid())
+    out.fetcher = std::make_unique<dqApp::DumpTileFetcher>(out.props->takeManifest(),
+                                                           pkg.tileRoots[0],
+                                                           std::move(fallbacks));
+    if (!out.fetcher->isValid())
     {
-        if (openTrace())
-            fprintf(stderr, "[OPEN] fail: fetcher invalid (%s)\n",
-                    pkg.tileRoots[0].c_str());
-        return std::nullopt;
+        out.failReason = "fetcher invalid (" + pkg.tileRoots[0] + ")";
+        out.fetcher.reset();
+        out.props.reset();
+        out.connection = nullptr;
     }
-    dqRender::TileAdmin::instance().setFetcher(std::move(fetcher));
+    return out;
+}
+
+// Stage 1 的失败轨迹（主线程——worker 段不做 IO 轨迹，失败原因随载荷带回）。
+void traceStage1Failure(DumpOpenPackage const& pkg, std::string const& failReason)
+{
+    if (!openTrace())
+        return;
+    if (failReason.rfind("imodel.json", 0) == 0)
+        fprintf(stderr, "[OPEN] fail: %s\n", failReason.c_str());
+    else if (failReason.rfind("manifest", 0) == 0)
+        fprintf(stderr, "[OPEN] fail: %s\n", failReason.c_str());
+    else if (failReason.rfind("fetcher", 0) == 0)
+        fprintf(stderr, "[OPEN] fail: %s\n", failReason.c_str());
+    else
+        fprintf(stderr, "[OPEN] fail: %s\n", failReason.c_str());
+    (void)pkg;
+}
+
+// Stage 2（主线程）：fetcher 注入（TileAdmin DI 缝 §8.4）+ ②视图装载 +
+// ③changeView + ④逐 model 树装配 + ⑤provider 注册 + ⑥坑 24 取景。
+// 体 = 原 openDumpIModel 的后半（逐段未动）。
+std::optional<DumpOpenResult> finishDumpOpen(Gui::View3DInventor& view,
+                                             DumpOpenPackage const& pkg,
+                                             DumpOpenStage1& s1)
+{
+    dqRender::TileAdmin::instance().setFetcher(std::move(s1.fetcher));
 
     // ② 默认视图装载（Viewer.ts:184-185：ViewList.create → getDefaultView；
     //    ViewPicker.ts:57-61 create → populate（getViewList 经回放缝）→
@@ -94,8 +138,8 @@ std::optional<DumpOpenResult> openDumpIModel(Gui::View3DInventor& view,
         [](dqApp::SpatialViewState&) {
             return std::make_unique<DumpOpenEmptyTileTreeReferences>();
         });
-    dqApp::ViewList views = dqApp::ViewList::create(connection.Get());
-    auto viewState = views.getDefaultView(connection.Get());
+    dqApp::ViewList views = dqApp::ViewList::create(s1.connection.Get());
+    auto viewState = views.getDefaultView(s1.connection.Get());
     dqApp::SpatialTileTreeReferences::clearCreateOverride();
     if (!viewState.IsValid())
     {
@@ -162,7 +206,7 @@ std::optional<DumpOpenResult> openDumpIModel(Gui::View3DInventor& view,
 
         // requestTileTreeProps 回放（:66——DumpTileTreeProps.byTreeId）；
         // modelSelector 引用的树不在 dump 域 = 采集缺口 → 打开失败。
-        auto treeProps = props->byTreeId(treeId);
+        auto treeProps = s1.props->byTreeId(treeId);
         if (!treeProps.has_value())
         {
             if (openTrace())
@@ -255,12 +299,103 @@ std::optional<DumpOpenResult> openDumpIModel(Gui::View3DInventor& view,
         }
     }
 
-    out.connection = connection;
+    out.connection = s1.connection;
     out.viewState = viewState;
-    out.props = std::move(*props);
+    out.props = std::move(*s1.props);
     out.fetcher = static_cast<dqApp::DumpTileFetcher*>(
         &dqRender::TileAdmin::instance().getFetcher());
     return out;
+}
+
+}  // namespace
+
+std::optional<DumpOpenResult> openDumpIModel(Gui::View3DInventor& view,
+                                             DumpOpenPackage const& pkg)
+{
+    // 同步入口 = 两段 inline 串行（既有调用方——DtaToolBars/SurfaceTools/
+    // 各测试——行为零变化；轨迹逐字保留）。
+    DumpOpenStage1 s1 = openDumpStage1(pkg);
+    if (!s1.failReason.empty())
+    {
+        traceStage1Failure(pkg, s1.failReason);
+        return std::nullopt;
+    }
+    return finishDumpOpen(view, pkg, s1);
+}
+
+void openDumpIModelAsync(Gui::View3DInventor& view, DumpOpenPackage const& pkg,
+                         std::function<void(std::optional<DumpOpenResult>)>&& onOpened)
+{
+    // Ported from: itwinjs-core 打开链的 async 面（openFile await——RPC 数据
+    // 面就绪后 views 装载；E5）。noWorker → 两段 inline 同步后回调（E3）。
+    if (dqRender::WorkerProxy::instance().isNoWorker())
+    {
+        DumpOpenStage1 s1 = openDumpStage1(pkg);
+        if (!s1.failReason.empty())
+        {
+            traceStage1Failure(pkg, s1.failReason);
+            if (onOpened)
+                onOpened(std::nullopt);
+            return;
+        }
+        if (onOpened)
+            onOpened(finishDumpOpen(view, pkg, s1));
+        return;
+    }
+
+    // worker 路径：stage 1（纯 CPU——imodel.json + manifest 解析 + fetcher
+    // 构造）下放 WorkerProxy 单例；完成经 TileAdmin::process 的帧内 drain 回
+    // 主线程续 stage 2。QPointer 守卫 view 的存活（QObject 析构即置空——
+    // 用户在解析完成前关窗的角案；参考的 promise 链对 closed connection
+    // 同样静默失效）。
+    QPointer<Gui::View3DInventor> viewGuard(&view);
+    auto slot = std::make_shared<std::optional<DumpOpenStage1>>();
+    dqRender::WorkerProxy::instance().submit(
+        [slot, pkg]() {
+            // worker 线程——纯 CPU 段（零 GL 零 viewport 零 Qt 对象触碰）。
+            *slot = openDumpStage1(pkg);
+        },
+        [slot, viewGuard, pkg, onOpened = std::move(onOpened)]() {
+            // 主线程（TileAdmin::process 的 drain 点）。
+            if (!slot->has_value() || !(*slot)->failReason.empty()
+                || !(*slot)->connection.IsValid())
+            {
+                // 解析段失败（或未达）——轨迹 + 失败回调。
+                if (slot->has_value())
+                    traceStage1Failure(pkg, (*slot)->failReason);
+                else if (openTrace())
+                    fprintf(stderr, "[OPEN] fail: stage1 result missing\n");
+                if (onOpened)
+                    onOpened(std::nullopt);
+                return;
+            }
+            if (viewGuard.isNull())
+            {
+                // 视图已死——放弃装配（stage 1 载荷随闭包释放）。
+                if (openTrace())
+                    fprintf(stderr, "[OPEN] fail: view closed during async open\n");
+                if (onOpened)
+                    onOpened(std::nullopt);
+                return;
+            }
+            if (openTrace())
+                fprintf(stderr, "[OPEN] stage1 done (worker) — main leg starts\n");
+            auto const tMain0 = std::chrono::steady_clock::now();
+            std::optional<DumpOpenResult> result =
+                finishDumpOpen(*viewGuard, pkg, **slot);
+            if (openTrace())
+            {
+                // P-1b P-b4 计时面：主线程阻塞时长（stage 2——解析下放后的
+                // UI 冻结面；对拍基线 = joeshouse Debug 2.87s 全阻塞 → 目标
+                // <50ms 量级）。
+                auto const ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - tMain0).count();
+                fprintf(stderr, "[OPEN] main-block ms=%lld\n",
+                        static_cast<long long>(ms));
+            }
+            if (onOpened)
+                onOpened(std::move(result));
+        });
 }
 
 // ─── 模型↔包映射（M-Y Y-b2：自 main.cpp 匿名命名空间迁出——ReopenIModelTool

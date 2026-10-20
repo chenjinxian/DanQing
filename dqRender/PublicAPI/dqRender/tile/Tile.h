@@ -204,6 +204,20 @@ public:
     /// @return TileContent with graphic and metadata
     virtual TileContent readContent(uint8_t const* data, size_t dataSize) = 0;
 
+    /// Async content read (P-1b P-b3): hand the raw bytes to the tile. Returns
+    /// true if the tile took over the read asynchronously — the caller must
+    /// then NOT touch the tile's content; the completion delivers through the
+    /// TileAdmin pending-parse drain at a later frame's process(). Returns
+    /// false to keep the synchronous readContent face (the caller reads and
+    /// setContent inline, as before).
+    /// EQUIVALENCE E4: 参考 readContent 恒 async（TileRequest.handleResponse
+    /// await readContent，TileRequest.ts:177-179；IModelTile 经 decoder.decode
+    /// 下放解析——IModelTile.ts:99-121 → ImdlDecoder.ts:66-80）；DanQing 以
+    /// bool 承载"是否接管"——默认 false（解析未下放的瓦型/测试桩保持现行
+    /// 同步链），ImdlTile 覆写为两相（worker 解析 + 主线程 graphics）。
+    /// 验证法 = WorkerProxyTest + ImdlParserTest + AsyncImdlContentTest。
+    virtual bool readContentAsync(std::vector<uint8_t>&& data);
+
     /// Load child tiles (called when tile is selected for refinement)
     virtual void loadChildren() = 0;
 

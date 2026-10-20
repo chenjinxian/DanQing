@@ -87,6 +87,32 @@ parseImdlDocument(ImdlByteStream& stream,
                   ImdlFeatureTableHeader const* featureHeader = nullptr,
                   std::vector<uint32_t> const* featureWords = nullptr);
 
+// ---------------------------------------------------------------------------
+// P-1b P-b2：跨线程解析载荷（worker 半的产物 → 主线程 graphics 半的输入）。
+// Ported from: itwinjs-core ImdlModel.Document (ImdlModel.ts:218-225 — the
+//              parsed document the worker transfers back) + the content
+//              description decodeTileContentDescription produces
+//              (TileMetadata.ts:880-940 — the readImdlContent face the
+//              graphics half consumes, ImdlReader.ts:62-84).
+// ---------------------------------------------------------------------------
+struct DQ_RENDER_EXPORT ImdlParsedContent {
+    // The parsed glTF-section document (sceneJson/binary/feature words).
+    // Ported from: ImdlModel.Document 的 DanQing 子集（ImdlDocument）。
+    ImdlDocument document;
+
+    // The header-derived description (contentRange/isLeaf/sizeMultiplier/
+    // emptySubRangeMask) — TileContent 的对应字段源。
+    ImdlContentDescription description;
+
+    // ImdlHeader.flags（graphics 半的 MultiModelFeatureTable 门）。
+    uint32_t imdlFlags = 0;
+
+    // false = 解析失败（畸形数据——参考的 ImdlParseError 返回腿，
+    // ImdlParser.ts:24 `Promise<Document | ImdlParseError>`；对应现行
+    // readContent 的各早退空 TileContent 路径）。
+    bool valid = false;
+};
+
 // Decode the imdl document's meshes into polyfaces (the minimal graphics
 // pass: quantized vertex tables → IndexedPolyface; per-vertex colors/normals
 // land with the full graphics pass, uniform color carried by the props).

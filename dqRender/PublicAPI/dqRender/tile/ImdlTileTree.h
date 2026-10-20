@@ -8,6 +8,7 @@
 #pragma once
 
 #include "../Export.h"
+#include "ImdlDocument.h"  // ImdlParsedContent（P-1b createContentGraphics 载荷）
 #include "ImdlHeader.h"  // CurrentImdlVersion（TileOptions 缺省值引用）
 #include "Tile.h"
 #include "TileDrawArgs.h"
@@ -375,6 +376,23 @@ public:
     // --- Tile overrides ---
     bool requestContent() override;
     TileContent readContent(uint8_t const* data, size_t dataSize) override;
+
+    /// P-1b P-b3：异步内容读取接管（worker 解析路径—— Tile.h 的 E4 注）。
+    /// noWorker（env DANQING_NO_WORKER=1）→ false（调用方走同步 readContent
+    /// 旧路）；否则 bytes 交 worker 解析、完成经 TileAdmin 的 pending-parse
+    /// drain 在主线程交付（readContentAsync 返回 true）。
+    /// Ported from: IModelTile.readContent（IModelTile.ts:99-121 —
+    /// decoder.decode = 解析（worker）+ graphics（主线程））+ readContentAsync
+    /// 的 isCanceled 门默认式（:95-96 `() => !this.isLoading`）。
+    bool readContentAsync(std::vector<uint8_t>&& data) override;
+
+    /// Content read 的 graphics 半（主线程 only——触碰 RenderSystem/GL）：
+    /// 解析载荷 → TileContent（LUT graphics / 桩 polyface 回退 + feature 表
+    /// unpack + createBatch + location Branch 包裹）。valid=false → 空
+    /// TileContent（desc 字段照搬——现行 readContent 的 desc-后失败路径原样）。
+    /// Ported from: readImdlContent 的 graphics legs（ImdlReader.ts:88-123 —
+    /// decodeImdlGraphics + convertFeatureTable/createBatch）。
+    TileContent createContentGraphics(ImdlParsedContent&& parsed);
 
     /// IModelTile.setContent 的 :134-148 语义：emptySubRangeMask 赋值 (:136)、
     /// maximumSize 回填 (:140-142)、sizeMultiplier 升门控赋值 (:145-146) +
