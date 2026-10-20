@@ -83,7 +83,8 @@ dta::DumpOpenPackage instances60Package()
 {
     dta::DumpOpenPackage pkg;
     pkg.imodelRoot = kDumpRoot + "/instances60-imodel-v1";
-    pkg.tileRoots = {kDumpRoot + "/instances60-v1", kDumpRoot + "/instances60-drill-v1"};
+    pkg.tileRoots = {kDumpRoot + "/instances60-v1", kDumpRoot + "/instances60-drill-v1",
+                     kDumpRoot + "/instances60-mag-missing-v1"};
     return pkg;
 }
 
@@ -159,7 +160,8 @@ TEST(AsyncOpenChain, SubmitDoesNotBlockMainThreadOnManifestParse)
     dta::DumpOpenPackage pkg;
     pkg.imodelRoot = kDumpRoot + "/joeshouse-v1";
     pkg.tileRoots = {kDumpRoot + "/joeshouse-v1", kDumpRoot + "/joeshouse-drill-v1",
-                     kDumpRoot + "/joeshouse-drill-v2"};
+                     kDumpRoot + "/joeshouse-drill-v2",
+                     kDumpRoot + "/joeshouse-mag-missing-v1"};
 
     Gui::View3DInventor view(nullptr, nullptr, nullptr);
     view.resize(1000, 700);

@@ -203,13 +203,13 @@ TEST(SurfaceFileTools, DumpPackageForModelTableIntact)
     auto const joe = dta::dumpPackageForModel(QStringLiteral("joeshouse"));
     ASSERT_TRUE(joe.has_value());
     EXPECT_TRUE(joe->imodelRoot.find("joeshouse-v1") != std::string::npos);
-    ASSERT_EQ(joe->tileRoots.size(), 3u);  // 主+drill-v1+drill-v2
+    ASSERT_EQ(joe->tileRoots.size(), 4u);  // 主+drill-v1+drill-v2+放大补采
     EXPECT_FALSE(joe->frameToWorldContent);
 
     auto const inst = dta::dumpPackageForModel(QStringLiteral("instances60"));
     ASSERT_TRUE(inst.has_value());
     EXPECT_TRUE(inst->imodelRoot.find("instances60-imodel-v1") != std::string::npos);
-    ASSERT_EQ(inst->tileRoots.size(), 2u);
+    ASSERT_EQ(inst->tileRoots.size(), 3u);  // 主+drill+d1 补采
 
     auto const house = dta::dumpPackageForModel(QStringLiteral("housemodel"));
     ASSERT_TRUE(house.has_value());
@@ -221,7 +221,7 @@ TEST(SurfaceFileTools, DumpPackageForModelTableIntact)
 
     auto const bridge = dta::dumpPackageForModel(QStringLiteral("bridge-edit"));
     ASSERT_TRUE(bridge.has_value());
-    ASSERT_EQ(bridge->tileRoots.size(), 3u);  // 主+drill+sweep
+    ASSERT_EQ(bridge->tileRoots.size(), 8u);  // 主+drill+sweep+放大链补采×4+邻域覆盖
     EXPECT_TRUE(bridge->frameToWorldContent);  // 坑 24 取景路径
 
     EXPECT_EQ(dta::dumpPackageForModel(QStringLiteral("bogus")), std::nullopt);

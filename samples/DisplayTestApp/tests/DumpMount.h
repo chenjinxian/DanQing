@@ -98,7 +98,8 @@ inline dqGeom::Range3d mountDumpFitVolume(dqGeom::Range3d const& fit,
 // + setRenderSystem）。失败（manifest 坏 / props 不可达 / 无 fit 域）→
 // nullopt。
 inline std::optional<DumpMount> mountDump(dqApp::Viewport& viewport,
-                                          std::string const& dumpRoot)
+                                          std::string const& dumpRoot,
+                                          std::vector<std::string> fallbackRoots = {})
 {
     auto loadedProps = dqApp::DumpTileTreeProps::load(dumpRoot);
     if (!loadedProps.has_value())
@@ -108,7 +109,7 @@ inline std::optional<DumpMount> mountDump(dqApp::Viewport& viewport,
         return std::nullopt;
 
     // DI 缝注入（§8.4）：替换 Startup 的 FileTileFetcher。
-    auto fetcher = std::make_unique<dqApp::DumpTileFetcher>(dumpRoot);
+    auto fetcher = std::make_unique<dqApp::DumpTileFetcher>(dumpRoot, fallbackRoots);
     if (!fetcher->isValid())
         return std::nullopt;
     dqRender::TileAdmin::instance().setFetcher(std::move(fetcher));

@@ -261,7 +261,8 @@ TEST(DumpOpenChain, OpensInstances60WithReferenceIsomorphicSequence)
 
     dta::DumpOpenPackage pkg;
     pkg.imodelRoot = kDumpRoot + "/instances60-imodel-v1";
-    pkg.tileRoots = {kDumpRoot + "/instances60-v1", kDumpRoot + "/instances60-drill-v1"};
+    pkg.tileRoots = {kDumpRoot + "/instances60-v1", kDumpRoot + "/instances60-drill-v1",
+                     kDumpRoot + "/instances60-mag-missing-v1"};
     auto opened = dta::openDumpIModel(view, pkg);
     ASSERT_TRUE(opened.has_value()) << "open chain failed: " << pkg.imodelRoot;
 
@@ -526,7 +527,8 @@ TEST(DumpOpenChain, OpensJoesHouseWithTenModelTrees)
     dta::DumpOpenPackage pkg;
     pkg.imodelRoot = kDumpRoot + "/joeshouse-v1";
     pkg.tileRoots = {kDumpRoot + "/joeshouse-v1", kDumpRoot + "/joeshouse-drill-v1",
-                     kDumpRoot + "/joeshouse-drill-v2"};
+                     kDumpRoot + "/joeshouse-drill-v2",
+                     kDumpRoot + "/joeshouse-mag-missing-v1"};
     auto opened = dta::openDumpIModel(view, pkg);
     ASSERT_TRUE(opened.has_value()) << "open chain failed: " << pkg.imodelRoot;
 
@@ -597,9 +599,9 @@ TEST(DumpOpenChain, OpensJoesHouseWithTenModelTrees)
         std::set<std::string> const expectedOpenFace = {
             "25_1d-E:6_0x26/-b-0-0-0-0-1", "25_1d-E:6_0x3d/-b-0-0-0-0-1",
             "25_1d-E:6_0x43/-b-0-0-0-0-1", "25_1d-E:6_0x4b/-b-0-0-0-0-1",
-            "25_1d-E:6_0x3f/-b-2-0-0-0-1", "25_1d-E:6_0x41/-b-2-0-0-0-1",
-            "25_1d-E:6_0x45/-b-2-0-0-0-1", "25_1d-E:6_0x47/-b-2-0-0-0-1",
-            "25_1d-E:6_0x49/-b-2-0-0-0-1", "25_1d-E:6_0x4d/-b-2-0-0-0-1",
+            "25_1d-E:6_0x3f/-b-1-0-0-0-1", "25_1d-E:6_0x41/-b-1-0-0-0-1",
+            "25_1d-E:6_0x45/-b-1-0-0-0-1", "25_1d-E:6_0x47/-b-1-0-0-0-1",
+            "25_1d-E:6_0x49/-b-1-0-0-0-1", "25_1d-E:6_0x4d/-b-1-0-0-0-1",
         };
         std::set<std::string> openFaceKeys;
         for (auto const& rec : opened->fetcher->requestLog()) {
@@ -615,14 +617,32 @@ TEST(DumpOpenChain, OpensJoesHouseWithTenModelTrees)
     // ③ 相 2：zoom 泵（kZoom=2^n 绕内容质心——drill 采集配方）复现放大链。
     //    停止规则 = drill 15 键全 Completed 后再一级（过冲/终态形）。
     std::set<std::string> const drillKeys = {
-        "25_1d-E:6_0x3f/-b-2-0-0-0-1", "25_1d-E:6_0x3f/-b-2-0-0-0-2",
-        "25_1d-E:6_0x3f/-b-2-0-0-0-4", "25_1d-E:6_0x3f/-b-2-0-0-0-8",
-        "25_1d-E:6_0x3f/-b-2-0-0-0-10", "25_1d-E:6_0x3f/-b-2-0-0-0-20",
-        "25_1d-E:6_0x4d/-b-2-0-0-0-1", "25_1d-E:6_0x4d/-b-2-0-0-0-2",
-        "25_1d-E:6_0x4d/-b-2-0-0-0-4", "25_1d-E:6_0x4d/-b-2-0-0-0-8",
-        "25_1d-E:6_0x4d/-b-2-0-0-0-10",
-        "25_1d-E:6_0x41/-b-2-0-0-0-1", "25_1d-E:6_0x45/-b-2-0-0-0-1",
-        "25_1d-E:6_0x47/-b-2-0-0-0-1", "25_1d-E:6_0x49/-b-2-0-0-0-1",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-1",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-2",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-4",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-8",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-10",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-20",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-40",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-80",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-100",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-200",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-400",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-1",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-2",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-4",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-8",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-10",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-20",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-40",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-80",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-100",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-200",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-400",
+        "25_1d-E:6_0x41/-b-1-0-0-0-1",
+        "25_1d-E:6_0x45/-b-1-0-0-0-1",
+        "25_1d-E:6_0x47/-b-1-0-0-0-1",
+        "25_1d-E:6_0x49/-b-1-0-0-0-1",
     };
     auto connectedDrillCount = [&]() -> size_t {
         size_t n = 0;
@@ -658,16 +678,12 @@ TEST(DumpOpenChain, OpensJoesHouseWithTenModelTrees)
     }
     view.getUeViewport()->RenderFrame();
 
-    // --- 对账：请求日志 vs drill 键域 + 联合 manifest 域 ---
+    // --- 对账：请求日志 vs 包全部根（v1 ∪ drill-v1 ∪ drill-v2 ∪ 放大补采）---
     std::set<std::string> unionKeys;
-    {
-        auto sweepManifest = dqApp::loadDumpManifest(kDumpRoot + "/joeshouse-v1");
-        auto drillManifest = dqApp::loadDumpManifest(kDumpRoot + "/joeshouse-drill-v1");
-        ASSERT_TRUE(sweepManifest.has_value());
-        ASSERT_TRUE(drillManifest.has_value());
-        for (auto const& t : sweepManifest->tiles)
-            unionKeys.insert(t.treeId + "/" + t.contentId);
-        for (auto const& t : drillManifest->tiles)
+    for (auto const& rootPath : pkg.tileRoots) {
+        auto manifest = dqApp::loadDumpManifest(rootPath);
+        ASSERT_TRUE(manifest.has_value()) << "manifest unreadable: " << rootPath;
+        for (auto const& t : manifest->tiles)
             unionKeys.insert(t.treeId + "/" + t.contentId);
     }
     auto const& log = opened->fetcher->requestLog();
@@ -738,35 +754,30 @@ TEST(DumpOpenChain, OpensJoesHouseWithTenModelTrees)
             EXPECT_EQ(expectedChain[i], dedup[i])
                 << treeId << " chain diverges at position " << i;
     };
+    // 2026-10-20 子瓦范围修复后重钉：选中瓦由 d2 变为 d1（saved 视域下 d1
+    // 为 Visible），放大链相应为 "-b-1-…-{1,2,4,8,10,20,40,80,100,200,400}"
+    // （m400=×1024 于 kZoom=1024 级连通；补采 joeshouse-mag-missing-v1）。
     assertTreeSubsequence("25_1d-E:6_0x3f",
-                          {"-b-2-0-0-0-1", "-b-2-0-0-0-2", "-b-2-0-0-0-4",
-                           "-b-2-0-0-0-8", "-b-2-0-0-0-10", "-b-2-0-0-0-20"});
+                          {"-b-1-0-0-0-1", "-b-1-0-0-0-2", "-b-1-0-0-0-4",
+                           "-b-1-0-0-0-8", "-b-1-0-0-0-10", "-b-1-0-0-0-20",
+                           "-b-1-0-0-0-40", "-b-1-0-0-0-80", "-b-1-0-0-0-100",
+                           "-b-1-0-0-0-200", "-b-1-0-0-0-400"});
     assertTreeSubsequence("25_1d-E:6_0x4d",
-                          {"-b-2-0-0-0-1", "-b-2-0-0-0-2", "-b-2-0-0-0-4",
-                           "-b-2-0-0-0-8", "-b-2-0-0-0-10"});
+                          {"-b-1-0-0-0-1", "-b-1-0-0-0-2", "-b-1-0-0-0-4",
+                           "-b-1-0-0-0-8", "-b-1-0-0-0-10", "-b-1-0-0-0-20",
+                           "-b-1-0-0-0-40", "-b-1-0-0-0-80", "-b-1-0-0-0-100",
+                           "-b-1-0-0-0-200", "-b-1-0-0-0-400"});
 
-    // ③c **Completed 集实钉（首绿实测）** = 19 键 = drill 15 键 + 4 叶根
-    //    树打开面根键；requested=22（零重复——每键至多一条）。
-    EXPECT_EQ(19u, numCompleted) << "chain-connected set drifted";
-    EXPECT_EQ(22u, log.size());
-    // ③d **过冲 miss 实钉（首绿实测——采集饱和点后的合法延伸）**：
-    //    "25_1d-E:6_0x4d/-b-2-0-0-0-20"（0x4d ×32——采集 0x4d 饱和在
-    //    ×16[drill README 在案]，回放 kZoom=64 级把 m16 推过 SSE 派生
-    //    m32——域外）；"25_1d-E:6_0x3f/-b-2-0-0-0-40" 与
-    //    "25_1d-E:6_0x4d/-b-2-0-0-0-40"（×64——kZoom=128 过冲级）。放大
-    //    链在视口面可无限延伸（M-G drill 的 ×20 过冲同族）——采集域外
-    //    是采集 cap/饱和实态，非回放缺陷。miss 全为 V4 放大派生形
-    //    （mult 段 hex——20/40 = ×32/×64）。
-    ASSERT_EQ(3u, misses.size());
-    EXPECT_EQ("25_1d-E:6_0x4d/-b-2-0-0-0-20", misses[0]);
-    EXPECT_EQ("25_1d-E:6_0x3f/-b-2-0-0-0-40", misses[1]);
-    EXPECT_EQ("25_1d-E:6_0x4d/-b-2-0-0-0-40", misses[2]);
-    // ③e 泵形实钉（首绿实测——级数依赖视口/设备像素几何[采集
-    //    1556×844 vs 回放 2000×1400]，harness 变更时按机制复核重钉——
-    //    M-G drill 锁同款登记）：m32(0x3f) 于第 6 级（kZoom=64）连通
-    //    （drill 15 键全），过冲级第 7 级后停泵。
-    EXPECT_EQ(7, levelsRun);
-    EXPECT_EQ(6, firstFullLevel);
+    // ③c **Completed 集实钉（2026-10-20 重钉）** = 30 键 = 6 树 d1 打开面
+    //    键 + 4 叶根树根键 + 0x3f/0x4d 各 10 枚放大键（m2..m400）；零
+    //    NotFound/零 Error（放大补采根补齐 m16..m400——修复前该段域外）。
+    EXPECT_EQ(30u, numCompleted) << "chain-connected set drifted";
+    EXPECT_EQ(30u, log.size());
+    EXPECT_EQ(0u, misses.size()) << "unexpected misses after coverage capture";
+    // ③e 泵形实钉（2026-10-20 重钉）：d1 放大链在 kZoom=1024（第 10 级）
+    //    达到 m400 全连通；harness 变更时按机制复核重钉。
+    EXPECT_EQ(10, levelsRun);
+    EXPECT_EQ(10, firstFullLevel);
 
     // ④ 像素锚（saved 视图——重设回 saved 取景读帧；location 消费后 10 树
     //    内容落 projectExtents 域）。重 load 的 clone 同样经 EMPTY refs 窗
@@ -863,7 +874,8 @@ TEST(DumpOpenChain, Instances60SavedViewSpheresRenderSolid)
 
     dta::DumpOpenPackage pkg;
     pkg.imodelRoot = kDumpRoot + "/instances60-imodel-v1";
-    pkg.tileRoots = {kDumpRoot + "/instances60-v1", kDumpRoot + "/instances60-drill-v1"};
+    pkg.tileRoots = {kDumpRoot + "/instances60-v1", kDumpRoot + "/instances60-drill-v1",
+                     kDumpRoot + "/instances60-mag-missing-v1"};
     auto opened = dta::openDumpIModel(view, pkg);
     ASSERT_TRUE(opened.has_value()) << "open chain failed: " << pkg.imodelRoot;
 
@@ -1514,7 +1526,17 @@ TEST(DumpOpenChain, OpensBridgeEditWithWorldContentFraming)
 
     dta::DumpOpenPackage pkg;
     pkg.imodelRoot = kDumpRoot + "/bridge-edit-v1";
-    pkg.tileRoots = {kDumpRoot + "/bridge-edit-v1", kDumpRoot + "/bridge-edit-drill-v1"};
+    // 与 dumpPackageForModel("bridge-edit") 同面（8 根）：子瓦范围 longest-axis
+    // 修复后取景面 d2 瓦 Visible（参考同形，DTA views v0 请求面 = 两枚 d2
+    // 键），其中 -b-2-0-0-0-1 的 140MB 字节本地持有于 sweep 根——缺 sweep
+    // 根会让 d2 读失败触发父轮询链（d1/d0 NotFound），非引擎缺陷。
+    pkg.tileRoots = {kDumpRoot + "/bridge-edit-v1", kDumpRoot + "/bridge-edit-drill-v1",
+                     kDumpRoot + "/bridge-edit-sweep-v1",
+                     kDumpRoot + "/bridge-edit-mag-missing-v1",
+                     kDumpRoot + "/bridge-edit-mag-missing-v2",
+                     kDumpRoot + "/bridge-edit-mag-missing-v3",
+                     kDumpRoot + "/bridge-edit-mag-missing-v4",
+                     kDumpRoot + "/bridge-edit-coverage-v1"};
     pkg.frameToWorldContent = true;  // 坑 24 取景路径（dumpPackageForModel 同款）
     auto opened = dta::openDumpIModel(view, pkg);
     ASSERT_TRUE(opened.has_value()) << "open chain failed: " << pkg.imodelRoot;
@@ -1579,14 +1601,10 @@ TEST(DumpOpenChain, OpensBridgeEditWithWorldContentFraming)
 
     // --- 对账：请求日志 vs 取景面 + 联合域 ---
     std::set<std::string> unionKeys;
-    {
-        auto mainManifest = dqApp::loadDumpManifest(kDumpRoot + "/bridge-edit-v1");
-        auto drillManifest = dqApp::loadDumpManifest(kDumpRoot + "/bridge-edit-drill-v1");
-        ASSERT_TRUE(mainManifest.has_value());
-        ASSERT_TRUE(drillManifest.has_value());
-        for (auto const& t : mainManifest->tiles)
-            unionKeys.insert(t.treeId + "/" + t.contentId);
-        for (auto const& t : drillManifest->tiles)
+    for (auto const& rootPath : pkg.tileRoots) {
+        auto manifest = dqApp::loadDumpManifest(rootPath);
+        ASSERT_TRUE(manifest.has_value()) << "manifest unreadable: " << rootPath;
+        for (auto const& t : manifest->tiles)
             unionKeys.insert(t.treeId + "/" + t.contentId);
     }
     auto const& log = opened->fetcher->requestLog();
@@ -1622,26 +1640,31 @@ TEST(DumpOpenChain, OpensBridgeEditWithWorldContentFraming)
 
     EXPECT_EQ(0u, numError) << "dump asset integrity break";
     EXPECT_EQ(requestedKeys.size(), log.size()) << "duplicate tile requests";
-    // ④a **取景面请求序（首绿实测——判据按实际回放面裁剪）**：恰 1 枚
-    //    "-b-3-0-0-0-1"（Completed——**经 fallback drill 根命中**：主根
-    //    bridge-edit-v1 只有 d2 两粗瓦，d3 字节只在 bridge-edit-drill-v1
-    //    ——多根 fetcher 的首个跨根命中实录）。**与采集面（d2 两粗瓦
-    //    README"统计"节）的分级差 = 窗尺寸 × SSE 的定量结果**：mpp =
-    //    extents.x/窗宽 = 1366.37/1263 = 1.0818 m/px → d2（radius 2525、
-    //    [SEL] 实测 pixelSize 2334 > maxSize 2048）TooCoarse → 首个 Visible
-    //    = d3（1167 ≤ 2048）；采集面 d2 Visible ⇒ 采集会话取景窗宽
-    //    ≤ ~1108 px（mpp ≥ 1.233）——采集 provenance 未记录取景时点窗
-    //    （README 已知限制坑 25 同域），机制面（同一 lookAtVolume 域、
-    //    同一 SSE 公式）两侧一致。
-    ASSERT_EQ(1u, log.size()) << "framing request face drifted";
-    EXPECT_EQ("-b-3-0-0-0-1", log[0].contentId);
-    EXPECT_EQ(dqApp::DumpTileFetcher::DumpFetchOutcome::Completed, log[0].outcome);
-    EXPECT_EQ(1l, ctx.readyTiles) << "Completed → graphics reconciliation broke";
-    // ④b 树侧终态（首绿实测）：root→d1→d2→d3 四瓦结构（d0-d2 canSkip 穿透
-    //    [maxInitialTilesToSkip=3]不被请求——根键零请求 = 采集域无根字节的
-    //    缺口不可达，NotFound 白名单为空集）。
+    // ④a **取景面请求面（2026-10-20 子瓦范围 longest-axis 修复后重钉）**：
+    //    恰两枚 d2 键 Completed —— **与 DTA 同视域 views 回放 v0 请求面
+    //    逐键相同**（bridge-edit-viewport-views-v1 manifest 的 d≤3 集 =
+    //    {-b-2-0-0-0-1, -b-2-0-1-0-1, -b-3-0-0-0-1, -b-3-1-0-0-1}；v0 帧
+    //    面即本取景面）。[SEL] 实测：d0 TooCoarse(pixelSize 9336.8>2048)/
+    //    d1 TooCoarse(2285.4>2048)/d2 Visible(844.7≤2048) → d2 两子瓦经
+    //    Visible 分支 insertMissing；d0/d1 走 canSkip 穿透零请求。修复前
+    //    错位八分体使 d2 pixelSize=2334>2048 → 首个 Visible=d3（单键
+    //    -b-3-0-0-0-1）——旧钉值是错位体积的派生面。
+    ASSERT_EQ(2u, log.size()) << "framing request face drifted";
+    {
+        std::set<std::string> faceKeys;
+        for (auto const& rec : log) {
+            faceKeys.insert(rec.contentId);
+            EXPECT_EQ(dqApp::DumpTileFetcher::DumpFetchOutcome::Completed, rec.outcome);
+        }
+        EXPECT_EQ(2u, faceKeys.size()) << "duplicate tile requests";
+        EXPECT_TRUE(faceKeys.count("-b-2-0-0-0-1") > 0);
+        EXPECT_TRUE(faceKeys.count("-b-2-0-1-0-1") > 0);
+    }
+    EXPECT_EQ(2l, ctx.readyTiles) << "Completed → graphics reconciliation broke";
+    // ④b 树侧终态：root→d1→d2×2 四瓦结构（d0/d1 canSkip 零请求——根键
+    //    零请求；NotFound 白名单为空集）。
     EXPECT_EQ(4l, ctx.totalTiles);
-    EXPECT_EQ(0u, numNotFound) << "unexpected misses (root/d1/d2 are canSkip, "
+    EXPECT_EQ(0u, numNotFound) << "unexpected misses (d0/d1 are canSkip, "
                                   "never requested)";
 
     // ⑤ 像素锚（全桥轮廓上屏）。

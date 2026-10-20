@@ -196,6 +196,51 @@ TEST(ImdlTileTree, RejectsChildrenOutsideModelRange)
         EXPECT_NEAR(c.range.high.x, 4.0, 1e-12);
 }
 
+// Authored: no reference test exists in itwinjs-core for computeChildTileProps;
+// expected values derived from bisectTileRange3d (TileMetadata.ts:724-733)
+// applied to the bridge-edit root range (rpc-dumps/bridge-edit-v1/files/5.json
+// rootTile.range). The reference bisects the range's CURRENT longest axis once
+// per i/j/k call — for an elongated range all three calls halve the same axis,
+// yielding 8 x-slices (not octants). The x/z index mapping (cube case: i->z,
+// k->x) comes from the same function's longest-axis order.
+TEST(ImdlTileTree, BisectsCurrentLongestAxisPerReference)
+{
+    dqRender::ImdlTileMetadata parent;
+    parent.contentId = "0/0/0/0";
+    parent.range = box(-9871.179510333754, -2100.4036125970165, -422.7552885020075,
+                        9871.179510333754,  2100.403612597017,   422.75528850200755);
+    parent.isLeaf = false;
+
+    dqRender::ImdlTreeMetadata root;
+    root.contentRange = box(-9870.192540428208, -2100.193603737086, -422.71301931353565,
+                            -8338.160069725083, -1774.2055561372936, -357.1003102681255);
+    root.is2d = false;
+
+    auto children = dqRender::computeImdlChildTileProps(parent, root);
+    // Only (i=0,j=0,k=0) lies inside the model range; the other x-slices miss.
+    ASSERT_EQ(children.size(), 1u);
+    EXPECT_EQ(children[0].contentId, "1/0/0/0");
+    // Three successive longest-axis (x) halvings: low kept on every call.
+    EXPECT_NEAR(children[0].range.low.x, -9871.179510333754, 1e-9);
+    EXPECT_NEAR(children[0].range.high.x, -7403.384632750316, 1e-9);
+    // y/z never split while x remains the longest axis.
+    EXPECT_NEAR(children[0].range.low.y, -2100.4036125970165, 1e-9);
+    EXPECT_NEAR(children[0].range.high.z, 422.75528850200755, 1e-9);
+
+    // Cube case middle child (i=1,j=0,k=0): i selects z-high, j y-low, k x-low.
+    parent.range = box(0, 0, 0, 8, 8, 8);
+    root.contentRange = box(-1, -1, -1, 9, 9, 9);
+    auto cube = dqRender::computeImdlChildTileProps(parent, root);
+    ASSERT_EQ(cube.size(), 8u);
+    EXPECT_EQ(cube[4].contentId, "1/1/0/0");   // (i=1, j=0, k=0)
+    EXPECT_NEAR(cube[4].range.low.x, 0.0, 1e-12);
+    EXPECT_NEAR(cube[4].range.high.x, 4.0, 1e-12);
+    EXPECT_NEAR(cube[4].range.low.y, 0.0, 1e-12);
+    EXPECT_NEAR(cube[4].range.high.y, 4.0, 1e-12);
+    EXPECT_NEAR(cube[4].range.low.z, 4.0, 1e-12);
+    EXPECT_NEAR(cube[4].range.high.z, 8.0, 1e-12);
+}
+
 // magnification 分支：有 sizeMultiplier → 单子同体积、倍率×2（:785-799）。
 TEST(ImdlTileTree, MagnificationDoublesMultiplier)
 {

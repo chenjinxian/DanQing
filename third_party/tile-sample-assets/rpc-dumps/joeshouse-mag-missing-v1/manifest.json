@@ -1,0 +1,471 @@
+{
+  "provenance": {
+    "pageHref": "http://localhost:3000/",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7977.54 Electron/44.0.0 Safari/537.36",
+    "defaultView": {
+      "origin": [
+        -0.3322686917484541,
+        23.82680528315059,
+        -14.244668121301645
+      ],
+      "extents": [
+        38.46216332077429,
+        20.862510181705332,
+        35.41381746319353
+      ],
+      "rotation": [
+        [
+          0.7071067811865478,
+          -0.7071067811865472,
+          -1.1102230246251565e-16
+        ],
+        [
+          0.4082482904638621,
+          0.4082482904638622,
+          0.8164965809277269
+        ],
+        [
+          -0.5773502691896262,
+          -0.5773502691896266,
+          0.5773502691896245
+        ]
+      ],
+      "is3d": true,
+      "cameraOn": false,
+      "lens": 0,
+      "viewRect": {
+        "w": 1556,
+        "h": 844
+      },
+      "capturedAt": "2026-10-20T16:07:00.362Z"
+    },
+    "formatVersion": 2424832,
+    "done": true,
+    "iModel": {
+      "name": "Joe's house.bim",
+      "projectExtents": {
+        "low": [
+          -7.487673782576411,
+          -9.008715020706598,
+          -0.6428724054036954
+        ],
+        "high": [
+          27.762144601950517,
+          18.75342958124392,
+          11.693023003317192
+        ]
+      },
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489"
+    },
+    "sweep": {
+      "phase": "done",
+      "tiles": 14,
+      "bytes": 591984,
+      "leaves": 0,
+      "branches": 14,
+      "trees": [
+        "25_1d-E:6_0x26",
+        "25_1d-E:6_0x3d",
+        "25_1d-E:6_0x3f",
+        "25_1d-E:6_0x41",
+        "25_1d-E:6_0x43",
+        "25_1d-E:6_0x45",
+        "25_1d-E:6_0x47",
+        "25_1d-E:6_0x49",
+        "25_1d-E:6_0x4b",
+        "25_1d-E:6_0x4d"
+      ],
+      "perTree": {
+        "25_1d-E:6_0x26": {
+          "tiles": 0,
+          "leaves": 0,
+          "branches": 0,
+          "errs": 0,
+          "bytes": 0,
+          "magnifierCapped": 0
+        },
+        "25_1d-E:6_0x3d": {
+          "tiles": 0,
+          "leaves": 0,
+          "branches": 0,
+          "errs": 0,
+          "bytes": 0,
+          "magnifierCapped": 0
+        },
+        "25_1d-E:6_0x3f": {
+          "tiles": 7,
+          "leaves": 0,
+          "branches": 7,
+          "errs": 0,
+          "bytes": 179200,
+          "magnifierCapped": 0
+        },
+        "25_1d-E:6_0x41": {
+          "tiles": 0,
+          "leaves": 0,
+          "branches": 0,
+          "errs": 0,
+          "bytes": 0,
+          "magnifierCapped": 0
+        },
+        "25_1d-E:6_0x43": {
+          "tiles": 0,
+          "leaves": 0,
+          "branches": 0,
+          "errs": 0,
+          "bytes": 0,
+          "magnifierCapped": 0
+        },
+        "25_1d-E:6_0x45": {
+          "tiles": 0,
+          "leaves": 0,
+          "branches": 0,
+          "errs": 0,
+          "bytes": 0,
+          "magnifierCapped": 0
+        },
+        "25_1d-E:6_0x47": {
+          "tiles": 0,
+          "leaves": 0,
+          "branches": 0,
+          "errs": 0,
+          "bytes": 0,
+          "magnifierCapped": 0
+        },
+        "25_1d-E:6_0x49": {
+          "tiles": 0,
+          "leaves": 0,
+          "branches": 0,
+          "errs": 0,
+          "bytes": 0,
+          "magnifierCapped": 0
+        },
+        "25_1d-E:6_0x4b": {
+          "tiles": 0,
+          "leaves": 0,
+          "branches": 0,
+          "errs": 0,
+          "bytes": 0,
+          "magnifierCapped": 0
+        },
+        "25_1d-E:6_0x4d": {
+          "tiles": 7,
+          "leaves": 0,
+          "branches": 7,
+          "errs": 0,
+          "bytes": 412784,
+          "magnifierCapped": 0
+        }
+      },
+      "errors": [],
+      "providerSource": "negotiated",
+      "modulesVia": "resource-entries",
+      "fallbackUsed": false,
+      "caps": {
+        "tiles": 400000,
+        "depth": 10,
+        "bytes": 1610612736,
+        "mag": 8
+      },
+      "done": true
+    },
+    "seed": "JoesHouse.bim",
+    "seedPath": "D:\\Github\\tiangong-kaiwu\\itwinjs-core\\test-apps\\display-test-app\\assets\\JoesHouse.bim",
+    "collected": "2026-10-20T16:07:09.870Z",
+    "itwinjsCommit": "88da8fb98647d37632a5cef4d6bb6e2e5c007855",
+    "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+    "changesetId": "",
+    "tool": "danqing-rpc-tools capture.mjs"
+  },
+  "stats": {
+    "trees": 10,
+    "tiles": 20,
+    "dupTiles": 0,
+    "dupTrees": 0,
+    "bytes": 616704
+  },
+  "trees": [
+    {
+      "treeId": "25_1d-E:6_0x26",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "formatVersion": 2424832,
+      "byteLength": 515,
+      "file": "files/7.json",
+      "propsFile": "files/7.json"
+    },
+    {
+      "treeId": "25_1d-E:6_0x3d",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "formatVersion": 2424832,
+      "byteLength": 515,
+      "file": "files/8.json",
+      "propsFile": "files/8.json"
+    },
+    {
+      "treeId": "25_1d-E:6_0x3f",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "formatVersion": 2424832,
+      "byteLength": 690,
+      "file": "files/9.json",
+      "propsFile": "files/9.json"
+    },
+    {
+      "treeId": "25_1d-E:6_0x41",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "formatVersion": 2424832,
+      "byteLength": 689,
+      "file": "files/10.json",
+      "propsFile": "files/10.json"
+    },
+    {
+      "treeId": "25_1d-E:6_0x43",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "formatVersion": 2424832,
+      "byteLength": 515,
+      "file": "files/11.json",
+      "propsFile": "files/11.json"
+    },
+    {
+      "treeId": "25_1d-E:6_0x45",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "formatVersion": 2424832,
+      "byteLength": 691,
+      "file": "files/12.json",
+      "propsFile": "files/12.json"
+    },
+    {
+      "treeId": "25_1d-E:6_0x47",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "formatVersion": 2424832,
+      "byteLength": 687,
+      "file": "files/13.json",
+      "propsFile": "files/13.json"
+    },
+    {
+      "treeId": "25_1d-E:6_0x49",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "formatVersion": 2424832,
+      "byteLength": 683,
+      "file": "files/14.json",
+      "propsFile": "files/14.json"
+    },
+    {
+      "treeId": "25_1d-E:6_0x4b",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "formatVersion": 2424832,
+      "byteLength": 515,
+      "file": "files/15.json",
+      "propsFile": "files/15.json"
+    },
+    {
+      "treeId": "25_1d-E:6_0x4d",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "formatVersion": 2424832,
+      "byteLength": 691,
+      "file": "files/16.json",
+      "propsFile": "files/16.json"
+    }
+  ],
+  "tiles": [
+    {
+      "treeId": "25_1d-E:6_0x3f",
+      "contentId": "-b-1-0-0-0-10",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "changesetId": "",
+      "byteLength": 9448,
+      "sha256": "a4c766ba28b535e215d523bd63477aef6e13af659a318ca2c3788cd2c8833a53",
+      "file": "files/17.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x4d",
+      "contentId": "-b-1-0-0-0-10",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "changesetId": "",
+      "byteLength": 10764,
+      "sha256": "73e0d436a6792cc42a54d035c12a28ca15d389eeacba9fea744100d02caed955",
+      "file": "files/18.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x3f",
+      "contentId": "-b-1-0-0-0-100",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "changesetId": "",
+      "byteLength": 29644,
+      "sha256": "3777133b12aa1d3534c176402561980838852947ed298f877ba31ea151a7b867",
+      "file": "files/20.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x4d",
+      "contentId": "-b-1-0-0-0-100",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "changesetId": "",
+      "byteLength": 52648,
+      "sha256": "1f21d44b6f042cb46a295e83ca945ee8f5018cb3cbe8b6eab90ded0b04ce54a2",
+      "file": "files/21.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x3f",
+      "contentId": "-b-2-0-0-0-1",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "changesetId": "",
+      "byteLength": 7728,
+      "sha256": "2855bd7eff4c055fc7307e3aaa08dc854b81f84cb6f1bd270a96fef6a4a5ece4",
+      "file": "files/22.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x4d",
+      "contentId": "-b-2-0-0-0-1",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "changesetId": "",
+      "byteLength": 5620,
+      "sha256": "f35f49f80f4b0895af622ad090cbe7d1bb16c51504cf7d0e837a3895222d7a26",
+      "file": "files/23.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x49",
+      "contentId": "-b-2-0-0-0-1",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "changesetId": "",
+      "byteLength": 3080,
+      "sha256": "5027950761b43482b4a9d43a7345012fcb02a87b2ef9af75d0a40b82a9dadae2",
+      "file": "files/24.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x47",
+      "contentId": "-b-2-0-0-0-1",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "changesetId": "",
+      "byteLength": 4144,
+      "sha256": "ccf564483c808a78ece08387341c57a6fb7563b424bbe44146729a7fe60097de",
+      "file": "files/25.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x45",
+      "contentId": "-b-2-0-0-0-1",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "changesetId": "",
+      "byteLength": 2072,
+      "sha256": "6730daa7243f36c6e2376e7c120cecfbcda784708add0c24bed928ca3eb91353",
+      "file": "files/26.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x41",
+      "contentId": "-b-2-0-0-0-1",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "changesetId": "",
+      "byteLength": 2076,
+      "sha256": "1cf8e9fdf3dec9a77e0a067d4725e84eb0f9e4a65c3817bdda5e40b383900481",
+      "file": "files/27.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x3f",
+      "contentId": "-b-1-0-0-0-20",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "changesetId": "",
+      "byteLength": 13932,
+      "sha256": "b0ce765bfc282fbbffaf8090c5c1d356f283a37c59ef23e712432cd7a3d57a77",
+      "file": "files/28.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x4d",
+      "contentId": "-b-1-0-0-0-20",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "changesetId": "",
+      "byteLength": 25768,
+      "sha256": "f92e5fcda5fb6ad6fcc85f9118879a2b9f850105a9a77ce3ee91c09fdc554d16",
+      "file": "files/29.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x3f",
+      "contentId": "-b-1-0-0-0-200",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "changesetId": "",
+      "byteLength": 36888,
+      "sha256": "113717846e72d2d6b4e8e60d90305747e8e857ca26b2bb1b81700fb3538e80b9",
+      "file": "files/30.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x4d",
+      "contentId": "-b-1-0-0-0-200",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "changesetId": "",
+      "byteLength": 100984,
+      "sha256": "60b48351fe090fad9e96df5afe03fefeb872abd4133d212325fa5a8447483553",
+      "file": "files/31.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x3f",
+      "contentId": "-b-1-0-0-0-40",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "changesetId": "",
+      "byteLength": 17048,
+      "sha256": "2a171d9176a6407c7531bab0a116882a551d02cf24d4a47434b3b6b287333f00",
+      "file": "files/32.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x4d",
+      "contentId": "-b-1-0-0-0-40",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "changesetId": "",
+      "byteLength": 27552,
+      "sha256": "b47cc22de940a99d33b9794d6b1faf2fd54f8d39f7c1b4645078284ebd40ce62",
+      "file": "files/33.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x3f",
+      "contentId": "-b-1-0-0-0-400",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "changesetId": "",
+      "byteLength": 51868,
+      "sha256": "2c1337a3836969aef1364d6b9612366345dbbdffd684d446028355c9a71422b4",
+      "file": "files/34.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x4d",
+      "contentId": "-b-1-0-0-0-400",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "changesetId": "",
+      "byteLength": 143348,
+      "sha256": "3ef00729c9105611e128720c5f68c78af83a253f677848eb63d0a2038a0e0530",
+      "file": "files/35.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x3f",
+      "contentId": "-b-1-0-0-0-80",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "changesetId": "",
+      "byteLength": 20372,
+      "sha256": "abd6742f509bb57b0dab9fbd2741ad7a6a3864244c2a5b49c9d486a0dc2facb8",
+      "file": "files/36.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x4d",
+      "contentId": "-b-1-0-0-0-80",
+      "guid": "first_1770d0763380cb45",
+      "iModelId": "2b382042-4a92-46a4-a3cf-db4b77085489",
+      "changesetId": "",
+      "byteLength": 51720,
+      "sha256": "6a795203007f6dd28014c417ff85fdbf6f7fb0771e7d20462e81f0bb4a4a8878",
+      "file": "files/37.imdl"
+    }
+  ]
+}

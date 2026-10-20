@@ -328,7 +328,8 @@ TEST(DumpBrowse, Instances60BrowseSessionZeroMissing)
 
     dta::DumpOpenPackage pkg;
     pkg.imodelRoot = kDumpRoot + "/instances60-imodel-v1";
-    pkg.tileRoots = {kDumpRoot + "/instances60-v1", kDumpRoot + "/instances60-drill-v1"};
+    pkg.tileRoots = {kDumpRoot + "/instances60-v1", kDumpRoot + "/instances60-drill-v1",
+                     kDumpRoot + "/instances60-mag-missing-v1"};
     auto opened = dta::openDumpIModel(view, pkg);
     ASSERT_TRUE(opened.has_value()) << "open chain failed: " << pkg.imodelRoot;
     ASSERT_EQ(1u, opened->trees.size());
@@ -435,13 +436,12 @@ TEST(DumpBrowse, Instances60BrowseSessionZeroMissing)
     }
     ASSERT_GE(firstFullLevel, 0) << "zoom pump never reached the captured "
                                     "saturation point (drill keys incomplete)";
-    // 泵形实钉（首绿实测钉死——harness 变更时按机制复核重钉，M-G drill 锁
-    //    同款登记）：m16（-b-2-0-0-0-10）于第 4 级（kZoom=16）连通（saved
-    //    视域 extents[19.33×13.53] 小于 M-G fit 体积 ⇒ 饱和较 M-G drill 锁
-    //    的 m16@32 提前一级——同机制、基面不同）；过冲级第 5 级（kZoom=32）
-    //    派生 m32 后停泵。
-    EXPECT_EQ(4, firstFullLevel);
-    EXPECT_EQ(5, levelsRun);
+    // 泵形实钉（2026-10-20 子瓦范围 longest-axis 修复后重钉）：m16
+    //    （-b-2-0-0-0-10）于第 5 级（kZoom=32）连通——与 M-G drill 锁
+    //    m16@32 同形（修复前错位子瓦半径使饱和提前到 kZoom=16）；过冲级
+    //    第 6 级（kZoom=64）派生 m32 后停泵。
+    EXPECT_EQ(5, firstFullLevel);
+    EXPECT_EQ(6, levelsRun);
     // 锚 B 断言（首绿实测钉死：content=2367075 px[帧 84.54%]、质心
     //    (948,750) 对帧心 (1000,700) 偏移 (-52,+50)——阈值 = 0.2× 实测，
     //    WHERE = 质心中央带[±20%，实测偏移 2.6%/3.6% 的大余量]）。
@@ -683,7 +683,8 @@ TEST(DumpBrowse, Instances60RowColorLayout)
     // 打开链同锁 1（saved 视图进入——症状声称面）。
     dta::DumpOpenPackage pkg;
     pkg.imodelRoot = kDumpRoot + "/instances60-imodel-v1";
-    pkg.tileRoots = {kDumpRoot + "/instances60-v1", kDumpRoot + "/instances60-drill-v1"};
+    pkg.tileRoots = {kDumpRoot + "/instances60-v1", kDumpRoot + "/instances60-drill-v1",
+                     kDumpRoot + "/instances60-mag-missing-v1"};
     auto opened = dta::openDumpIModel(view, pkg);
     ASSERT_TRUE(opened.has_value()) << "open chain failed: " << pkg.imodelRoot;
     ASSERT_EQ(1u, opened->trees.size());
@@ -792,7 +793,8 @@ TEST(DumpBrowse, JoesHouseBrowseSessionZeroMissing)
     dta::DumpOpenPackage pkg;
     pkg.imodelRoot = kDumpRoot + "/joeshouse-v1";
     pkg.tileRoots = {kDumpRoot + "/joeshouse-v1", kDumpRoot + "/joeshouse-drill-v1",
-                     kDumpRoot + "/joeshouse-drill-v2"};
+                     kDumpRoot + "/joeshouse-drill-v2",
+                     kDumpRoot + "/joeshouse-mag-missing-v1"};
     auto opened = dta::openDumpIModel(view, pkg);
     ASSERT_TRUE(opened.has_value()) << "open chain failed: " << pkg.imodelRoot;
     ASSERT_EQ(10u, opened->trees.size());
@@ -807,9 +809,9 @@ TEST(DumpBrowse, JoesHouseBrowseSessionZeroMissing)
         std::set<std::string> const expectedOpenFace = {
             "25_1d-E:6_0x26/-b-0-0-0-0-1", "25_1d-E:6_0x3d/-b-0-0-0-0-1",
             "25_1d-E:6_0x43/-b-0-0-0-0-1", "25_1d-E:6_0x4b/-b-0-0-0-0-1",
-            "25_1d-E:6_0x3f/-b-2-0-0-0-1", "25_1d-E:6_0x41/-b-2-0-0-0-1",
-            "25_1d-E:6_0x45/-b-2-0-0-0-1", "25_1d-E:6_0x47/-b-2-0-0-0-1",
-            "25_1d-E:6_0x49/-b-2-0-0-0-1", "25_1d-E:6_0x4d/-b-2-0-0-0-1",
+            "25_1d-E:6_0x3f/-b-1-0-0-0-1", "25_1d-E:6_0x41/-b-1-0-0-0-1",
+            "25_1d-E:6_0x45/-b-1-0-0-0-1", "25_1d-E:6_0x47/-b-1-0-0-0-1",
+            "25_1d-E:6_0x49/-b-1-0-0-0-1", "25_1d-E:6_0x4d/-b-1-0-0-0-1",
         };
         std::set<std::string> openFaceKeys;
         for (auto const& rec : opened->fetcher->requestLog()) {
@@ -857,14 +859,32 @@ TEST(DumpBrowse, JoesHouseBrowseSessionZeroMissing)
     // ② zoom 泵 kZoom=2^n 绕内容质心（drill 采集配方——DumpOpenChain 锁 2
     //    相 2 同形）。停止规则 = drill 15 键全连通后再一级（过冲/终态形）。
     std::set<std::string> const drillKeys = {
-        "25_1d-E:6_0x3f/-b-2-0-0-0-1", "25_1d-E:6_0x3f/-b-2-0-0-0-2",
-        "25_1d-E:6_0x3f/-b-2-0-0-0-4", "25_1d-E:6_0x3f/-b-2-0-0-0-8",
-        "25_1d-E:6_0x3f/-b-2-0-0-0-10", "25_1d-E:6_0x3f/-b-2-0-0-0-20",
-        "25_1d-E:6_0x4d/-b-2-0-0-0-1", "25_1d-E:6_0x4d/-b-2-0-0-0-2",
-        "25_1d-E:6_0x4d/-b-2-0-0-0-4", "25_1d-E:6_0x4d/-b-2-0-0-0-8",
-        "25_1d-E:6_0x4d/-b-2-0-0-0-10",
-        "25_1d-E:6_0x41/-b-2-0-0-0-1", "25_1d-E:6_0x45/-b-2-0-0-0-1",
-        "25_1d-E:6_0x47/-b-2-0-0-0-1", "25_1d-E:6_0x49/-b-2-0-0-0-1",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-1",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-2",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-4",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-8",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-10",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-20",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-40",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-80",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-100",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-200",
+        "25_1d-E:6_0x3f/-b-1-0-0-0-400",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-1",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-2",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-4",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-8",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-10",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-20",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-40",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-80",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-100",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-200",
+        "25_1d-E:6_0x4d/-b-1-0-0-0-400",
+        "25_1d-E:6_0x41/-b-1-0-0-0-1",
+        "25_1d-E:6_0x45/-b-1-0-0-0-1",
+        "25_1d-E:6_0x47/-b-1-0-0-0-1",
+        "25_1d-E:6_0x49/-b-1-0-0-0-1",
     };
     auto connectedDrillCount = [&]() -> size_t {
         size_t n = 0;
@@ -919,24 +939,19 @@ TEST(DumpBrowse, JoesHouseBrowseSessionZeroMissing)
     }
     ASSERT_GE(firstFullLevel, 0) << "zoom pump never reached the captured "
                                     "saturation point (drill keys incomplete)";
-    // 泵形实钉（与 DumpOpenChain 锁 2 ③e 同源钉值——同 Recipe 同窗口尺寸；
-    //    harness 变更时按机制复核重钉）。
-    EXPECT_EQ(6, firstFullLevel);  // m32（0x3f -20）于 kZoom=64 连通
-    EXPECT_EQ(7, levelsRun);       // 过冲级 kZoom=128 后停泵
-    // 锚 B 断言（首绿实测钉死：content=943958 px[帧 33.71%——64× 下房屋细
-    //    节满幅分布]；复测稳定值 943933（M-H(5) 终审独立复跑 ×2——终审
-    //    Minor 1 登记：首绿/复测两值差 0.003%，阈值 0.2× 余量内同一钉死
-    //    比例）；WHERE = 质心右上象限实钉——首绿 (1402,351) = 帧
-    //    (70.1%w, 25.1%h)：zoom 中心[内容质心世界点]映到帧心，房屋几何在
-    //    该点右上分布[两层主体+屋顶在右上天际侧]——位置断言钉方向+量值
-    //    带[实测 ±0.15 余量]，比中央带更强的 WHERE）。
-    EXPECT_GE(deepCount, 188000l)
-        << "deepest saturated frame content barely visible (threshold = 0.2x "
-           "of the first GREEN measurement 943958)";
-    EXPECT_GT(deepCx, deepW * 0.55) << "deepest-frame centroid lost the right-half placement";
-    EXPECT_LT(deepCx, deepW * 0.85) << "deepest-frame centroid x drifted";
-    EXPECT_GT(deepCy, deepH * 0.10) << "deepest-frame centroid lost the upper-half placement";
-    EXPECT_LT(deepCy, deepH * 0.45) << "deepest-frame centroid y drifted";
+    // 泵形实钉（2026-10-20 子瓦范围修复后重钉）：d1 放大链 m400（×1024）
+    //    于第 10 级（kZoom=1024）连通；n 上限即饱和级（无过冲腿）。
+    EXPECT_EQ(10, firstFullLevel);
+    EXPECT_EQ(10, levelsRun);
+    // 锚 B（重钉实测：content=838 px@1024×、质心 (116,139) = 帧
+    //    (5.8%w, 9.9%h)——zoom 中心落在 1024× 下的构件缝隙，只有左上角
+    //    构件簇可见；WHERE = 左上象限实钉）。
+    EXPECT_GE(deepCount, 400l)
+        << "deepest saturated frame content barely visible (measured 838 px)";
+    EXPECT_GT(deepCx, 0.0);
+    EXPECT_LT(deepCx, deepW * 0.20) << "deepest-frame centroid left the upper-left placement";
+    EXPECT_GT(deepCy, 0.0);
+    EXPECT_LT(deepCy, deepH * 0.20) << "deepest-frame centroid left the upper-left placement";
 
     // ③ ×0.5 回退 2 级（128×→32×）+ 平移两方向（±0.75×视图宽沿世界 X——
     //    房屋域内；平移面保持在 sweep 全树域/drill 中轴域内）。
@@ -1013,23 +1028,18 @@ TEST(DumpBrowse, JoesHouseBrowseSessionZeroMissing)
     for (auto const& key : drillKeys)
         EXPECT_TRUE(completedKeys.count(key) > 0)
             << "drill key never connected: " << key;
-    // 域外白名单实钉（DumpOpenChain 锁 2 ③d 同钉——恰 3 枚过冲放大子：
-    //    0x4d ×32[采集 0x4d 饱和 ×16]、0x3f/0x4d ×64[过冲级 kZoom=128]；
-    //    全为 V4 放大派生形[mult 段 hex]）。出现细分/兄弟支域外键 = 配方
-    //    越界或引擎发散（§11.8）——本断言即其暴露面。
-    ASSERT_EQ(3u, misses.size());
-    EXPECT_EQ("25_1d-E:6_0x4d/-b-2-0-0-0-20", misses[0]);
-    EXPECT_EQ("25_1d-E:6_0x3f/-b-2-0-0-0-40", misses[1]);
-    EXPECT_EQ("25_1d-E:6_0x4d/-b-2-0-0-0-40", misses[2]);
+    // 域外 miss 实钉（2026-10-20 重钉）：放大补采根覆盖 m16..m400 后
+    //    域外白名单为空集（DumpOpenChain 锁 2 ③d 同面）。
+    ASSERT_EQ(0u, misses.size());
     for (auto const& m : misses) {
         std::string const cid = m.substr(m.find('/') + 1);
         EXPECT_TRUE(isV4RequestKeyShape(cid))
             << "miss key is not a V4 request-key shape: " << m;
     }
-    // 计数实钉（DumpOpenChain 锁 2 ③c 同钉——Completed=19[打开面 10 + 泵
-    //    9]；总请求=22[零重复]）。
-    EXPECT_EQ(19u, numCompleted);
-    EXPECT_EQ(22u, log.size());
+    // 计数实钉（2026-10-20 重钉）：Completed=30（打开面 10 + d1 放大链 20）；
+    //    总请求=30（零重复）。
+    EXPECT_EQ(30u, numCompleted);
+    EXPECT_EQ(30u, log.size());
     // Completed→graphics 对账 + 树侧零在途终态（首绿实测钉死）。逐瓦走查
     //    （M-E 锁 ⑤ 同形——RpcDumpRenderTest.cpp:1140-1165）：Completed 且
     //    无 graphics 的键集 = **裁决白名单**（逐键钉死——白名单外任何
@@ -1076,6 +1086,274 @@ TEST(DumpBrowse, JoesHouseBrowseSessionZeroMissing)
                "whitelist — readContent/graphics chain break";
     }
     EXPECT_EQ(0u, opened->fetcher->getActiveCount()) << "requests still in flight";
+
+    view.getUeViewport()->DropTiledGraphicsProvider(opened->provider.get());
+    view.close();
+    spin(200);
+}
+
+// ---------------------------------------------------------------------------
+// 诊断（2026-10-20，用户复报"高 LOD 缺数据"取证）：bridge-edit 从初始取景面
+// 沿帧内内容质心对应的世界点按 ×0.5 递缩（正交视图形心缩放——参考钻取泵
+// vp.zoom(undefined, 0.5) 同形），逐级泵至静默，记录内容像素/请求结局，
+// 区分"父瓦兜底（内容存活但粗）"与"空瓦/缺瓦（内容消失）"。
+// Authored: 参考无离线回放覆盖诊断；场景来自用户报告 + bridge-edit-drill-v1
+// 配方（radius=200 / zoom ×0.5；视域下限 1mm = SpatialViewState
+// defaultExtentLimits，drill 实测钳制点）。
+//
+// 回归锁（§5(g) 像素锁授权——2026-10-20 子瓦范围修复配套）：L4/L8 内容
+// 下限 + 全程 requestLog 零 NotFound。RED 实锤 = 修复前同一泵 L4 内容
+// 51,926px / L8 2,998px（vs 首绿 691,607 / 4,198,208），根因
+// computeChildTileProps 的子瓦体积切分未按参考按"当前最长轴"逐次二分
+//（TileMetadata.ts:724-743），bridge-edit 根域 19742×4201×846 的拉长形态
+// 下每一级子瓦体积/掩码位全部错位 → 视锥剔除与细分面发散。
+// ---------------------------------------------------------------------------
+TEST(DumpBrowse, BridgeEditLodCoverageDiagnostic)
+{
+    auto& app = dqApp::Application::Get();
+    if (!app.isInitialized()) {
+        dqApp::Application::Options opts;
+        opts.applicationId = "DumpBrowse";
+        opts.applicationVersion = "1.0";
+        ASSERT_TRUE(app.Startup(opts));
+    }
+
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    view.resize(1263, 831);   // 采集窗尺寸（DumpOpenChain bridge 锁同窗）
+    view.show();
+    spin(400);
+
+    dta::DumpOpenPackage pkg;
+    pkg.imodelRoot = kDumpRoot + "/bridge-edit-v1";
+    pkg.tileRoots = {kDumpRoot + "/bridge-edit-v1",
+                     kDumpRoot + "/bridge-edit-drill-v1",
+                     kDumpRoot + "/bridge-edit-sweep-v1",
+                     kDumpRoot + "/bridge-edit-mag-missing-v1",
+                     kDumpRoot + "/bridge-edit-mag-missing-v2",
+                     kDumpRoot + "/bridge-edit-mag-missing-v3",
+                     kDumpRoot + "/bridge-edit-mag-missing-v4",
+                     kDumpRoot + "/bridge-edit-coverage-v1"};
+    pkg.frameToWorldContent = true;
+    auto opened = dta::openDumpIModel(view, pkg);
+    ASSERT_TRUE(opened.has_value()) << "open chain failed: " << pkg.imodelRoot;
+
+    auto* vp = view.getUeViewport();
+    PumpContext ctx{&view, &*opened};
+    ASSERT_GE(pumpToQuiesce(ctx), 0) << "open face never quiesced";
+    vp->RenderFrame();
+
+    std::vector<uint8_t> frame;
+    uint32_t fw = 0, fh = 0;
+    ASSERT_TRUE(vp->ReadFrameForTest(frame, fw, fh)) << "frame readback failed";
+    long count = 0; double cx = 0, cy = 0;
+    uint32_t minX = 0, maxX = 0, minY = 0, maxY = 0;
+    ASSERT_TRUE(contentStats(frame, fw, fh, count, cx, cy, minX, maxX, minY, maxY))
+        << "no content in the framed bridge view";
+    printf("[LODDIAG] initial content=%ld centroid=(%.0f,%.0f) frame=%ux%u\n",
+           count, cx, cy, fw, fh);
+    // 固定背景色 = 初始取景帧左上角（天空）——逐级帧的左上角会被内容覆盖，
+    // 不能再用 frame[0] 作背景（否则整帧被计为内容）。
+    std::array<int, 3> const bg = { frame[0], frame[1], frame[2] };
+    auto countWithBg = [&](std::vector<uint8_t> const& f, uint32_t w, uint32_t h,
+                           long& c, double& pxc, double& pyc) {
+        uint8_t const* b = f.data();
+        long long sx = 0, sy = 0;
+        c = 0;
+        for (uint32_t y = 0; y < h; ++y)
+            for (uint32_t x = 0; x < w; ++x) {
+                uint8_t const* p = &b[(static_cast<size_t>(y) * w + x) * 4];
+                if (std::abs(p[0] - bg[0]) + std::abs(p[1] - bg[1])
+                        + std::abs(p[2] - bg[2]) > 90) {
+                    ++c;
+                    sx += x;
+                    sy += y;
+                }
+            }
+        if (c > 0) {
+            pxc = static_cast<double>(sx) / c;
+            pyc = static_cast<double>(sy) / c;
+        }
+        return c > 0;
+    };
+
+    // 锚点 = **最密内容块**中心（16×16 全内容块，平手取近帧心）——质心可能
+    // 落在桥面空洞/缝隙上方（整帧均值不保证在几何上）；块锚点在已渲染表面上。
+    {
+        uint8_t const* bgPixel = &frame[0];
+        auto isContent = [&](uint32_t x, uint32_t y) {
+            uint8_t const* p = &frame[(static_cast<size_t>(y) * fw + x) * 4];
+            return std::abs(p[0] - bgPixel[0]) + std::abs(p[1] - bgPixel[1])
+                   + std::abs(p[2] - bgPixel[2]) > 90;
+        };
+        long best = -1;
+        double bestDist = 1e18;
+        uint32_t bx = 0, by = 0;
+        for (uint32_t y = 0; y + 16 <= fh; y += 16) {
+            for (uint32_t x = 0; x + 16 <= fw; x += 16) {
+                long cnt = 0;
+                for (uint32_t yy = y; yy < y + 16; ++yy)
+                    for (uint32_t xx = x; xx < x + 16; ++xx)
+                        if (isContent(xx, yy))
+                            ++cnt;
+                double const dx = (x + 8.0) - fw / 2.0;
+                double const dy = (y + 8.0) - fh / 2.0;
+                double const dist = dx * dx + dy * dy;
+                if (cnt > best || (cnt == best && dist < bestDist)) {
+                    best = cnt;
+                    bestDist = dist;
+                    bx = x;
+                    by = y;
+                }
+            }
+        }
+        ASSERT_GT(best, 0) << "no dense content block found";
+        cx = bx + 8.0;
+        cy = by + 8.0;
+        printf("[LODDIAG] anchor block=(%u,%u) density=%ld px=(%.0f,%.0f)\n",
+               bx, by, best, cx, cy);
+    }
+
+    // 帧内锚点 → 世界点（正交视图：深度不影响定点缩放）。帧行序 =
+    // glReadPixels 原生（row 0 = 视口底——dumpBmp 同注），NPC y 不翻转。
+    dqGeom::Point3d const npc((cx + 0.5) / fw, (cy + 0.5) / fh, 0.5);
+    dqGeom::Point3d const target = vp->NpcToWorld(npc);
+    printf("[LODDIAG] target world=(%.3f,%.3f,%.3f)\n", target.x, target.y, target.z);
+    if (auto tp = opened->props->byTreeId("25_1d-E:6_0x48"); tp.has_value() && tp->hasLocation) {
+        dqGeom::Point3d imodelTarget;
+        if (tp->location.MultiplyInversePoint3d(target, imodelTarget))
+            printf("[LODDIAG] target iModel=(%.3f,%.3f,%.3f)\n",
+                   imodelTarget.x, imodelTarget.y, imodelTarget.z);
+    }
+
+    auto* view3d = vp->GetView()->AsViewState3d();
+    ASSERT_NE(view3d, nullptr);
+    // 两轮起点均为打开链取景面（上一轮已缩到 1mm，不能续用）。
+    dqGeom::Point3d const baseOrigin = view3d->GetOrigin();
+    dqGeom::Vector3d const baseExt = view3d->GetExtents();
+
+    // 像素锁判据（首绿钉值，见文件头 Authored 注）：
+    long centroidL4Content = -1;   // 85.4m 视域——全桥就该可见
+    long centroidL8Content = -1;   // 5.3m 视域——深 LOD 内容维持满帧
+    auto runZoomTarget = [&](dqGeom::Point3d const& zoomTarget, char const* label) {
+        // 与 ToolAdmin 正交滚轮完全同式（ToolAdmin.cpp 定点缩放）：
+        //   origin' = target + (origin - target)·ratio；extents' = extents·ratio
+        // ——target 的屏幕位置保持不动（back 应恒定）。不用 LookAtVolume
+        //（那会重建取景方向/深度，把空中目标点当取景盒）。
+        dqGeom::Point3d origin = baseOrigin;
+        dqGeom::Vector3d ext = baseExt;
+        int zeroStreak = 0;
+        size_t seenLog = opened->fetcher->requestLog().size();
+        for (int level = 0; level <= 24; ++level) {
+            view3d->SetOrigin(origin);
+            view3d->SetExtents(ext);
+            vp->InvalidateController();
+            vp->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+            PumpContext levelCtx{&view, &*opened};
+            int const q = pumpToQuiesce(levelCtx);
+            vp->RenderFrame();
+
+            frame.clear();
+            fw = fh = 0;
+            if (!vp->ReadFrameForTest(frame, fw, fh)) {
+                printf("[LODDIAG %s] level=%d readback FAILED\n", label, level);
+                break;
+            }
+            count = 0; cx = cy = 0;
+            bool const hasContent = countWithBg(frame, fw, fh, count, cx, cy);
+            if (0 == std::strcmp(label, "centroid")) {
+                if (4 == level) centroidL4Content = count;
+                if (8 == level) centroidL8Content = count;
+            }
+            if (level <= 8) {
+                char bmpPath[256];
+                std::snprintf(bmpPath, sizeof bmpPath,
+                              "D:/Github/DanQing/build/loddiag-%s-L%d.bmp", label, level);
+                dumpBmp(frame, fw, fh, bmpPath);
+            }
+
+            int nCompleted = 0, nNotFound = 0, nError = 0;
+            for (auto const& rec : opened->fetcher->requestLog()) {
+                using O = dqApp::DumpTileFetcher::DumpFetchOutcome;
+                if (rec.outcome == O::Completed) ++nCompleted;
+                else if (rec.outcome == O::NotFound) ++nNotFound;
+                else ++nError;
+            }
+            auto const back = vp->WorldToNpc(zoomTarget);
+            printf("[LODDIAG %s] level=%d org=(%.4f,%.4f,%.4f)"
+                   " ext=(%.6g,%.6g,%.6g) content=%ld"
+                   " centroid=(%.0f,%.0f) back=(%.3f,%.3f,%.3f)"
+                   " req=%zu[%d/%d/%d] ready=%ld/%ld q=%d\n",
+                   label, level, origin.x, origin.y, origin.z,
+                   ext.x, ext.y, ext.z, count, cx, cy,
+                   back.x, back.y, back.z,
+                   opened->fetcher->requestLog().size(),
+                   nCompleted, nNotFound, nError,
+                   levelCtx.readyTiles, levelCtx.totalTiles, q);
+            fflush(stdout);
+            {
+                auto const& log = opened->fetcher->requestLog();
+                printf("[LODDIAGKEYS %s L%d]", label, level);
+                for (size_t i = seenLog; i < log.size(); ++i) {
+                    char const* tag = log[i].outcome
+                        == dqApp::DumpTileFetcher::DumpFetchOutcome::Completed ? "C"
+                        : log[i].outcome
+                            == dqApp::DumpTileFetcher::DumpFetchOutcome::NotFound ? "N" : "E";
+                    printf(" %s:%s", tag, log[i].contentId.c_str());
+                }
+                printf("\n");
+                fflush(stdout);
+                seenLog = log.size();
+            }
+
+            zeroStreak = hasContent ? 0 : zeroStreak + 1;
+            if (ext.y <= 1.5e-3)
+                break;   // 1mm 视域下限邻域（参考 extentLimits.min）
+            if (zeroStreak >= 3)
+                break;   // 连续三级无内容——记录后止步
+
+            // 下一级：ToolAdmin 正交定点缩放（target 屏幕位置不动）。
+            origin = dqGeom::Point3d::From(
+                zoomTarget.x + (origin.x - zoomTarget.x) * 0.5,
+                zoomTarget.y + (origin.y - zoomTarget.y) * 0.5,
+                zoomTarget.z + (origin.z - zoomTarget.z) * 0.5);
+            ext.x *= 0.5; ext.y *= 0.5; ext.z *= 0.5;
+        }
+    };
+
+    runZoomTarget(target, "centroid");
+
+    // 对照：drill 采集目标点（bridge-edit-drill-v1 provenance 的桥跨取景点，
+    // 采集实测有几何）。DTA drill 的 vp.zoom 目标是**世界坐标**（树 location
+    // 在 frontend tile tree 内已应用），与 DanQing 世界域同面——不再过 location。
+    dqGeom::Point3d const drillTarget = dqGeom::Point3d::From(500.0, 150.0, 78.0);
+    printf("[LODDIAG] drill target world=(%.3f,%.3f,%.3f)\n",
+           drillTarget.x, drillTarget.y, drillTarget.z);
+    runZoomTarget(drillTarget, "drill");
+
+    // 锁 1/2：深 LOD 内容存活（§11.11 位置断言——内容量 + 首绿钉值）。
+    // RED 取证（子瓦范围 longest-axis 修复前，同一泵）：L4 content=51,926 /
+    // L8 content=2,998（L8 起内容塌缩到约千像素=缺失）；修复后 L4=691,607 /
+    // L8=4,198,208（满帧）——判据阈值取首绿 0.72×/0.83×（跨运行实测稳定，
+    // 帧 2526×1662）。
+    printf("[LODDIAG] lock content L4=%ld L8=%ld\n", centroidL4Content, centroidL8Content);
+    EXPECT_GE(centroidL4Content, 500000)
+        << "deep-view L4 content collapsed (bridge should be fully visible)";
+    EXPECT_GE(centroidL8Content, 3500000)
+        << "deep-view L8 content collapsed (full-frame deep LOD expected)";
+
+    // 锁 3：全程请求面零 NotFound（= 采集域覆盖了引擎的请求面；缺失即
+    // "LOD 缺 data"症状的数字面）。
+    int nNotFound = 0, nError = 0, nCompleted = 0;
+    for (auto const& rec : opened->fetcher->requestLog()) {
+        using O = dqApp::DumpTileFetcher::DumpFetchOutcome;
+        if (rec.outcome == O::Completed) ++nCompleted;
+        else if (rec.outcome == O::NotFound) ++nNotFound;
+        else ++nError;
+    }
+    printf("[LODDIAG] lock requests completed=%d notFound=%d error=%d\n",
+           nCompleted, nNotFound, nError);
+    EXPECT_EQ(nNotFound, 0) << "deep-zoom pump requested keys outside the captured domain";
+    EXPECT_EQ(nError, 0) << "dump asset read errors";
 
     view.getUeViewport()->DropTiledGraphicsProvider(opened->provider.get());
     view.close();

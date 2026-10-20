@@ -36,17 +36,37 @@ BEGIN_DQ_RENDER_NAMESPACE
 
 namespace {
 
-// Bisect a range along one axis. Ported from: bisectTileRange3d/2d
-// (TileMetadata.ts:724-743 — the axis' low/high midpoint split, keep half).
-void bisectRange(dqGeom::Range3d& range, int axis, bool keepLow)
+// Bisect a range by shrinking its high or low endpoint along its CURRENT
+// longest axis. Ported from: bisectTileRange3d (TileMetadata.ts:724-733) —
+// note the reference splits one coordinate per call, chosen by the range's
+// diagonal at call time (NOT the i/j/k loop axis). For an elongated range the
+// three successive calls keep halving the same axis, producing 8 slices along
+// it rather than a naive octant split; for a cubic range the effective mapping
+// is i->z, j->y, k->x. computeChildTileProps' child volumes and the back-end's
+// emptySubRangeMask bits are defined in this convention — bisecting x/y/z by
+// the loop index silently misplaces every child range (bridge-edit 23:5:1
+// root range: LOD selection/culling diverges from the reference).
+void bisectTileRange3d(dqGeom::Range3d& range, bool takeUpper)
 {
-    double* lo = &range.low.x;
-    double* hi = &range.high.x;
-    double const mid = 0.5 * (lo[axis] + hi[axis]);
-    if (keepLow)
-        hi[axis] = mid;
+    dqGeom::Vector3d const diag = range.Diagonal();
+    dqGeom::Point3d& pt = takeUpper ? range.high : range.low;
+    if (diag.x > diag.y && diag.x > diag.z)
+        pt.x = 0.5 * (range.low.x + range.high.x);
+    else if (diag.y > diag.z)
+        pt.y = 0.5 * (range.low.y + range.high.y);
     else
-        lo[axis] = mid;
+        pt.z = 0.5 * (range.low.z + range.high.z);
+}
+
+// Ported from: bisectTileRange2d (TileMetadata.ts:735-743).
+void bisectTileRange2d(dqGeom::Range3d& range, bool takeUpper)
+{
+    dqGeom::Vector3d const diag = range.Diagonal();
+    dqGeom::Point3d& pt = takeUpper ? range.high : range.low;
+    if (diag.x > diag.y)
+        pt.x = 0.5 * (range.low.x + range.high.x);
+    else
+        pt.y = 0.5 * (range.low.y + range.high.y);
 }
 
 }  // namespace
@@ -447,10 +467,14 @@ std::vector<ImdlChildTileProps> computeImdlChildTileProps(
                     continue;  // known-empty sub-volume (:826-830)
 
                 dqGeom::Range3d range = parent.range;
-                bisectRange(range, 0, 0 == i);
-                bisectRange(range, 1, 0 == j);
-                if (!root.is2d)
-                    bisectRange(range, 2, 0 == k);
+                if (root.is2d) {
+                    bisectTileRange2d(range, 0 == i);
+                    bisectTileRange2d(range, 0 == j);
+                } else {
+                    bisectTileRange3d(range, 0 == i);
+                    bisectTileRange3d(range, 0 == j);
+                    bisectTileRange3d(range, 0 == k);
+                }
 
                 if (testContentRange && !range.IntersectsRange(root.contentRange))
                     continue;  // outside model range (:836-840)

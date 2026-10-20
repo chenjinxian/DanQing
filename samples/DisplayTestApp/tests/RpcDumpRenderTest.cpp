@@ -935,7 +935,8 @@ TEST(RpcDumpRender, Instances60FullLoadReconcilesManifestKeys)
     spin(400);
 
     // 多树全量装载（本 dump 1 树 3587 瓦——全树前缀加载的对账输入）。
-    auto mount = dta::mountDump(*view.getUeViewport(), dumpRoot);
+    auto mount = dta::mountDump(*view.getUeViewport(), dumpRoot,
+                                {dumpRoot + "/../instances60-mag-missing-v1"});
     ASSERT_TRUE(mount.has_value()) << "mount failed: " << dumpRoot;
     ASSERT_EQ(1u, mount->manifest.trees.size());
     ASSERT_EQ(3587u, mount->manifest.tiles.size());
@@ -1043,6 +1044,12 @@ TEST(RpcDumpRender, Instances60FullLoadReconcilesManifestKeys)
     std::set<std::string> manifestKeys;
     for (auto const& t : mount->manifest.tiles)
         manifestKeys.insert(t.treeId + "/" + t.contentId);
+    // 放大补采根（2026-10-20 子瓦范围修复后 d1 键可达）：fallback manifest
+    // 键并入对账域（主根 stats/tile 计数语义不变）。
+    if (auto extra = dqApp::loadDumpManifest(dumpRoot + "/../instances60-mag-missing-v1")) {
+        for (auto const& t : extra->tiles)
+            manifestKeys.insert(t.treeId + "/" + t.contentId);
+    }
 
     auto const& log = mount->fetcher->requestLog();
     std::set<std::string> requestedKeys;
@@ -1090,22 +1097,23 @@ TEST(RpcDumpRender, Instances60FullLoadReconcilesManifestKeys)
     // depth-2 唯一）}。采集域的放大键（-b-0-0-0-0-{2,4,8} 等）是 sweep BFS
     // 面产物，视口驱动不请求（锁头取证结论 (a)）——不钉入链通集，钉了即烤
     // 采集面差异进判据。
+    // 2026-10-20 子瓦范围修复后重钉：链通集 = d1 m1（放大补采根命中）+
+    // d1 m2（相 2 泵出放大子，主根命中）；旧钉值 root/d2/d3 是错位子瓦
+    // 体积派生面（修复后 root 走 canSkip 穿透、d1 即 Visible）。
     EXPECT_EQ(2u, numCompleted) << "unexpected chain-connected set — reconcile "
                                    "the new consumption face consciously";
     {
-        bool rootConnected = false, drillConnected = false;
+        bool d1Connected = false, magConnected = false;
         for (auto const& rec : log) {
             if (rec.outcome != dqApp::DumpTileFetcher::DumpFetchOutcome::Completed)
                 continue;
-            if (rec.contentId == "-b-0-0-0-0-1")
-                rootConnected = true;
-            if (rec.contentId == "-b-2-0-0-0-1")
-                drillConnected = true;
+            if (rec.contentId == "-b-1-0-0-0-1") d1Connected = true;
+            if (rec.contentId == "-b-1-0-0-0-2") magConnected = true;
         }
-        EXPECT_TRUE(rootConnected) << "root key never connected";
-        EXPECT_TRUE(drillConnected)
-            << "phase-2 drill key -b-2-0-0-0-1 (in-manifest mult-1 derivation) "
-               "never connected — derived-child request chain broken";
+        EXPECT_TRUE(d1Connected) << "d1 key (-b-1-0-0-0-1) never connected";
+        EXPECT_TRUE(magConnected)
+            << "magnification key (-b-1-0-0-0-2) never connected — "
+               "phase-2 derived-child chain broken";
     }
     // ④ 差异形：每个 miss 都是 "-b-<d>-<i>-<j>-<k>-<mult>" 形（V4 派生形，
     // mult 段 hex——细分继承父 mult / 放大 2 的幂）。
@@ -1134,16 +1142,10 @@ TEST(RpcDumpRender, Instances60FullLoadReconcilesManifestKeys)
             << "miss key is not a V4 derivation shape: " << m
             << " (collection-domain shape leaked or malformed)";
     }
-    // 差异键实钉（M-F(2) 两相实测）：域外 miss 恰两枚——
-    //  "-b-1-0-0-0-1"（相 1：冷启动根的首个 loadChildren 在内容到达前细分
-    //    （两实现同构）、唯一幸存子被 :148 ≤1 门保留、fit 下 Visible 被请求；
-    //    sweep 从未细分 mult=1 父 → 域外）；
-    //  "-b-3-0-0-0-1"（相 2 后波："-b-2-0-0-0-1" 就绪后再下潜 depth-3，
-    //    mult=1 形；采集域 depth-3 无 mult=1 键 → 域外）。
-    // 若实测变化（键集合/数量），先核锁头取证结论再更新钉值。
-    ASSERT_EQ(2u, misses.size());
-    EXPECT_EQ("-b-1-0-0-0-1", misses[0]);
-    EXPECT_EQ("-b-3-0-0-0-1", misses[1]);
+    // 差异键实钉（2026-10-20 重钉）：d1 键经放大补采根补齐后域外 miss
+    //    为空集（旧钉值 d1/d3 是错位子瓦体积派生面——修复后 d3 不再被
+    //    选择，d1 由 live 后端 key-list 补采）。
+    ASSERT_EQ(0u, misses.size());
 
     // ⑤ 树侧终态全消费：manifest 命中键 → hasGraphics；miss 键 → NotFound。
     std::map<std::string, dqRender::Tile*> tilesByKey;
@@ -1157,12 +1159,14 @@ TEST(RpcDumpRender, Instances60FullLoadReconcilesManifestKeys)
     };
     for (auto& t : mount->trees)
         walk(t->getRootTile());
-    long graphicsTiles = 0, terminalMisses = 0, inFlight = 0;
+    long graphicsTiles = 0, terminalMisses = 0, inFlight = 0, neverRequested = 0;
     for (auto const& kv : tilesByKey) {
         bool const hit = manifestKeys.count(kv.first) > 0;
         if (hit) {
             if (kv.second->hasGraphics())
                 ++graphicsTiles;
+            else if (kv.second->getLoadStatus() == dqRender::TileLoadStatus::NotLoaded)
+                ++neverRequested;  // canSkip 穿透的祖先（参考同形：不请求不加载）
             else
                 ++inFlight;  // manifest 键已请求完成却未消费成 graphics
         } else {
@@ -1173,9 +1177,11 @@ TEST(RpcDumpRender, Instances60FullLoadReconcilesManifestKeys)
         }
     }
     printf("[RPC-RENDER] tree-side: tiles=%zu graphics=%ld terminalMiss=%ld "
-           "inFlight=%ld\n", tilesByKey.size(), graphicsTiles, terminalMisses,
-           inFlight);
+           "inFlight=%ld neverRequested=%ld\n", tilesByKey.size(), graphicsTiles,
+           terminalMisses, inFlight, neverRequested);
     EXPECT_EQ(0l, inFlight) << "tiles left in non-terminal state at quiescence";
+    // canSkip 祖先（root：maxInitialTilesToSkip=3——参考同形不请求不加载）。
+    EXPECT_EQ(1l, neverRequested) << "unexpected never-requested manifest key";
     // ⑥ 计数对账：每个 Completed 请求都被消费成 graphics。
     EXPECT_EQ(static_cast<long>(numCompleted), graphicsTiles)
         << "completed requests without consumed graphics (readContent drop?)";

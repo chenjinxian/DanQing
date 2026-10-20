@@ -76,6 +76,19 @@ third_party/tile-sample-assets/rpc-dumps/bridge-edit-drill-v1/files/8.imdl
 # 跨会话确定性；manifest sha256 不变，回放缺瓦走父瓦兜底）
 third_party/tile-sample-assets/rpc-dumps/bridge-edit-sweep-v1/files/12.imdl
 
+# 2026-10-20 bridge-edit LOD 取证的一次性大体积采集（合计 ~5GB）——仅作
+# 本地取证/邻域数据源，不入库（其小瓦邻域贡献已并入 bridge-edit-coverage-v1）。
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-drill-deep-v1/
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-dta-deep-probe/
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-setview-probe/
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-setview-probe2/
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-sweep-mag-v1/
+# 同视域 A/B 回放采集（153 瓦全部与既有根逐字节相同——零新增键；600MB 含
+# 140MB 大瓦，仅作本地 A/B 证据）
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-viewport-views-v1/
+# 早期放大链 key-list 采样（198 键；唯一贡献已并入 coverage-v1）
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-magnify-v1/
+
 saved-views-test/
 output-shaders-test/
 macro-*.macro

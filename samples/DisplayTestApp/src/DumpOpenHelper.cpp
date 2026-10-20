@@ -417,7 +417,11 @@ void openDumpIModelAsync(Gui::View3DInventor& view, DumpOpenPackage const& pkg,
 //                             ASCII 目录名映射；默认视图空域坑 24 → frameToWorldContent）,
 //                             bridge-edit-sweep-v1（M-M(5)——全树 sweep 380,738 瓦/
 //                             4.96GB[用户解除存储限制]；400k 瓦预算 cap 触顶，
-//                             浏览深度界扩至 sweep 域；>100MB 大瓦本地持有）]
+//                             浏览深度界扩至 sweep 域；>100MB 大瓦本地持有）,
+//                             bridge-edit-mag-missing-v1（2026-10-20 LOD 取证——
+//                             子瓦范围 longest-axis 修复后深层泵请求的放大链
+//                             m16..m131072 + d13 空间瓦 254 键，真后端 key-list
+//                             回放 6.57MB）]
 // （与 DumpOpenChainTest.cpp 各锁的包定义一致。）
 std::optional<DumpOpenPackage> dumpPackageForModel(QString const& modelId)
 {
@@ -428,11 +432,13 @@ std::optional<DumpOpenPackage> dumpPackageForModel(QString const& modelId)
     if (modelId == QLatin1String("joeshouse")) {
         pkg.imodelRoot = dumpRoot + "/joeshouse-v1";
         pkg.tileRoots = {dumpRoot + "/joeshouse-v1", dumpRoot + "/joeshouse-drill-v1",
-                         dumpRoot + "/joeshouse-drill-v2"};
+                         dumpRoot + "/joeshouse-drill-v2",
+                         dumpRoot + "/joeshouse-mag-missing-v1"};
     }
     else if (modelId == QLatin1String("instances60")) {
         pkg.imodelRoot = dumpRoot + "/instances60-imodel-v1";
-        pkg.tileRoots = {dumpRoot + "/instances60-v1", dumpRoot + "/instances60-drill-v1"};
+        pkg.tileRoots = {dumpRoot + "/instances60-v1", dumpRoot + "/instances60-drill-v1",
+                         dumpRoot + "/instances60-mag-missing-v1"};
     }
     else if (modelId == QLatin1String("housemodel")) {
         pkg.imodelRoot = dumpRoot + "/housemodel-v1";
@@ -445,7 +451,12 @@ std::optional<DumpOpenPackage> dumpPackageForModel(QString const& modelId)
     else if (modelId == QLatin1String("bridge-edit")) {
         pkg.imodelRoot = dumpRoot + "/bridge-edit-v1";
         pkg.tileRoots = {dumpRoot + "/bridge-edit-v1", dumpRoot + "/bridge-edit-drill-v1",
-                         dumpRoot + "/bridge-edit-sweep-v1"};
+                         dumpRoot + "/bridge-edit-sweep-v1",
+                         dumpRoot + "/bridge-edit-mag-missing-v1",
+                         dumpRoot + "/bridge-edit-mag-missing-v2",
+                         dumpRoot + "/bridge-edit-mag-missing-v3",
+                         dumpRoot + "/bridge-edit-mag-missing-v4",
+                         dumpRoot + "/bridge-edit-coverage-v1"};
         // 坑 24：默认视图 0x99 指向原点附近空域（不含几何——直接回放=白屏
         // 零请求，README"默认视图空域"节）→ 打开链取景到世界域几何
         // contentRange（DumpOpenHelper 的 zoomToVolume 应用面）。
