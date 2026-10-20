@@ -646,7 +646,16 @@ bool ImdlTile::readContentAsync(std::vector<uint8_t>&& data)
             // content) does not build graphics — 取消的瓦不建 graphics。
             if (getLoadStatus() != TileLoadStatus::Loading)
                 return;
-            setContent(createContentGraphics(std::move(parsed)));
+            // 诊断探针（§13.1 DANQING_TILE_TIME）：graphics 创建[主线程 GL 半]耗时。
+            auto const tG0 = std::chrono::steady_clock::now();
+            auto content = createContentGraphics(std::move(parsed));
+            if (std::getenv("DANQING_TILE_TIME")) {
+                auto const us = std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - tG0).count();
+                std::fprintf(stderr, "[TT] graphics %.2fms\n", us / 1000.0);
+                std::fflush(stderr);
+            }
+            setContent(std::move(content));
         });
 
     // Parse off-thread (E2 defaultParser). The parse leg touches nothing but
@@ -694,6 +703,7 @@ TileContent ImdlTile::createContentGraphics(ImdlParsedContent&& parsed)
     //   屏幕像素不可辨；验证法=TileTreeRender 8 项像素锁全绿 +
     //   LutPathUploadsVertexTableVerbatim 的字节级直传断言。
     std::vector<RenderGraphic*> graphics;
+    auto const tLutG0 = std::chrono::steady_clock::now();
     if (system->driver()) {
         graphics = createImdlLutGraphics(doc, *system);
     } else {
@@ -705,6 +715,15 @@ TileContent ImdlTile::createContentGraphics(ImdlParsedContent&& parsed)
             if (auto* graphic = system->createGraphicFromPolyface(polyface.Get(), 0xFFFFFFFFu, 0))
                 graphics.push_back(graphic);
         }
+    }
+    if (std::getenv("DANQING_TILE_TIME")) {
+        auto const us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - tLutG0).count();
+        std::fprintf(stderr, "[TT]   lutGraphics %.2fms graphics=%zu binary=%lluKB ftWords=%zu\n",
+                     us / 1000.0, graphics.size(),
+                     static_cast<unsigned long long>(doc.binary.size() / 1024u),
+                     doc.featureData.size());
+        std::fflush(stderr);
     }
     if (graphics.empty())
         return content;
@@ -725,12 +744,22 @@ TileContent ImdlTile::createContentGraphics(ImdlParsedContent&& parsed)
         dqCommon::PackedFeatureTable packed(doc.featureData, /*modelId*/ 0,
                                             doc.featureCount,
                                             dqCommon::BatchType::Primary);
+        auto const tU0 = std::chrono::steady_clock::now();
         content.featureTable =
             std::make_unique<dqCommon::FeatureTable>(packed.unpack());
+        auto const tU1 = std::chrono::steady_clock::now();
         // ImdlReader.ts:122-123: graphic = system.createBatch(graphic,
         // featureTable, content.contentRange).
         content.graphic.reset(system->createBatch(list, content.featureTable.get(),
                                                   content.contentRange));
+        if (std::getenv("DANQING_TILE_TIME")) {
+            auto const usU = std::chrono::duration_cast<std::chrono::microseconds>(tU1 - tU0).count();
+            auto const usB = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - tU1).count();
+            std::fprintf(stderr, "[TT]   unpack %.2fms (n=%u) createBatch %.2fms\n",
+                         usU / 1000.0, doc.featureCount, usB / 1000.0);
+            std::fflush(stderr);
+        }
     } else {
         content.graphic.reset(list);
     }

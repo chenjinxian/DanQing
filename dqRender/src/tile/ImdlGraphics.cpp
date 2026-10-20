@@ -34,6 +34,7 @@
 #include <dqCommon/Image.h>
 #include <dqGeom/IndexedPolyface.h>
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -325,7 +326,16 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
     if (!driver)
         return graphics;  // 桩/无 GL 系统——调用方回退 polyface 对照通道
 
+    // 诊断探针（§13.1 DANQING_TILE_TIME）：JSON 解析段耗时——sceneJson 字节量 + ms。
+    auto const tJ0 = std::chrono::steady_clock::now();
     auto json = tilejson::parseJsonDocument(doc.sceneJson);
+    if (std::getenv("DANQING_TILE_TIME")) {
+        auto const us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - tJ0).count();
+        std::fprintf(stderr, "[TT]   jsonParse %.2fms sceneJson=%lluB\n",
+                     us / 1000.0, static_cast<unsigned long long>(doc.sceneJson.size()));
+        std::fflush(stderr);
+    }
     if (!json)
         return graphics;
 
@@ -513,9 +523,17 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
         }
 
         // LUT 纹理：线上字节原样上传（VertexLUT.ts:93-99）。
+        auto const tLut0 = std::chrono::steady_clock::now();
         VertexLutTexture lut;
         if (!lut.create(*driver, uploadData, texWidth, texHeight, count, numRgba))
             continue;  // create 失败内部不自持纹理（nullid），无半成品
+        if (std::getenv("DANQING_TILE_TIME")) {
+            auto const us = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - tLut0).count();
+            std::fprintf(stderr, "[TT]   lutUpload %.2fms %ux%u count=%u\n",
+                         us / 1000.0, texWidth, texHeight, count);
+            std::fflush(stderr);
+        }
         // QParams3d（ParseImdlDocument.ts:1013-1018）。
         lut.setQuantization(
             static_cast<float>(prim.vertices.decodedMin[0]),
@@ -536,12 +554,20 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
             lut.destroy(*driver);  // 半成品清理（§12.9：LUT 已建、几何未成）
             continue;
         }
+        auto const tIdx0 = std::chrono::steady_clock::now();
         auto const idxBo = driver->createBufferObject(
             static_cast<uint32_t>(idxSize), rhi::BufferObjectBinding::VERTEX,
             rhi::BufferUsage::STATIC);
         rhi::BufferDescriptor idxDesc(idxData, idxSize);
         driver->updateBufferObject(idxBo, std::move(idxDesc), 0);
         uint32_t const numIndices = static_cast<uint32_t>(idxSize / 3u);
+        if (std::getenv("DANQING_TILE_TIME")) {
+            auto const us = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - tIdx0).count();
+            std::fprintf(stderr, "[TT]   idxUpload %.2fms %lluB\n",
+                         us / 1000.0, static_cast<unsigned long long>(idxSize));
+            std::fflush(stderr);
+        }
 
         // a_qPosition VAO（照 PolylineGeometry corner VAO 创建段，
         // MeshGraphic.cpp:437-460）：单 attribute VBI——attribute 序即
@@ -712,6 +738,7 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
         // create/createSilhouettes（字节流原样入 BO，零 CPU 重排——形态同
         // 顶点表 LUT 直传）+ MeshData.ts:93-94（edgeWidth/edgeLineCode）。
         // -------------------------------------------------------------------
+        auto const tEdge0 = std::chrono::steady_clock::now();
         if (auto edges = tilejson::parseImdlEdges(*json, doc, prim)) {
             if (getenv("DANQING_EDGE_TRACE"))
                 std::fprintf(stderr,
@@ -861,6 +888,12 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
                     }
                 }
             }
+        }
+        if (std::getenv("DANQING_TILE_TIME")) {
+            auto const us = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - tEdge0).count();
+            std::fprintf(stderr, "[TT]   edges+rest %.2fms\n", us / 1000.0);
+            std::fflush(stderr);
         }
 
         graphics.push_back(meshGraphic);

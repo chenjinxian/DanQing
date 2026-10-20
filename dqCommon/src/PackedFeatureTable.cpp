@@ -3,7 +3,9 @@
 // Ported from: itwinjs-core core/common/src/internal/PackedFeatureTable.ts
 #include "dqCommon/PackedFeatureTable.h"
 
+#include <algorithm>
 #include <utility>
+#include <vector>
 
 BEGIN_DQ_COMMON_NAMESPACE
 
@@ -168,12 +170,40 @@ void PackedFeatureTable::getSubCategoryIdPair(uint32_t index, uint64_t& outSubCa
 
 FeatureTable PackedFeatureTable::unpack() const
 {
-    FeatureTable table(m_numFeatures, dqBase::DqId(m_modelId), m_type);
+    // 输出等价优化（§11.8 核读 + 2026-10-20 bridge-edit 卡顿取证）：
+    // 参考 unpack（PackedFeatureTable.ts:184-193）逐条 insertWithIndex——JS
+    // splice 在输入已按 Feature.compare 升序时 O(1/条)，而 imdl packed words
+    // 的 feature 序不保证升序：DanQing 的有序数组插入（lowerBound+移位）在
+    // 非升序下退化为 O(n²)（实测 n=108,778 → 1.52s；n=71,306 → 0.74s，
+    // [TT] unpack 探针）。先按同一比较器排序再插入——输出内容与逐条插入
+    // 完全一致（FeatureTable 是 Feature.compare 序的有序表；重复 feature 的
+    // 相对序两边都未定义——参考 assert(!bound.equal) 仅在 dev 生效），
+    // 复杂度 O(n log n)。
+    // 参考偏差登记（TD-33）：参考 imdl 路径**从不调用 unpack**（
+    // convertFeatureTable 直接交 PackedFeatureTable 给 createBatch，
+    // ParseImdlDocument.ts:1259-1266）；DanQing 在内容创建时 unpack 成
+    // FeatureTable 是 Batch 消费面未接口化的偏差——接口化后本转换整体消除。
+    struct Entry {
+        Feature feature;
+        int index;
+    };
+    std::vector<Entry> entries;
+    entries.reserve(m_numFeatures);
     for (uint32_t i = 0; i < m_numFeatures; ++i) {
         PackedFeature pf = getFeature(i);
-        Feature feature(dqBase::DqId(pf.elementId), dqBase::DqId(pf.subCategoryId), pf.geometryClass);
-        table.insertWithIndex(feature, static_cast<int>(i));
+        entries.push_back({Feature(dqBase::DqId(pf.elementId),
+                                   dqBase::DqId(pf.subCategoryId),
+                                   pf.geometryClass),
+                           static_cast<int>(i)});
     }
+    std::stable_sort(entries.begin(), entries.end(),
+                     [](Entry const& a, Entry const& b) {
+                         return a.feature.compare(b.feature) < 0;
+                     });
+
+    FeatureTable table(m_numFeatures, dqBase::DqId(m_modelId), m_type);
+    for (auto const& e : entries)
+        table.insertWithIndex(e.feature, e.index);  // 升序插入 = O(log n)/条
     return table;
 }
 

@@ -4,6 +4,9 @@
 #include "dqApp/tile/DumpTileFetcher.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iterator>
 #include <utility>
@@ -221,7 +224,20 @@ void DumpTileFetcher::fetch(std::string const& url, dqRender::Tile& tile,
     }
 
     std::vector<uint8_t> bytes;
-    if (!readFileBytes(*hitFileRoot + "/" + tileEntry->file, bytes)) {
+    // 诊断探针（§13.1 DANQING_TILE_TIME）：fetch 读盘在 UI 线程的耗时——
+    // 2026-10-20 bridge-edit 卡顿取证所加（常驻，env 门控零开销）。
+    auto const tRead0 = std::chrono::steady_clock::now();
+    bool const readOk = readFileBytes(*hitFileRoot + "/" + tileEntry->file, bytes);
+    if (std::getenv("DANQING_TILE_TIME")) {
+        auto const us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - tRead0).count();
+        std::fprintf(stderr, "[TT] fetchRead %s/%s %.2fms bytes=%llu hitRoot=%d\n",
+                     treeId.c_str(), contentId.c_str(), us / 1000.0,
+                     static_cast<unsigned long long>(bytes.size()),
+                     static_cast<int>(record.hitRoot));
+        std::fflush(stderr);
+    }
+    if (!readOk) {
         entry.ok = false;
         entry.error = "DumpTileFetcher: cannot open " + tileEntry->file
                       + " (dump root: " + *hitFileRoot + ")";
