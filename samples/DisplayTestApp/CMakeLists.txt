@@ -420,7 +420,9 @@ if(TARGET gtest_main AND TARGET dqApp)
         dbghelp  # PickHiliteSelectionTest 的 SEH 崩溃符号化探针（DANQING_CRASH_STACK）
     )
     include(GoogleTest)
-    gtest_discover_tests(DisplayTestAppDtaTest)
+    # PRE_TEST：发现步推迟到 ctest（同 dqAppTest——windeployqt 序先后根因，
+    # 2026-10-18 Release 全量验证揭出）。
+    gtest_discover_tests(DisplayTestAppDtaTest DISCOVERY_MODE PRE_TEST)
 endif()
 
 # Windows：部署 Qt DLL 到应用/测试输出目录（缺 DLL 在无 UI 会话下弹窗挂起，

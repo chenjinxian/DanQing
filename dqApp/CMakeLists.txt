@@ -192,7 +192,11 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
     target_compile_definitions(dqAppTest PRIVATE
         DANQING_TEST_ASSET_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
     include(GoogleTest)
-    gtest_discover_tests(dqAppTest)
+    # PRE_TEST：发现步推迟到 ctest 时跑 exe（默认 POST_BUILD 在链后立即跑，
+    # 早于同目标的 windeployqt POST_BUILD——Release 首次构建无历史部署 DLL
+    # 残留时 0xc0000135 之根因，2026-10-18 Release 全量验证揭出；Debug 靠
+    # 历史残留侥幸通过）。
+    gtest_discover_tests(dqAppTest DISCOVERY_MODE PRE_TEST)
 endif()
 
 # Windows：部署 Qt DLL 到测试输出目录。缺 DLL 时 Loader 在无 UI 会话下弹窗
