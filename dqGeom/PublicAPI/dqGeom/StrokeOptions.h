@@ -10,6 +10,7 @@
 
 #include "Angle.h"
 #include "DqGeom.h"
+#include "Geometry.h"  // stepCount/conditionalDivideFraction（M-W W-b2 增段）
 
 #include <algorithm>
 #include <cmath>
@@ -110,16 +111,70 @@ struct DQ_GEOM_EXPORT StrokeOptions {
         return std::max(minStrokesPerPrimitive, 1);
     }
 
-    // --- Ported from: StrokeOptions.applyMaxEdgeLength (:373-380) ---
+    // --- Ported from: StrokeOptions.applyMaxEdgeLength (member, :132-138) ---
     // maxEdgeLength 未激活（≤0）时原样返回 minCount。
+    // M-W W-b2 订正：归位 Geometry.stepCount 调用（参考同调——stepCount 默认
+    // maxCount=101 帽，此前内联 floor 缺帽）。
     int ApplyMaxEdgeLength(int minCount, double totalLength) const
     {
         totalLength = std::fabs(totalLength);
         if (maxEdgeLength > 0.0 && minCount * maxEdgeLength < totalLength) {
-            // Geometry.stepCount(maxEdgeLength, totalLength, minCount)
-            int const numSteps = static_cast<int>(std::floor((totalLength + 0.999999 * maxEdgeLength) / maxEdgeLength));
-            if (numSteps > minCount)
-                minCount = numSteps;
+            minCount = stepCount(maxEdgeLength, totalLength, minCount);
+        }
+        return minCount;
+    }
+
+    // --- M-W W-b2 增段（BezierCurveBase::computeStrokeCountForOptions 消费面） ---
+
+    // Ported from: StrokeOptions.applyChordTol（member，StrokeOptions.ts:193-200——
+    // chordTol 激活且 < radius 时按 2·acos(1−a/radius) 步长取 stepCount）。
+    int ApplyChordTol(int minCount, double radius, double sweepRadians) const
+    {
+        if (chordTol > 0.0 && chordTol < radius) {
+            double const a = chordTol;
+            double const stepRadians = 2.0 * std::acos(1.0 - a / radius);
+            minCount = stepCount(stepRadians, sweepRadians, minCount);
+        }
+        return minCount;
+    }
+
+    // Ported from: StrokeOptions.applyChordTolToLengthAndRadians（member，:205-212
+    // ——radius = length/sweepRadians 条件除）。
+    int ApplyChordTolToLengthAndRadians(int minCount, double length, double sweepRadians) const
+    {
+        if (chordTol > 0.0) {
+            auto const radius = conditionalDivideFraction(length, sweepRadians);
+            if (radius.has_value())
+                return ApplyChordTol(minCount, *radius, sweepRadians);
+        }
+        return minCount;
+    }
+
+    // Ported from: StrokeOptions.applyAngleTol（**static**，:151-161——options 可缺席
+    // 直承；defaultStepRadians 未给时 π/8）。
+    static int ApplyAngleTol(StrokeOptions const* options, int minCount, double sweepRadians,
+                             double defaultStepRadians)
+    {
+        sweepRadians = std::fabs(sweepRadians);
+        double stepRadians = defaultStepRadians != 0.0 ? defaultStepRadians : 3.14159265358979323846 / 8.0;
+        if (options != nullptr && options->angleTolRadians > 0.0)
+            stepRadians = options->angleTolRadians;
+        if (minCount * stepRadians < sweepRadians)
+            minCount = stepCount(stepRadians, sweepRadians, minCount);
+        return minCount;
+    }
+
+    // Ported from: StrokeOptions.applyMaxEdgeLength（**static**，:168-179——options
+    // 可缺席直承；minCount<1 抬升 1 的原样）。
+    static int ApplyMaxEdgeLength(StrokeOptions const* options, int minCount, double edgeLength)
+    {
+        if (edgeLength < 0.0)
+            edgeLength = -edgeLength;
+        if (minCount < 1)
+            minCount = 1;
+        if (options != nullptr && options->maxEdgeLength > 0.0
+            && options->maxEdgeLength * minCount < edgeLength) {
+            minCount = stepCount(options->maxEdgeLength, edgeLength, minCount);
         }
         return minCount;
     }

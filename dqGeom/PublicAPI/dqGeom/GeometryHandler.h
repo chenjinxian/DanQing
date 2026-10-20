@@ -23,6 +23,8 @@ class LineSegment3d;
 class LineString3d;
 class Arc3d;
 class PointString3d;
+class BSplineCurve3d;   // M-W W-b2
+class BezierCurve3d;    // M-W W-b2
 class Path;
 class Loop;
 class ParityRegion;
@@ -51,6 +53,9 @@ public:
     virtual void HandleLineString3d(LineString3d&) {}
     virtual void HandleArc3d(Arc3d&) {}
     virtual void HandlePointString3d(PointString3d&) {}
+    // 1:1 GeometryHandler.ts handleBSplineCurve3d/handleBezierCurve3d（M-W W-b2）。
+    virtual void HandleBSplineCurve3d(BSplineCurve3d&) {}
+    virtual void HandleBezierCurve3d(BezierCurve3d&) {}
 
     // --- Curve collections (Phase 1) ---
     virtual void HandlePath(Path&) {}
@@ -72,7 +77,7 @@ public:
     virtual void HandleRotationalSweep(RotationalSweep&) {}
     virtual void HandleRuledSweep(RuledSweep&) {}
 
-    // Phase 1: HandleBSplineCurve3d, HandleBezierCurve3d, HandleTransitionSpiral3d
+    // Phase 1: HandleTransitionSpiral3d
     // PR 3 commit 3+: HandleTorusPipe/HandleLinearSweep/HandleRotationalSweep/HandleRuledSweep
 };
 
