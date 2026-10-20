@@ -114,4 +114,45 @@ inline int32_t split3Way01(double x, double tolerance = 1.0e-6) noexcept {
     return 0;
 }
 
+// --- M-W W-b2 增段（BSpline/KnotVector 消费面） ---
+
+/// Ported from: Geometry.isAlmostEqualNumber (Geometry.ts:594-597)。
+/// 默认容差 = smallAngleRadians（Geometry.ts:260 = 1.0e-12；Angle.h 的
+/// Angle::kSmallAngleRadians 同值——居所分工见文件头注记，常数值内联）。
+inline bool isAlmostEqualNumber(double a, double b, double tolerance = 1.0e-12) noexcept {
+    double const sumAbs = 1.0 + std::abs(a) + std::abs(b);
+    return std::abs(a - b) <= tolerance * sumAbs;
+}
+
+/// Ported from: Geometry.isSmallMetricDistance (Geometry.ts:638-640)。
+/// 容差 = smallMetricDistance（1.0e-6——Point3d.h 的 kSmallMetricDistance
+/// 同值内联；居所分工见文件头注记）。
+inline bool isSmallMetricDistance(double distance) noexcept {
+    return std::abs(distance) <= 1.0e-6;
+}
+
+/// Ported from: Geometry.maxXY (Geometry.ts:697-702)。
+inline double maxXY(double a, double b) noexcept {
+    double result = a;
+    if (b > result)
+        result = b;
+    return result;
+}
+
+/// Ported from: Geometry.stepCount (Geometry.ts:1274-1291)——0.999999 偏移使
+/// stepSize*(n-1) < total <= stepSize*n 与 stepSize*n 同归 n；maxCount 默认 101。
+inline int stepCount(double stepSize, double total, int minCount = 1, int maxCount = 101) noexcept {
+    if (stepSize <= 0.0)
+        return minCount;
+    total = std::abs(total);
+    if (stepSize >= total)
+        return minCount;
+    int const numSteps = static_cast<int>(std::floor((total + 0.999999 * stepSize) / stepSize));
+    if (numSteps < minCount)
+        return minCount;
+    if (numSteps > maxCount)
+        return maxCount;
+    return numSteps;
+}
+
 } // namespace dqGeom
