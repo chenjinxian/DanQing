@@ -105,6 +105,7 @@ extern PFNGLGETSTRINGPROC dqglGetString;
 extern PFNGLGETSTRINGIPROC dqglGetStringi;
 extern PFNGLGETSYNCIVPROC dqglGetSynciv;
 extern PFNGLGETTEXIMAGEPROC dqglGetTexImage;
+extern PFNGLGETTEXLEVELPARAMETERIVPROC dqglGetTexLevelParameteriv;
 extern PFNGLGETUNIFORMFVPROC dqglGetUniformfv;
 extern PFNGLGETUNIFORMLOCATIONPROC dqglGetUniformLocation;
 extern PFNGLINVALIDATEFRAMEBUFFERPROC dqglInvalidateFramebuffer;
@@ -236,6 +237,7 @@ extern PFNGLVIEWPORTPROC dqglViewport;
 #define glGetStringi dqglGetStringi
 #define glGetSynciv dqglGetSynciv
 #define glGetTexImage dqglGetTexImage
+#define glGetTexLevelParameteriv dqglGetTexLevelParameteriv
 #define glGetUniformfv dqglGetUniformfv
 #define glGetUniformLocation dqglGetUniformLocation
 #define glInvalidateFramebuffer dqglInvalidateFramebuffer

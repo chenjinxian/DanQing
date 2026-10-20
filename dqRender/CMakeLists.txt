@@ -389,3 +389,4 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
     include(GoogleTest)
     gtest_discover_tests(dqRenderTest)
 endif()
+

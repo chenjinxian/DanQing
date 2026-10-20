@@ -43,8 +43,8 @@ public:
         m_target = nullptr;
         m_mv = nullptr;
         m_mvp = nullptr;
-        m_materialColor = nullptr;
-        m_materialParams = nullptr;
+        m_materialColor.fill(0.0f);
+        m_materialParams.fill(0.0f);
         m_normalMatrix = nullptr;
         m_texture = {};
         m_textureUnit = -1;
@@ -63,13 +63,27 @@ public:
     float const* getModelViewProjectionMatrix() const noexcept { return m_mvp; }
 
     // --- Per-draw material state ---
-    void setMaterialColor(float const* rgba) noexcept { m_materialColor = rgba; }
-    float const* getMaterialColor() const noexcept { return m_materialColor; }
+    // 值语义承载（2026-10-20 Release 31 例像素测试 saga 根因修复）：此前存
+    // `mat.getRgba()` 裸指针，而 mat 在绘制循环里绑定 `defaultMaterial()`
+    // **按值临时**（const& 延寿仅至填充块尾）——shader->draw(drawParams) 在块外
+    // 解引用死临时的栈内存：Debug 栈残留恰为哨兵值=侥幸绿，Release /O2 栈复用
+    // =垃圾色（全部 Surface 瓦盒染错色）。拷贝进 DrawParams 自持数组。
+    void setMaterialColor(float const* rgba) noexcept
+    {
+        if (rgba) std::memcpy(m_materialColor.data(), rgba, m_materialColor.size() * sizeof(float));
+        else m_materialColor.fill(0.0f);
+    }
+    float const* getMaterialColor() const noexcept { return m_materialColor.data(); }
 
     // --- Per-draw material params (u_materialParams, vec4) ---
     // Ported from: itwinjs-core Surface.ts addMaterial() (line 214-220)
-    void setMaterialParams(float const* mp) noexcept { m_materialParams = mp; }
-    float const* getMaterialParams() const noexcept { return m_materialParams; }
+    //（值语义同上——同型悬垂隐患一并消除。）
+    void setMaterialParams(float const* mp) noexcept
+    {
+        if (mp) std::memcpy(m_materialParams.data(), mp, m_materialParams.size() * sizeof(float));
+        else m_materialParams.fill(0.0f);
+    }
+    float const* getMaterialParams() const noexcept { return m_materialParams.data(); }
 
     // --- Per-draw surface flags (u_surfaceFlags[12], SurfaceBitIndex) ---
     // Ported from: itwinjs-core Surface.ts addSurfaceFlags() (line 519-527)
@@ -128,8 +142,8 @@ private:
     TargetImpl* m_target = nullptr;
     float const* m_mv = nullptr;
     float const* m_mvp = nullptr;
-    float const* m_materialColor = nullptr;
-    float const* m_materialParams = nullptr;  // vec4, u_materialParams
+    std::array<float, 4> m_materialColor = {{-1.0f, -1.0f, -1.0f, -1.0f}};  // rgba，-1=无覆盖哨兵
+    std::array<float, 4> m_materialParams = {};  // vec4, u_materialParams（fragUniforms）
     float const* m_normalMatrix = nullptr;  // mat3 (9 floats), u_normalMatrix
     rhi::TextureHandle m_texture;            // s_texture
     int m_textureUnit = -1;                  // sampler unit for s_texture

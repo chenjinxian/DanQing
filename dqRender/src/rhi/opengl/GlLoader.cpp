@@ -98,6 +98,7 @@ PFNGLGETSTRINGPROC dqglGetString = nullptr;
 PFNGLGETSTRINGIPROC dqglGetStringi = nullptr;
 PFNGLGETSYNCIVPROC dqglGetSynciv = nullptr;
 PFNGLGETTEXIMAGEPROC dqglGetTexImage = nullptr;
+PFNGLGETTEXLEVELPARAMETERIVPROC dqglGetTexLevelParameteriv = nullptr;
 PFNGLGETUNIFORMFVPROC dqglGetUniformfv = nullptr;
 PFNGLGETUNIFORMLOCATIONPROC dqglGetUniformLocation = nullptr;
 PFNGLINVALIDATEFRAMEBUFFERPROC dqglInvalidateFramebuffer = nullptr;
@@ -300,6 +301,7 @@ bool init() {
         { "glGetStringi", reinterpret_cast<void**>(&dqglGetStringi) },
         { "glGetSynciv", reinterpret_cast<void**>(&dqglGetSynciv) },
         { "glGetTexImage", reinterpret_cast<void**>(&dqglGetTexImage) },
+        { "glGetTexLevelParameteriv", reinterpret_cast<void**>(&dqglGetTexLevelParameteriv) },
         { "glGetUniformfv", reinterpret_cast<void**>(&dqglGetUniformfv) },
         { "glGetUniformLocation", reinterpret_cast<void**>(&dqglGetUniformLocation) },
         { "glInvalidateFramebuffer", reinterpret_cast<void**>(&dqglInvalidateFramebuffer) },

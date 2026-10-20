@@ -192,6 +192,7 @@ ProgramHandle OpenGLDriver::createProgram(Program&& program) noexcept
         std::string vertStr(vertSrc.begin(), vertSrc.end());
         std::string fragStr(fragSrc.begin(), fragSrc.end());
 
+
         if (!prog->compile(vertStr.c_str(), fragStr.c_str(), program.getName(),
                            program.getAttributeLocations())) {
             m_handleAllocator.deallocate(handle);
@@ -394,8 +395,9 @@ void OpenGLDriver::bindRenderPrimitive(RenderPrimitiveHandle rph) noexcept
             for (int vi = 0; vi < 3; ++vi) {
                 float* pos = reinterpret_cast<float*>(vbuf + vi * 52);
                 float* uv = reinterpret_cast<float*>(vbuf + vi * 52 + 40);
-                printf("[VAO] v%d pos=(%.2f,%.2f,%.2f) uv=(%.3f,%.3f)\n",
-                       vi, pos[0], pos[1], pos[2], uv[0], uv[1]);
+                float* col = reinterpret_cast<float*>(vbuf + vi * 52 + 24);
+                printf("[VAO] v%d pos=(%.2f,%.2f,%.2f) col=(%.3f,%.3f,%.3f,%.3f) uv=(%.3f,%.3f)\n",
+                       vi, pos[0], pos[1], pos[2], col[0], col[1], col[2], col[3], uv[0], uv[1]);
             }
         }
     }
