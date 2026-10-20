@@ -22,6 +22,7 @@
 
 #include <dqCommon/FeatureTable.h>  // TileContent::featureTable unique_ptr 析构需完整类型
 #include <dqRender/RenderGraphic.h>  // TileContent::graphic unique_ptr 同上
+#include <dqRender/WorkerProxy.h>    // 异步读盘完成闭包的测试泵（drainCompleted）
 #include <dqRender/tile/Tile.h>
 #include <dqRender/tile/TileTree.h>
 
@@ -31,6 +32,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -88,6 +90,9 @@ struct FetchResult {
     std::string error;
 };
 
+// 轮询契约 + 异步读盘（2026-10-20：读盘经 WorkerProxy 后台线程，完成项在该
+// 线程的 drainCompleted 入队——测试泵 = drain + processCompleted 有界轮询；
+// 无 Worker 部署（DANQING_NO_WORKER=1）下 drain 为空操作、首轮即可能已交付）。
 void fetchAndWait(dqApp::DumpTileFetcher& fetcher, std::string const& url,
                   dqRender::Tile& tile, FetchResult& out)
 {
@@ -103,7 +108,18 @@ void fetchAndWait(dqApp::DumpTileFetcher& fetcher, std::string const& url,
             out.errored = true;
             out.error = error;
         });
-    fetcher.processCompleted();  // 轮询契约：投递只在 processCompleted（FileTileFetcher 同款）
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (!out.completed && !out.errored
+           && std::chrono::steady_clock::now() < deadline) {
+        dqRender::WorkerProxy::instance().drainCompleted();  // 完成闭包 → m_completed
+        fetcher.processCompleted();                          // 投递（唯一时点）
+        if (out.completed || out.errored)
+            break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    // 终轮兜底：完成闭包可能在末次 sleep 后到达（deadline 边界非确定性）。
+    dqRender::WorkerProxy::instance().drainCompleted();
+    fetcher.processCompleted();
 }
 
 }  // namespace
@@ -388,6 +404,98 @@ TEST(DumpTileFetcherTest, MissingDumpFailsLoadGracefully)
     fetchAndWait(fetcher, "some/tree", tile, out);
     EXPECT_FALSE(out.completed);
     EXPECT_TRUE(out.errored);
+}
+
+// ---------------------------------------------------------------------------
+// 异步读盘契约（2026-10-20 bridge-edit 卡顿取证续）：fetch 内零回调（读盘在
+// WorkerProxy 后台线程），完成项只在 drain（UI 线程）+ processCompleted 后
+// 投递；字节与磁盘逐字节同值。
+// Authored: no reference test exists（回放取数缝的投递时序契约——参考的
+// 取数天然异步，DanQing 以 WorkerProxy 承载；本锁钉轮询语义不变）。
+// ---------------------------------------------------------------------------
+TEST(DumpTileFetcherTest, DeliveryDeferredUntilDrainAndProcessCompleted)
+{
+    std::string const dumpRoot = kDumpRoot + "/compatseed-v1";
+    dqApp::DumpTileFetcher fetcher(dumpRoot);
+    ASSERT_TRUE(fetcher.isValid());
+    StubTree stubTree;
+    StubTile tile(stubTree);
+
+    FetchResult got;
+    fetcher.fetch(
+        kCompatTreeId + "/-b-0-0-0-0-1", tile,
+        [&got](dqRender::Tile& t, std::vector<uint8_t> const& data) {
+            got.tile = &t;
+            got.completed = true;
+            got.data = data;
+        },
+        [&got](dqRender::Tile& t, std::string const& error) {
+            got.tile = &t;
+            got.errored = true;
+            got.error = error;
+        });
+    // 投递契约：fetch() 返回时回调必未触发（完成闭包最早在本线程的下一次
+    // drain 运行）。在途/待投递计数参与 TileAdmin 并发门。
+    EXPECT_FALSE(got.completed);
+    EXPECT_FALSE(got.errored);
+    EXPECT_GE(fetcher.getActiveCount(), 1u);
+
+    // 有界泵：drain（完成闭包 → 待投递队列）→ processCompleted（唯一投递点）。
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (!got.completed && !got.errored
+           && std::chrono::steady_clock::now() < deadline) {
+        dqRender::WorkerProxy::instance().drainCompleted();
+        fetcher.processCompleted();
+        if (got.completed || got.errored)
+            break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_TRUE(got.completed) << got.error;
+    EXPECT_FALSE(got.errored);
+    EXPECT_EQ(0u, fetcher.getActiveCount());
+    auto const disk = readAllBytes(dumpRoot + "/files/12.imdl");
+    ASSERT_EQ(4304u, disk.size());
+    EXPECT_EQ(disk, got.data);  // 后台读盘字节 == 磁盘直读
+}
+
+// ---------------------------------------------------------------------------
+// 取消代际：cancelAll() 后旧代在途完成项丢弃（不投递、不记 requestLog）。
+// 时序确定：cancelAll 在首次 drain 之前调用——完成闭包无论何时运行都会在
+// 代际门处提前返回。同步径（DANQING_NO_WORKER=1）同样不投递（队列被清空）。
+// ---------------------------------------------------------------------------
+TEST(DumpTileFetcherTest, CancelAllDropsUndeliveredCompletion)
+{
+    std::string const dumpRoot = kDumpRoot + "/compatseed-v1";
+    dqApp::DumpTileFetcher fetcher(dumpRoot);
+    ASSERT_TRUE(fetcher.isValid());
+    StubTree stubTree;
+    StubTile tile(stubTree);
+
+    FetchResult got;
+    fetcher.fetch(
+        kCompatTreeId + "/-b-0-0-0-0-1", tile,
+        [&got](dqRender::Tile& t, std::vector<uint8_t> const& data) {
+            got.tile = &t;
+            got.completed = true;
+            got.data = data;
+        },
+        [&got](dqRender::Tile& t, std::string const& error) {
+            got.tile = &t;
+            got.errored = true;
+            got.error = error;
+        });
+    fetcher.cancelAll();
+
+    // 给在途读盘充分的落地时间（最多 500ms）：若代际门失效，完成项会在
+    // 下一轮 drain+processCompleted 投递。
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+    while (std::chrono::steady_clock::now() < deadline) {
+        dqRender::WorkerProxy::instance().drainCompleted();
+        fetcher.processCompleted();
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    EXPECT_FALSE(got.completed);
+    EXPECT_FALSE(got.errored);
 }
 
 // ---------------------------------------------------------------------------

@@ -3,6 +3,8 @@
 // Authored: see DumpTileFetcher.h（宿主侧取数缝——参考无对应物）。
 #include "dqApp/tile/DumpTileFetcher.h"
 
+#include <dqRender/WorkerProxy.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -223,11 +225,99 @@ void DumpTileFetcher::fetch(std::string const& url, dqRender::Tile& tile,
         return;
     }
 
+    std::string const filePath = *hitFileRoot + "/" + tileEntry->file;
+    size_t const expectedBytes = tileEntry->byteLength;
+
+    // -------------------------------------------------------------------
+    // 读盘下放（2026-10-20 bridge-edit 卡顿取证续：fetch 读盘 30-94ms/大瓦
+    // 在 UI 线程卡死交互）。
+    // EQUIVALENCE（§11.10）：参考源 = ImdlReader 的取数经宿主异步（XHR/
+    // HTTP——浏览器侧 IO 从不阻塞主线程，core/frontend/src/tile/ImdlReader.ts
+    // :44-70 的 arrayBuffer 异步读 + TileAdmin 的请求完成回调）；发散 = DanQing
+    // 本地文件回放无网络层 (§8.2)，等价面 = WorkerProxy（P-b1 载体）后台
+    // 读盘；完成项在 UI 线程的 WorkerProxy drain（TileAdmin::process 首段）入
+    // m_completed，仍由 processCompleted() 投递；验证法 =
+    // DumpTileFetcherTest.DeliveryDeferredUntilDrainAndProcessCompleted（fetch
+    // 内零回调 + 字节同值）+ CancelAllDropsUndeliveredCompletion（代际）。
+    // 轮询交付契约与帧序不变量（M-F(1)：交付不早于下一个选择趟）不变。
+    // 生命周期：任务体只持 slot+路径（不触 fetcher）；完成闭包以 weak 令牌
+    // 防 fetcher 先亡（fetcher 替换/teardown——setFetcher 删除旧实例）。
+    // 取消：cancelAll() 递增代际，旧代完成的项丢弃（读盘本身不可中断——
+    // 文件 IO 无副作用）。
+    // noWorker（DANQING_NO_WORKER=1）→ 同步旧路（下方 readFileBytes 段）。
+    // -------------------------------------------------------------------
+    // 载体已终止（仅 teardown 边界可能——生产无人调用 singleton terminate）
+    // 时走同步径：submit 对终止载体返回 0 并丢弃闭包（请求会悬挂），先门控。
+    if (!dqRender::WorkerProxy::instance().isNoWorker()
+        && !dqRender::WorkerProxy::instance().isTerminated() && m_lifeToken) {
+        struct AsyncReadSlot {
+            bool readOk = false;
+            std::vector<uint8_t> bytes;
+            double readMs = 0.0;
+        };
+        auto slot = std::make_shared<AsyncReadSlot>();
+        std::weak_ptr<char> life = m_lifeToken;
+        uint64_t const gen = m_ioGeneration;
+        DumpTileFetcher* self = this;
+        DumpRequestRecord rec = std::move(record);
+        auto onC = std::move(entry.onComplete);
+        auto onE = std::move(entry.onError);
+        dqRender::Tile* tilePtr = &tile;
+        std::string const treeIdCopy = treeId;
+        std::string const contentIdCopy = contentId;
+        m_inFlightReads.fetch_add(1);
+        dqRender::WorkerProxy::instance().submit(
+            [slot, filePath]() {
+                auto const t0 = std::chrono::steady_clock::now();
+                slot->readOk = readFileBytes(filePath, slot->bytes);
+                slot->readMs = std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - t0).count() / 1000.0;
+            },
+            [self, life, gen, slot, rec = std::move(rec), onC = std::move(onC),
+             onE = std::move(onE), tilePtr, expectedBytes, filePath,
+             treeIdCopy, contentIdCopy]() mutable {
+                if (!life.lock())
+                    return;  // fetcher 已亡（setFetcher 替换/teardown）——丢弃
+                self->m_inFlightReads.fetch_sub(1);
+                if (gen != self->m_ioGeneration)
+                    return;  // cancelAll 代际：旧代完成项丢弃
+                Completed e;
+                e.tile = tilePtr;
+                e.onComplete = std::move(onC);
+                e.onError = std::move(onE);
+                if (std::getenv("DANQING_TILE_TIME")) {
+                    std::fprintf(stderr, "[TT] fetchRead(worker) %s/%s %.2fms bytes=%llu hitRoot=%d\n",
+                                 treeIdCopy.c_str(), contentIdCopy.c_str(), slot->readMs,
+                                 static_cast<unsigned long long>(slot->bytes.size()),
+                                 static_cast<int>(rec.hitRoot));
+                    std::fflush(stderr);
+                }
+                if (!slot->readOk) {
+                    e.ok = false;
+                    e.error = "DumpTileFetcher: cannot open " + filePath;
+                } else if (slot->bytes.size() != expectedBytes) {
+                    e.ok = false;
+                    e.error = "DumpTileFetcher: byteLength mismatch for " + treeIdCopy + "/"
+                              + contentIdCopy + " (manifest "
+                              + std::to_string(expectedBytes) + ", disk "
+                              + std::to_string(slot->bytes.size()) + ")";
+                } else {
+                    rec.outcome = DumpFetchOutcome::Completed;
+                    rec.bytes = static_cast<uint64_t>(slot->bytes.size());
+                    e.ok = true;
+                    e.data = std::move(slot->bytes);
+                }
+                self->m_requestLog.push_back(std::move(rec));
+                self->m_completed.push_back(std::move(e));
+            });
+        return;
+    }
+
     std::vector<uint8_t> bytes;
-    // 诊断探针（§13.1 DANQING_TILE_TIME）：fetch 读盘在 UI 线程的耗时——
-    // 2026-10-20 bridge-edit 卡顿取证所加（常驻，env 门控零开销）。
+    // 诊断探针（§13.1 DANQING_TILE_TIME）：同步读盘耗时（noWorker 径——异步径
+    // 的 worker 侧计时标记为 fetchRead(worker)）。
     auto const tRead0 = std::chrono::steady_clock::now();
-    bool const readOk = readFileBytes(*hitFileRoot + "/" + tileEntry->file, bytes);
+    bool const readOk = readFileBytes(filePath, bytes);
     if (std::getenv("DANQING_TILE_TIME")) {
         auto const us = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - tRead0).count();
@@ -279,11 +369,16 @@ void DumpTileFetcher::processCompleted()
 
 uint32_t DumpTileFetcher::getActiveCount() const noexcept
 {
-    return static_cast<uint32_t>(m_completed.size());
+    // 口径 = 已就绪待投递 + 在途读盘（取消后旧代完成项被丢弃，在途计数在
+    // 完成闭包处回落——排空尾部最多一个 drain 周期）。
+    return static_cast<uint32_t>(m_completed.size()) + m_inFlightReads.load();
 }
 
 void DumpTileFetcher::cancelAll()
 {
+    // 代际递增：此后到达的旧代完成项丢弃（读盘不可中断——文件 IO 无副作用；
+    // 完成闭包仍会执行并回落 in-flight 计数，仅在代际门处提前返回）。
+    ++m_ioGeneration;
     m_completed.clear();
 }
 

@@ -9,8 +9,13 @@
 // 键，manifest 是唯一键域）；键 = manifest tiles[] 的 (treeId, contentId)
 // 原样串（前端请求键，Task 1 评审钉死①）。
 //
-// 投递契约与 FileTileFetcher 同款轮询语义：fetch() 同步读盘/查表，投递只在
-// processCompleted()（从不在 fetch() 内联——TileAdmin process 周期语义）。
+// 投递契约与 FileTileFetcher 同款轮询语义：投递只在 processCompleted()
+// （从不在 fetch() 内联——TileAdmin process 周期语义）。查表（manifest 哈希
+// 索引）在 fetch() 内同步完成（UI 线程，O(1)）；读盘**异步**——文件 IO 经
+// WorkerProxy（dqRender，P-b1 载体）后台线程执行，完成项在该线程的
+// drainCompleted（TileAdmin::process 首段，UI 线程）入队，仍在同一 process
+// 周期的 processCompleted() 投递（帧序不变量 M-F(1) 不变）。同步径仅在
+// DANQING_NO_WORKER=1（P-b3 单线程对照）时保留——语义同旧实现。
 // 公共头依据 §8.4：DisplayTestApp 宿主跨模块注入（TileAdmin::setFetcher）。
 #pragma once
 
@@ -19,8 +24,10 @@
 
 #include <dqRender/tile/ITileFetcher.h>
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -107,9 +114,11 @@ public:
     void addFallbackRoot(DumpManifest&& manifest, std::string const& root);
     void addFallbackRoot(std::string const& root);
 
-    // 全部被请求键的轨迹（fetch 调用即追加——每条一次；TileAdmin 对
-    // 非 NotLoaded 态不重建请求（TileAdmin.cpp processRequestsForUser），
-    // 故每键至多一条）。供完整加载对账测试只读遍历。
+    // 全部被请求键的轨迹（每条至多一次；NotFound/Error 在 fetch() 内落定即
+    // 追加，Completed 在后台读盘完成闭包落定后追加——列表序 = 结果落定序，
+    // 非请求序；cancelAll() 丢弃未落定的旧代项。TileAdmin 对非 NotLoaded 态
+    // 不重建请求（TileAdmin.cpp processRequestsForUser），故每键至多一条）。
+    // 供完整加载对账测试只读遍历（消费面按键集合/逐键属性，不依赖列表序）。
     std::vector<DumpRequestRecord> const& requestLog() const noexcept
     {
         return m_requestLog;
@@ -156,6 +165,14 @@ private:
     std::vector<std::string> m_fallbackWarnings;
     std::vector<Completed> m_completed;
     std::vector<DumpRequestRecord> m_requestLog;
+
+    // 异步读盘（2026-10-20 bridge-edit 卡顿取证续）：生命周期令牌（完成闭包
+    // weak 持有——fetcher 被替换/销毁后旧完成项丢弃，防 UAF）；代际（
+    // cancelAll 递增——旧代完成项丢弃）；在途读盘计数（getActiveCount 口径
+    // = 已就绪待投递 + 在途）。
+    std::shared_ptr<char> m_lifeToken = std::make_shared<char>(0);
+    uint64_t m_ioGeneration = 0;
+    std::atomic<uint32_t> m_inFlightReads{0};
 
     // 两构造器共有的尾段（M-I(1)）：fallback 逐根装载 + 全根索引建立
     //（索引必须在各 manifest 定型后建立——FallbackRoot 向量不再增长）。
