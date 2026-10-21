@@ -64,6 +64,7 @@
 #include <dqRender/rhi/Handle.h>
 
 #include <algorithm>
+#include <cassert>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -262,8 +263,12 @@ private:
 template<typename T>
 class Cluster {
 public:
-    // :329-332（assert(markers.length > 0)——空组为调用方违约）。
-    explicit Cluster(std::vector<T*> markers) : markers(std::move(markers)) {}
+    // :329-332（assert(markers.length > 0)——C++ assert 承载；§9 禁异常不禁
+    // 断言）。
+    explicit Cluster(std::vector<T*> markers) : markers(std::move(markers))
+    {
+        assert(!this->markers.empty());
+    }
 
     std::vector<T*> markers;                  // :326
     std::unique_ptr<Marker> clusterMarker;    // :327
@@ -422,7 +427,7 @@ bool Marker::setPositionT(Viewport& vp, MarkerSet<T>* markerSet)
     if (!visible)                          // :251-252
         return false;
 
-    // :254——worldToView4d（Viewport.ts:3517-3519 的 Viewport 面）。
+    // :254——worldToView4d（Viewport.ts:2118 的 Viewport 面）。
     dqGeom::Point4d const pt4 = vp.worldToView4d(worldLocation);
     if (pt4.w > 1.0 || pt4.w < 1.0e-6)     // :255——视锥外或贴眼
         return false;
@@ -481,7 +486,7 @@ void MarkerSet<T>::addDecoration(DecorateContext& context)
         return;
 
     // :434-439——frustum 未变不重建 entries（性能 + 组 marker 悬停身份存续）。
-    // 参考判据 = worldToViewMap.isAlmostEqual（Matrix4d.ts:251-253——maxDiff ≤
+    // 参考判据 = worldToViewMap.isAlmostEqual（Matrix4d.ts:251-252——maxDiff ≤
     // Geometry.smallMetricDistance=1e-6；DanQing IsAlmostEqual 缺省 1e-10，
     // 显式传参考容差）。
     if (m_worldToViewMap.MaxDiff(vp.worldToViewMap().Transform0()) > 1.0e-6) {

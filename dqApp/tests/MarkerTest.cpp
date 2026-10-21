@@ -543,7 +543,7 @@ void driveMotion(Viewport* vp, float x, float y)
 
 }  // namespace
 
-// Authored: 悬停路由（:1108-1115 → :1036-1048）——motion 到 marker 上：
+// Authored: 悬停路由（:1134-1141 → :1036-1048）——motion 到 marker 上：
 // enter（hilite）+ 悬停身份 + 光标 pointer + 光圈门熄灭；移出：leave + 光标
 // 复位 viewManager.cursor。
 TEST(MarkerTest, ToolAdminHoverRoutesEnterLeaveCursorAndLocateGate)
@@ -575,7 +575,7 @@ TEST(MarkerTest, ToolAdminHoverRoutesEnterLeaveCursorAndLocateGate)
     ta.toolState.locateCircleOn = false;
 }
 
-// Authored: 点击吞没（:1298-1300）——marker 上的 Data 键 down 由
+// Authored: 点击吞没（:1325-1327）——marker 上的 Data 键 down 由
 // onMouseButton 消费，不进工具路由；空点则进 idle 工具。
 TEST(MarkerTest, ToolAdminDataButtonOnMarkerSwallowedByOnMouseButton)
 {

@@ -67,7 +67,7 @@ struct ViewRect {
     // Ported from: itwinjs-core ViewRect.setFrom (ViewRect.ts:77)。
     void setFrom(ViewRect const& other) { init(other.left, other.top, other.right, other.bottom); }
 
-    // Ported from: itwinjs-core ViewRect.inset (ViewRect.ts:102-113)——delta 取
+    // Ported from: itwinjs-core ViewRect.inset (ViewRect.ts:103-114)——delta 取
     // floor；塌缩（宽/高不足 2×delta）→ init(0,0,0,0)；否则直接改成员（不经
     // _set——负 delta 扩张可使边界为负，参考行为原样保留）。
     void inset(double deltaX, double deltaY)

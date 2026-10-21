@@ -1329,8 +1329,8 @@ public:
     // CanvasDecoration 接口携 handler 方法族；DanQing 的 CanvasDecoration 是
     // std::function 结构体（dqRender，W4 面），handler 族在 dqApp::Marker 本体
     // ——路由经 Marker::fromDecoration 恢复身份（XE7 缝——Marker.h 头注）。
-    // pickCanvasDecoration 的调用点：onMotion（:1108-1115）/ sendButtonEvent
-    //（:1298-1300）/ onWheel（:592-594，拾取的悬停副作用）/ onMouseLeave
+    // pickCanvasDecoration 的调用点：onMotion（:1134-1141）/ sendButtonEvent
+    //（:1325-1327）/ onWheel（:618-620，拾取的悬停副作用）/ onMouseLeave
     //（:958）/ sendTapEvent（:632——touch 面未移植，TODO 锚）。
 
     // C++ 生命周期缝（XE14）：marker 析构时清悬停指针（参考靠 GC——JS 对象

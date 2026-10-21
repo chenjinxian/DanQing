@@ -1138,7 +1138,7 @@ void ToolAdmin::onButtonUp(Viewport* vp, dqGeom::Point2d pt2d, BeButton button, 
 // Ported from: itwinjs-core ToolAdmin.sendButtonEvent (ToolAdmin.ts:1297-1385)
 void ToolAdmin::sendButtonEvent(BeButtonEvent& ev)
 {
-    // TS L1298-1300: const overlayHit = this.pickCanvasDecoration(ev);
+    // TS L1325-1327: const overlayHit = this.pickCanvasDecoration(ev);
     //                 if (undefined !== overlayHit && undefined !== overlayHit.onMouseButton
     //                     && overlayHit.onMouseButton(ev)) return;
     // M-X X-b1 接通——Marker::onMouseButton 为虚面默认 false（参考可选成员
@@ -1518,7 +1518,7 @@ void ToolAdmin::onMotion(Viewport* vp, dqGeom::Point2d pt2d, InputSource inputSo
     current.fromPoint(vp, pt2d, inputSource);
     current.toEvent(ev, /*useSnap=*/false);
 
-    // TS L1108-1115: pickCanvasDecoration overlay-hit path（M-X X-b1 接通）。
+    // TS L1134-1141: pickCanvasDecoration overlay-hit path（M-X X-b1 接通）。
     //   const overlayHit = this.pickCanvasDecoration(ev);
     //   if (undefined !== overlayHit) {
     //     if (overlayHit.onMouseMove) overlayHit.onMouseMove(ev);
@@ -1649,7 +1649,7 @@ void ToolAdmin::onWheel(ToolEvent const& event)
     wheelEvent.wheelDelta = delta;
     current.toEvent(wheelEvent, /*useSnap=*/true);
 
-    // TS L592-594: const overlayHit = this.pickCanvasDecoration(wheelEvent);
+    // TS L618-620: const overlayHit = this.pickCanvasDecoration(wheelEvent);
     //   if (undefined !== overlayHit && undefined !== overlayHit.onWheel
     //       && overlayHit.onWheel(wheelEvent)) return EventHandled.Yes;
     // M-X X-b1：拾取面接通（悬停副作用——enter/leave/光标随滚轮位更新）。

@@ -646,9 +646,10 @@ public:
     dqGeom::Point3d NpcToWorld(dqGeom::Point3d const& pt) const;
     // Ported from: itwinjs-core Viewport.worldToViewMap getter (Viewport.ts:564)。
     dqGeom::Map4d const& worldToViewMap() const { return m_viewingSpace.worldToViewMap(); }
-    // Ported from: itwinjs-core Viewport.worldToView4d (Viewport.ts:3517-3519
-    // ——worldToViewMap.transform0.multiplyPoint3dPoint4d(world)；Matrix4d.
-    // MultiplyPoint3d(pt, w=1) 即 multiplyPoint3dPoint4d 的非归一化语义）。
+    // Ported from: itwinjs-core Viewport.worldToView4d (Viewport.ts:2118
+    // ——_viewingSpace.worldToView4d → ViewingSpace.ts:445 → Matrix4d.
+    // multiplyPoint3d(pt, w=1.0)[Matrix4d.ts:426，非归一化]；DanQing 同名形
+    // MultiplyPoint3d(pt, 1.0) 同语义）。
     dqGeom::Point4d worldToView4d(dqGeom::Point3d const& world) const
     {
         return m_viewingSpace.worldToViewMap().Transform0().MultiplyPoint3d(world, 1.0);
