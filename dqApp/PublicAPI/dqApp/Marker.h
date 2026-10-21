@@ -331,6 +331,11 @@ public:
         }
         size_t size() const { return m_set.m_markers.size(); }
         bool empty() const { return m_set.m_markers.empty(); }
+        // 插入序遍历（TS Set 的 forEach 语义——Marker.ts:102/444 的迭代序）。
+        template<typename F>
+        void forEach(F&& fn) { for (auto& m : m_set.m_markers) fn(m.get()); }
+        template<typename F>
+        void forEach(F&& fn) const { for (auto const& m : m_set.m_markers) fn(m.get()); }
 
     private:
         friend class MarkerSet;
@@ -358,6 +363,7 @@ public:
 
     // :371——markers 集合访问面（见 Markers 类注释）。
     Markers& markers() { return m_markersFacade; }
+    Markers const& markers() const { return m_markersFacade; }
 
     // Indicate that this MarkerSet is dirty（:405-407——worldToViewMap 归零即
     // 失效标记；下一 addDecoration 重建 entries）。

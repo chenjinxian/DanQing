@@ -35,6 +35,7 @@
 #include "FpsMonitor.h"
 #include "Application.h"
 #include "GltfDecorationTool.h"
+#include "IncidentMarkerDemo.h"       // M-X X-b2：ToggleIncidentMarkers 工具注册
 #include "OutputShadersTool.h"        // M-O(2) 3d OutputShaders 工具注册
 #include "PathDecorationTest.h"       // M-W W-b1：TogglePathDecoration 工具注册
 #include "SurfaceTools.h"             // M-Y Y-b1/Y-b2：Surface 窗口 keyin 族 + Close/ReopenIModel 注册
@@ -103,6 +104,11 @@ void registerDtaTools()
     registry.Register("TogglePathDecoration",
                       []() -> dqApp::InteractiveTool* { return new PathDecorationTestTool(); },
                       "dta path decoration");
+    // M-X X-b2：IncidentMarkerDemoTool（IncidentMarkerDemo.ts:253-262——toolId
+    // "ToggleIncidentMarkers"；keyin "dta incident markers"＝SVTTools.json:64-65）。
+    registry.Register("ToggleIncidentMarkers",
+                      []() -> dqApp::InteractiveTool* { return new IncidentMarkerDemoTool(); },
+                      "dta incident markers");
     // M-Y Y-b1：Surface 窗口 keyin 族七件（Surface.ts:451-598——SVTTools.json
     // :25-50 en 键；MDI 承载与 EQUIVALENCE 见 SurfaceTools.h 头注）。
     registry.Register("CreateWindow",
