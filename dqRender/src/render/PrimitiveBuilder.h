@@ -73,6 +73,7 @@ private:
     RenderSystem& m_system;
     rhi::Driver& m_driver;  // PR F: GPU upload for create(driver, Mesh) in finish().
     GeometryAccumulator m_accumulator;
+    dqBase::DqId m_pickableId;  // 1:1 GraphicBuilderOptions.pickableId（TD-35）
     std::function<double()> m_computeChordTolerance;
 };
 

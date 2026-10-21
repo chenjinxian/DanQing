@@ -9,6 +9,7 @@
 #include "dqApp/DecorateContext.h"
 #include "dqApp/Viewport.h"
 #include "dqApp/ViewState.h"
+#include "dqApp/IModelConnection.h"  // NextTransientId（TD-35 pick id 供给）
 
 #include <dqRender/GraphicBuilder.h>
 #include <dqRender/RenderGraphic.h>
@@ -378,16 +379,20 @@ void AcsTriadDecorator::Decorate(DecorateContext& context)
 
     // ------------------------------------------------------------------
     // ACS origin point（AccuDraw.ts:2293-2299）——pickable world decoration。
-    // 参考用 transientIds 取 pick id 建 WorldDecoration builder；DanQing 的
-    // GraphicBuilderOptions 尚无 pickable/transientIds 接线（TODO 随 AccuDraw/
-    // ElementLocate 移植）——此处产出**视觉等价**的蓝点（同 builder/同色/同 weight），
-    // 不注册 pick id（TestDecorationHit 恒 false 至接线完成）。
+    // 参考用 transientIds 取 pick id 建 WorldDecoration builder；TD-35 接线：
+    // GraphicBuilderOptions.pickableId = vp.GetIModel()->NextTransientId()
+    //（参考 `this._acsPickId = context.viewport.iModel.transientIds.getNext()`，
+    // AccuDraw.ts:2294）——pick pass 的 float→R32UI 污染（3014 像素翻译归零）
+    // 根治：pick id 注册 → pickable 门 → 真 pick 值。
     // ------------------------------------------------------------------
     {
         dqRender::GraphicBuilderOptions pickOpts;
         pickOpts.type = dqRender::GraphicType::WorldDecoration;           // :2295
         // placement undefined → identity（:2295 第二参）
         pickOpts.computeChordTolerance = opts.computeChordTolerance;
+        auto* imodel = vp.GetIModel();
+        if (imodel)
+            pickOpts.pickableId = imodel->NextTransientId();              // :2294
         auto pickBuilder = vp.createGraphicBuilder(pickOpts);
         if (pickBuilder) {
             // :2296 — ColorDef.blue.adjustedForContrast(view.backgroundColor, 50)。

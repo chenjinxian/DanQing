@@ -167,6 +167,13 @@ public:
     HiliteSet& GetHiliteSet() { return m_hiliteSet; }
     HiliteSet const& GetHiliteSet() const { return m_hiliteSet; }
 
+    // ← IModelConnection.transientIds.getNext（AccuDraw.ts:2293-2299——ACS
+    //    原点 pick id 供给；参考 TransientIdSequence.getNext 的 ++_localId
+    //    语义——前端侧唯一消费面即 ACS 原点装饰）。
+    dqBase::DqId NextTransientId() noexcept {
+        return dqBase::Id64::FromLocalAndBriefcaseIds(static_cast<uint32_t>(++m_transientIdCounter), 0xffffff);
+    }
+
     // --- Static events (← IModelConnection.onOpen/onClose) ---
     static dqBase::DqEvent<IModelConnection*> OnOpen;
     static dqBase::DqEvent<IModelConnection*> OnClose;
@@ -194,6 +201,13 @@ protected:
     bool m_closed = false;
     SelectionSet m_selectionSet;
     HiliteSet m_hiliteSet;
+    // ← IModelConnection.transientIds（IModelConnection.ts:85
+    //   `public readonly transientIds = new TransientIdSequence()`）——
+    //   TransientIdSequence 的 getNext 供给（前端侧唯一消费面 =
+    //   AccuDraw.ts:2293-2299 的 ACS 原点 pick id；其余 transient 注册
+    //   随对应工具面落地登记）。DanQing 无 backend TransientIdSequence——
+    //   等价面 = 静态计数器（参考 getNext 的 ++_localId 语义）。
+    mutable uint64_t m_transientIdCounter = 0;
     // ← IModelConnection.views (IModelConnection.ts:71/224) — constructed with this
     //    connection, as in the reference ctor. The other frontend-side object
     //    collections (models/elements/codeSpecs/categories/tiles/geoServices/

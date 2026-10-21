@@ -13,6 +13,7 @@
 #include <dqCommon/AnalysisStyle.h>
 #include <dqCommon/ColorDef.h>
 #include <dqCommon/GraphicParams.h>
+#include <dqBase/DqId.h>  // pickableId（PickableGraphicOptions.id）
 
 #ifndef BEGIN_DQ_RENDER_NAMESPACE
 #define BEGIN_DQ_RENDER_NAMESPACE namespace dqRender {
@@ -83,6 +84,13 @@ struct GraphicBuilderOptions {
     // createGraphicBuilder/createGraphic 链均不携带；Viewport 的 analysisStyle 经
     // RenderPlan.ts:126 进 target 供 draw 期动画消费，与本字段正交）。
     std::optional<dqCommon::AnalysisStyle> analysisStyle;
+    // 1:1 GraphicBuilderOptions.pickable（GraphicBuilder.ts:32——pickable
+    //    = PickableGraphicOptions { id, subCategoryId?, geometryClass?, ... }，
+    //    BatchOptions.ts:37-56；DanQing 只取 id（pick id）——其余段随
+    //    activateFeature 面落地登记）。消费点 = PrimitiveBuilder::finish 的
+    //    pickable 臂（AcsTriadDecorator 的 ACS 原点 pick id——AccuDraw.ts
+    //    :2293-2299 的 pickable world decoration 语义）。
+    dqBase::DqId pickableId;
 };
 
 // Abstract base class for building RenderGraphics.
@@ -96,6 +104,10 @@ public:
 
     // Get the graphic type.
     GraphicType getType() const noexcept { return m_type; }
+
+    // ← GraphicBuilderOptions.pickable.id（BatchOptions.ts:37-56——pick id
+    //    访问面；PrimitiveBuilder::finish 的 pickable 臂消费）。
+    dqBase::DqId getPickableId() const noexcept { return m_pickableId; }
 
     // --- Read-only builder state (1:1 GraphicAssembler.ts properties, computed once in the ctor) ---
     // If true, normal vectors are generated for surfaces (1:1 wantNormals).
@@ -221,7 +233,8 @@ protected:
           // preserveOrder = options.preserveOrder ?? (ViewOverlay | WorldOverlay | ViewBackground)
           m_preserveOrder(options.preserveOrder.value_or(
               m_type == GraphicType::ViewOverlay || m_type == GraphicType::WorldOverlay ||
-              m_type == GraphicType::ViewBackground))
+              m_type == GraphicType::ViewBackground)),
+          m_pickableId(options.pickableId)  // TD-35：PickableGraphicOptions.id 载体
     {
     }
 
@@ -246,6 +259,7 @@ private:
     bool m_wantEdges = false;     // 1:1 GraphicAssembler.wantEdges
     bool m_wantNormals = false;   // 1:1 GraphicAssembler.wantNormals
     bool m_preserveOrder = false; // 1:1 GraphicAssembler.preserveOrder
+    dqBase::DqId m_pickableId;    // 1:1 GraphicBuilderOptions.pickableId（TD-35）
     dqCommon::GraphicParams m_graphicParams; // 1:1 GraphicAssembler._graphicParams (current symbology)
 };
 

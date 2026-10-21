@@ -190,6 +190,7 @@ PrimitiveBuilder::PrimitiveBuilder(RenderSystem& system, rhi::Driver& driver, Gr
     , m_system(system)
     , m_driver(driver)
     , m_computeChordTolerance(options.computeChordTolerance)
+    , m_pickableId(options.pickableId)  // TD-35：PickableGraphicOptions.id 载体
 {
     if (options.analysisStyle.has_value() && options.analysisStyle->displacement.has_value())
         m_accumulator = GeometryAccumulator(GeometryAccumulatorOptions{
@@ -275,7 +276,6 @@ RenderGraphic* PrimitiveBuilder::finish()
 
     MeshList meshes = m_accumulator.toMeshes(opts, tolerance, /*pickable=*/std::nullopt);
     m_accumulator.clear();
-    // TEMP-DIAG（ACS 盘填充深缩放死亡排查）：per-mesh 类型/图元数/range——
     // 死亡步（ext≈0.012）对照：三角形在 mesh 层就没了 = MeshBuilder 链杀；
     // 三角形在但不上屏 = 渲染命令/合成层杀（env DANQING_GL_TRACE=1）。
     if (std::getenv("DANQING_GL_TRACE")) {
@@ -335,6 +335,21 @@ RenderGraphic* PrimitiveBuilder::finish()
     branch->setChild(std::move(array));
     // Branch : Graphic : RenderGraphic — RenderGraphicAdapter::addCommands dispatches to Branch::addCommands
     // (defined), and the MeshGraphic leaves are Graphics, so the whole tree is UB-free.
+
+    // TD-35：pickable 装饰的 pick id 包装（GraphicBuilderOptions.pickableId——
+    // 参考 GraphicBuilderOptions.pickable / PickableGraphicOptions.id，
+    // GraphicBuilder.ts:32 + BatchOptions.ts:37-56）。消费面 = pick pass 的
+    // 单 feature 批（Batch 携 elementId 表 + pickable 门——RenderCommands.
+    // addBatch 的 isPickable 已在 Batch 上恒 true，Graphic.h:208）；缺失本
+    // 包装时该装饰在 pick pass 用 float 着色器写 R32UI 附件（0x3F800000
+    // 污染实录，TD-35）。
+    if (m_pickableId.isValid()) {
+        auto featureTable = std::make_unique<dqCommon::FeatureTable>(
+            1, dqBase::DqId(0), dqCommon::BatchType::Primary);
+        featureTable->insertWithIndex(dqCommon::Feature(m_pickableId), 0);
+        return m_system.createBatch(branch.release(), featureTable.get(),
+                                    dqGeom::Range3d::CreateNull());
+    }
     return branch.release();
 }
 
