@@ -13,6 +13,7 @@
 #include "Export.h"
 #include "RenderGraphic.h"
 
+#include <dqCommon/ContourDisplay.h>  // M-X X-a2：GraphicBranchOptions.contours
 #include <dqCommon/ViewFlags.h>
 #include <dqRender/FeatureSymbology.h>
 
@@ -33,10 +34,16 @@ BEGIN_DQ_RENDER_NAMESPACE
 // ---------------------------------------------------------------------------
 struct GraphicBranchOptions {
     bool ownsEntries = false;
+    // 分支级等高线显示覆盖（M-X X-a2）。
+    // Ported from: itwinjs-core GraphicBranchOptions.contours
+    //   （GraphicBranch.ts:165——`contours?: ContourDisplay`；webgl 消费=
+    //   Branch ctor :374 `this.contourLine = opts.contours`）。参考前端无生产
+    //   者（API 面）——DanQing 同形载体先行，消费链接线随面板落后续。
+    std::optional<dqCommon::ContourDisplay> contours;
     // Ported from: itwinjs-core GraphicBranch options
     // These properties will be added when the corresponding types are ported:
     // planarClassifier, textureDrape, edgeSettings, iModel, frustum,
-    // appearanceProvider, secondaryClassifiers, contourLine,
+    // appearanceProvider, secondaryClassifiers,
     // viewAttachmentId, inSectionDrawingAttachment, disableClipStyle
 };
 

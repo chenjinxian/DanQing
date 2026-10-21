@@ -2432,6 +2432,16 @@ void Viewport::ValidateRenderPlan()
         if (newPlan.is3d)
             newPlan.ao = style.getSettings().getAmbientOcclusionSettings();
 
+        // contours 等高线显示设置（M-X X-a2）。
+        // Ported from: itwinjs-core RenderPlan.ts:128——
+        //   const contours = (style.is3d() && style.settings.contours.groups.length > 0)
+        //     ? style.settings.contours : undefined;
+        //（is3d + 组非空双门——displayContours 旗标不在此查[BatchUniforms
+        //  .wantContourLines 的消费门，BatchUniforms.ts:110-113]；EQUIVALENCE
+        //  同 thematic 段的 2d 判别注记）。
+        if (newPlan.is3d && !style.getSettings().getContours().groups.empty())
+            newPlan.contours = style.getSettings().getContours();
+
         // Analysis style（M-U U-e）——RenderPlan.ts:126
         //   const analysisStyle = style.settings.analysisStyle;
         //（参考无 is3d 门；Target.changeRenderPlan :516 消费[E2 着色器面随

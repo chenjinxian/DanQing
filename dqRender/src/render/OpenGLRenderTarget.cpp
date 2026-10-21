@@ -144,10 +144,13 @@ void OpenGLRenderTarget::changeRenderPlan(RenderPlan const& plan)
     // M-S S-c：plan.thematic 段透传（Target.plan.thematic 的读取面——
     // TargetImpl 存管，uniforms.thematic.update 在本函数尾段消费）。
     // M-T T-b：plan.ao 段透传（Target.ts:524-530 的 AO 门在 TargetImpl 内）。
+    // M-X X-a2：plan.contours 段透传（Target.ts:533 第 4 参——
+    // branch.changeRenderPlan 的 contourLine 消费面）。
     m_impl->changeRenderPlan(vf, plan.is3d,
                              plan.hline.has_value() ? &*plan.hline : nullptr,
                              plan.thematic.has_value() ? &*plan.thematic : nullptr,
-                             plan.ao.has_value() ? &*plan.ao : nullptr);
+                             plan.ao.has_value() ? &*plan.ao : nullptr,
+                             plan.contours.has_value() ? &*plan.contours : nullptr);
 
     // M-U U-e：analysisFraction/analysisStyle 段（Target.ts:516/:205-206——
     // step 7 直写语义的 plan 载体等价面[E7 登记]；位移着色器消费随 E2）。
@@ -170,6 +173,10 @@ void OpenGLRenderTarget::changeRenderPlan(RenderPlan const& plan)
     // 后、updateRenderPlan 之前[参考同序——Slope 轴/HillShade 太阳向依赖新
     // 视矩阵]）。M-S S-c。
     m_impl->getUniforms().thematic.update(*m_impl);
+    // Contour uniforms — Ported from: itwinjs-core Target.changeRenderPlan
+    //（Target.ts:539——`uniforms.contours.update(this)`；序：thematic 之后、
+    // updateRenderPlan 之前[参考同序]）。M-X X-a2。
+    m_impl->getUniforms().contours.update(*m_impl);
     // 取证探针（M-S S-d 断链定位所加——[THM]；§13.1 族登记保留）。
     static bool const s_thmTrace = getenv("DANQING_THM_TRACE") != nullptr;
     if (s_thmTrace) {

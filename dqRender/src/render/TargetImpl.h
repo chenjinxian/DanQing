@@ -261,7 +261,8 @@ public:
     /// Change the render plan (view flags, 3D mode, frustum).
     /// Ported from: itwinjs-core Target.changeRenderPlan()
     ///（Target.ts:533——`uniforms.branch.changeRenderPlan(vf, plan.is3d,
-    /// plan.hline, plan.contours)` 的 hline 段；contours 未移植）。
+    /// plan.hline, plan.contours)`——M-X X-a2：contours 段归位[第 4 参面，
+    /// DanQing 分解签名尾置]）。
     /// M-S S-c：thematic 形参承载 plan.thematic（Target.plan.thematic 的
     /// 读取面——ThematicUniforms.update :91 / wantThematicSensors :407；
     /// TargetImpl 不持整 plan，仅存管 thematic 段）。
@@ -272,7 +273,8 @@ public:
     void changeRenderPlan(ViewFlags const& viewFlags, bool is3d,
                           dqCommon::HiddenLineSettings const* hline = nullptr,
                           dqCommon::ThematicDisplay const* thematic = nullptr,
-                          dqCommon::AmbientOcclusion::Settings const* ao = nullptr);
+                          dqCommon::AmbientOcclusion::Settings const* ao = nullptr,
+                          dqCommon::ContourDisplay const* contours = nullptr);
 
     /// Get the current view flags from the branch stack.
     /// Ported from: itwinjs-core Target.currentViewFlags
@@ -308,12 +310,17 @@ public:
     }
 
     /// Get the current contour display settings.
-    /// Ported from: itwinjs-core Target.currentContours
-    dqCommon::ContourDisplay const* getCurrentContours() const noexcept { return m_contours; }
-
-    /// Set the contour display settings.
-    /// Ported from: itwinjs-core Target (contour display from view state)
-    void setContours(dqCommon::ContourDisplay const* contours) noexcept { m_contours = contours; }
+    /// Ported from: itwinjs-core Target.currentContours（Target.ts:269——
+    ///   `this.currentBranch.contourLine`：读 branch 栈顶 contourLine，非
+    ///   target 自持成员；M-X X-a2 归位——此前经 m_contours 成员直存[无喂
+    ///   数方=ported-but-uncalled]）。
+    /// 返回指针指向栈顶 BranchState 的 optional 值（借用语义——栈存续期
+    ///   有效；跨 changeRenderPlan/push/pop 重取）。
+    dqCommon::ContourDisplay const* getCurrentContours() const noexcept
+    {
+        auto const& cl = m_branchStack.getTop().getContourLine();
+        return cl.has_value() ? &*cl : nullptr;
+    }
 
     /// Get the current transform (from branch stack).
     /// Ported from: itwinjs-core Target.currentTransform
@@ -627,9 +634,6 @@ private:
     // 消费面 = AO/Blur 程序的 u_hbaoSettings/u_blurSettings/u_maxDistance
     // ProgramUniform[glsl/AmbientOcclusion.ts:266-292 + Blur.ts:106-115]）。
     dqCommon::AmbientOcclusion::Settings m_aoSettings;
-
-    // Contour display settings (Ported from: itwinjs-core Target.currentContours)
-    dqCommon::ContourDisplay const* m_contours = nullptr;
 
     // readPixels state (Ported from: itwinjs-core Target members)
     bool m_isReadPixelsInProgress = false;

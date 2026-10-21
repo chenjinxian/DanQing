@@ -12,6 +12,7 @@
 #include "ViewFlags.h"
 #include "EdgeSettings.h"
 
+#include <dqCommon/ContourDisplay.h>  // M-X X-a2：BranchState.contourLine 载体
 #include <dqGeom/Transform.h>
 
 #include <array>
@@ -97,12 +98,20 @@ public:
     bool isDisableClipStyle() const noexcept { return m_disableClipStyle; }
     void setDisableClipStyle(bool v) noexcept { m_disableClipStyle = v; }
 
+    // Contour line display settings for this branch level（M-X X-a2）。
+    // Ported from: itwinjs-core BranchStateOptions.contourLine（BranchState.ts:54）
+    //   + BranchState.contourLine getter（:84）——Target.currentContours
+    //   （Target.ts:269 `currentBranch.contourLine`）与 BatchUniforms.
+    //   wantContourLines（BatchUniforms.ts:110-113）的读取面。
+    // §3.4 适配：TS 引用 → optional 值（栈态值语义——ContourUniforms 的
+    //   失效比对经 equals[值]，不经指针同一性[栈 vector 重定位面]）。
+    std::optional<dqCommon::ContourDisplay> const& getContourLine() const noexcept { return m_contourLine; }
+
     // Ported from: itwinjs-core BranchState options
     // These properties are part of the platform layer and will be
     // added when the corresponding types are ported:
     //   - appearanceProvider: FeatureAppearance provider for symbology
     //   - realityModelDisplaySettings: reality model rendering config
-    //   - contourLine: contour line rendering settings
     //   - symbologyOverrides: FeatureSymbology.Overrides
     //   - iModel, transformFromIModel, viewAttachmentId: multi-iModel support
 
@@ -110,10 +119,13 @@ public:
 
     /// Update view flags and related settings for a new render plan.
     /// Ported from: itwinjs-core BranchState.changeRenderPlan()
-    ///（BranchState.ts:93-96——含 `edgeSettings.init(hline)`；hline 缺省
-    /// nullptr = 参考 undefined → EdgeSettings 归默认）。
+    ///（BranchState.ts:93-98——含 `edgeSettings.init(hline)`[hline 缺省
+    /// nullptr = 参考 undefined → EdgeSettings 归默认] + :97
+    /// `this._opts.contourLine = contour`[contour 缺省 nullptr = 参考
+    /// undefined → contourLine 清——无条件赋值，无短路]）。M-X X-a2。
     void changeRenderPlan(ViewFlags const& viewFlags, bool is3d,
-                          dqCommon::HiddenLineSettings const* hline = nullptr);
+                          dqCommon::HiddenLineSettings const* hline = nullptr,
+                          dqCommon::ContourDisplay const* contour = nullptr);
 
     /// Create a BranchState suitable for rendering decorations.
     /// Ported from: itwinjs-core BranchState.createForDecorations()
@@ -170,6 +182,10 @@ private:
 
     // Disable clip style (Ported from: itwinjs-core BranchStateOptions.disableClipStyle)
     bool m_disableClipStyle = false;
+
+    // Contour line display (Ported from: itwinjs-core BranchStateOptions.contourLine
+    //   [BranchState.ts:54]——M-X X-a2；nullopt = 参考 undefined)。
+    std::optional<dqCommon::ContourDisplay> m_contourLine;
 };
 
 // ---------------------------------------------------------------------------
@@ -258,9 +274,12 @@ public:
 
     /// Update the render plan on the bottom state.
     /// Ported from: itwinjs-core BranchStack.changeRenderPlan()
-    ///（BranchStack.ts:70-72——透传 hline 到底层 BranchState）。
+    ///（BranchStack.ts:70-72——透传 hline 到底层 BranchState；M-X X-a2 增
+    /// contour 透传——Target.ts:533 `uniforms.branch.changeRenderPlan(vf,
+    /// is3d, hline, plan.contours)` 的第 4 参）。
     void changeRenderPlan(ViewFlags const& viewFlags, bool is3d,
-                          dqCommon::HiddenLineSettings const* hline = nullptr);
+                          dqCommon::HiddenLineSettings const* hline = nullptr,
+                          dqCommon::ContourDisplay const* contour = nullptr);
 
     /// Seed the bottom (base) state's view matrices: mv = view, mvp = proj·view.
     /// The reference composes u_mv = frustum.viewMatrix · model at draw time

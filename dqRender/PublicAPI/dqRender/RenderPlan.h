@@ -11,6 +11,7 @@
 
 #include <dqCommon/AmbientOcclusion.h>  // M-T T-b：plan.ao 载体
 #include <dqCommon/ClipStyle.h>
+#include <dqCommon/ContourDisplay.h>  // M-X X-a2：plan.contours 载体
 #include <dqCommon/DisplayStyleSettings.h>
 #include <dqCommon/FeatureOverrides.h>
 #include <dqCommon/Frustum.h>
@@ -128,6 +129,15 @@ struct DQ_RENDER_EXPORT RenderPlan {
     // §3.4 适配：TS `ao?: AmbientOcclusion.Settings` → std::optional。M-T T-b。
     std::optional<dqCommon::AmbientOcclusion::Settings> ao;
 
+    // Contour display（等高线显示设置）。
+    // Ported from: itwinjs-core RenderPlan.ts contours（:62 声明 + :128 填充——
+    //   `contours = (style.is3d() && style.settings.contours.groups.length > 0)
+    //    ? style.settings.contours : undefined`[is3d + 组非空双门——
+    //    displayContours 旗标不在此查，在 BatchUniforms.wantContourLines
+    //    :110-113]）+ Target.ts:533 消费（branch.changeRenderPlan 第 4 参）。
+    // §3.4 适配：TS `contours?: ContourDisplay` → std::optional。M-X X-a2。
+    std::optional<dqCommon::ContourDisplay> contours;
+
     // Check if this plan equals another (for change detection)
     bool equals(RenderPlan const& rhs) const {
         if (!viewFlags.equals(rhs.viewFlags)) return false;
@@ -164,6 +174,10 @@ struct DQ_RENDER_EXPORT RenderPlan {
         // Settings 无 equals[shy 恒赋值+事件]，T-b 登记）。
         if (ao.has_value() != rhs.ao.has_value()) return false;
         if (ao.has_value() && !ao->equals(*rhs.ao)) return false;
+        // contours 段（RenderPlan.ts:62——M-X X-a2）：optional 在场性 +
+        // ContourDisplay.equals（ContourDisplay.ts:405-416）。
+        if (contours.has_value() != rhs.contours.has_value()) return false;
+        if (contours.has_value() && !contours->equals(*rhs.contours)) return false;
         // analysisStyle 段（RenderPlan.ts:59——M-U U-e）：optional 在场性 +
         // AnalysisStyle.equals（AnalysisStyle.ts:257-272）。
         if (analysisStyle.has_value() != rhs.analysisStyle.has_value()) return false;

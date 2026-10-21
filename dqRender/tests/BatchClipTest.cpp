@@ -385,7 +385,11 @@ TEST(SurfaceVariantCompilerTest, FeatureModeOverrides)
     BuildSurfaceSource(compiler, false, false, FeatureMode::Overrides, false, false, false, false, false, vert, frag);
 
     EXPECT_NE(frag.find("u_featureOverrides"), std::string::npos);
-    EXPECT_NE(frag.find("u_featureOverrideWidth"), std::string::npos);
+    // u_featureOverrideWidth → u_featureParams（f26844b8b3 的 2D LUT 归位——
+    // FeatureSymbology.ts:255 addLookupTable(vert, "feature", "3.0") 的
+    // u_featureParams.xy=(width,height)；旧 1D 形同步失效——陈旧断言修正，
+    // M-O(2) 陈旧测试源同族）。
+    EXPECT_NE(frag.find("u_featureParams"), std::string::npos);
 }
 
 // Authored: no reference test exists in itwinjs-core for batch clip rendering

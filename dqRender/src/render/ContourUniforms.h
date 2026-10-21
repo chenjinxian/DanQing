@@ -22,6 +22,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <optional>
 
 #ifndef BEGIN_DQ_RENDER_NAMESPACE
 #define BEGIN_DQ_RENDER_NAMESPACE namespace dqRender {
@@ -50,8 +51,14 @@ public:
 
     ContourUniforms() = default;
 
-    /// Get the current contour display settings.
-    dqCommon::ContourDisplay const* getContourDisplay() const noexcept { return m_contourDisplay; }
+    /// Get the current contour display settings（值存管副本——参考
+    /// _contourDisplay 为 TS 引用[GC 存续]；DanQing 栈顶 BranchState 的
+    /// optional 值会在栈 push 重定位时搬迁，指针存管=悬空，故拷贝值
+    /// 自持。失效比对经 equals[值]——参考 :58-61 同语义）。
+    dqCommon::ContourDisplay const* getContourDisplay() const noexcept
+    {
+        return m_contourDisplay.has_value() ? &*m_contourDisplay : nullptr;
+    }
 
     /// Update contour uniforms from target state.
     /// Ported from: itwinjs-core ContourUniforms.update()
@@ -105,7 +112,9 @@ private:
     }
 
     std::array<float, kContourDefsSize * 4> m_contourDefs{};
-    dqCommon::ContourDisplay const* m_contourDisplay = nullptr;
+    // 参考 _contourDisplay（ContourUniforms.ts:22）——TS 引用 → 值存管
+    //（getContourDisplay 注）。nullopt = 参考 undefined。
+    std::optional<dqCommon::ContourDisplay> m_contourDisplay;
 };
 
 END_DQ_RENDER_NAMESPACE

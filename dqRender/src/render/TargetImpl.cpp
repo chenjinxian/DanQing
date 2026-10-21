@@ -743,7 +743,8 @@ void TargetImpl::drawCanvasDecorations(std::vector<CanvasDecoration> const& canv
 void TargetImpl::changeRenderPlan(ViewFlags const& viewFlags, bool is3d,
                                   dqCommon::HiddenLineSettings const* hline,
                                   dqCommon::ThematicDisplay const* thematic,
-                                  dqCommon::AmbientOcclusion::Settings const* ao)
+                                  dqCommon::AmbientOcclusion::Settings const* ao,
+                                  dqCommon::ContourDisplay const* contours)
 {
     // M-S S-c：plan.thematic 存管（Target.plan.thematic 读取面的承载）。
     if (thematic)
@@ -777,9 +778,10 @@ void TargetImpl::changeRenderPlan(ViewFlags const& viewFlags, bool is3d,
     }
 
     // Update branch stack with new view flags
-    //（Target.ts:533——vf + is3d + hline 透传；BranchState.ts:93-96 消费
-    // edgeSettings.init(hline)；M-T T-b：vf=AO 门裁剪后形态）
-    m_branchStack.changeRenderPlan(vf, is3d, hline);
+    //（Target.ts:533——vf + is3d + hline + contours 透传；BranchState.ts:93-98
+    // 消费 edgeSettings.init(hline) + `m_contourLine = contour`[M-X X-a2]；
+    // M-T T-b：vf=AO 门裁剪后形态）
+    m_branchStack.changeRenderPlan(vf, is3d, hline, contours);
 }
 
 // ---------------------------------------------------------------------------

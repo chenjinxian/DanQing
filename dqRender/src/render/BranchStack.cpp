@@ -102,7 +102,8 @@ void BranchState::recomputeTechniqueFlags()
 // hline.visible.color=0 黑边覆盖从未到达绘制（ported-but-uncalled）。）
 // ---------------------------------------------------------------------------
 void BranchState::changeRenderPlan(ViewFlags const& viewFlags, bool is3d,
-                                   dqCommon::HiddenLineSettings const* hline)
+                                   dqCommon::HiddenLineSettings const* hline,
+                                   dqCommon::ContourDisplay const* contour)
 {
     setViewFlags(viewFlags);
     m_is3d = is3d;
@@ -111,6 +112,10 @@ void BranchState::changeRenderPlan(ViewFlags const& viewFlags, bool is3d,
     // 另有参考不存在的 simple-flag 兼容成员（visibleEdges/edgeWeight 等——
     // 不归 init/clear 管），整只替换使它们同步归默认，语义 ⊇ 参考。
     m_edgeSettings = EdgeSettings::create(hline);
+    // M-X X-a2：BranchState.ts:97 `this._opts.contourLine = contour`
+    //（无条件赋值——缺席=清；nullopt = 参考 undefined）。
+    m_contourLine = contour ? std::optional<dqCommon::ContourDisplay>(*contour)
+                            : std::nullopt;
 }
 
 // ---------------------------------------------------------------------------
@@ -189,12 +194,16 @@ BranchState BranchState::fromBranch(BranchState const& prev, Branch const& branc
     state.m_groupNodeId = prev.m_groupNodeId;
     state.m_disableClipStyle = prev.m_disableClipStyle;
 
+    // M-X X-a2：contourLine 继承/覆写（BranchState.ts:123——
+    //   `contourLine: branch.contourLine ?? prev.contourLine`）。
+    state.m_contourLine = branch.getContourLine().has_value()
+        ? branch.getContourLine()
+        : prev.m_contourLine;
+
     // Ported from: itwinjs-core BranchState.fromBranch() (line 101-125)
     // The branch can override: clipVolume, planarClassifier, textureDrape,
-    // edgeSettings, is3d, frustumScale, groupNodeId, disableClipStyle.
-    // These properties are inherited from parent (done above).
-    // Branch-level overrides require adding these properties to the Branch class.
-    // Currently Branch only has: transform, viewFlags, animationNodeId, groupNodeId.
+    // edgeSettings, is3d, frustumScale, groupNodeId, disableClipStyle,
+    // contourLine.
 
     return state;
 }
@@ -258,6 +267,9 @@ void BranchStack::push(std::array<float, 16> const& branchMv,
     state.m_is3d = m_stack.back().m_is3d;
     state.m_frustumScale = m_stack.back().m_frustumScale;
     state.m_forceViewCoords = m_stack.back().m_forceViewCoords;
+    // M-X X-a2：contourLine 继承（fromBranch `?? prev.contourLine` 臂的
+    //   便路径等价——BranchState.ts:123）。
+    state.m_contourLine = m_stack.back().m_contourLine;
     m_stack.push_back(state);
 }
 
@@ -286,6 +298,8 @@ void BranchStack::pushTransform(std::array<float, 16> const& branchMv,
     state.m_is3d = m_stack.back().m_is3d;
     state.m_frustumScale = m_stack.back().m_frustumScale;
     state.m_forceViewCoords = m_stack.back().m_forceViewCoords;
+    // M-X X-a2：contourLine 继承（同 push 臂注）。
+    state.m_contourLine = m_stack.back().m_contourLine;
     m_stack.push_back(state);
 }
 
@@ -306,6 +320,8 @@ void BranchStack::pushViewFlags(ViewFlags const& flags)
     state.m_is3d = m_stack.back().m_is3d;
     state.m_frustumScale = m_stack.back().m_frustumScale;
     state.m_forceViewCoords = m_stack.back().m_forceViewCoords;
+    // M-X X-a2：contourLine 继承（同 push 臂注）。
+    state.m_contourLine = m_stack.back().m_contourLine;
     m_stack.push_back(state);
 }
 
@@ -352,10 +368,11 @@ BranchState const& BranchStack::getBottom() const
 // Ported from: itwinjs-core BranchStack.changeRenderPlan()
 // ---------------------------------------------------------------------------
 void BranchStack::changeRenderPlan(ViewFlags const& viewFlags, bool is3d,
-                                   dqCommon::HiddenLineSettings const* hline)
+                                   dqCommon::HiddenLineSettings const* hline,
+                                   dqCommon::ContourDisplay const* contour)
 {
     assert(m_stack.size() == 1);
-    m_stack.front().changeRenderPlan(viewFlags, is3d, hline);
+    m_stack.front().changeRenderPlan(viewFlags, is3d, hline, contour);
 }
 
 // ---------------------------------------------------------------------------

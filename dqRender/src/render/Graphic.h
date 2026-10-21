@@ -9,6 +9,7 @@
 #include "RenderCommands.h"
 #include "dqRender/RenderGraphic.h"
 
+#include <dqCommon/ContourDisplay.h>  // M-X X-a2：Branch.contourLine 载体
 #include <dqGeom/Range3d.h>
 #include <dqGeom/Transform.h>
 
@@ -209,6 +210,16 @@ public:
     void setAnimationId(std::string id) { m_animationId = std::move(id); }
     std::optional<std::string> const& getAnimationId() const noexcept { return m_animationId; }
 
+    // Contour line display override for this branch（M-X X-a2）。
+    // Ported from: itwinjs-core webgl Graphic.ts Branch.contourLine（:353）+
+    //   ctor 消费 opts.contours（:374——GraphicBranchOptions.contours，
+    //   GraphicBranch.ts:165）；BranchState.fromBranch 的
+    //   `branch.contourLine ?? prev.contourLine` 继承消费面（BranchState.ts:123）。
+    // §3.4 适配：TS 引用 → optional 值（Contours 的 per-batch LUT 读
+    //   currentBranch.contourLine——栈态值语义）。
+    void setContourLine(dqCommon::ContourDisplay const& contours) { m_contourLine = contours; }
+    std::optional<dqCommon::ContourDisplay> const& getContourLine() const noexcept { return m_contourLine; }
+
     // Set group node ID for this branch
     // Ported from: itwinjs-core Graphic.ts Branch.groupNodeId
     void setGroupNodeId(int32_t nodeId) {
@@ -251,6 +262,8 @@ private:
     int32_t m_groupNodeId = -1;
     // ← GraphicBranch.animationId（schedule 分支键——见 setAnimationId 注）。
     std::optional<std::string> m_animationId;
+    // ← Graphic.ts:353 Branch.contourLine（M-X X-a2）。
+    std::optional<dqCommon::ContourDisplay> m_contourLine;
     bool m_hasTransform = false;
     bool m_hasViewFlags = false;
     bool m_hasAnimationNodeId = false;

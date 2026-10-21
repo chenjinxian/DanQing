@@ -15,6 +15,7 @@
 #include "ViewRectUniforms.h"
 
 #include "Batch.h"  // Batch + BatchState (for setCurrentBatch)
+#include "ContourUniforms.h"  // ContourUniforms（TargetUniforms.ts:134 成员归位，M-X X-a2）
 #include "InstancedGeometry.h"  // InstancedGeometry (for BranchUniforms.update instanced path)
 #include "ThematicSensors.h"  // ThematicSensors (for bindNumThematicSensors)
 #include "ThematicUniforms.h"  // ThematicUniforms（TargetUniforms.ts:133 成员归位，M-S S-c）
@@ -505,7 +506,7 @@ private:
 // pending extraction.
 // TODO: PixelWidthFactor (needs branch.top.frustumScale); full updateRenderPlan
 // (needs plan.hiliteSettings/emphasisSettings/lights — absent from the public
-// RenderPlan stub); contours/shadow/realityModel/atmosphere members.
+// RenderPlan stub); shadow/realityModel/atmosphere members.
 // ---------------------------------------------------------------------------
 class TargetUniforms {
 public:
@@ -517,6 +518,7 @@ public:
     BranchUniforms branch;
     BatchUniforms batch;
     ThematicUniforms thematic;  // Ported from: TargetUniforms.ts:133
+    ContourUniforms contours;   // Ported from: TargetUniforms.ts:134（M-X X-a2）
 
     /// Get the projection matrix (viewRect for view-coords, frustum otherwise).
     /// Ported from: itwinjs-core TargetUniforms.getProjectionMatrix()

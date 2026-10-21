@@ -15,11 +15,16 @@ void ContourUniforms::update(TargetImpl& target)
     auto const* currentContours = target.getCurrentContours();
 
     // Early out if contour display hasn't changed
-    if (m_contourDisplay && currentContours && m_contourDisplay == currentContours) {
+    // Ported from: itwinjs-core ContourUniforms.update（:58-61——**值等比**
+    //   `this.contourDisplay.equals(target.currentContours)`；M-X X-a2 前
+    //   DanQing 是指针同一性[恒假于栈态值]——值语义归位）。
+    if (m_contourDisplay && currentContours && m_contourDisplay->equals(*currentContours)) {
         return;
     }
 
-    m_contourDisplay = currentContours;
+    m_contourDisplay = currentContours
+        ? std::optional<dqCommon::ContourDisplay>(*currentContours)
+        : std::nullopt;
 
     if (!m_contourDisplay)
         return;
