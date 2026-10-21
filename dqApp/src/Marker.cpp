@@ -69,8 +69,11 @@ Marker::Marker(dqGeom::Point3d const& worldLocation_, dqGeom::Point2d const& siz
 }
 
 // XE14（C++ 显式所有权缝——参考依赖 GC）：marker 析构时清 ToolAdmin 的悬停
-// 指针 + 清扫最近装饰视口列表里的本 marker 条目，防悬垂（悬停中的 marker
-// 所属 demo/集合销毁场景）。
+// 指针 + 清扫最近装饰视口的本 marker 条目（活列表 + 装饰缓存——修复轮 1
+// Important-1 扩展），防悬垂（悬停中的 marker 所属 demo/集合销毁场景）。
+// 边界如实登记：依赖 Application::Get() 单例在场——其为 Meyers 局部静态
+//（进程期恒活，静态析构序 = 先建者后毁：Application 先于任何 marker 建立
+//[首个 ToolAdmin/Viewport 触达即建]，故 marker 析构时恒在场）。
 Marker::~Marker()
 {
     Application::Get().GetToolAdmin().clearCanvasDecorationIfMarker(this);

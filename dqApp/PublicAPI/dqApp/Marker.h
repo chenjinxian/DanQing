@@ -248,7 +248,12 @@ private:
     bool setPositionT(Viewport& vp, MarkerSet<T>* markerSet);
 
     // XE14 生命周期簿记：最近一次 addMarker 的目标视口（~Marker 清扫该视口
-    // 当前装饰列表里的本 marker 条目——Viewport::RemoveCanvasDecorationsForMarker）。
+    // 当前装饰列表 + 装饰缓存里的本 marker 条目——Viewport::
+    // RemoveCanvasDecorationsForMarker）。边界如实登记：同一 marker 若被
+    // addMarker 进多个视口的装饰列表，仅清扫最近一处——MarkerSet 语义上
+    // marker 从属单一视口（MarkerSet.addDecoration 的视口门 Marker.ts:
+    // 429-430 保证集合内 marker 只装饰其绑定视口），跨视口复用裸 Marker 为
+    // 边界态（参考无此场景——Marker 经 MarkerSet 与视口 1:1）。
     Viewport* m_lastDecorateViewport = nullptr;
 
     friend struct MarkerDrawFunctor;
