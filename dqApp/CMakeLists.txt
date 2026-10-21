@@ -71,6 +71,7 @@ target_sources(dqApp
         src/tile/DisclosedTileTreeSet.cpp
         src/tile/PrimaryTileTreeSupplier.cpp
         src/tile/SpatialTileTreeReferences.cpp
+        # B-lane 锚（M-X 起——B 道代理只在此锚下追加 src 注册；勿动他区）
         # Headers with Q_OBJECT (needed for AUTOMOC)
         PublicAPI/dqApp/Viewport.h
         src/FileTileFetcher.h
@@ -177,6 +178,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/DumpIModelConnectionTest.cpp  # imodel.json 解析 + Views 回放缝 + saved 视图应用锁（M-H Task 3）
         tests/ViewAspectRatioSkewTest.cpp  # M-W W-p1：aspectRatioSkew 引擎缝（clamp/props 往返/fixAspectRatio/maxSkew）
         # A-lane 锚（M-W 起——A 道代理只在此锚下追加测试注册；勿动他区）
+        # B-lane 锚（M-X 起——B 道代理只在此锚下追加测试注册；勿动他区）
     )
     target_link_libraries(dqAppTest
         PRIVATE

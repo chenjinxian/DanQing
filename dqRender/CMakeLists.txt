@@ -157,6 +157,7 @@ target_sources(dqRender
         src/render/RenderInstancesParamsImpl.cpp
         src/render/ContourUniforms.cpp
         src/render/RealityModelUniforms.cpp
+        # A-lane 锚（M-X 起——A 道代理只在此锚下追加 src 注册；勿动他区）
         src/render/AtmosphereUniforms.cpp
         src/render/ThematicUniforms.cpp
         src/render/ShadowUniforms.cpp
