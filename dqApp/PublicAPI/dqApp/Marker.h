@@ -42,9 +42,12 @@
 //   XE11 title HTML 标记→纯文本（`<br>`→换行，XE3——demo 侧赋值点承载转换，
 //        Marker 透传）；tooltipOptions 字段移植（NotificationManager.ts:115-118
 //        的 duration/placement），宿主 QToolTip 不消费（登记）。
-//   XE14 Marker 析构 → ToolAdmin::clearCanvasDecorationIfMarker 生命周期缝
-//        （JS GC vs C++ 显式所有权——参考悬停指针随 GC 安全；TD-22 同族）。
-//        验证=析构清悬停锁。
+//   XE14 Marker 析构 → ToolAdmin::clearCanvasDecorationIfMarker + Viewport::
+//        RemoveCanvasDecorationsForMarker 生命周期缝（JS GC vs C++ 显式所有权
+//        ——参考悬停指针随 GC 安全；TD-22 同族）。修复轮 1 扩维：视口清扫 =
+//        活列表 + DecorationsCache 的 Canvas 缓存条目双扫（cacheable
+//        decorator 存活期 erase marker → 缓存命中重放复活死指针的 UAF 路径
+//        封堵；同点同纹）。验证=析构清悬停锁 + 缓存清扫锁。
 #pragma once
 
 #include "DecorateContext.h"  // Marker::addMarker/addDecoration + MarkerSet::addDecoration

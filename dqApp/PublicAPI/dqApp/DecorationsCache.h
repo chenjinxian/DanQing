@@ -18,6 +18,7 @@
 namespace dqApp {
 
 class IDecorator;
+class Marker;  // M-X 修复轮 1：removeCanvasDecorationsForMarker 形参
 
 // Cached decoration entry.
 // Ported from: itwinjs-core DecorationsCache.ts CachedDecoration
@@ -68,6 +69,12 @@ public:
 
     // Remove cached decorations for a specific decorator.
     void remove(IDecorator const* decorator);
+
+    // 清扫所有 decorator 桶中捕获指定 marker 的 Canvas 缓存条目（XE14 扩展
+    // 清扫——修复轮 1 Important-1：~Marker 生命周期缝的缓存维。C++ 显式
+    // 所有权适配，参考无对应物[GC]——Authored: no reference equivalent）。
+    // 不触发任何回调（条目函子捕获的死指针不解引用——纯容器摘除）。
+    void removeCanvasDecorationsForMarker(Marker const& marker);
 
 private:
     std::unordered_map<IDecorator*, std::vector<CachedDecoration>> m_cache;

@@ -668,6 +668,42 @@ TEST(MarkerTest, CanvasDecorationsReplayFromCacheOnSecondCollect)
     Application::Get().GetViewManager().DropDecorator(&decorator);
 }
 
+// Authored: XE14 扩展清扫（修复轮 1 Important-1）——cacheable decorator 存活
+// 期 markers().erase() 删 marker：~Marker 同点清扫视口活列表 +
+// DecorationsCache 缓存条目；二次收集（缓存命中重放，Decorate 不重跑）不
+// 复活死 marker 的函子（无悬垂 draw/pick 回调）。测试只读指针值做同一性
+// 对账（死指针不解引用——RED 态安全）。
+TEST(MarkerTest, MarkerDestroyedScrubsCachedCanvasEntries)
+{
+    MarkerViewportFixture holder = makeMarkerViewport();
+    TestMarkerSet set(holder.vp);
+    auto const center = atViewPixel(holder.vp, 320, 240);
+    TestMarker* raw = set.markers().add(
+        std::make_unique<TestMarker>(center, dqGeom::Point2d::From(30, 30)));
+    CacheableMarkerDecorator decorator(&set);
+    Application::Get().GetViewManager().AddDecorator(&decorator);
+
+    // 首次收集：cacheable → 活列表一枚 + 缓存一枚（两份拷贝捕获同一 raw）。
+    holder.vp->CollectDecorationsForTest();
+    ASSERT_EQ(holder.vp->GetDecorations().canvasDecorations.size(), 1u);
+    ASSERT_EQ(Marker::fromDecoration(holder.vp->GetDecorations().canvasDecorations[0]),
+              raw);
+    ASSERT_EQ(decorator.decorateCalls, 1);
+
+    // erase → unique_ptr 删除 → ~Marker（活列表 + 缓存双清扫）。
+    set.markers().erase(raw);
+    EXPECT_TRUE(holder.vp->GetDecorations().canvasDecorations.empty());
+
+    // 二次收集：缓存命中重放（Decorate 不重跑）——清扫后的缓存 bucket 不再
+    // 携死 marker 条目（修复前：重放复活死条目 → size==1 + 死指针）。
+    holder.vp->CollectDecorationsForTest();
+    EXPECT_EQ(decorator.decorateCalls, 1);   // 缓存命中面（两态同）——判据在下行
+    EXPECT_TRUE(holder.vp->GetDecorations().canvasDecorations.empty());
+
+    Application::Get().GetViewManager().DropDecorator(&decorator);
+    ToolAdmin::clearQueue();
+}
+
 // ---------------------------------------------------------------------------
 // Marker::setImageUrl（Marker.ts:244——imageElementFromUrl 的 DanQing 承载；
 // PNG 路径[qsvg 插件面的 SVG 装载锁在 X-b2 演示侧]）

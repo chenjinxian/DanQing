@@ -675,8 +675,9 @@ public:
     void InvalidateCachedDecorations(IDecorator* decorator);
 
     // XE14 生命周期缝（M-X X-b1；C++ 显式所有权 vs 参考 GC——TD-22 ~Tile
-    // 三 feed 清扫同族）：~Marker 调用，从本视口当前装饰列表摘除捕获该
-    // marker 的画布条目（防悬垂 pick/draw 回调）。
+    // 三 feed 清扫同族）：~Marker 调用，从本视口摘除捕获该 marker 的画布
+    // 条目——当前装饰列表（防悬垂 pick/draw 回调）+ DecorationsCache 的
+    // Canvas 缓存条目（防缓存重放复活——修复轮 1 Important-1 扩维）双扫。
     // Authored: no reference equivalent（参考 CanvasDecoration 对象由 GC 保活）。
     void RemoveCanvasDecorationsForMarker(Marker const& marker);
     // Ported from: itwinjs-core Viewport.npcToView/viewToNpc (Viewport.ts:2045/2050)

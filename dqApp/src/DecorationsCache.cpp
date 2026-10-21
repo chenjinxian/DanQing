@@ -3,6 +3,9 @@
 // Ported from: itwinjs-core core/frontend/src/DecorationsCache.ts
 #include "dqApp/DecorationsCache.h"
 #include "dqApp/Decorator.h"
+#include "dqApp/Marker.h"   // Marker::fromDecoration（removeCanvasDecorationsForMarker 同一性判据）
+
+#include <algorithm>
 
 namespace dqApp {
 
@@ -63,6 +66,17 @@ void DecorationsCache::remove(IDecorator const* decorator)
         entry.graphic = nullptr;
     }
     m_cache.erase(it);
+}
+
+// XE14 扩展清扫（修复轮 1 Important-1）——见 DecorationsCache.h 方法注释。
+void DecorationsCache::removeCanvasDecorationsForMarker(Marker const& marker)
+{
+    for (auto& [decorator, decorations] : m_cache) {
+        std::erase_if(decorations, [&marker](CachedDecoration const& entry) {
+            return entry.type == CachedDecoration::Type::Canvas
+                && Marker::fromDecoration(entry.canvasDecoration) == &marker;
+        });
+    }
 }
 
 }  // namespace dqApp

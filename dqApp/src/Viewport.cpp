@@ -3238,7 +3238,10 @@ void Viewport::InvalidateCachedDecorations(IDecorator* decorator)
     InvalidateDecorations();
 }
 
-// XE14 生命周期缝（~Marker 调用——头注/Viewport.h 登记）。
+// XE14 生命周期缝（~Marker 调用——头注/Viewport.h 登记）。修复轮 1
+// Important-1 扩展：活列表与 DecorationsCache 的 Canvas 缓存条目同点双扫
+//（缓存命中重放复活死 marker 的 UAF 路径——cacheable decorator 存活期
+// erase marker 的可达序：erase→析构→再收集→重放）。
 void Viewport::RemoveCanvasDecorationsForMarker(Marker const& marker)
 {
     auto& list = m_decorations.canvasDecorations;
@@ -3248,6 +3251,7 @@ void Viewport::RemoveCanvasDecorationsForMarker(Marker const& marker)
         else
             ++it;
     }
+    m_decorationCache.removeCanvasDecorationsForMarker(marker);
 }
 
 }  // namespace dqApp
