@@ -14,6 +14,7 @@
 // harness 说明：无头锁经 Surface::setMdiAreaForTest 注入裸 QMdiArea；
 // dump 重开 E2E（真窗+真 dump）只写不跑——归主会话收口。
 #include <gtest/gtest.h>
+#include <filesystem>
 #include <QApplication>
 #include <QCoreApplication>
 #include <QMdiArea>
@@ -221,7 +222,15 @@ TEST(SurfaceFileTools, DumpPackageForModelTableIntact)
 
     auto const bridge = dta::dumpPackageForModel(QStringLiteral("bridge-edit"));
     ASSERT_TRUE(bridge.has_value());
-    ASSERT_EQ(bridge->tileRoots.size(), 8u);  // 主+drill+sweep+放大链补采×4+邻域覆盖
+    // 主+drill+sweep+放大链补采×4+邻域覆盖（=8；d13 前沿本地持有——
+    // manifest 存在时条件接入为第 9 根）。
+    {
+        std::error_code ec;
+        bool const hasFrontier = std::filesystem::exists(
+            std::string(DANQING_TILE_ASSETS_DIR)
+                + "/rpc-dumps/bridge-edit-frontier-d13-v1/manifest.json", ec);
+        ASSERT_EQ(bridge->tileRoots.size(), hasFrontier ? 9u : 8u);
+    }
     EXPECT_TRUE(bridge->frameToWorldContent);  // 坑 24 取景路径
 
     EXPECT_EQ(dta::dumpPackageForModel(QStringLiteral("bogus")), std::nullopt);

@@ -88,6 +88,12 @@ third_party/tile-sample-assets/rpc-dumps/bridge-edit-sweep-mag-v1/
 third_party/tile-sample-assets/rpc-dumps/bridge-edit-viewport-views-v1/
 # 早期放大链 key-list 采样（198 键；唯一贡献已并入 coverage-v1）
 third_party/tile-sample-assets/rpc-dumps/bridge-edit-magnify-v1/
+# 2026-10-21 d13 空间前沿 + d12 m2 放大补采（~828k 瓦/1.7GB，分块采集后
+# 硬链接合并为 bridge-edit-frontier-d13-v1；manifest 为紧凑形仅含
+# treeId/contentId/byteLength/file。体积与文件数不适合入库——本地持有，
+# 应用侧按 manifest 存在性条件接入；复现工具 = capture.mjs key-list 模式 +
+# enumerate_frontier.py/merge_frontier.py）
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-frontier-d13*/
 
 saved-views-test/
 output-shaders-test/

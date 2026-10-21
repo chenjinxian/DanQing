@@ -27,6 +27,7 @@
 //           readPixels 双锚）。dump 资产只读（§11.11），钉值 = 首绿实测
 //           （阈值注释在各断言处）。
 #include <gtest/gtest.h>
+#include <filesystem>
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDateTime>
@@ -1133,6 +1134,13 @@ TEST(DumpBrowse, BridgeEditLodCoverageDiagnostic)
                      kDumpRoot + "/bridge-edit-mag-missing-v3",
                      kDumpRoot + "/bridge-edit-mag-missing-v4",
                      kDumpRoot + "/bridge-edit-coverage-v1"};
+    // d13 空间前沿（本地持有——manifest 存在即接入，缺席静默跳过）。
+    {
+        std::string const frontier = kDumpRoot + "/bridge-edit-frontier-d13-v1";
+        std::error_code ec;
+        if (std::filesystem::exists(frontier + "/manifest.json", ec))
+            pkg.tileRoots.push_back(frontier);
+    }
     pkg.frameToWorldContent = true;
     auto opened = dta::openDumpIModel(view, pkg);
     ASSERT_TRUE(opened.has_value()) << "open chain failed: " << pkg.imodelRoot;

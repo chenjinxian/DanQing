@@ -11,6 +11,7 @@
 
 #include <map>
 #include <cstdlib>  // std::getenv（DANQING_RPC_DUMP——dumpPackageForModel）
+#include <filesystem>
 #include <chrono>
 #include <cstdio>
 #include <dqRender/WorkerProxy.h>  // P-1b P-b1：worker 载体（参考 WorkerProxy.ts 公开面）
@@ -457,6 +458,15 @@ std::optional<DumpOpenPackage> dumpPackageForModel(QString const& modelId)
                          dumpRoot + "/bridge-edit-mag-missing-v3",
                          dumpRoot + "/bridge-edit-mag-missing-v4",
                          dumpRoot + "/bridge-edit-coverage-v1"};
+        // d13 空间前沿（2026-10-21 全树继续采集——~828k 瓦/1.7GB，本地持有
+        // 不入库[.gitignore]）：manifest 存在即接入；缺席（新检出）时静默
+        // 跳过，深放大退回父瓦 LOD（与既有大瓦本地持有同策略）。
+        {
+            std::string const frontier = dumpRoot + "/bridge-edit-frontier-d13-v1";
+            std::error_code ec;
+            if (std::filesystem::exists(frontier + "/manifest.json", ec))
+                pkg.tileRoots.push_back(frontier);
+        }
         // 坑 24：默认视图 0x99 指向原点附近空域（不含几何——直接回放=白屏
         // 零请求，README"默认视图空域"节）→ 打开链取景到世界域几何
         // contentRange（DumpOpenHelper 的 zoomToVolume 应用面）。
