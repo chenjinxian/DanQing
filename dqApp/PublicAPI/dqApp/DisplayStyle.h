@@ -54,6 +54,7 @@ public:
     dqBase::DqEvent<> OnBackgroundMapChanged;
     dqBase::DqEvent<> OnClipStyleChanged;
     dqBase::DqEvent<> OnThematicChanged;
+    dqBase::DqEvent<> OnContoursChanged;  // M-X X-a1（DisplayStyleSettings.ts:517 onContoursChanged）
     dqBase::DqEvent<> OnHiddenLineChanged;
     dqBase::DqEvent<> OnAmbientOcclusionChanged;
     dqBase::DqEvent<> OnSolarShadowsChanged;
@@ -236,6 +237,20 @@ public:
         if (td.equals(m_settings.getThematic())) return;
         OnThematicChanged.Raise();      // 参考序：raise 先于赋值
         m_settings.setThematic(td);
+    }
+
+    // ── Contour display（M-X X-a1——同 thematic 门面形）─────────────
+    // ← itwinjs-core DisplayStyle3dSettings.contours setter
+    //   （DisplayStyleSettings.ts:1231-1239——equals 短路 → **先 raise**
+    //   onContoursChanged[:517] → 赋值 + _json3d.contours 写出[写出段归
+    //   dqCommon toJSON3d]）。事件无载荷（DqEvent<> 门面形态——参考携带
+    //   新值形参，Viewport 监听面[Viewport.ts:1408]不消费形参，
+    //   EQUIVALENCE 同 setThematic 注）。
+    dqCommon::ContourDisplay const& getContours() const noexcept { return m_settings.getContours(); }
+    void setContours(dqCommon::ContourDisplay const& contours) {
+        if (contours.equals(m_settings.getContours())) return;
+        OnContoursChanged.Raise();      // 参考序：raise 先于赋值
+        m_settings.setContours(contours);
     }
     // iModel 访问（projectExtents 补齐链消费——DisplayStyleState.ts:1010）。
     IModelConnection const* getIModel() const noexcept { return m_iModel; }

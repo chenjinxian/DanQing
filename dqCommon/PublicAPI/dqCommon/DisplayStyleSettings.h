@@ -10,6 +10,7 @@
 #include "AnalysisStyle.h"
 #include "ClipStyle.h"
 #include "ColorDef.h"
+#include "ContourDisplay.h"
 #include "Environment.h"
 #include "Export.h"
 #include "FeatureSymbology.h"
@@ -68,7 +69,10 @@ struct DisplayStyle3dSettingsProps : DisplayStyleSettingsProps {
     std::optional<HiddenLineSettingsProps> hline;
     std::optional<AmbientOcclusion::Props> ao;
     std::optional<LightSettingsProps> lights;
-    // TODO: contours, solarShadows, planProjections (not yet ported)
+    // M-X X-a1：contours 载体（DisplayStyleSettings.ts:165 的
+    //   `contours?: ContourDisplayProps`——ContourDisplay.ts:366-371）。
+    std::optional<ContourDisplayProps> contours;
+    // TODO: solarShadows, planProjections (not yet ported)
 };
 
 // SubCategory override entry.
@@ -222,6 +226,15 @@ public:
     const ThematicDisplay& getThematic() const noexcept { return m_thematic; }
     void setThematic(const ThematicDisplay& td) { m_thematic = td; }
 
+    // ── Contour display（M-X X-a1）────────────────────────────────
+    // Ported from: itwinjs-core DisplayStyle3dSettings.contours
+    //   （DisplayStyleSettings.ts:1230-1239——equals 短路/事件/赋值序的事件段
+    //   在 dqApp::DisplayStyle 门面[本层=纯数据容器，头注在案]；ctor
+    //   fromJSON :1103 / toJSON :1181 / applyOverrides :1213-1214 三段在
+    //   .cpp 的 toJSON3d/applyOverrides3d）。
+    const ContourDisplay& getContours() const noexcept { return m_contours; }
+    void setContours(const ContourDisplay& contours) { m_contours = contours; }
+
     // ── Hidden line ───────────────────────────────────────────────
     const HiddenLineSettings& getHiddenLineSettings() const noexcept { return m_hiddenLine; }
     void setHiddenLineSettings(const HiddenLineSettings& settings) { m_hiddenLine = settings; }
@@ -266,6 +279,7 @@ public:
 protected:
     Environment m_environment;
     ThematicDisplay m_thematic;
+    ContourDisplay m_contours;  // M-X X-a1（DisplayStyleSettings.ts:1086 _contours）
     HiddenLineSettings m_hiddenLine = HiddenLineSettings::defaults();
     AmbientOcclusion::Settings m_ambientOcclusion = AmbientOcclusion::Settings::defaults();
     LightSettings m_lights;

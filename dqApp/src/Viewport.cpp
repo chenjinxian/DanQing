@@ -725,6 +725,14 @@ void Viewport::AttachToView()
         RequestRedraw();
     }));
 
+    m_viewEventScope.add(style.OnContoursChanged.AddListener([this]() {
+        // ← itwinjs-core: settings.onContoursChanged（Viewport.ts:1408——
+        // displayStyleChanged 形；M-X X-a1）。
+        InvalidateRenderPlan();
+        m_changeFlags.SetDisplayStyle();
+        RequestRedraw();
+    }));
+
     m_viewEventScope.add(style.OnHiddenLineChanged.AddListener([this]() {
         // ← itwinjs-core: settings.onHiddenLineSettingsChanged（Viewport.ts:1404
         // ——displayStyleChanged 形）。
@@ -2935,6 +2943,14 @@ void Viewport::overrideDisplayStyle(dqCommon::DisplayStyle3dSettingsProps const&
         // 等价——树 Id/变体键读当前 settings）。
         m_changeFlags.SetDisplayStyle();
         InvalidateScene();
+    }
+    if (overrides.contours) {
+        // M-X X-a1：OnContoursChanged 监听面（Viewport.ts:1408 的
+        // displayStyleChanged 形——applyOverrides3d 的 contours 段
+        // [DisplayStyleSettings.ts:1213-1214]在 DanQing 绕过事件，等价失效
+        // 在此发）。
+        m_changeFlags.SetDisplayStyle();
+        InvalidateRenderPlan();
     }
     if (overrides.thematic || overrides.ao) {
         // 数据面写入（TD-8 族——视觉 pass 未移植，EQUIVALENCE 登记于计划文档）；

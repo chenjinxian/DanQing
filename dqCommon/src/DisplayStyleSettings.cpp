@@ -153,6 +153,9 @@ DisplayStyle3dSettingsProps DisplayStyle3dSettings::toJSON3d() const
     p.hline = HiddenLineSettingsProps{m_hiddenLine.visible.toJSON(), m_hiddenLine.hidden.toJSON(), m_hiddenLine.transparencyThreshold};
     p.ao = m_ambientOcclusion.toJSON();
     p.lights = m_lights.toJSON();  // M-Q Q-a：toJSON 接线（LightSettings::toJSON 已在）
+    // M-X X-a1：contours 段（DisplayStyleSettings.ts:1181——
+    //   `props.contours = this.contours.toJSON()`）。
+    p.contours = m_contours.toJSON();
     return p;
 }
 
@@ -170,7 +173,12 @@ void DisplayStyle3dSettings::applyOverrides3d(const DisplayStyle3dSettingsProps&
     // (M-M(1): saved display styles with non-default light rigs were silently
     // dropped before this; defaults are otherwise LightSettings{} == reference).
     if (props.lights) m_lights = LightSettings::fromJSON(*props.lights);
-    // TODO: contours, solarShadows, planProjections
+    // M-X X-a1：contours 段（DisplayStyleSettings.ts:1213-1214——
+    //   `if (overrides.contours) this.contours = ContourDisplay.fromJSON(...)`；
+    //   参考经 setter[equals 短路+onContoursChanged]——DanQing 本层纯数据
+    //   [事件面在 dqApp 门面/Viewport overrideDisplayStyle 域]）。
+    if (props.contours) m_contours = ContourDisplay::fromJSON(&*props.contours);
+    // TODO: solarShadows, planProjections
 }
 
 END_DQ_COMMON_NAMESPACE
