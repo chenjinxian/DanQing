@@ -6,7 +6,7 @@
 #include "dqApp/Marker.h"
 
 #include "dqApp/Application.h"
-#include "dqApp/IModelConnection.h"   // GetProjectExtents（computeMinScaleViewW）
+#include "dqApp/IModelConnection.h"   // GetProjectExtents（getMinScaleViewW）
 #include "dqApp/ToolAdmin.h"   // BeButtonEvent + clearCanvasDecorationIfMarker（XE14）
 
 #include <dqRender/CreateTextureArgs.h>
@@ -21,7 +21,7 @@ namespace dqApp {
 
 // Ported from: Marker.ts:46-63（getMinScaleViewW——视锥后端 w 值：投影域 8 角
 // 沿视线[-Z]的最大投影深度处的 w，缩放因子的距离归一基）。
-double computeMinScaleViewW(Viewport& vp)
+double getMinScaleViewW(Viewport& vp)
 {
     std::optional<double> zHigh;
     // EQUIVALENCE：参考直读 vp.view.getCenter()/getZVector()（Marker.ts:48-49）

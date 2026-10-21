@@ -413,7 +413,7 @@ namespace dqApp {
 
 // getMinScaleViewW 的自由函数形（Marker.ts:46-63）——声明于 Marker.cpp
 // （Marker::setPositionT 与 MarkerSet::getMinScaleViewW 共用）。
-DQ_APP_EXPORT double computeMinScaleViewW(Viewport& vp);
+DQ_APP_EXPORT double getMinScaleViewW(Viewport& vp);
 
 // Ported from: Marker.setPosition（Marker.ts:250-283）。
 template<typename T>
@@ -444,7 +444,7 @@ bool Marker::setPositionT(Viewport& vp, MarkerSet<T>* markerSet)
             dqGeom::Range1d const& range = *m_scaleFactorRange;
             double const minScaleViewW =
                 (nullptr != markerSet) ? markerSet->getMinScaleViewW(vp)
-                                       : computeMinScaleViewW(vp);   // :272
+                                       : getMinScaleViewW(vp);   // :272
             if (minScaleViewW > 0.0)
                 scale = dqGeom::clamp(range.high - (pt4.w / minScaleViewW) * range.Length(), 0.4, 2.0);
             else
@@ -468,7 +468,7 @@ template<typename T>
 double MarkerSet<T>::getMinScaleViewW(Viewport& vp)
 {
     if (!m_minScaleViewW.has_value())
-        m_minScaleViewW = computeMinScaleViewW(vp);
+        m_minScaleViewW = getMinScaleViewW(vp);
     return *m_minScaleViewW;
 }
 
