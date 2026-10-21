@@ -5,6 +5,7 @@
 // Tests for all GLSL shader builder modules.
 
 #include "render/CompositingShaderBuilders.h"
+#include "render/ContourShaders.h"  // M-X X-a4：kApplyContours/kComputeContourNdx（Contours.ts 移植家）
 #include "render/FeatureEffectShaderBuilders.h"
 #include "render/SkyShaderBuilders.h"
 #include "shader/AmbientOcclusionShaders.h"  // M-T T-d：kAmbientOcclusionFrag
@@ -143,14 +144,22 @@ TEST(FeatureEffectShaderBuildersTest, ThematicDisplay)
 }
 
 // Authored: no reference test exists in itwinjs-core for batch rendering
+// M-X X-a3/X-a4：getContourLinesCode 旧块清退（uniform 内嵌声明 + 自创
+// applyContourLines 包装与参考 Contours.ts 的 builder 组合形态相悖）——锁面
+// 换到参考移植的家（ContourShaders.h 的 addApplyContours 模块常量；
+// 组装态变体源锁 = ContoursTest.SurfaceVariantAlwaysCompilesApplyContours）。
 TEST(FeatureEffectShaderBuildersTest, ContourLines)
 {
-    char const* src = getContourLinesCode();
-    std::string s(src);
-    EXPECT_NE(s.find("applyContours"), std::string::npos);
-    EXPECT_NE(s.find("u_contourDefs"), std::string::npos);
-    EXPECT_NE(s.find("u_contourLUT"), std::string::npos);
-    EXPECT_NE(s.find("unpackAndNormalize2BytesVec4"), std::string::npos);
+    std::string const body = dqRender::kApplyContours;
+    EXPECT_NE(body.find("v_contourNdx"), std::string::npos);
+    EXPECT_NE(body.find("u_contourDefs"), std::string::npos);
+    EXPECT_NE(body.find("unpackAndNormalize2BytesVec4"), std::string::npos);
+    // showGeometry==0 的 discard 臂（Contours.ts:91-95）。
+    EXPECT_NE(body.find("discard"), std::string::npos);
+    // 早退门（Contours.ts:17-18——u_contourLUTWidth==0u → 15=无等高线）。
+    std::string const ndxBody = dqRender::kComputeContourNdx;
+    EXPECT_NE(ndxBody.find("u_contourLUTWidth == 0u"), std::string::npos);
+    EXPECT_NE(ndxBody.find("u_contourLUT"), std::string::npos);
 }
 
 // Authored: no reference test exists in itwinjs-core for batch rendering

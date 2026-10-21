@@ -15,6 +15,10 @@
 #include "ShaderBuilder.h"
 #include "shader/DecodeShaders.h"  // kDecodeUint24（getFeatureIndex 的 decodeUInt24）
 
+#include "DrawParams.h"         // DrawParams（GraphicUniform lambda 形参）
+#include "ShaderProgramImpl.h"  // ShaderProgram::addGraphicUniform
+#include "TargetImpl.h"         // 绑定 lambda 的 getUniforms().batch/contours/branch 消费面
+
 #include <string>
 
 #ifndef BEGIN_DQ_RENDER_NAMESPACE

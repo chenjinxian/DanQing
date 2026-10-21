@@ -2,7 +2,7 @@
 // Ported from: itwinjs-core core/frontend/src/test/FeatureSymbology.test.ts
 // DanQing dqRender — P2/P3 feature tests
 //
-// Tests for PlanarClassifier, ContourLines,
+// Tests for PlanarClassifier,
 // MonochromeMode, RealityMeshGeometry, Layer, LineCode, Sync,
 // Decorations, PerformanceMetrics, RenderMemory, AttributeMap, MockRender,
 // and remaining GLSL modules.
@@ -11,11 +11,15 @@
 //  相悖且出处注释虚假[指到 FeatureSymbology.test.ts 的无 thematic 面]；
 //  真 thematic 测试面 = dqCommon ThematicDisplayTest + ThematicUniformsTest +
 //  ThematicDisplayShaderTest + ThematicSensorsGpuTest + E2E 五锁。）
+// （M-X X-a4：孤儿 ContourLines 类三测试随类删除——该类的 setInterval/
+//  setOrigin/setColor/buildContourLutData 形态与参考 ContourGroup/
+//  ContourDisplay/Contours 语义全错位且零消费者；真等高线测试面=
+//  dqCommon ContourDisplayTest + dqRender ContoursTest/ContourPlanWiringTest
+//  + X-a5 E2E 像素锁。）
 // （SolarShadowMap/GraphicTemplate 的 src/render 自创平行实现已删——前者与
 // ShadowUniforms.h 的同名 struct、后者与公开 API 抽象接口构成 ODR 双定义。）
 
 #include "render/PlanarClassifier.h"
-#include "render/ContourLines.h"
 #include "render/MonochromeMode.h"
 #include "render/RealityMeshGeometry.h"
 #include "render/Layer.h"
@@ -64,45 +68,6 @@ TEST(PlanarClassifierTest, SetColor)
     EXPECT_FLOAT_EQ(color[0], 1.0f);
     EXPECT_FLOAT_EQ(color[1], 0.0f);
     EXPECT_FLOAT_EQ(color[3], 0.5f);
-}
-
-// ============================================================================
-// ContourLines tests
-// ============================================================================
-
-// Ported from: itwinjs-core core/frontend/src/test/FeatureSymbology.test.ts
-TEST(ContourLinesTest, DefaultState)
-{
-    ContourLines contours;
-    EXPECT_FALSE(contours.isEnabled());
-    EXPECT_FLOAT_EQ(contours.getInterval(), 1.0f);
-}
-
-// Ported from: itwinjs-core core/frontend/src/test/FeatureSymbology.test.ts
-TEST(ContourLinesTest, Configure)
-{
-    ContourLines contours;
-    contours.setEnabled(true);
-    contours.setInterval(5.0f);
-    contours.setOrigin(100.0f);
-    contours.setColor(0x000000);
-    contours.setWidth(2.0f);
-
-    EXPECT_TRUE(contours.isEnabled());
-    EXPECT_FLOAT_EQ(contours.getInterval(), 5.0f);
-    EXPECT_FLOAT_EQ(contours.getOrigin(), 100.0f);
-}
-
-// Ported from: itwinjs-core core/frontend/src/test/FeatureSymbology.test.ts
-TEST(ContourLinesTest, BuildContourLut)
-{
-    ContourLines contours;
-    contours.setColor(0xFF0000);
-    auto lut = contours.buildContourLutData(10);
-    EXPECT_EQ(lut.size(), 40u);  // 10 levels * 4 bytes
-    EXPECT_EQ(lut[0], 255);  // R
-    EXPECT_EQ(lut[1], 0);    // G
-    EXPECT_EQ(lut[2], 0);    // B
 }
 
 // ============================================================================

@@ -125,7 +125,6 @@ target_sources(dqRender
         src/render/SurfaceGeometry.cpp
         src/render/ViewportQuadGeometry.cpp
         src/render/ThematicSensors.cpp
-        src/render/ContourLines.cpp
         src/render/LineCode.cpp
         src/render/RealityMeshGeometry.cpp
         src/render/MeshGraphic.cpp
