@@ -304,17 +304,21 @@ public:
 
     void bindModelViewMatrix(UniformHandle& uniform) const
     {
-        uniform.setUniform4fv(m_mv, 4);
+        // mat4 位置必须走 setMatrix4（glUniformMatrix4fv）——glUniform4fv 写
+        // mat4 位置是 GL_INVALID_OPERATION 静默 no-op（TD-15 注记的"无害双写"
+        // 的失效半段；X-a5 等高线 saga 实锤：u_modelToWorldC 从未收到 m_model
+        // → v_height 读残留 → 线距全塌）。
+        uniform.setMatrix4(m_mv);
     }
 
     void bindModelViewProjectionMatrix(UniformHandle& uniform) const
     {
-        uniform.setUniform4fv(m_mvp, 4);
+        uniform.setMatrix4(m_mvp);
     }
 
     void bindModelMatrix(UniformHandle& uniform) const
     {
-        uniform.setUniform4fv(m_model, 4);
+        uniform.setMatrix4(m_model);
     }
 
     float const* getModelViewMatrix() const noexcept { return m_mv; }

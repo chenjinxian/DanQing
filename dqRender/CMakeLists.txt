@@ -354,6 +354,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/OrientationGroundTruthTest.cpp
         tests/PlanarGridRenderTest.cpp
         # A-lane 锚（M-W 起——A 道代理只在此锚下追加测试注册；勿动他区）
+        tests/ContourDisplayE2ETest.cpp    # M-X X-a5：合成场景等高线离屏像素锁（线带 WHERE/showGeometry discard 臂/开关可逆）
         tests/ContoursTest.cpp             # M-X X-a3：Contours LUT 打包钉值 + wantContourLines 门 + 变体源码锁（Contours.ts:27-152）
         tests/ContourPlanWiringTest.cpp    # M-X X-a2：RenderPlan.contours + Branch/Target 接线锁（RenderPlan.ts:62/:128 + Target.ts:269/:533 + BranchState.ts:54/:93/:123）
         tests/WorkerProxyTest.cpp          # P-1b P-b1：WorkerProxy 载体合同锁（E1/E2/E3——WorkerProxy.ts 移植面）

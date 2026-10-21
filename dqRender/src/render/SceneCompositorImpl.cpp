@@ -2807,7 +2807,22 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     //   shader->draw 前]；sampler 索引 uniform 仍由
                     //   GraphicUniform 恒写[防 loopback 注 Contours.ts:123-124]；
                     //   发散=未发现；验证法=ContoursTest + X-a5 像素锁）。
-                    if (m_target.getUniforms().batch.wantContourLines()) {
+                    {
+                        bool const wantContours = m_target.getUniforms().batch.wantContourLines();
+                        // TEMP-DIAG（X-a5 取证，env 门控——§13.1 族；定位后留探针登记）。
+                        static bool const s_contourTrace = std::getenv("DANQING_CONTOUR_TRACE") != nullptr;
+                        if (s_contourTrace) {
+                            auto const* cc = m_target.getCurrentContours();
+                            auto* curBatch = m_batchState.getCurrentBatch();
+                            fprintf(stderr, "[CONTOUR] want=%d currentContours=%s(display=%d,groups=%zu) batch=%s ft=%s\n",
+                                    (int)wantContours,
+                                    cc ? "set" : "null", cc ? (int)cc->displayContours : -1,
+                                    cc ? cc->groups.size() : (size_t)0,
+                                    curBatch ? "set" : "null",
+                                    (curBatch && curBatch->getFeatureTable()) ? "set" : "null");
+                            fflush(stderr);
+                        }
+                        if (wantContours) {
                         if (auto* curBatch = m_batchState.getCurrentBatch()) {
                             if (curBatch->getFeatureTable()) {
                                 auto& contours = curBatch->getContours(m_target);
@@ -2823,7 +2838,8 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                                 }
                             }
                         }
-                    }
+                        }  // if (wantContours)
+                    }  // contour trace/feed block
                     {
                         auto const tBind0 = std::chrono::steady_clock::now();
                         shader->draw(drawParams);
@@ -2858,6 +2874,32 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                                 dump4("u_materialColor");
                                 std::fflush(stdout);
                             }
+                        }
+                    }
+
+                    // [CONTOUR-post] 取证探针（X-a5 零线 saga——[LIGHT-post] 同族）：
+                    // draw 之后读回 u_contourLUTWidth/u_contourDefs[1]/u_modelToWorldC
+                    // 的 GPU 实收值（GraphicUniform 派发已发生——断点定位）。
+                    if (getenv("DANQING_CONTOUR_TRACE")) {
+                        GLuint const cProg = shader->getGlProgram();
+                        if (cProg != 0) {
+                            GLint const wLoc = dqglGetUniformLocation(cProg, "u_contourLUTWidth");
+                            GLfloat wVal = -999999.0f;
+                            if (wLoc >= 0) dqglGetUniformfv(cProg, wLoc, &wVal);  // uint→float 读回（无 dqglGetUniformuiv）
+                            GLfloat defs[4] = {-9, -9, -9, -9};
+                            GLint const dLoc = dqglGetUniformLocation(cProg, "u_contourDefs[1]");
+                            if (dLoc >= 0) dqglGetUniformfv(cProg, dLoc, defs);
+                            GLfloat m2[4] = {-9, -9, -9, -9};
+                            GLint const mLoc = dqglGetUniformLocation(cProg, "u_modelToWorldC");
+                            if (mLoc >= 0) {
+                                GLfloat m16[16];
+                                dqglGetUniformfv(cProg, mLoc, m16);
+                                m2[0] = m16[2]; m2[1] = m16[6]; m2[2] = m16[10]; m2[3] = m16[14];  // row 2 (col-major)
+                            }
+                            std::fprintf(stderr, "[CONTOUR-post] widthLoc=%d width=%u defs[1]=(%.3f,%.3f,%.3f,%.3f) modelRow2=(%.3f,%.3f,%.3f,%.3f)\n",
+                                         (int)wLoc, (unsigned)wVal, defs[0], defs[1], defs[2], defs[3],
+                                         m2[0], m2[1], m2[2], m2[3]);
+                            std::fflush(stderr);
                         }
                     }
 
@@ -3054,6 +3096,12 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
             }
             case DrawCommandType::PopBatch:
                 m_batchState.pop();
+                // M-X X-a3：批次弹栈清 contours 供给（参考 BatchUniforms.
+                //   clearCurrentBatch/_setCurrentBatch(undefined) 的
+                //   `_contours = undefined` 语义[:47-49/:91 否臂]——不清则后续
+                //   无 batch 图元（装饰）的 u_contourLUTWidth 读残留宽，
+                //   采样单元 14 的上一 batch LUT=跨 batch 污染[TD-28③ 同族]）。
+                m_target.getUniforms().batch.setContours(nullptr);
                 break;
             case DrawCommandType::PushClip: {
                 // Ported from: itwinjs-core DrawCommand.ts PushClipCommand.execute()
