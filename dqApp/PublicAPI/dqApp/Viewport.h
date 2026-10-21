@@ -32,6 +32,9 @@
 
 #include <dqCommon/SkyBox.h>   // m_skyGradientCache（SkyGradient）
 
+#include <dqGeom/Point2d.h>   // pickCanvasDecoration 形参（M-X X-b1）
+#include <dqGeom/Point4d.h>   // worldToView4d 返回（M-X X-b1）
+
 #include <optional>            // std::optional（m_skyGradientCache 等）
 #include <functional>          // std::function（PickAtRect 测试缝——DANQING_TESTING）
 
@@ -77,6 +80,7 @@ namespace dqApp {
 class IModelConnection;
 class BackgroundMapGeometry;
 class IDecorator;
+class Marker;  // M-X X-b1：RemoveCanvasDecorationsForMarker 形参（XE14）
 
 // Ported from: itwinjs-core Viewport.ts — ViewUndoEvent 枚举（undo/redo 事件载荷，
 // Viewport.ts:168）。
@@ -384,6 +388,12 @@ public:
     //           decoration invalidation through the render loop.
     bool GetDecorationsValidForTest() const noexcept { return m_decorationsValid; }
     void SetDecorationsValidForTest(bool valid) noexcept { m_decorationsValid = valid; }
+
+    // Test-only：无 GL 帧泵下驱动一次装饰收集（M-X X-b1——headless 锁需要
+    // 真实的 canvasDecorations 列表喂 pickCanvasDecoration；RenderFrame 需 GL
+    // 管道，headless 不可达）。
+    // Authored: test affordance — no reference equivalent（参考经渲染帧驱动）。
+    void CollectDecorationsForTest() { CollectDecorations(); }
 #endif  // DANQING_TESTING
 
     // Viewport ID
@@ -634,6 +644,40 @@ public:
     dqGeom::Point3d ViewToWorld(dqGeom::Point3d const& pt) const;
     dqGeom::Point3d WorldToNpc(dqGeom::Point3d const& pt) const;
     dqGeom::Point3d NpcToWorld(dqGeom::Point3d const& pt) const;
+    // Ported from: itwinjs-core Viewport.worldToViewMap getter (Viewport.ts:564)。
+    dqGeom::Map4d const& worldToViewMap() const { return m_viewingSpace.worldToViewMap(); }
+    // Ported from: itwinjs-core Viewport.worldToView4d (Viewport.ts:3517-3519
+    // ——worldToViewMap.transform0.multiplyPoint3dPoint4d(world)；Matrix4d.
+    // MultiplyPoint3d(pt, w=1) 即 multiplyPoint3dPoint4d 的非归一化语义）。
+    dqGeom::Point4d worldToView4d(dqGeom::Point3d const& world) const
+    {
+        return m_viewingSpace.worldToViewMap().Transform0().MultiplyPoint3d(world, 1.0);
+    }
+
+    // Ported from: itwinjs-core Viewport.pickCanvasDecoration (Viewport.ts:3542
+    // ——`this.target.pickOverlayDecoration(pt)`)。EQUIVALENCE（M-X X-b1）：
+    // 参考经 target 读 target.graphics.canvasDecorations（Target.ts:1428-1440
+    // 逆序遍历——后绘制者优先）；DanQing 的 Viewport 自持 m_decorations 并逐帧
+    // 喂 target（Viewport.cpp drawCanvasDecorations 调用点——同一集合），
+    // dqRender Target 面属本里程碑边界外，缝落 Viewport。发散=集合读取点
+    //（同一数据）；验证=MarkerTest 命中/逆序优先锁。
+    dqRender::CanvasDecoration const* pickCanvasDecoration(dqGeom::Point2d pt) const;
+
+    // Ported from: itwinjs-core Viewport.openToolTip (Viewport.ts:3360-3362
+    // ——notifications.openToolTip(toolTipDiv, message, location, options)。
+    // XE3（M-X）：HTMLElement|string → std::string 纯文本；ToolTipOptions 由
+    // 调用点携带但宿主 QToolTip 不消费（Marker.tooltipOptions 登记）。
+    void openToolTip(std::string const& message, dqGeom::Point3d const* location = nullptr);
+
+    // Ported from: itwinjs-core Viewport.invalidateCachedDecorations
+    // (Viewport.ts:3235-3239——cache.delete(decorator) + invalidateDecorations)。
+    void InvalidateCachedDecorations(IDecorator* decorator);
+
+    // XE14 生命周期缝（M-X X-b1；C++ 显式所有权 vs 参考 GC——TD-22 ~Tile
+    // 三 feed 清扫同族）：~Marker 调用，从本视口当前装饰列表摘除捕获该
+    // marker 的画布条目（防悬垂 pick/draw 回调）。
+    // Authored: no reference equivalent（参考 CanvasDecoration 对象由 GC 保活）。
+    void RemoveCanvasDecorationsForMarker(Marker const& marker);
     // Ported from: itwinjs-core Viewport.npcToView/viewToNpc (Viewport.ts:2045/2050)
     dqGeom::Point3d NpcToView(dqGeom::Point3d const& pt) const;
     dqGeom::Point3d ViewToNpc(dqGeom::Point3d const& pt) const;
