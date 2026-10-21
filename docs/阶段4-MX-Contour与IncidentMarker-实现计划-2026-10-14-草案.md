@@ -1,9 +1,11 @@
-# 阶段 4 M-X Contour 显示与 IncidentMarker 实现计划（草案——M-W 收口后呈批）
+# 阶段 4 M-X Contour 显示与 IncidentMarker 实现计划（2026-10-21 正式）
 
 > 里程碑：M-X（Contour display 大件 8/16 + IncidentMarker/MarkerSet）。
-> 基线：M-W 收口（日期待回填，全量门禁数待回填）。权威对照面：
+> 用户指令：按 M-X（Contour+IncidentMarker）开工（2026-10-21 会话）。
+> 基线：P-1d/TD-35 收口后主干 HEAD ca4247486f（X-p0 锚点）；基线门禁（2026-10-21 frontier 轮，Debug）2891 项 = 2861 通过 + 28 跳过 + 2 环境态失败（TD-26/29 族归因在案）。权威对照面：
 > `docs/DTA功能对照统计-2026-10-07.md`（§2 大件 #5 Contour / #12 IncidentMarker）。
-> 本草案=M-W 双代理运行期间的勘察备料（M-W 收口后回填基线并呈批）。
+> 本文前身=2026-10-14 草案备料（M-W 双代理运行期间勘察）；2026-10-21 经五代理参考仓渲染层需求勘察精化后正式化。
+> 参考检出：D:/Github/itwinjs-core @88da8fb9（只读）。
 
 ## 0. 范围勘察结论（参考全读记录——2026-10-14 M-W 期间备料）
 
@@ -68,31 +70,54 @@
 - B（widget 承载）：每 marker 一 QWidget——偏离 implements CanvasDecoration 语义。
 - C 结案。
 
-## 1. 任务分解（草案——呈批时细化）
+## 1. 任务分解（2026-10-21 正式化——五代理勘察锚点已并入）
 
-### A 道（Contour，五件）
-- X-a1 DisplayStyleSettings.contours 载体（DisplayStyleSettings.ts:164/:1086/:1103/
-  :1181+事件 :516）+ dqApp DisplayStyle 门面。
-- X-a2 RenderPlan.contours + Target changeRenderPlan 携带 + ContourUniforms.update
-  接线（Target.ts:533/:539）+ GraphicBranch.contourLine。
-- X-a3 BatchUniforms.bindContourLUT/Width（BatchUniforms.ts:115-121——LUT 纹理构建
-  链全读移植）+ shader 槽激活链核通。
-- X-a4 ContourLines.h 自创脚手架归位/清退（S-h 孤儿类先例）。
-- X-a5 E2E 像素锁（合成场景高程等高线 WHERE 断言——主会话收口跑）。
+### 主会话预备件（dispatch 前落主干）
 
-### B 道（IncidentMarker，裁决后两件）
-- X-b1 Marker/Cluster/MarkerSet 宿主件（裁决 A 形态——Marker.ts:71-494 子集
-  移植：位置/尺寸/图/标签/缩放因子/title/onMouseButton + 聚类）。
-- X-b2 IncidentMarkerDemo 演示 + ToggleIncidentMarkers 工具注册 + 六 SVG 资产。
+**X-p0 CMake 锚点**（已落 ca4247486f）：dqRender src A 锚 / dqApp src B 锚 / dqAppTest B 锚；M-W 存量锚复用（dqCommon tests A / dqRender tests A / DisplayTestApp src+tests A/B / dqAppTest A）。
 
-## 2. EQUIVALENCE 预登记（草案）
+### A 道（Contour，五件逐件 RED→GREEN+提交）
+
+- **X-a1 DisplayStyleSettings.contours 载体 + dqApp 门面**（dqCommon+dqApp）：
+  `core/common/src/DisplayStyleSettings.ts` 的 props.contours 字段(:164)+_contours 成员(:1086)+fromJSON(:1103)+toJSON(:1181)+OnContoursChanged 事件(:516)+setter 触发 onContoursChanged(:1231-1238) 1:1（dqCommon `ContourDisplay.h` 全族已在位——`ContourDisplay.ts:256-471`：maxContourGroups=5 :397/groups 截断 :410/空 subCategories=default group 语义）。dqApp DisplayStyle 门面 + OnContoursChanged→InvalidateRenderPlan 接线（M-U U-g 监听族先例）。锁=dqCommonTest（props 往返/五组截断/默认组语义）+dqAppTest（门面事件恰一次+plan 失效）。
+- **X-a2 RenderPlan.contours + Target/Branch 接线**（dqRender）：
+  RenderPlan.contours 字段（RenderPlan.ts:62+:128 提取+:171 拷贝，is3d 门对齐 M-S thematic 段先例）；GraphicBranch.contourLine 字段（Graphic.ts:353——GraphicBranch.h:39 现仅注释）+BranchOptions.contours(:165)；BranchStack/BranchState contourLine 透传（BranchState.ts:54/:93）+BranchUniforms.changeRenderPlan 第 4 参（BranchUniforms.ts:149-150）；TargetImpl::changeRenderPlan 调 uniforms.contours.update（Target.ts:533-539——ContourUniforms::update(TargetImpl) 已在位）+currentContours 从 branch 读（Target.ts:269——TargetImpl.h:310-316 归位）。锁=dqRenderTest（plan 提取/branch 透传/changeRenderPlan 调用序）。
+- **X-a3 Contours LUT 纹理类 + BatchUniforms 绑定 + shader 槽激活**（dqRender）：
+  新 `src/render/Contours.{h,cpp}`=Contours.ts:27-152 全量 1:1（LUT 纹理 TextureUnit.Contours=TEXTURE14 已定义 RenderFlags.h:168-169；buildLookupTable 4-bit/feature 打包 :92-108——每 RGBA byte 装 2 feature 的 group index；bindContourLUT :115/bindContourLUTWidth :121/wantContourLines getter）；BatchUniforms _contours 惰性创建（BatchUniforms.ts:36/:91）+绑定调用点（Uniforms.h:182-189 TODO 勾销）；Graphic.getContours per-target LUT 缓存（Graphic.ts:135-145）。shader 槽激活=Surface 变体构建处**恒调** addApplyContours（Surface.ts:776——无 TechniqueFlags 位，运行时 u_contourLUTWidth==0u 早退门 Contours.ts:17-18；GLSL 已在 FeatureEffectShaderBuilders.h:164-220，槽位 ShaderBuilder.h:256 已注册、组装已在 ShaderBuilder.cpp:550/941/1026/1215——核通 caller 链）。锁=dqRenderTest LUT 打包字节序钉值+变体源码锁（applyContours 调用出场）+Contours.test 参考测试面核查移植。
+- **X-a4 ContourLines.h 自创脚手架归位/清退**（S-h 孤儿类先例）：setInterval/setOrigin/setColor 形态与参考 ContourGroup/ContourDisplay 语义错位——评估消费者后清退或归位。
+- **X-a5 E2E 像素锁（主会话收口跑；A 道备好合成测试资产与判据建议）**：合成场景高程等高线——线带像素 WHERE 断言/showGeometry=false discard 臂/开关可逆（§5(g)）。
+
+### B 道（IncidentMarker，两件序贯——Marker 移植先于演示；画布承载裁决 A 已落 M-Z）
+
+- **X-b1 Marker/Cluster/MarkerSet 移植**（Marker.ts 494 行——dqApp 引擎面）：
+  `core/frontend/src/Marker.ts`：Marker implements CanvasDecoration 同构（:71-318——worldLocation :82/size :84/visible :76/drawFunc :127/drawDecoration 主入口 :195-223[先 drawFunc→drawImage→fillText 序]/setImage :229-241/imageOffset·imageSize :92/:94/label·labelFont·labelColor·labelMaxWidth :96-108/setScaleFactor{low,high} :155-158/setPosition 投影+视锥剔除 :250-283/pick :148/onMouseButton 族 :130-145/addMarker→addCanvasDecoration :300-307）；Cluster(:325-350)+MarkerSet(:357-494——minimumClusterSize :369/clusterRadius :373/markDirty :405/addDecoration 屏幕 XY 距离聚类 :427-493，纯几何零 DOM)。画布承载=DanQing 既有 CanvasDecoration/GLCanvasContext 通路（XE1——DecorateContext::AddCanvasDecoration 已被 WindowAreaTest/MeasureLabel 验证）；title→QToolTip（XE3）；htmlElement DOM 覆盖面不移植登记（XE6）。锁=dqAppTest（聚类距离判定/Cluster 合成/setPosition 剔除/drawDecoration 序——core/frontend 对应 Marker 测试面先核查移植）。
+- **X-b2 IncidentMarkerDemo + 工具 + 资产**（IncidentMarkerDemo.ts 262 行 1:1）：
+  samples/DisplayTestApp/src 新件：IncidentMarker(:16-77——makeColor 绿→琥珀→红插值 :28-31/onMouseButton 消息框 :34-41/setImage 六面/addMarker WorldDecoration 200mm 圆 :64-76)+IncidentClusterMarker(:80-137——drawFunc canvas 圆+top10 严重度 title)+IncidentMarkerSet(:140-144)+IncidentMarkerDemo(:150-251——500 随机 incidents/useCachedDecorations/loading 门 invalidateCachedDecorations)+ToggleIncidentMarkers 工具(:253-262，toolId "ToggleIncidentMarkers")。六 SVG 资产（Warning_sign/Hazard_*——DTA public 树）入库 samples/DisplayTestApp/assets/（XE5）；imageElementFromUrl→Qt QImage/QSvgRenderer（XE2）；WorldDecoration 圆饼复用 GraphicBuilder 通路（GltfDecoration addDecoration 先例）。锁=DisplayTestAppTest（toggle 状态机/makeColor 插值钉值/聚类合成计数/loading 门/资产加载）。
+
+## 2. EQUIVALENCE 预登记（§11.10 制度）
 - XE1：Marker 画布承载（DOM div→canvas decoration 层）。
 - XE2：imageElementFromUrl→Qt SVG 装载（QSvgRenderer/QImage 面）。
 - XE3：title HTML div→QToolTip 纯文本（`<br>`→换行——M-O(1) tooltip 链）。
 - XE4：Contour 面板 DOM→Qt 控件（ContoursSettings 面板族同 E2 先例）。
+- XE5：六 SVG 资产入库位=samples/DisplayTestApp/assets/（M-W E5 先例：DTA 演示资产非引擎第三方目录）；发散=无；验证=资产加载锁。
+- XE6：Marker 的 htmlElement DOM 覆盖（Marker.ts:121）与 title HTMLElement（:110）不移植——title 走 XE3 QToolTip 纯文本、htmlElement 登记不做；发散=富文本形态不可表达；验证=tooltip 文本锁。
 
-## 3. 门禁（同 M-W 契约）
-## 4. 完成实录（回填区）
+## 3. 双代理编排契约（M-X 版——M-W 契约 8 条沿用）
+1. **文件集不相交**：A 道=dqCommon/dqRender/dqApp（DisplayStyle 门面）+引擎测试；B 道=dqApp Marker 族新文件+samples/DisplayTestApp src 新件+其测试+资产。共享面=dqApp/CMakeLists.txt 与 dqAppTest 列表——各道只写本道锚区。
+2. **CMake 锚点**：X-p0 已落+M-W 存量锚复用；各道只写本道锚区。
+3. **禁动清单**（两道同禁）：DtaToolBars.{h,cpp}（主会话集成面）、CLAUDE.md、docs/ 台账与计划文档、对方道文件、.gitignore、third_party。
+4. **worktree 初始化**（代理自做自验）：third_party\qt Junction（指向主检出 D:\Github\DanQing\third_party\qt）+cmake configure（-DCMAKE_PREFIX_PATH=<worktree>/third_party/qt/windows/6.11.1/msvc2022_64）；锚区若缺席（基底旧于 ca4247486f）先 `git merge main --no-edit`。
+5. **代理测试面**：无真窗无 dump（dqCommonTest/dqRenderTest/dqAppTest/DisplayTestAppTest）；真窗像素锁/dump E2E/全量 ctest 归主会话合并后串行。
+6. **代理纪律**：§11.8 全读参考（锚清单在 §1 任务文）、§5 RED→GREEN 双向证据、EQUIVALENCE §11.10 登记、逐件提交、报告=文件清单+测试摘要+EQUIVALENCE 表+遗留。
+7. **主会话集成**：merge→ContoursPanel+工具栏 item 24 激活+IncidentMarker 入口核实→X-a5 E2E+真窗验证→全量门禁（TD-26/29 规程）→CLAUDE.md §1/§15+统计台账+本文实录回填→收口提交。
+8. **流水线**：同道内逐件序贯；两道并行；完成即报。
+
+## 4. 门禁（同 M-W 契约）
+- A/B worktree：各自目标面全绿（dqCommonTest/dqRenderTest/dqAppTest/DisplayTestAppTest），RED→GREEN 证据随报告。
+- 主会话收口：全量 ctest（Debug）串行；TD-26/29 族失败按 §14 规程隔离复跑 ×2 归因。
+- E2E 像素锁（X-a5 合成场景等高线 + IncidentMarker 真窗）主会话跑绿为收口门。
+
+## 5. 完成实录（回填区）
 
 ---
 
