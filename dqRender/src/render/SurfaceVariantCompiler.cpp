@@ -286,7 +286,14 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
         if (featureMode == FeatureMode::Overrides) {
             // Feature override uniforms
             frag.addVariable({"u_featureOverrides", VariableType::Sampler2D, VariableScope::Uniform, 0});
-            frag.addVariable({"u_featureOverrideWidth", VariableType::Float, VariableScope::Uniform, 0});
+            // u_featureParams.xy = (width, height) —— 参考 u_featureParams
+            //（addLookupTable(vert, "feature", "3.0")，FeatureSymbology.ts:255 +
+            // LookupTable.ts computeCoordsTemplate）。此前自创 1D 形
+            // u_featureOverrideWidth（y=0.5 恒取中间行）——批 feature 数
+            // >1365（computeDimensions 的 4096 texel 宽 cap）时 LUT 多行，
+            // 采样读到别的行 → Visibility 位 0 → 全批 discard（baytown/bridge
+            // 拾取塌缩 saga 根因，2026-10-21）。
+            frag.addVariable({"u_featureParams", VariableType::Vec2, VariableScope::Uniform, 0});
             frag.addVariable({"u_hiliteColor", VariableType::Vec4, VariableScope::Uniform, 0});
             // Flash uniforms（doApplyFlash，glsl/FeatureSymbology.ts:698-705：
             // u_flash_intensity 为 ProgramUniform 读 target.flashIntensity；
@@ -312,6 +319,9 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
             // Ported from: itwinjs-core FeatureSymbology.ts + FeatureEffectShaderBuilders.h
             frag.addFunction(getOvrFlagConstants());
             frag.addFunction(getExtractNthBit());
+            // 2D LUT 坐标（LookupTable.ts computeLUTCoords——见
+            // getComputeLUTCoords 头注；1:1 参考形，含 epsilon 修 mod）。
+            frag.addFunction(getComputeLUTCoords());
 
             // Feature override component
             // Ported from: itwinjs-core FeatureSymbology.ts applyFeatureSymbology()
@@ -324,12 +334,17 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
             // flags16.A=0 would have discarded the whole feature had it run).
             frag.setFragmentComponent(FragmentShaderComponent::OverrideFeatureId,
                 // LUT 坐标：参考 addLookupTable(vert, "feature", "3.0")（FeatureSymbology.ts:255）
-                // ——每特征 3 texel（FeatureOverrides._initialize 的 computeDimensions(n,3)），
-                // texel0 = flags/flags16/lineCode/lineWeight。此前漏乘 3 → featureIndex>0
-                // 全部采到别的特征的 texel（单特征 batch 恒 0 才没暴露——Deco 示例
-                // 20 特征 batch 的悬停 flash 因此全灭）。
-                "    float featureU = (float(v_featureId) * 3.0 + 0.5) * u_featureOverrideWidth;\n"
-                "    vec4 overrideTexel = texture(u_featureOverrides, vec2(featureU, 0.5));\n"
+                // + getFirstFeatureRgba（:104-108）——computeLUTCoords(index,
+                // u_featureParams.xy, center, 3.0)；center = 半 texel 偏移
+                //（LookupTable.ts initializerTemplate：0.5*stepX/0.5*stepY）。
+                // 第二 texel（rgb/alpha）= coord.x += stepX×1（getSecondFeatureRgba
+                // :111-117 非 linear 腿；isLinear 的 ×2 腿依赖 u_renderOrder——
+                // DanQing 恒未上传（默认 0 ≠ kRenderOrder_Linear），登记于
+                // TD-23 遗留）。
+                "    vec2 featureDims = u_featureParams;\n"
+                "    vec2 featureCoord = computeLUTCoords(v_featureId, featureDims,\n"
+                "        vec2(0.5 / featureDims.x, 0.5 / featureDims.y), 3.0);\n"
+                "    vec4 overrideTexel = texture(u_featureOverrides, featureCoord);\n"
                 "    float ovrFlags = overrideTexel.r * 255.0;\n"
                 "    float ovrFlags16 = overrideTexel.g * 255.0;\n"
                 "    if (!nthBitSet(ovrFlags16, kOvrBit_Visibility)) discard;\n"
@@ -341,7 +356,7 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
                 // 当颜色用会把命中元素画成 flags 字节的近黑色（M-O(2) I10 眼验
                 // 实锤：覆盖球呈 (3,16,0)/255 暗色）。
                 "    if (nthBitSet(ovrFlags, kOvrBit_Rgb) || nthBitSet(ovrFlags, kOvrBit_Alpha)) {\n"
-                "        vec4 rgbaTexel = texture(u_featureOverrides, vec2(featureU + u_featureOverrideWidth, 0.5));\n"
+                "        vec4 rgbaTexel = texture(u_featureOverrides, vec2(featureCoord.x + 1.0 / featureDims.x, featureCoord.y));\n"
                 "        if (nthBitSet(ovrFlags, kOvrBit_Rgb)) baseColor.rgb = rgbaTexel.rgb;\n"
                 "        if (nthBitSet(ovrFlags, kOvrBit_Alpha)) baseColor.a = rgbaTexel.a;\n"
                 "    }\n"

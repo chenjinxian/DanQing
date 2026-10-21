@@ -81,6 +81,34 @@ uint decodeUint24(vec3 bytes) {
 )";
 }
 
+/// 2D LUT coordinate computation — row-major (index*mult) texel placement.
+/// Ported from: itwinjs-core glsl/LookupTable.ts computeLUTCoords — the
+/// FeatureOverrides LUT (like every Bentley LUT) stores `index*mult` texels
+/// row-major across a width×height texture (computeDimensions caps width at
+/// 4096, so tables above 1365 features wrap to multiple rows). The prior
+/// per-variant 1D sampling (`(idx*3 + 0.5) * 1/width, y=0.5`) only read the
+/// MIDDLE row: any batch whose LUT is taller than one row sampled another
+/// feature's texels — visibility bit 0 → discard (the "hover/select 后大面积
+/// 构件消失" class: baytown surface batches, bridge 108k-feature tiles; small
+/// pointString batches (≤1365 features, height=1) were unaffected and kept
+/// rendering). `dimensions` = u_featureParams.xy = (width, height);
+/// `center` = half-texel offset; `mult` = texels per feature (3.0).
+inline char const* getComputeLUTCoords()
+{
+    return R"(
+vec2 computeLUTCoords(float index, vec2 dimensions, vec2 center, float mult) {
+  float baseIndex = index*mult;
+
+  // Fix precision issues wherein mod(x,y) => y instead of 0 when x is multiple of y...
+  float epsilon = 0.5 / dimensions.x;
+  float yId = floor(baseIndex / dimensions.x + epsilon);
+  float xId = baseIndex - dimensions.x * yId; // replaces mod()...
+
+  return center + vec2(xId/dimensions.x, yId/dimensions.y);
+}
+)";
+}
+
 /// Check if nth bit is set in a float-encoded flag
 /// Ported from: itwinjs-core Common.ts addExtractNthBit (line 136-143)
 /// Uses bitwise operations instead of pow/mod for correctness and performance.

@@ -392,6 +392,7 @@ if(TARGET gtest_main AND TARGET dqApp)
         tests/IModelFileToolsTest.cpp     # M-Y Y-b2：CloseIModel/ReopenIModel 状态机 + key↔包映射锁（无头面）
         tests/AtmosphereEditorTest.cpp    # M-Z B 道：Atmosphere 编辑器子区锁（无头面——渲染深链 render-dead 登记在案，无像素锁）
         tests/AsyncOpenChainTest.cpp      # P-1b P-b4：异步打开链终态对账 + 提交不阻塞锁（E5；真窗族规程=主会话收口跑）
+        tests/PickCollapseTest.cpp        # 2026-10-21：Baytown/Bridge 拾取/选中激活内容塌缩回归锁（注册序尾=dump 族序敏感安全位）
         resources.qrc                 # DTA 图标资源（字体 + SVG——图标断言测试需要）
     )
     target_include_directories(DisplayTestAppDtaTest PRIVATE

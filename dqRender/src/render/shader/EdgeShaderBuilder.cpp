@@ -13,6 +13,7 @@
 #include "render/VertexTable.h"         // addVertexTable（顶点 LUT 接线）
 #include "render/ViewportShaders.h"     // addModelToWindowCoordinates, addViewport
 #include "render/VertexShaderModules.h" // addLineWeight, addSamplePosition, octDecodeNormal
+#include "render/FeatureSymbologyShaders.h" // getOvrFlagConstants/getExtractNthBit/getComputeLUTCoords（2026-10-21 塌缩修复）
 #include "shader/DecodeShaders.h"       // kDecodeUint24
 
 BEGIN_DQ_RENDER_NAMESPACE
@@ -489,18 +490,38 @@ void overrideFeatureId() {
 
         if (featureMode == FeatureMode::Overrides) {
             frag.addVariable({"u_featureOverrides", VariableType::Sampler2D, VariableScope::Uniform, 0});
-            frag.addVariable({"u_featureOverrideWidth", VariableType::Float, VariableScope::Uniform, 0});
+            // u_featureParams.xy = (width, height)——surface 变体同款 2D 形
+            //（LookupTable.ts computeLUTCoords；1D u_featureOverrideWidth 的
+            // 中间行采样缺陷见 getComputeLUTCoords 头注。旧体还漏乘 3 且把
+            // texel0 的 flags 字节当颜色/alpha 消费——边线 overrides 从未
+            // 按真布局读取）。
+            frag.addVariable({"u_featureParams", VariableType::Vec2, VariableScope::Uniform, 0});
             frag.addVariable({"u_hiliteColor", VariableType::Vec4, VariableScope::Uniform, 0});
+            // OvrFlag 位常量 + nthBitSet + 2D 坐标（surface 变体同源）。
+            frag.addFunction(getOvrFlagConstants());
+            frag.addFunction(getExtractNthBit());
+            frag.addFunction(getComputeLUTCoords());
 
             // Define overrideFeatureId as a function outside main.
+            // 1:1 surface/polyline 槽体（边线消费同一 computeFeatureOverrides
+            // 语义——FeatureSymbology.ts applyFeatureSymbology 对 edge 与
+            // surface 同体；visibility discard + rgb/alpha 第二 texel +
+            // hilite mix + flash）。
             frag.addFunction(R"(
 void overrideFeatureId() {
-    float featureU = (float(v_featureId) + 0.5) * u_featureOverrideWidth;
-    vec4 overrideTexel = texture(u_featureOverrides, vec2(featureU, 0.5));
-    if (overrideTexel.a > 0.0) {
-        baseColor.rgb = overrideTexel.rgb;
-        baseColor.a *= overrideTexel.a;
+    vec2 featureDims = u_featureParams;
+    vec2 featureCoord = computeLUTCoords(v_featureId, featureDims,
+        vec2(0.5 / featureDims.x, 0.5 / featureDims.y), 3.0);
+    vec4 overrideTexel = texture(u_featureOverrides, featureCoord);
+    float ovrFlags = overrideTexel.r * 255.0;
+    float ovrFlags16 = overrideTexel.g * 255.0;
+    if (!nthBitSet(ovrFlags16, kOvrBit_Visibility)) discard;
+    if (nthBitSet(ovrFlags, kOvrBit_Rgb) || nthBitSet(ovrFlags, kOvrBit_Alpha)) {
+        vec4 rgbaTexel = texture(u_featureOverrides, vec2(featureCoord.x + 1.0 / featureDims.x, featureCoord.y));
+        if (nthBitSet(ovrFlags, kOvrBit_Rgb)) baseColor.rgb = rgbaTexel.rgb;
+        if (nthBitSet(ovrFlags, kOvrBit_Alpha)) baseColor.a = rgbaTexel.a;
     }
+    if (nthBitSet(ovrFlags16, kOvrBit_Hilited)) baseColor.rgb = mix(baseColor.rgb, u_hiliteColor.rgb, 0.25);
 }
 )");
             frag.setFragmentComponent(FragmentShaderComponent::OverrideFeatureId, "");

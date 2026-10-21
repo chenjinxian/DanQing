@@ -1907,8 +1907,14 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     if (flags.featureMode == FeatureMode::Overrides && currentBatch && currentBatch->hasFeatureOverrides()) {
                         auto* lut = currentBatch->getOrCreateFeatureOverrideLUT();
                         if (lut) {
-                            float width = static_cast<float>(lut->getWidth());
-                            params.setFloat("u_featureOverrideWidth", width > 0.0f ? 1.0f / width : 0.0f);
+                            // u_featureParams = (width, height)——参考
+                            // u_featureParams（LookupTable.ts computeLUTCoords
+                            // 的 2D 维度）；此前 1D u_featureOverrideWidth 使
+                            // 多行 LUT（feature 数 >1365）采样恒取中间行
+                            // （baytown/bridge 拾取塌缩 saga 根因）。
+                            float lutDims[2] = {static_cast<float>(lut->getWidth()),
+                                                static_cast<float>(lut->getHeight())};
+                            params.setVec2("u_featureParams", lutDims);
                             // 单元 1 = TextureUnit.FeatureSymbology（RenderFlags.ts:157 +
                             // FeatureOverrides.ts:449——参考的 override LUT 单元）。
                             // **M-S S-e 修正**：初提交起误用单元 7——与

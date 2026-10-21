@@ -365,11 +365,15 @@ ProgramBuilder createPolylineProgramBuilder(FeatureMode featureMode, PositionTyp
 
         if (featureMode == FeatureMode::Overrides) {
             frag.addVariable({"u_featureOverrides", VariableType::Sampler2D, VariableScope::Uniform, 0});
-            frag.addVariable({"u_featureOverrideWidth", VariableType::Float, VariableScope::Uniform, 0});
+            // u_featureParams.xy = (width, height)——surface 变体同款 2D 形
+            //（LookupTable.ts computeLUTCoords；1D u_featureOverrideWidth 的
+            // 中间行采样缺陷见 getComputeLUTCoords 头注）。
+            frag.addVariable({"u_featureParams", VariableType::Vec2, VariableScope::Uniform, 0});
             frag.addVariable({"u_hiliteColor", VariableType::Vec4, VariableScope::Uniform, 0});
             // OvrFlag 位常量 + nthBitSet（surface 变体同源——槽体消费）。
             frag.addFunction(getOvrFlagConstants());
             frag.addFunction(getExtractNthBit());
+            frag.addFunction(getComputeLUTCoords());
 
             // OverrideFeatureId（function-call fragment main 约定 = vec4 返回）：
             // 1:1 surface 槽体（texel0 布局 R=OvrFlags/G=OvrFlags16/B=lineCode/
@@ -378,13 +382,18 @@ ProgramBuilder createPolylineProgramBuilder(FeatureMode featureMode, PositionTyp
             // 旧体读 texel.a 当 alpha 门且无 return，Polyline-Overrides 变体
             // 编译失败"function does not return a value"）。
             frag.setFragmentComponent(FragmentShaderComponent::OverrideFeatureId,
-                "    float featureU = (float(v_featureId) * 3.0 + 0.5) * u_featureOverrideWidth;\n"
-                "    vec4 overrideTexel = texture(u_featureOverrides, vec2(featureU, 0.5));\n"
+                "    vec2 featureDims = u_featureParams;\n"
+                "    vec2 featureCoord = computeLUTCoords(v_featureId, featureDims,\n"
+                "        vec2(0.5 / featureDims.x, 0.5 / featureDims.y), 3.0);\n"
+                "    vec4 overrideTexel = texture(u_featureOverrides, featureCoord);\n"
                 "    float ovrFlags = overrideTexel.r * 255.0;\n"
                 "    float ovrFlags16 = overrideTexel.g * 255.0;\n"
                 "    if (!nthBitSet(ovrFlags16, kOvrBit_Visibility)) discard;\n"
-                "    if (nthBitSet(ovrFlags, kOvrBit_Rgb)) baseColor.rgb = overrideTexel.rgb;\n"
-                "    if (nthBitSet(ovrFlags, kOvrBit_Alpha)) baseColor.a = overrideTexel.a;\n"
+                "    if (nthBitSet(ovrFlags, kOvrBit_Rgb) || nthBitSet(ovrFlags, kOvrBit_Alpha)) {\n"
+                "        vec4 rgbaTexel = texture(u_featureOverrides, vec2(featureCoord.x + 1.0 / featureDims.x, featureCoord.y));\n"
+                "        if (nthBitSet(ovrFlags, kOvrBit_Rgb)) baseColor.rgb = rgbaTexel.rgb;\n"
+                "        if (nthBitSet(ovrFlags, kOvrBit_Alpha)) baseColor.a = rgbaTexel.a;\n"
+                "    }\n"
                 "    if (nthBitSet(ovrFlags16, kOvrBit_Hilited)) baseColor.rgb = mix(baseColor.rgb, u_hiliteColor.rgb, 0.25);\n"
                 "    return baseColor;\n");
         }
