@@ -303,6 +303,47 @@ struct PickCollapse {
                label, tried, hits);
     }
 
+    // 全帧矩形拾取（一次 readPickData 回读整帧 pick 附件——细线/点几何在
+    // 20px 网格下的采样命中率失真[T D-34 取证：管线 2-3px/点 4-6px 对 20px
+    // 步进天然稀疏]；distinct id 数 = pick 附件真实覆盖面的直接读数）。
+    void pickRectProbe(char const* label) const
+    {
+        std::vector<uint32_t> ids;
+        // PickAtRect 入参 = CSS 像素（内部 ×dpr 转设备域）——传设备域会被
+        // 越界裁剪直接 return（首跑实录：全 0 的直接来源）。
+        int32_t const cssW = static_cast<int32_t>(w / dpr) - 1;
+        int32_t const cssH = static_cast<int32_t>(h / dpr) - 1;
+        vp->PickAtRect(0, 0, cssW, cssH, ids);
+        // ids = distinct nonzero element ids（PickAtRect 契约）。
+        printf("[PICKCOLLAPSE %s] pickRect distinct ids=%zu\n", label, ids.size());
+        // TD-34 取证：64 设备px 窗逐区采样（对 20px 网格不可见的细线/点
+        // 几何的 pick 覆盖直接读数）。
+        long windows = 0, windowsWithHits = 0;
+        for (uint32_t wy = 0; wy + 64 <= h; wy += 128)
+            for (uint32_t wx = 0; wx + 64 <= w; wx += 128) {
+                bool hasContent = false;
+                for (uint32_t y = wy; y < wy + 64 && !hasContent; y += 4)
+                    for (uint32_t x = wx; x < wx + 64 && !hasContent; x += 4) {
+                        uint8_t const* p = &base[(static_cast<size_t>(y) * w + x) * 4];
+                        if (std::abs(p[0] - bg.r) + std::abs(p[1] - bg.g)
+                                + std::abs(p[2] - bg.b) > 90)
+                            hasContent = true;
+                    }
+                if (!hasContent)
+                    continue;
+                ++windows;
+                std::vector<uint32_t> wids;
+                vp->PickAtRect(static_cast<int32_t>(wx / dpr),
+                               static_cast<int32_t>(wy / dpr),
+                               static_cast<int32_t>((wx + 63) / dpr),
+                               static_cast<int32_t>((wy + 63) / dpr), wids);
+                if (!wids.empty())
+                    ++windowsWithHits;
+            }
+        printf("[PICKCOLLAPSE %s] pickRect64 windows=%ld withHits=%ld\n",
+               label, windows, windowsWithHits);
+    }
+
     // 背景探针必须是真实非内容像素（setup 后调用——命中域定后再选角）。
     bool ensureBackgroundProbe()
     {
@@ -338,6 +379,7 @@ void runHoverAndSelect(PickCollapse& s, char const* label)
     dumpBmpPC(s.base, s.w, s.h,
               (std::string("D:/Github/DanQing/build/pickcollapse-") + label + "-base.bmp").c_str());
     s.pickSweep(label);
+    s.pickRectProbe(label);
 
     // 探针 = 第一个真实拾取命中像素（内容像素逐个试——用户症状的触发前提
     // 是真实 element 激活 flash/hilite；pick 全帧 0 命中即 RED 断言本身）。

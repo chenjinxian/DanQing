@@ -1831,7 +1831,7 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     if (getenv("DANQING_PICK_TRACE")
                         && (m_target.isReadPixelsInProgress() || m_batchState.getCurrentBatch())) {
                         static int n = 0;
-                        if (n++ < 8) {
+                        if (n++ < 400) {
                             auto const& pmvp = m_branchStack.getCurrentMvp();
                             printf("[PICK] draw prim: shader=%p pass=%d tech=%d featureMode=%d posType=%d batch=%u stackDepth=%d mvp22=%.3f\n",
                                    static_cast<void*>(shader),

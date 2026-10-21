@@ -489,18 +489,32 @@ TEST(PickDumpScene, SelectionHilitesTilePixelsAndUnselectRestores)
 
     // 断言 1（可观测面）：命中 element 的可视像素簇向 hilite 色移动——
     // 首绿实测 2307（2px 网格 = 命中 element 的一个可视实例足迹
-    // bbox (996,698)-(1104,806)）；阈值 = 0.2×。同 element 的其余可视拷贝
-    // 所在 batch 无 feature 表（见文件头"已登记非阻断"），不参与高亮——
-    // 足迹以持有表的 batch 实例为准。
+    // bbox (996,698)-(1104,806)）；阈值 = 0.2×。2026-10-21 TD-34 清偿后
+    // 重钉：edge-Overrides 变体归位（边线高亮走同一 feature LUT 机制，
+    // Edge.ts getPass Hilite 同形）+ TD-33（Batch 恒持 packed 表）后，
+    // 同 element 的**全部**可视实例拷贝（含选择失效触发迟到加载的 tile
+    // 几何——实测 moved 14882、簇 bbox 扩至 (998,700)-(1626,1398)）参与
+    // 高亮——参考正确行为（Batch.isPickable/LUT 机制逐实例同 id 同高亮）；
+    // 旧钉值"仅持表 batch 实例参与"（其余拷贝所在 batch 无表不参与高亮）
+    // 是已清偿的发散面。
     EXPECT_GE(moved, 500)
         << "选中后无向 hilite 色 0x23bbfc 移动的像素簇（高亮未上屏）";
 
-    // WHERE 断言 2（域）：移动簇被内容 bbox 包住——高亮只落在场景内容上，
-    // 天空/背景永不参与（排除整帧污染/全局色调变化）。
-    EXPECT_GE(mMinX, s.cMinX);
-    EXPECT_GE(mMinY, s.cMinY);
-    EXPECT_LE(mMaxX, s.cMaxX);
-    EXPECT_LE(mMaxY, s.cMaxY);
+    // WHERE 断言 2（域）：移动簇被**选中帧**的内容 bbox 包住——高亮只落在
+    // 场景内容上，天空/背景永不参与（排除整帧污染/全局色调变化）。基帧
+    // bbox 不可用作域：选择失效可触发迟到 tile 加载（上注），选中帧内容
+    // 域是高亮足迹的唯一合法边界。
+    {
+        uint32_t selMinX = 0, selMaxX = 0, selMinY = 0, selMaxY = 0;
+        long selContent = 0;
+        ASSERT_TRUE(contentStatsPDS(frameSel, s.fw, s.fh, selContent,
+                                    selMinX, selMaxX, selMinY, selMaxY))
+            << "selected frame has no content";
+        EXPECT_GE(mMinX, selMinX);
+        EXPECT_GE(mMinY, selMinY);
+        EXPECT_LE(mMaxX, selMaxX);
+        EXPECT_LE(mMaxY, selMaxY);
+    }
 
     // WHERE 断言 3（位置）：移动簇邻近拾取点（簇 bbox 外扩 200 设备像素须
     // 含拾取点）——高亮的就是所点 element 的可视足迹。不取"簇覆盖拾取点"：

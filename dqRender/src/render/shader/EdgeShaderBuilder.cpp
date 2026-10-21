@@ -458,34 +458,49 @@ vec4 reverseWhiteOnWhite(vec4 baseColor) {
     // technique 自动声明 `out vec4 fragColor`）——此前声明成普通 global，链接
     // 通过但 framebuffer 无任何写入（U11(2) 边缘上屏为零的直接根因之一：
     // 片元全部"画"进未定义变量）。
-    frag.addFragOutput("fragColor", -1);
-    frag.addFunction("void assignFragData(vec4 bc) { fragColor = bc; }\n");
-    frag.setFragmentComponent(FragmentShaderComponent::AssignFragData, "");
+    // Pick 变体整换输出（TD-34——参考 Technique.addFeatureId :240-251 →
+    // addPickBufferOutputs 对所有几何技巧统一；见 Pick 分支注）。
+    if (featureMode != FeatureMode::Pick) {
+        frag.addFragOutput("fragColor", -1);
+        frag.addFunction("void assignFragData(vec4 bc) { fragColor = bc; }\n");
+        frag.setFragmentComponent(FragmentShaderComponent::AssignFragData, "");
+    }
 
     // Feature symbology (pick / overrides)
     if (featureMode != FeatureMode::None) {
         vert.addVariable({"a_featureId", VariableType::Uint, VariableScope::Attribute, 0});
+        // 全局 pick 值 = u_batchId + featureIndex（polyline 分支同注，TD-34）。
+        vert.addVariable({"u_batchId", VariableType::Float, VariableScope::Uniform, 0});
         // GLSL requires `flat` qualifier for integer varyings.
         vert.addCode("flat out uint v_featureId;\n");
         frag.addCode("flat in uint v_featureId;\n");
 
         vert.setVertexComponent(VertexShaderComponent::ComputeFeatureOverrides,
-            "    v_featureId = a_featureId;\n");
+            "    v_featureId = a_featureId + uint(u_batchId + 0.5);\n");
 
         if (featureMode == FeatureMode::Pick) {
-            // Define overrideFeatureId as a function outside main.
+            // 参考统一 pick 输出（SurfaceVariantCompiler Pick 段同款——
+            // 附件 0 R32UI = featureId、附件 1 = depthOrder）。旧体在
+            // overrideFeatureId 里写 vec4 编码色到非 pick 附件、AssignFragData
+            // 恒写 vec4(0.0) → readPickData 对边线恒 0（TD-34）。
+            // 注意 edge builder 的 assignFragData 是 **addFunction 约定**
+            //（base 臂手动 addFunction + 空组件——组件约定会编译失败
+            // 'assignFragData' undeclared，首跑实录）。
+            frag.addCode("layout(location = 0) out uint fragColor;\n"
+                         "layout(location = 1) out vec4 fragDepthOrder;\n");
+            frag.addFunction(std::string(kComputeLinearDepth.data(), kComputeLinearDepth.size()));
+            frag.addFunction(std::string(kEncodeDepthRgb.data(), kEncodeDepthRgb.size()));
+            // computeLinearDepth 的 u_frustum（参考 addFeatureId :245
+            // addFrustum——addUniform 按名去重，silhouette/indexed 分支的
+            // 既有调用安全）。
+            addFrustum(builder);
             frag.addFunction(R"(
-void overrideFeatureId() {
-    fragColor = vec4(
-        float(v_featureId & 0xFFu) / 255.0,
-        float((v_featureId >> 8) & 0xFFu) / 255.0,
-        float((v_featureId >> 16) & 0xFFu) / 255.0,
-        float((v_featureId >> 24) & 0xFFu) / 255.0);
+void assignFragData(vec4 bc) {
+    fragColor = v_featureId;
+    fragDepthOrder = vec4(0.0, encodeDepthRgb(computeLinearDepth(v_eyeSpace.z)));
 }
 )");
-            frag.setFragmentComponent(FragmentShaderComponent::AssignFragData,
-                "    fragColor = vec4(0.0);\n");
-            frag.setFragmentComponent(FragmentShaderComponent::OverrideFeatureId, "");
+            frag.setFragmentComponent(FragmentShaderComponent::AssignFragData, "");
         }
 
         if (featureMode == FeatureMode::Overrides) {

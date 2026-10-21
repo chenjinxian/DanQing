@@ -339,7 +339,11 @@ ProgramBuilder createPolylineProgramBuilder(FeatureMode featureMode, PositionTyp
     // Ported from: itwinjs-core Fragment.ts addFragColorWithPreMipliedAlpha.
     // assignFragData writes fragColor; buildFragmentMain wraps the slot body
     // as `void assignFragData(vec4 baseColor)` and emits the call.
-    addFragData(builder);
+    // Pick 变体整换输出（参考 Technique.addFeatureId :240-251 →
+    // addPickBufferOutputs 对所有几何技巧统一；addFragData(pickOutput=true)
+    // 声明 R32UI uint + depthOrder 附件、AssignFragData 归 Pick 分支——
+    // TD-34：旧体写 vec4 编码色到非 pick 附件 → readPickData 恒 0）。
+    addFragData(builder, /*pickOutput=*/ featureMode == FeatureMode::Pick);
 
     // --- Feature symbology (Pick / Overrides) ---
     // Ported from: itwinjs-core Polyline.ts addFeatureSymbology() — embedded
@@ -355,12 +359,18 @@ ProgramBuilder createPolylineProgramBuilder(FeatureMode featureMode, PositionTyp
             "    v_featureId = a_featureId;\n");
 
         if (featureMode == FeatureMode::Pick) {
+            // 参考统一 pick 输出（SurfaceVariantCompiler Pick 段同款——
+            // 附件 0 R32UI = featureId、附件 1 = depthOrder）。
+            // Ported from: itwinjs-core Fragment.ts addPickBufferOutputs 的
+            // output1/output2 语义（DanQing 拆独立附件形态，Surface 先例）。
+            frag.addFunction(std::string(kComputeLinearDepth.data(), kComputeLinearDepth.size()));
+            frag.addFunction(std::string(kEncodeDepthRgb.data(), kEncodeDepthRgb.size()));
+            // computeLinearDepth 的 u_frustum（参考 addFeatureId :245
+            // addFrustum——addUniform 按名去重，重复调用安全）。
+            addFrustum(builder);
             frag.setFragmentComponent(FragmentShaderComponent::AssignFragData,
-                "    fragColor = vec4(\n"
-                "        float(v_featureId & 0xFFu) / 255.0,\n"
-                "        float((v_featureId >> 8) & 0xFFu) / 255.0,\n"
-                "        float((v_featureId >> 16) & 0xFFu) / 255.0,\n"
-                "        float((v_featureId >> 24) & 0xFFu) / 255.0);\n");
+                "    fragColor = v_featureId;\n"
+                "    fragDepthOrder = vec4(0.0, encodeDepthRgb(computeLinearDepth(v_eyeSpace.z)));\n");
         }
 
         if (featureMode == FeatureMode::Overrides) {
@@ -571,29 +581,45 @@ ProgramBuilder createPointCloudProgramBuilder(FeatureMode featureMode, PositionT
         "    return a_color;\n");
 
     // Fragment: circular point shape
-    frag.addVariable({"fragColor", VariableType::Vec4, VariableScope::Global, 0});
-    frag.addGlobal("baseColor", VariableType::Vec4);
-    frag.setFragmentComponent(FragmentShaderComponent::ComputeBaseColor,
-        "    vec2 coord = gl_PointCoord - vec2(0.5);\n"
-        "    if (dot(coord, coord) > 0.25) discard;\n"
-        "    baseColor = v_color;\n");
-    frag.addFunction("void assignFragData(vec4 bc) { fragColor = bc; }\n");
-    frag.setFragmentComponent(FragmentShaderComponent::AssignFragData, "");
+    // Pick 变体整换输出（TD-34——同 polyline 段注；fragColor 从 vec4 global
+    // 换成 R32UI uint 附件输出，基础臂的 vec4 形不声明）。
+    if (featureMode != FeatureMode::Pick) {
+        frag.addVariable({"fragColor", VariableType::Vec4, VariableScope::Global, 0});
+        frag.addGlobal("baseColor", VariableType::Vec4);
+        frag.setFragmentComponent(FragmentShaderComponent::ComputeBaseColor,
+            "    vec2 coord = gl_PointCoord - vec2(0.5);\n"
+            "    if (dot(coord, coord) > 0.25) discard;\n"
+            "    baseColor = v_color;\n");
+        frag.addFunction("void assignFragData(vec4 bc) { fragColor = bc; }\n");
+        frag.setFragmentComponent(FragmentShaderComponent::AssignFragData, "");
+    } else {
+        frag.addGlobal("baseColor", VariableType::Vec4);
+        frag.setFragmentComponent(FragmentShaderComponent::ComputeBaseColor,
+            "    vec2 coord = gl_PointCoord - vec2(0.5);\n"
+            "    if (dot(coord, coord) > 0.25) discard;\n"
+            "    baseColor = v_color;\n");
+    }
 
     // Feature symbology
     if (featureMode != FeatureMode::None) {
         vert.addVariable({"a_featureId", VariableType::Uint, VariableScope::Attribute, 0});
+        // 全局 pick 值 = u_batchId + featureIndex（polyline 分支同注，TD-34）。
+        vert.addVariable({"u_batchId", VariableType::Float, VariableScope::Uniform, 0});
         builder.addVarying("v_featureId", VariableType::Uint);
         vert.setVertexComponent(VertexShaderComponent::ComputeFeatureOverrides,
-            "    v_featureId = a_featureId;\n");
+            "    v_featureId = a_featureId + uint(u_batchId + 0.5);\n");
 
         if (featureMode == FeatureMode::Pick) {
+            // 参考统一 pick 输出（polyline Pick 分支同款注）。EQUIVALENCE
+            // 登记（§11.10）：fragDepthOrder 恒 vec4(0.0)——pointstring 顶点
+            // 面无 modelView/u_frustum（u_mvp 合一， eye-space 不可达——本
+            // builder 的简化形，文件头登记），depthOrder 通道缺席；消费面
+            // readPickData 只读 featureId 附件（pick 深度消费面未接，登记）。
+            frag.addCode("layout(location = 0) out uint fragColor;\n"
+                         "layout(location = 1) out vec4 fragDepthOrder;\n");
             frag.setFragmentComponent(FragmentShaderComponent::AssignFragData,
-                "    fragColor = vec4(\n"
-                "        float(v_featureId & 0xFFu) / 255.0,\n"
-                "        float((v_featureId >> 8) & 0xFFu) / 255.0,\n"
-                "        float((v_featureId >> 16) & 0xFFu) / 255.0,\n"
-                "        float((v_featureId >> 24) & 0xFFu) / 255.0);\n");
+                "    fragColor = 7u;\n"  // TEMP-DIAG(TD-34 pointstring)
+                "    fragDepthOrder = vec4(0.0);\n");
         }
     }
 

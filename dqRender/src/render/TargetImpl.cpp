@@ -923,8 +923,13 @@ void TargetImpl::readPixels(int32_t x, int32_t y, uint32_t width, uint32_t heigh
 
     // TEMP-DIAG（拾取 saga，env 门控）：pick 回读层界证据。
     if (getenv("DANQING_PICK_TRACE")) {
-        printf("[PICK] rect=(%d,%d %ux%u) raw[0]=%u batches=%zu nextBatchId=%u\n",
+        uint32_t nonzero = 0;
+        for (uint32_t i = 0; i < requiredSize; ++i)
+            if (outputBuffer[i] != 0)
+                ++nonzero;
+        printf("[PICK] rect=(%d,%d %ux%u) raw[0]=%u nonzero=%u/%u batches=%zu nextBatchId=%u\n",
                x, y, width, height, outputBuffer ? outputBuffer[0] : 0xDEADu,
+               nonzero, requiredSize,
                m_batchState.getNumBatches(), m_batchState.getNextBatchId());
     }
 
