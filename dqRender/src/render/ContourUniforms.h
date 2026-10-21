@@ -66,9 +66,13 @@ public:
 
     /// Bind contour definitions uniform.
     /// Ported from: itwinjs-core ContourUniforms.bindcontourDefs()
+    ///（ContourUniforms.ts:103-106——`uniform.setUniform4fv(this._contourDefs)`
+    ///   全数组上传；参考 UniformHandle.setUniform4fv 按数组长推导 count=
+    ///   32/4=8——DanQing 显式传 kContourDefsSize[默认 count=1 只会上传首
+    ///   vec4——X-a3 修]）。
     void bindcontourDefs(UniformHandle& uniform) const
     {
-        uniform.setUniform4fv(m_contourDefs.data());
+        uniform.setUniform4fv(m_contourDefs.data(), kContourDefsSize);
     }
 
 private:

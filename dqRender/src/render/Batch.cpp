@@ -2,6 +2,7 @@
 // DanQing dqRender — Batch implementation
 // Ported from: itwinjs-core core/frontend/src/internal/render/webgl/Graphic.ts + BatchState.ts
 #include "Batch.h"
+#include "Contours.h"
 #include "RenderCommands.h"
 
 #include <algorithm>
@@ -11,6 +12,8 @@ BEGIN_DQ_RENDER_NAMESPACE
 // ---------------------------------------------------------------------------
 // Batch
 // ---------------------------------------------------------------------------
+Batch::~Batch() = default;  // unique_ptr<Contours> 不完全类型的出列点（Batch.h 注）
+
 Batch::Batch(uint32_t featureCount)
     : m_featureCount(featureCount)
 {
@@ -463,6 +466,26 @@ ThematicSensors const& Batch::getThematicSensors(
         m_thematicSensorSettings = &settings;
     }
     return *m_thematicSensors;
+}
+
+// ---------------------------------------------------------------------------
+// getContours — per-batch contour group LUT
+// Ported from: itwinjs-core Graphic.ts PerTargetBatchData.getContours
+//              (:135-146——matchesTargetAndFeatureCount 失效重建 / create+
+//              initFromMap 初建 / 否则 update) + Batch.getContours (:327-329)
+// ---------------------------------------------------------------------------
+Contours& Batch::getContours(TargetImpl& target)
+{
+    if (m_contours && !m_contours->matchesTargetAndFeatureCount(target, *m_featureTable))
+        m_contours.reset();
+
+    if (!m_contours) {
+        m_contours = Contours::createFromTarget(target);
+        m_contours->initFromMap(*m_featureTable);
+    } else {
+        m_contours->update(*m_featureTable);
+    }
+    return *m_contours;
 }
 
 END_DQ_RENDER_NAMESPACE

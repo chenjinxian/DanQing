@@ -24,6 +24,7 @@
 #include "SurfaceNormal.h"     // addNormal
 #include "SurfaceTexture.h"    // addTexture
 #include "ThematicDisplayShaders.h"  // addThematicDisplay
+#include "ContourShaders.h"          // addApplyContours（M-X X-a3——Contours.ts:102-151）
 #include "shader/EdgeShaderBuilder.h"      // createEdgeProgramBuilder
 
 #include <string>
@@ -154,6 +155,12 @@ void SurfaceVariantCompiler::buildProgram(ShaderProgram& prog, TechniqueFlags co
             "    vec4 wowColor = vec4(baseColor.rgb * vec3(float(delta.x <= 0.0 || delta.y <= 0.0 || delta.z <= 0.0)), baseColor.a);\n"
             "    return u_reverseWhiteOnWhite ? wowColor : baseColor;\n");
     }
+
+    // --- Contour display ---
+    // Ported from: itwinjs-core Surface.ts:776——`addApplyContours(builder)`
+    // **无条件**编译进 Surface 变体（无 TechniqueFlags 位——运行时门=
+    // u_contourLUTWidth==0u 早退[Contours.ts:17-18]）。M-X X-a3。
+    addApplyContours(builder);
 
     // --- Monochrome display ---
     // Ported from: itwinjs-core Monochrome.ts addSurfaceMonochrome()

@@ -78,6 +78,37 @@ void VertexTableBuilder::computeDimensions(uint32_t nEntries, uint32_t nRgbaPerE
     height = h;
 }
 
+// Ported from: VertexTable.ts computeDimensions (:53-81) — fractional
+// nRgbaPerEntry overload (the reference takes JS numbers; Contours.ts:59 calls
+// with 1/8 texel per feature). Math.ceil applies to the fractional product;
+// the row-alignment modulus is fmod in double (always 0 for 1/8 and integral
+// widths — kept for fidelity).
+void VertexTableBuilder::computeDimensions(uint32_t nEntries, double nRgbaPerEntry,
+                                           uint32_t nExtraRgba, uint32_t maxSize,
+                                           uint32_t& width, uint32_t& height) {
+    const uint32_t nRgba = static_cast<uint32_t>(std::ceil(nEntries * nRgbaPerEntry)) + nExtraRgba;
+
+    if (nRgba <= maxSize) {
+        width = nRgba;
+        height = 1u;
+        return;
+    }
+
+    // Make roughly square to reduce unused space in last row.
+    uint32_t w = static_cast<uint32_t>(std::ceil(std::sqrt(static_cast<double>(nRgba))));
+
+    // Ensure a given entry's RGBA values all fit on the same row.
+    const double remainder = std::fmod(static_cast<double>(w), nRgbaPerEntry);
+    if (remainder != 0.0)
+        w += static_cast<uint32_t>(nRgbaPerEntry - remainder);
+
+    // Compute height.
+    const uint32_t h = static_cast<uint32_t>(std::ceil(static_cast<double>(nRgba) / static_cast<double>(w)));
+
+    width = w;
+    height = h;
+}
+
 // Ported from: VertexTableBuilder.ts convertFloat32 (:450-453).
 //   const u32Array = new Uint32Array(1);
 //   const f32Array = new Float32Array(u32Array.buffer);

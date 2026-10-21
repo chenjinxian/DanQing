@@ -9,6 +9,7 @@
 #include "SceneCompositorImpl.h"
 #include "rhi/opengl/GlLoader.h"
 #include "CachedGeometry.h"
+#include "Contours.h"               // M-X X-a3：逐 batch contour LUT（getContours 消费面）
 #include "ViewportQuadGeometry.h"  // SkySphereViewportQuadGeometry (sky uniforms)
 #include "Material.h"
 #include "SurfaceGeometry.h"
@@ -2586,6 +2587,11 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                         branchParams.viewIndependentOrigin = geometry->viewIndependentOrigin();
                         branchParams.isViewCoords = false;  // viewCoords not yet wired
                         branchParams.wantThematic = m_target.wantThematicDisplay();
+                        // M-X X-a3：wantContourLines 门接线（BranchUniforms.ts:243
+                        // 的 m32 填充门——`uniforms.batch.wantContourLines`；
+                        // 填充后 u_modelToWorldC 才持真值）。
+                        branchParams.wantContourLines =
+                            m_target.getUniforms().batch.wantContourLines();
                         m_target.getUniforms().branch.update(
                             m_branchStack.getTop().getLocalToWorld(),
                             m_target.getViewMatrix(),
@@ -2788,6 +2794,35 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                         //（PlanarGridShaders 的 u_frustum vec3；手写 shader 不走
                         //   CommonShaders 的 ProgramUniform 绑定，须在此显式上传）。
                         params.setVec3("u_frustum", m_target.getFrustumUniforms().getFrustumData());
+                    }
+                    // Contours（M-X X-a3）——逐 batch 特征→等高线组 LUT 供给。
+                    // Ported from: itwinjs-core BatchUniforms._setCurrentBatch
+                    //   :91（`this._contours = undefined !== batch &&
+                    //   this.wantContourLines ? batch.getContours(this._target)
+                    //   : undefined`）+ Contours.ts:121-127/:148-151 的
+                    //   bindContourLUT（GPU 绑=本绘制环——EQUIVALENCE
+                    //   §11.10：参考绑定位=GraphicUniform lambda 内
+                    //   bindSampler；DanQing=绘制环 driver.bindTexture[
+                    //   s_sensorSampler 同族先例，同值同序——本段在
+                    //   shader->draw 前]；sampler 索引 uniform 仍由
+                    //   GraphicUniform 恒写[防 loopback 注 Contours.ts:123-124]；
+                    //   发散=未发现；验证法=ContoursTest + X-a5 像素锁）。
+                    if (m_target.getUniforms().batch.wantContourLines()) {
+                        if (auto* curBatch = m_batchState.getCurrentBatch()) {
+                            if (curBatch->getFeatureTable()) {
+                                auto& contours = curBatch->getContours(m_target);
+                                m_target.getUniforms().batch.setContours(&contours);
+                                if (auto const tex = contours.getTexture();
+                                    tex != rhi::TextureHandle{}) {
+                                    constexpr uint32_t kContourTexUnit =
+                                        static_cast<uint32_t>(GL::TextureUnit::Contours)
+                                        - static_cast<uint32_t>(GL::TextureUnit::Zero);  // =14
+                                    driver.bindTexture(kContourTexUnit, tex);
+                                    params.setInt("u_contourLUT",
+                                                  static_cast<int>(kContourTexUnit));
+                                }
+                            }
+                        }
                     }
                     {
                         auto const tBind0 = std::chrono::steady_clock::now();

@@ -40,6 +40,8 @@
 BEGIN_DQ_RENDER_NAMESPACE
 
 class RenderSystemImpl;  // forward-declare for bindLUT (avoids circular include)
+class TargetImpl;        // M-X X-a3：BatchUniforms.m_target（参考 BatchUniforms._target）
+class Contours;          // M-X X-a3：BatchUniforms.m_contours（参考 BatchUniforms._contours）
 
 // ---------------------------------------------------------------------------
 // BatchUniforms — per-batch uniforms  [STUB — pending 1:1 extraction]
@@ -179,15 +181,41 @@ public:
     /// Definition is out-of-line in BatchUniforms.cpp (needs RenderSystemImpl).
     void bindLUT(UniformHandle& uniform, RenderSystemImpl* system, uint32_t unit) const;
 
-    // TODO: bindThematicSensors (GPU texture bind),
-    //       bindContourLUT/bindContourLUTWidth — these need GPU texture binding +
-    //       the _contours member plumbed through setCurrentBatch (depend on a
-    //       Contours class + Batch.getThematicSensors/getContours + Target state,
-    //       not yet present).
+    // ── Contours（M-X X-a3——Uniforms.h 原 TODO[:182-189]勾销）────────────
+    /// 当前 batch 的 Contours LUT（参考 BatchUniforms._contours——
+    ///   _setCurrentBatch :91 的 `undefined !== batch && wantContourLines ?
+    ///   batch.getContours(target) : undefined`；DanQing 的绘制环供给面
+    ///   =SceneCompositorImpl 表面绘制段[setSensors 同族先例]）。
+    void setContours(Contours const* contours) noexcept { m_contours = contours; }
+    Contours const* getContours() const noexcept { return m_contours; }
+
+    /// Target 反挂（参考 BatchUniforms ctor 的 `target: Target`
+    ///   [BatchUniforms.ts:42-45]——DanQing 成员初始化序适配：TargetImpl
+    ///   ctor 体内 setTarget(this)）。
+    void setTarget(TargetImpl const* target) noexcept { m_target = target; }
+
+    /// Whether the current view wants contour lines.
+    /// Ported from: itwinjs-core BatchUniforms.wantContourLines
+    ///   （BatchUniforms.ts:110-113——`currentBranch.contourLine` 在场 &&
+    ///   displayContours && groups.length>0；BranchUniforms.update :243 的
+    ///   m32 填充门 + _setCurrentBatch :91 的 LUT 供给门同读）。定义出列
+    ///   BatchUniforms.cpp（TargetImpl 完整类型面）。
+    bool wantContourLines() const noexcept;
+
+    /// Bind the per-batch contour LUT sampler（Contours.bindContourLUT
+    ///   [:148-151]面——GPU 纹理绑=绘制环 EQUIVALENCE[s_sensorSampler 同族]；
+    ///   本面=sampler 单元索引 uniform 恒写[Contours.ts:123-124 的防 loopback
+    ///   注]）。
+    void bindContourLUT(UniformHandle& uniform) const;
+
+    /// Bind the contour LUT width（Contours.bindContourLUTWidth[:144-146]；
+    ///   无 LUT 时写 0=着色器早退门[Contours.ts:17-18]）。
+    void bindContourLUTWidth(UniformHandle& uniform) const;
 
     /// Set the current batch: assign batchId, resolve overrides + feature mode.
     /// Ported from: itwinjs-core BatchUniforms.setCurrentBatch() (line 51-92)
-    /// TODO: thematic sensors + contours (need ThematicSensors/Contours wiring).
+    ///（_contours 供给腿[:91]归 SceneCompositorImpl 表面绘制段——DanQing
+    ///  的绘制环等价面，M-X X-a3）。
     void setCurrentBatch(Batch& batch, BatchState& state)
     {
         state.assignBatchId(batch);  // assign unique batch ID (reference push does this internally)
@@ -228,6 +256,8 @@ private:
     uint8_t m_featureMode = 0;  // 0=None, 1=Pick, 2=Overrides
     FeatureOverrideLUT const* m_overrides = nullptr;
     ThematicSensors const* m_sensors = nullptr;  // Ported from BatchUniforms._sensors
+    Contours const* m_contours = nullptr;        // Ported from BatchUniforms._contours（M-X X-a3）
+    TargetImpl const* m_target = nullptr;        // 参考 BatchUniforms._target（M-X X-a3）
 };
 
 // ---------------------------------------------------------------------------

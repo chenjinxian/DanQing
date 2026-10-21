@@ -122,6 +122,15 @@ public:
                                   uint32_t nExtraRgba, uint32_t maxSize,
                                   uint32_t& width, uint32_t& height);
 
+    // 分数 nRgbaPerEntry 重载（M-X X-a3）——参考签名即 JS number（VertexTable.ts
+    // :46 全 double 域）；Contours 的 LUT 以 1/8 texel/特征调用（Contours.ts:59
+    // `computeDimensions(this._numFeatures, 1 / 8, 0, maxTextureSize)`——每
+    // RGBA texel 装 8 特征[4 字节×2 nibble]）。整数输入语义与原重载逐值相等
+    //（fmod 行对齐对 1/8 恒零——整数宽必被 0.125 整除）。
+    static void computeDimensions(uint32_t nEntries, double nRgbaPerEntry,
+                                  uint32_t nExtraRgba, uint32_t maxSize,
+                                  uint32_t& width, uint32_t& height);
+
 private:
     // Ported from: VertexTableBuilder.ts convertFloat32 (:450-453).
     // Reinterprets IEEE-754 float bits as uint32 via memcpy (no conversion).

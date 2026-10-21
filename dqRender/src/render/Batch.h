@@ -28,6 +28,9 @@
 
 BEGIN_DQ_RENDER_NAMESPACE
 
+class Contours;    // M-X X-a3（m_contours unique_ptr 不完全类型面）
+class TargetImpl;
+
 // ---------------------------------------------------------------------------
 // BatchContext — context for a batch during rendering
 // Ported from: itwinjs-core Graphic.ts BatchContext (line 83-89)
@@ -61,6 +64,10 @@ public:
     /// tests): packs via PackedFeatureTable::pack — the reference callers'
     /// `createBatch(graphic, PackedFeatureTable.pack(featureTable), range)`.
     Batch(uint32_t featureCount, std::unique_ptr<dqCommon::FeatureTable> featureTable);
+
+    // unique_ptr<Contours> 不完全类型成员要求析构出列（Contours 完整类型在
+    // Batch.cpp 面）。M-X X-a3。
+    ~Batch() override;
 
     /// Set the child graphic (the geometry to render under this batch).
     void setChild(std::unique_ptr<Graphic> child) { m_child = std::move(child); }
@@ -115,6 +122,22 @@ public:
         dqGeom::Transform const& localToWorld,
         dqGeom::Transform const& viewMatrix,
         rhi::Driver* driver);
+
+    /// Get the per-batch contour group LUT（M-X X-a3——Graphic.ts:135-146 的
+    /// PerTargetBatchData.getContours + Batch.getContours :327-329）。
+    /// 缓存失效 = matchesTargetAndFeatureCount（Contours.ts:37-40——target
+    /// 同一性 + numFeatures 等；Contours.update 的 matchesSubCategories 腿
+    /// [:42-54]在 update 内）。
+    /// EQUIVALENCE（§11.10）：参考缓存是 per-target-per-batch 二维
+    /// （PerTargetBatchData）；DanQing 缓存挂 batch 单维（ThematicSensors
+    /// 缓存同族先例——Batch.h:226）——多 target 共享 batch 且各 target
+    /// contours 不同值时逐帧重建（matchesTargetAndFeatureCount 的 target
+    /// 同一性腿兜住正确性；本仓 DTA 面单视口形态为主）。
+    /// 验证法 = ContoursTest.BatchGetContoursCachesPerFeatureCount。
+    /// 前置：调用方须保证 wantContourLines（BatchUniforms._setCurrentBatch
+    /// :91 的门）且 featureTable 非空（Contours._initialize :57 assert）。
+    Contours& getContours(TargetImpl& target);
+    Contours const* peekContours() const noexcept { return m_contours.get(); }
 
     /// Get the feature override LUT (may be nullptr).
     FeatureOverrideLUT const* getFeatureOverrideLUT() const noexcept { return m_featureOverrideLUT.get(); }
@@ -223,6 +246,7 @@ private:
     // （2026-10-20 UI 卡顿根因；TD-33 清偿面）。
     std::unique_ptr<dqCommon::PackedFeatureTable> m_featureTable;
     std::unique_ptr<FeatureOverrideLUT> m_featureOverrideLUT;
+    std::unique_ptr<Contours> m_contours;                  // M-X X-a3：逐 batch contour LUT 缓存
     std::optional<ThematicSensors> m_thematicSensors;      // M-S S-e：逐 batch 传感器缓存
     dqCommon::ThematicDisplaySensorSettings const* m_thematicSensorSettings = nullptr;  // 缓存失效判据（指针同一性）
     BatchContext m_context;

@@ -62,6 +62,11 @@ inline void addVertexTable(ProgramBuilder& builder, bool quantized,
 {
     auto& vert = builder.getVertexBuilder();
 
+    // M-X X-a3：usesVertexTable 置位（VertexShaderBuilder.usesVertexTable 的
+    // DanQing 承载——ShaderBuilder.h 注；消费面=addApplyContours 的
+    // getFeatureIndex 体选择[FeatureSymbology.ts:77]）。
+    vert.setUsesVertexTable(true);
+
     // --- Globals ---
     // Ported from: itwinjs-core Vertex.ts addPositionFromLUT() line 217-220
     vert.addGlobal("g_vertexLUTIndex", VariableType::Float);

@@ -396,6 +396,17 @@ public:
     bool usesInstancedGeometry() const noexcept { return m_usesInstancedGeometry; }
     void setUsesInstancedGeometry(bool v) noexcept { m_usesInstancedGeometry = v; }
 
+    /// Whether this (vertex) builder sources positions from a vertex LUT table.
+    /// Ported from: itwinjs-core VertexShaderBuilder.usesVertexTable
+    ///   （ShaderBuilder.ts:728-730——`undefined !== this._flags.positionType`；
+    ///   DanQing 无 positionType builder 旗标，由 addVertexTable[VertexTable.h:60
+    ///   的 LUT 接线唯一入口]置位——同一真值源，EQUIVALENCE：发散=未发现
+    ///   [addVertexTable 只在 LUT 形态调用]；验证法=ContoursTest 变体源锁）。
+    /// 消费面：addApplyContours 的 getFeatureIndex 体选择（FeatureSymbology.ts
+    ///   :77——顶点表形态读 g_featureAndMaterialIndex）。
+    bool usesVertexTable() const noexcept { return m_usesVertexTable; }
+    void setUsesVertexTable(bool v) noexcept { m_usesVertexTable = v; }
+
     /// Opt in to the function-call vertex-main convention (itwinjs
     /// VertexShaderBuilder.buildSource): each set slot is emitted as a named
     /// GLSL function + a call in main(), with rawPosition/baseColor threaded.
@@ -468,6 +479,7 @@ private:
     std::string m_version = "410 core";
     ShaderStage m_stage = ShaderStage::Vertex;
     bool m_usesInstancedGeometry = false;  // Ported from VertexShaderBuilder.usesInstancedGeometry
+    bool m_usesVertexTable = false;        // Ported from VertexShaderBuilder.usesVertexTable（M-X X-a3）
     bool m_functionCallVertMain = false;   // opt-in function-call vertex main (see setter)
     bool m_functionCallFragMain = false;   // opt-in function-call fragment main (see setter)
     ShaderBuilderFlags m_flags;

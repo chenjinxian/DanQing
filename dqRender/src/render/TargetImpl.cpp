@@ -63,6 +63,11 @@ TargetImpl::TargetImpl(RenderSystemImpl& system, Techniques& techniques, ViewRec
     // 生产上传通道（参考 Texture2DHandle 全局 GL 门面 → 注入 driver）。
     m_clipStack.setDriver(&m_system.getDriver());
 
+    // M-X X-a3：BatchUniforms 的 target 反挂（参考 BatchUniforms ctor
+    //   `constructor(target, batchState)`[BatchUniforms.ts:42-45]——
+    //   wantContourLines 读 currentBranch.contourLine 的面）。
+    m_uniforms.batch.setTarget(this);
+
     // Create a render target for this viewport
     m_renderTarget = m_system.getDriver().createRenderTarget(
         rhi::TargetBufferFlags::ALL, rect.width(), rect.height(), 1, 1);
