@@ -13,6 +13,8 @@
 // 判据（§11.11）：量值（帧差显著）+ 位置（500 marker 布满取景域 →
 // 四象限带差分均在场）+ 可逆（toggle off 帧差回落基线）。随机源经
 // rand01 注入固定种子（XE16 确定性；ctor nullptr = 参考非确定语义）。
+// 首跑钉值（2026-10-22 主会话收口，Debug 1000×700 逻辑/dpr2）：diffOn=260,541
+// /四象限 39872/45548/36974/37598/diffOff=0——阈值保守下界余量 ~130×/~400×/逐位。
 #include <gtest/gtest.h>
 #include <QApplication>
 #include <QCoreApplication>
@@ -22,6 +24,7 @@
 #include "View3DInventor.h"
 
 #include <dqApp/Application.h>
+#include <dqApp/IModelConnection.h>
 #include <dqApp/ViewManager.h>
 #include <dqApp/Viewport.h>
 
