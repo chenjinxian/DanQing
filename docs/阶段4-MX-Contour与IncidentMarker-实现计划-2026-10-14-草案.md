@@ -159,3 +159,15 @@ ClassifierTileTree 全文定案。
 - **W-b2 解堵件**：A 道 BSplineCurve3d+KnotVector 子集移植后 B 道回做。
 
 
+
+## 6. 完成实录（2026-10-23 收口回填）
+
+**提交账**（主干序）：ca4247486f（X-p0 锚点）→ 10e670e384（计划正式化）→ A 道七笔（7382427196 a1 / 5ad3f0a9e1 a2 / 48863a046a a3 / 6d077feae0 a4 / b1c150c12d a5 / 8c32ce52f4 fix1 / 771ab367c4 fix2）→ B 道（merge 7da0c0c880 含 e075dbfae9 b1+73ebf2cd3b b2+修复 67b780e9ea..8a16b83317 两轮）→ 主会话集成件（208eb864e9 真窗锁+ab79d37324 钉值）→ C 道（8aa0fb97af ContoursPanel）→ AV 修复双轮（15e5c44ceb batch-fix / 833b72f5f1 batch-fix2）。
+
+**门禁**（2026-10-23 收口，Debug，正确二进制[fix2 重建]）：**2950 项 = 2948 通过 + 1 跳过族区 + 2 失败均隔离绿**（MinimizeRestore=TD-29 签名；ReopenReloads=M-Y 在册移交项）。四真窗 AV 测试全过（MdiAcsDisc 机器态内核冻结 ×2=非代码[40/40+12/12 干净证据在案]，剔除跑）。dump 族全绿（fix2 实证）。dqRenderTest 793/dqCommonTest 520/dqAppTest 480/DisplayTestAppTest 139。
+
+**AV saga 全账**：收口门禁四真窗 SEH 0xc0000005 翻转态 → A/B 净基线对照（基线 12/12 vs 合并后翻转）→ 主会话增量 bisect 作废（跨公共头 stale-obj 混合——§11.11 教训第四次实录）→ 专案定音 H4（TD-35 每帧产批 × TD-36 注册表双缺口=悬垂 Batch* UAF；M-X 为布局/时序放大器非引入者）→ batch-fix（装饰路径 ×40 160/160）→ 门禁抓出瓦批路径回归（fix1 在 dump teardown 序下反指针悬垂——验证面盲区实证）→ batch-fix2（析构双向闭合）→ 正确二进制门禁 99.9%+2 隔离绿。**TD-36 登记+清偿**（CLAUDE.md §14）；TD-35 增注（暴露器角色）。
+
+**移交项（M-X 域外）**：①bridge-edit 数据面 `-b-1-0-0-0-1` 键全根 error=1（净基线三轮同败——B 道报告+fix 轮 2 两次移交；数据补采域调查）；②BridgeEditLodCoverageDiagnostic 同 signature（与①同源候选）；③MdiAcsDisc 机器态内核冻结 ×2（修复后干净证据 52 轮在案——留痕观察）；④P-2 newBridge 采集进行中（独立任务，sweep 20GB budget-capped 已收口/d9 续采波待跑/仓内集成排 M-X 后）。
+
+**裁决全录**：见 .superpowers/sdd/…M-X…/progress.md（A/B 并行编排、Marker 分 B 道、Important-2 锁重推导、AV 根因 H4、验证规模×40→×10→一轮门禁[用户流程纠偏：低概率缺陷 A/B 定案后立即升级专案，不做无仪器概率轮]）。

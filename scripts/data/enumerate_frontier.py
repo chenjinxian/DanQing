@@ -15,7 +15,7 @@ Reference semantics (itwinjs-core@88da8fb9):
 """
 import json, os, struct, sys
 
-DUMP = r"D:\Github\DanQing\third_party\tile-sample-assets\rpc-dumps\bridge-edit-sweep-v1"
+DUMP = os.environ.get("FRONTIER_DUMP") or r"D:\Github\DanQing\third_party\tile-sample-assets\rpc-dumps\bridge-edit-sweep-v1"  # P-2：FRONTIER_DUMP 可覆写（newBridge 等 budget-capped 中途树的前沿估算）
 TARGET_DEPTH = int(sys.argv[1]) if len(sys.argv) > 1 else 12
 OUT = sys.argv[2] if len(sys.argv) > 2 else r"D:\Github\DanQing\build\frontier-keys.txt"
 
