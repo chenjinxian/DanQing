@@ -12,14 +12,17 @@
 //
 // 锁序（声明序非 dump 先行——防跨测试污染；TD-31 取证另见 MinimalSolidBox
 // 内的 fetcher 重挂注记）：
-//   1. MinimalSolidBoxHeightAndSlopeAreExact——tileset 三板收敛锁（thematic
-//      重上色后三板收敛同族、与原色全不同；Slope 臂分流实证）。
+//   1. MinimalSolidBoxHeightAndSlopeAreExact——tileset 三板收敛锁（资产=恒
+//      z 平板[修复轮 2 取证 rawPosition.z≡0.047]：重上色后三板收敛同族 +
+//      中/右板变色铁证[左板与 gradient 撞色——见内注]；Slope 臂分流实证）。
 //   2. TallBoxGradientSweepIsExact——2×2×10 盒（GraphicType::Scene 挂接——
 //      WorldDecoration 对 thematic 豁免是参考刻意语义[Target.ts:236-243/
-//      Graphic.ts:484-491]，S-e 取证后改挂）；TD-30 z 压平形态下 Height 段
-//      全域低端纯蓝、Slope 段侧面归白端。
-//   3. HeightGradientColorsByWorldZAndRestores——joeshouse Height（蓝族主导
-//      + 蓝道 stdB 展布 + 关闭恢复精确）。
+//      Graphic.ts:484-491]，S-e 取证后改挂）；修复轮 2 重推导——X-a5 真值
+//      后 Height 段真垂直渐变方向（高 z 暖/低 z 冷；幅度受 TD-30 z 压缩
+//      ——方向+换色为准）、Slope 段侧面归白端。
+//   3. HeightGradientColorsByWorldZAndRestores——joeshouse Height（世界 z
+//      排序方向锁[高 z 带暖/低 z 带冷——修复轮 2 重推导] + 蓝道 stdB 展布 +
+//      关闭恢复精确）。
 //   4. SlopeDistinguishesVerticalFromFlat——joeshouse Slope（Custom 双色键，
 //      关光照纯渐变域：竖直面 ndx=1 白族 487891 / 水平面 ndx=0 暗族 557104
 //      ——S-e 视空间归位后钉值）。
@@ -333,15 +336,19 @@ TEST(ThematicDisplayE2E, MinimalSolidBoxHeightAndSlopeAreExact)
     auto const h0 = panelColor(frame, 0), h1 = panelColor(frame, 1), h2 = panelColor(frame, 2);
     printf("[THM] box height panels: (%d,%d,%d) (%d,%d,%d) (%d,%d,%d)\n",
            h0[0], h0[1], h0[2], h1[0], h1[1], h1[2], h2[0], h2[1], h2[2]);
-    // ①重上色发生：基线三板相异（红/绿/蓝 >100 通道和）→ 高态收敛（≤40）即
-    // 重上色铁证（无重上色不可能从相异收敛）；左右板各自变色（中板绿×中域
-    // 渐变绿巧合不排除——钉左右板）。
     auto chanDist = [](std::array<int, 3> const& a, std::array<int, 3> const& b) {
         return std::abs(a[0] - b[0]) + std::abs(a[1] - b[1]) + std::abs(a[2] - b[2]);
     };
     EXPECT_GT(chanDist(base0, base1), 100);  // 基线相异性自检（资产色）
     EXPECT_GT(chanDist(base1, base2), 100);
-    EXPECT_GT(chanDist(h0, base0), 60);      // 红板 → 渐变族
+    // ①重上色（修复轮 2 重推导）：资产为**恒 z 平板**（俯视取景——FRAGDBG=5
+    // 取证 rawPosition.z≡0.047 全几何常值），Height ndx 每板恒定 → 三板各单
+    // 色、同 z → 收敛同色。重上色证明钉中/右板（左板 red 本色与
+    // gradient(0.694)=(177,1,1) 撞色[修复轮 2 实测 chanDist(h0,base0)=0]——
+    // 左板的重上色经收敛传递证明：h0≈h1 且 h1≠base1）。列内垂直渐变判据对
+    // 本资产不可达（恒 z 几何）；真 z 渐变方向锁在全控 3D 盒锁
+    // [TallBoxGradientSweepIsExact] 与真模型锁[HeightGradientColors]。
+    EXPECT_GT(chanDist(h1, base1), 60);      // 绿板 → 渐变族
     EXPECT_GT(chanDist(h2, base2), 60);      // 蓝板 → 渐变族
     // ②收敛：三板同高 → 同色（两两差 ≤40/通道和——光照角度微差容限）。
     EXPECT_LE(chanDist(h0, h1), 40);
@@ -530,26 +537,36 @@ TEST(ThematicDisplayE2E, TallBoxGradientSweepIsExact)
     pumpStable(frame, w, h);
     dumpBmpTHM(frame, w, h, DANQING_TILE_ASSETS_DIR "/../../build/thematic-tallbox-height.bmp");
 
-    // 判据（Height 本件如实面）：**取证实录——PrimitiveBuilder 网格路径把本盒
-    // 的顶点 z 压平**（v_thematicIndex 全程≈0：box 网格 rawPosition.z 恒 0，
-    // 与 PolyfaceBuilder 的 z∈[0,10] 源数据分离——GeometryAccumulator→
-    // MeshBuilder 链的独立缺陷，登记 TD-30，非 thematic 面）。当前真实形态 =
-    // 全盒 ndx=0 → 渐变低端纯蓝均色（BlueRed row0）。断言：内容区全域蓝族
-    //（渐变纹理+链消费实证）+ 基线（白盒）已变。
-    long blueAll = 0, totalC = 0;
+    // 判据（修复轮 2 重推导——X-a5 后 u_modelToWorld 真值上传）：**真垂直
+    // 渐变方向**——盒 z∈[0,10] 对 range=[0,10]，世界 z 高 →ndx 高→暖通道、
+    // z 低 →ndx 低→冷通道（方向=参考 Height 语义；幅度受 TD-30 网格路径 z
+    // 压缩[渐变带收窄至绿/黄段]——幅度非本锁变量面，方向+换色为准）。
+    long satAll = 0, totalC = 0;
     for (uint32_t y = 0; y < h; ++y)
         for (uint32_t x = uint32_t(w * 0.2); x < uint32_t(w * 0.8); ++x) {
             uint8_t const* p = &frame[(static_cast<size_t>(y) * w + x) * 4];
             int const r = p[0], g = p[1], b = p[2];
             if (r + g + b < 30)
-                continue;
+                continue;  // 黑底
             ++totalC;
-            if (b >= 90 && b > r + 40 && b > g)
-                ++blueAll;
+            int const mx = std::max(r, std::max(g, b)), mn = std::min(r, std::min(g, b));
+            if (mx - mn > 40)
+                ++satAll;  // 饱和（渐变色族；基线白盒 max−min=0）
         }
-    printf("[THM] tallbox height: blueAll=%ld/%ld\n", blueAll, totalC);
-    EXPECT_GT(blueAll, 1000L);
-    EXPECT_GT(blueAll * 2, totalC);  // 主导（内容区多数蓝族）
+    // 帧行序 = GL 自底向上（raw y 小 = 屏幕下方 = 低 z）：高 z 带 = raw
+    // 0.75h（实测 (255,247,0) 暖），低 z 带 = raw 0.30h（实测 (0,255,26) 冷）。
+    auto tallAt = [&](double fx, double fy) {
+        uint8_t const* p = &frame[(static_cast<size_t>(uint32_t(h * fy)) * w
+                                   + uint32_t(w * fx)) * 4];
+        return std::array<int, 3>{p[0], p[1], p[2]};
+    };
+    auto const hiZ = tallAt(0.5, 0.75), loZ = tallAt(0.5, 0.30);
+    printf("[THM] tallbox height: sat=%ld/%ld hiZ(0.75h)=(%d,%d,%d) loZ(0.30h)=(%d,%d,%d)\n",
+           satAll, totalC, hiZ[0], hiZ[1], hiZ[2], loZ[0], loZ[1], loZ[2]);
+    EXPECT_GT(totalC, 1000L);
+    EXPECT_GT(satAll * 3, totalC * 2);       // 换色铁证：内容区多数饱和渐变色（基线=白）
+    EXPECT_GT(hiZ[0] - loZ[0], 120);         // R 随世界 z 上升（高 z 暖——方向锁）
+    EXPECT_GT(loZ[2] - hiZ[2], 15);          // B 随世界 z 下降（低 z 冷）
 
     // --- Slope：顶面暗（#404040 族）侧面亮（白族）——Custom 双色键 ---
     {
@@ -671,13 +688,19 @@ TEST(ThematicDisplayE2E, HeightGradientColorsByWorldZAndRestores)
     printf("[THM] height-on changed px = %ld / %u\n", changed, f.w * f.h);
     EXPECT_GT(changed, 100000L);
 
-    // ②内容形态（数据形状如实——S-d 取证：房体在内容 z 带内 ndx≤0.15 的
-    // BlueRed 蓝端区[extents 高杆是边族不进 thematic]，方向断言不可钉——
-    // 方向终证在全控盒锁[TallBoxGradientSweepIsExact]）：内容带内蓝族主导
-    //（BlueRed 低端被消费——渐变纹理+模式+链全通）+ 蓝通道非恒值（渐变
-    // 逐顶点计算的形状锁——恒色则方差≈0；首绿实测 stddev=57.8 钉 20）。
+    // ②内容形态（修复轮 2 重推导——X-a5 后 u_modelToWorld 真值上传，ndx 按
+    // 真世界 z 全程展开：房体 z∈[-0.3,4.5] 铺满 range=[-0.5,5.0] → 低 z 带
+    // （墙基）落渐变冷段、高 z 带（屋顶）几乎无冷像素——**冷像素 z 分布方向
+    // 锁**（旧"蓝族主导"判据是 u_modelToWorld 零矩阵时代 ndx 恒低端的退化
+    // 形态钉值，X-a5 真值化后失效；暖均值差信号弱[光照混合+帧间瓦级差异
+    // 6.5~17 波动——修复轮 2 两轮实测]不采用）。帧行序 = GL 自底向上（raw
+    // y 小 = 屏幕下方 = 低 z）：低 z 带 = raw[0.20h,0.45h]、高 z 带 =
+    // raw[0.65h,0.80h]。实测（lit 帧）：冷占比(b>r+30) 低 z 带 24.6% vs
+    // 高 z 带 0.7%（61× 分离）、低 z 带 meanB−meanR=+20.6。蓝通道方差保持
+    //（渐变逐顶点变化形状锁）。
     uint32_t const w = f.w, h = f.h;
-    long blueDom = 0, total = 0;
+    long total = 0, coldHi = 0, nHi = 0, coldLo = 0, nLo = 0;
+    double srLo = 0, sbLo = 0;
     double sumB = 0.0, sumB2 = 0.0;
     for (uint32_t y = uint32_t(h * 0.20); y < uint32_t(h * 0.80); y += 2)
         for (uint32_t x = uint32_t(w * 0.30); x < uint32_t(w * 0.70); x += 2) {
@@ -688,15 +711,29 @@ TEST(ThematicDisplayE2E, HeightGradientColorsByWorldZAndRestores)
             ++total;
             sumB += b;
             sumB2 += double(b) * b;
-            if (b > r && b > g)
-                ++blueDom;
+            bool const hiZBand = y >= uint32_t(h * 0.65);  // 屏幕=屋顶带（高 z）
+            bool const loZBand = y < uint32_t(h * 0.45);   // 屏幕=墙基带（低 z）
+            if (hiZBand) {
+                ++nHi;
+                if (b > r + 30) ++coldHi;
+            } else if (loZBand) {
+                ++nLo; srLo += r; sbLo += b;
+                if (b > r + 30) ++coldLo;
+            }
         }
     double const meanB = sumB / std::max(1L, total);
     double const stdB = std::sqrt(std::max(0.0, sumB2 / std::max(1L, total) - meanB * meanB));
-    printf("[THM] content blue: dominant=%ld/%ld meanB=%.1f stdB=%.2f\n",
-           blueDom, total, meanB, stdB);
-    EXPECT_GT(blueDom, total / 2);   // 蓝族主导（BlueRed 低端消费实证）
-    EXPECT_GT(stdB, 20.0);           // 渐变逐顶点变化（恒色形态锁）
+    double const coldFracHi = double(coldHi) / std::max(1L, nHi);
+    double const coldFracLo = double(coldLo) / std::max(1L, nLo);
+    double const coldExcessLoZ = sbLo / std::max(1L, nLo) - srLo / std::max(1L, nLo);
+    printf("[THM] content z-order: cold(hiZ)=%ld/%ld(%.1f%%) cold(loZ)=%ld/%ld(%.1f%%)"
+           " loZ(B-R)=%.1f meanB=%.1f stdB=%.2f\n",
+           coldHi, nHi, coldFracHi * 100.0, coldLo, nLo, coldFracLo * 100.0,
+           coldExcessLoZ, meanB, stdB);
+    EXPECT_GT(coldExcessLoZ, 15.0);            // 低 z 带：冷通道占优（ndx 低段）
+    EXPECT_GT(coldFracLo, 0.10);               // 冷像素低 z 带成片（≥10%）
+    EXPECT_LT(coldFracHi, 0.03);               // 高 z 带几乎无冷像素（<3%）
+    EXPECT_GT(stdB, 20.0);                     // 渐变逐顶点变化（恒色形态锁）
 
     // ③关闭恢复（vf.thematicDisplay=false——plan.thematic 缺席→uniforms 清态）。
     {

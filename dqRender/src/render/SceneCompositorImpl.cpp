@@ -1944,12 +1944,16 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     //  落地——参考经 TextureUnit.SurfaceTexture=2 接管
                     //  s_texture。）
 
-                    // Set contour uniforms for contour line rendering.
-                    // Ported from: itwinjs-core Contours.ts uniform binding
-                    // The u_contourDefs array is bound via ContourUniforms::bindcontourDefs().
-                    // The u_contourLUT and u_contourLUTWidth are bound via BatchUniforms.
-                    // The model-to-world transform is used for height computation.
-                    params.setMatrix4("u_modelToWorldC", m_branchStack.getCurrentMv().data());
+                    // Contour uniforms（M-X X-a3）：全数经 GraphicUniform/
+                    // ContourUniforms 注册面（ContourShaders.h——参考
+                    // glsl/Contours.ts:121-146：u_contourLUT/u_contourLUTWidth
+                    // ← BatchUniforms、u_contourDefs ← ContourUniforms、
+                    // u_modelToWorldC ← branch.bindModelMatrix）。修复轮 2：
+                    // 此处的名值上传 `setMatrix4("u_modelToWorldC", MV)` 是
+                    // 初创脚手架残留（X-a4 清退 ContourLines 时漏删——写的还是
+                    // MV 而非 model），且 uploadUniforms 在 GraphicUniform 之后
+                    // 执行（每程序首帧会用错误矩阵绘制一次——首绘瑕疵）。
+                    // 参考无此路径，删除。
 
                     // Set technique-specific uniforms
                     if (techniqueId == TechniqueId::Surface) {
@@ -2919,6 +2923,43 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     // to GraphicUniform/ProgramUniform bindings in a later sweep.
                     // No-op if the program failed to compile (null GL handle).
                     shader->uploadUniforms(driver, params);
+                    // [THM-final] 取证探针（修复轮 2，env 门控 DANQING_CONTOUR_TRACE
+                    // ——§13.1 族，[CONTOUR-post] 的终态姊妹）：uploadUniforms 之后
+                    // / geometry->draw 之前的 uniform 终态（GraphicUniform 派发 +
+                    // 名值上传的净结果）——thematic u_modelToWorld 与 contour
+                    // u_modelToWorldC 的 GPU 实收 vs CPU m_model 对账 + 双门
+                    // （wantThematic/wantContourLines）。
+                    if (getenv("DANQING_CONTOUR_TRACE")) {
+                        GLuint const tProg = shader->getGlProgram();
+                        if (tProg != 0) {
+                            auto row2 = [&](char const* name, float* out4) {
+                                out4[0] = out4[1] = out4[2] = out4[3] = -9;
+                                GLint const loc = dqglGetUniformLocation(tProg, name);
+                                if (loc >= 0) {
+                                    GLfloat m16[16];
+                                    dqglGetUniformfv(tProg, loc, m16);
+                                    out4[0] = m16[2]; out4[1] = m16[6];
+                                    out4[2] = m16[10]; out4[3] = m16[14];
+                                }
+                            };
+                            float mw[4], mwc[4];
+                            row2("u_modelToWorld", mw);
+                            row2("u_modelToWorldC", mwc);
+                            float const* cpuModel =
+                                m_target.getUniforms().branch.getModelMatrix();
+                            std::fprintf(stderr,
+                                "[THM-final] u_modelToWorld row2=(%.2f,%.2f,%.2f,%.2f)"
+                                " u_modelToWorldC row2=(%.2f,%.2f,%.2f,%.2f)"
+                                " cpu_m_model row2=(%.2f,%.2f,%.2f,%.2f)"
+                                " wantThematic=%d wantContour=%d\n",
+                                mw[0], mw[1], mw[2], mw[3],
+                                mwc[0], mwc[1], mwc[2], mwc[3],
+                                cpuModel[2], cpuModel[6], cpuModel[10], cpuModel[14],
+                                (int)m_target.wantThematicDisplay(),
+                                (int)m_target.getUniforms().batch.wantContourLines());
+                            std::fflush(stderr);
+                        }
+                    }
                 }
 
                 auto const tGeom0 = std::chrono::steady_clock::now();
