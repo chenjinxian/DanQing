@@ -481,7 +481,11 @@ template<typename T>
 double MarkerSet<T>::getMinScaleViewW(Viewport& vp)
 {
     if (!m_minScaleViewW.has_value())
-        m_minScaleViewW = getMinScaleViewW(vp);
+        // 调用点命名空间限定（修复轮 2）：自由函数与本成员同名共存（参考
+        // Marker.ts:46 自由函数 vs :417 成员——TS 下方法不经 this. 不入
+        // 调用作用域故安全）；C++ 类作用域查找命中成员即终止且抑制 ADL，
+        // 非限定调用命中成员自身 = 无限自递归——`dqApp::` 限定为自由函数。
+        m_minScaleViewW = dqApp::getMinScaleViewW(vp);
     return *m_minScaleViewW;
 }
 

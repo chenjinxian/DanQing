@@ -92,10 +92,12 @@ struct TestMarker : public Marker {
     }
 };
 
-// 测试 MarkerSet——聚类创建计数 + entries 检视。
+// 测试 MarkerSet——聚类创建计数 + entries 检视 + m_minScaleViewW 暴露
+//（Marker.ts:365 的 protected 成员——修复轮 2 锁的观测面）。
 struct TestMarkerSet : public MarkerSet<TestMarker> {
     using MarkerSet<TestMarker>::MarkerSet;
     using MarkerSet<TestMarker>::entriesCountForTest;
+    using MarkerSet<TestMarker>::m_minScaleViewW;
     int clusterMarkerCalls = 0;
     Marker* getClusterMarker(Cluster<TestMarker>& cluster) override
     {
@@ -212,6 +214,41 @@ TEST(MarkerTest, SetPositionScaleFactorInertOnOrthoView)
     // rect 未缩放（:277 的 scaleAboutCenter 在 isCameraOn 门内）。
     EXPECT_EQ(marker.rect.width(), 30);
     EXPECT_EQ(marker.rect.height(), 30);
+}
+
+// Authored: 修复轮 2——MarkerSet<T>::getMinScaleViewW 成员体内的同名自由
+// 函数调用（Marker.ts:417-421 → :46-63）命名空间限定化的行为锁：camera-on
+// 视口 + setScaleFactor marker + MarkerSet 驱动 setPosition——C++ 类作用域
+// 查找命中成员即终止且抑制 ADL，未限定时成员无限自递归（修复前本用例栈
+// 溢出崩）；GREEN = setPosition 完成 + m_minScaleViewW 恰等于自由函数值
+// （钉值自校准——同一计算）+ scaleFactor 在参考 clamp 域 [.4, 2.0]。
+TEST(MarkerTest, MarkerSetMinScaleViewWDelegatesToFreeFunction)
+{
+    CollectFixture f;
+    // 相机开启（M-O(3) P1 的 TurnCameraOn 面——纯数学，headless 安全）。
+    ASSERT_EQ(f.holder.vp->TurnCameraOn(), ViewStatus::Success);
+    ASSERT_TRUE(f.holder.vp->isCameraOn());
+
+    TestMarkerSet set(f.holder.vp);
+    auto const center = atViewPixel(f.holder.vp, 320, 240);
+    TestMarker* raw = set.markers().add(
+        std::make_unique<TestMarker>(center, dqGeom::Point2d::From(30, 30)));
+    raw->setScaleFactor(dqGeom::Range1d(0.2, 1.4));   // IncidentMarkerDemo.ts:51 同值
+
+    auto context = f.makeContext();
+    set.addDecoration(context);   // 驱动面：setPosition(vp, this) → 成员 getMinScaleViewW
+    EXPECT_EQ(f.decorations.canvasDecorations.size(), 1u);   // setPosition 完成并入列
+
+    // m_minScaleViewW 恰等于自由函数（同一计算——缓存值对账）。
+    ASSERT_TRUE(set.m_minScaleViewW.has_value());
+    EXPECT_DOUBLE_EQ(*set.m_minScaleViewW, dqApp::getMinScaleViewW(*f.holder.vp));
+    EXPECT_GT(*set.m_minScaleViewW, 0.0);
+
+    // 缩放因子落在参考 clamp 域（Marker.ts:274/:276——Geometry.clamp(.,.4,2.0)）。
+    ASSERT_TRUE(raw->m_scaleFactor.has_value());
+    EXPECT_GE(raw->m_scaleFactor->x, 0.4);
+    EXPECT_LE(raw->m_scaleFactor->x, 2.0);
+    EXPECT_DOUBLE_EQ(raw->m_scaleFactor->x, raw->m_scaleFactor->y);
 }
 
 // Authored: pick（:148——rect.containsPoint；ViewRect.ts:145 的左/上含、
