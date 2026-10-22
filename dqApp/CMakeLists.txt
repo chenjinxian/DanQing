@@ -72,6 +72,7 @@ target_sources(dqApp
         src/tile/PrimaryTileTreeSupplier.cpp
         src/tile/SpatialTileTreeReferences.cpp
         # B-lane 锚（M-X 起——B 道代理只在此锚下追加 src 注册；勿动他区）
+        src/Marker.cpp  # M-X X-b1：Marker/Cluster/MarkerSet（core/frontend/src/Marker.ts）
         # Headers with Q_OBJECT (needed for AUTOMOC)
         PublicAPI/dqApp/Viewport.h
         src/FileTileFetcher.h
@@ -180,6 +181,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         # A-lane 锚（M-W 起——A 道代理只在此锚下追加测试注册；勿动他区）
         tests/ContoursFacadeTest.cpp  # M-X X-a1：DisplayStyle contours 门面 + OnContoursChanged→InvalidateRenderPlan 接线
         # B-lane 锚（M-X 起——B 道代理只在此锚下追加测试注册；勿动他区）
+        tests/MarkerTest.cpp  # M-X X-b1：Marker/Cluster/MarkerSet + ToolAdmin 画布装饰路由锁
     )
     target_link_libraries(dqAppTest
         PRIVATE

@@ -24,6 +24,7 @@
 #include <dqGeom/Vector3d.h>
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 
 namespace dqApp {
@@ -33,6 +34,8 @@ class ViewState3d;
 // ---------------------------------------------------------------------------
 // ViewRect — viewport rectangle in pixels
 // Ported from: itwinjs-core core/frontend/src/common/ViewRect.ts
+// 参考字段为"非负整数"语义（ViewRect.ts:10-14——_set 每赋值 max(0,floor)），
+// DanQing 以 int32 承载。
 // ---------------------------------------------------------------------------
 struct ViewRect {
     int32_t left = 0;
@@ -49,6 +52,61 @@ struct ViewRect {
     double aspect() const
     {
         return isNull() ? 1.0 : static_cast<double>(width()) / static_cast<double>(height());
+    }
+
+    // Ported from: itwinjs-core ViewRect.init (ViewRect.ts:57-61)——每字段经
+    // _set（ViewRect.ts:24-26）= max(0, floor)。
+    void init(double left_, double top_, double right_, double bottom_)
+    {
+        left   = std::max(0, static_cast<int32_t>(std::floor(left_)));
+        top    = std::max(0, static_cast<int32_t>(std::floor(top_)));
+        right  = std::max(0, static_cast<int32_t>(std::floor(right_)));
+        bottom = std::max(0, static_cast<int32_t>(std::floor(bottom_)));
+    }
+
+    // Ported from: itwinjs-core ViewRect.setFrom (ViewRect.ts:77)。
+    void setFrom(ViewRect const& other) { init(other.left, other.top, other.right, other.bottom); }
+
+    // Ported from: itwinjs-core ViewRect.inset (ViewRect.ts:103-114)——delta 取
+    // floor；塌缩（宽/高不足 2×delta）→ init(0,0,0,0)；否则直接改成员（不经
+    // _set——负 delta 扩张可使边界为负，参考行为原样保留）。
+    void inset(double deltaX, double deltaY)
+    {
+        int32_t const dx = static_cast<int32_t>(std::floor(deltaX));
+        int32_t const dy = static_cast<int32_t>(std::floor(deltaY));
+        if (width() - 2 * dx <= 0 || height() - 2 * dy <= 0) {
+            init(0, 0, 0, 0);
+            return;
+        }
+        left += dx;
+        right -= dx;
+        top += dy;
+        bottom -= dy;
+    }
+
+    // Ported from: itwinjs-core ViewRect.scaleAboutCenter (ViewRect.ts:123-130)。
+    void scaleAboutCenter(double xScale, double yScale)
+    {
+        double const w = static_cast<double>(width());
+        double const h = static_cast<double>(height());
+        double const xDelta = (w - (w * xScale)) * 0.5;
+        double const yDelta = (h - (h * yScale)) * 0.5;
+        inset(xDelta, yDelta);
+    }
+
+    // Ported from: itwinjs-core ViewRect.containsPoint (ViewRect.ts:145)——左/上
+    // 边界含，右/下边界不含。
+    bool containsPoint(dqGeom::Point2d const& point) const
+    {
+        return point.x >= static_cast<double>(left) && point.x < static_cast<double>(right)
+            && point.y >= static_cast<double>(top) && point.y < static_cast<double>(bottom);
+    }
+    // XAndY 坐标同义的 Point3d 形（Marker.setPosition 以 Point3d 位置调
+    // vp.viewRect.containsPoint——Marker.ts:259）。
+    bool containsPoint(dqGeom::Point3d const& point) const
+    {
+        return point.x >= static_cast<double>(left) && point.x < static_cast<double>(right)
+            && point.y >= static_cast<double>(top) && point.y < static_cast<double>(bottom);
     }
 };
 

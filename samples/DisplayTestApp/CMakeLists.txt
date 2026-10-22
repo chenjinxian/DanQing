@@ -110,6 +110,8 @@ add_executable(DisplayTestApp WIN32
     src/Gui/PathDecorationTest.h
     src/Gui/SurfaceTools.cpp         # M-Y Y-b1/Y-b2：Surface 窗口 keyin 族 + Close/ReopenIModel（Surface.ts）
     src/Gui/SurfaceTools.h
+    src/Gui/IncidentMarkerDemo.cpp   # M-X X-b2：IncidentMarkerDemo（IncidentMarkerDemo.ts）
+    src/Gui/IncidentMarkerDemo.h
 )
 
 target_include_directories(DisplayTestApp PRIVATE
@@ -393,6 +395,9 @@ if(TARGET gtest_main AND TARGET dqApp)
         tests/AtmosphereEditorTest.cpp    # M-Z B 道：Atmosphere 编辑器子区锁（无头面——渲染深链 render-dead 登记在案，无像素锁）
         tests/AsyncOpenChainTest.cpp      # P-1b P-b4：异步打开链终态对账 + 提交不阻塞锁（E5；真窗族规程=主会话收口跑）
         tests/PickCollapseTest.cpp        # 2026-10-21：Baytown/Bridge 拾取/选中激活内容塌缩回归锁（注册序尾=dump 族序敏感安全位）
+        tests/IncidentMarkerDemoTest.cpp  # M-X X-b2：toggle 状态机/makeColor 插值钉值/聚类合成计数/loading 门/资产装载锁（无头面）
+        src/Gui/IncidentMarkerDemo.cpp    # M-X X-b2 被测面（app+DtaTest 双注册，M-M(6) 先例）
+        src/Gui/IncidentMarkerDemo.h      # include-path parity
         resources.qrc                 # DTA 图标资源（字体 + SVG——图标断言测试需要）
     )
     target_include_directories(DisplayTestAppDtaTest PRIVATE

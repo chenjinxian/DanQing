@@ -3,6 +3,7 @@
 // Ported from: itwinjs-core core/frontend/src/tools/ToolAdmin.ts
 #include "dqApp/ToolAdmin.h"
 #include "dqApp/Application.h"
+#include "dqApp/Marker.h"    // M-X X-b1：canvas decoration 悬停/点击路由（XE7 身份恢复缝）
 #include "dqApp/Viewport.h"
 #include <cmath>
 #include "dqApp/ViewState.h"
@@ -1137,15 +1138,15 @@ void ToolAdmin::onButtonUp(Viewport* vp, dqGeom::Point2d pt2d, BeButton button, 
 // Ported from: itwinjs-core ToolAdmin.sendButtonEvent (ToolAdmin.ts:1297-1385)
 void ToolAdmin::sendButtonEvent(BeButtonEvent& ev)
 {
-    // TS L1298-1300: const overlayHit = this.pickCanvasDecoration(ev);
+    // TS L1325-1327: const overlayHit = this.pickCanvasDecoration(ev);
     //                 if (undefined !== overlayHit && undefined !== overlayHit.onMouseButton
     //                     && overlayHit.onMouseButton(ev)) return;
-    // Step 3 stub: pickCanvasDecoration requires a live Viewport with canvas-
-    // decoration hit testing (Viewport::pickCanvasDecoration, ToolAdmin.ts:1028);
-    // that API has no DanQing equivalent yet. overlayHit is therefore always
-    // nullptr and the early-return is unreachable. TODO: wire when Viewport
-    // canvas-decoration picking lands.
-    // std::unique_ptr<CanvasDecoration> overlayHit = pickCanvasDecoration(ev);
+    // M-X X-b1 接通——Marker::onMouseButton 为虚面默认 false（参考可选成员
+    // undefined 的观测等价）；子类（IncidentMarker）覆写吞事件。
+    if (Marker* overlayHit = pickCanvasDecoration(ev)) {
+        if (overlayHit->onMouseButton(ev))
+            return;
+    }
 
     // TS L1302-1303: if (this.onPreButtonEvent(ev)) return;
     // ToolAdmin.onPreButtonEvent is itself a no-op base (ToolAdmin.ts:1292-1294
@@ -1293,8 +1294,70 @@ void ToolAdmin::sendButtonEvent(BeButtonEvent& ev)
 // calls, preserving the observable dispatch contract.
 // ---------------------------------------------------------------------------
 
+// Ported from: itwinjs-core ToolAdmin.setCanvasDecoration (ToolAdmin.ts:1036-1048)。
+void ToolAdmin::setCanvasDecoration(Viewport& vp, Marker* dec, BeButtonEvent* ev)
+{
+    // TS L1037-1038: if (dec === this._canvasDecoration) return;
+    if (dec == m_canvasDecoration)
+        return;
+
+    // TS L1040-1041: leave 先发到旧装饰。
+    if (m_canvasDecoration != nullptr)
+        m_canvasDecoration->onMouseLeave();
+    m_canvasDecoration = dec;
+    m_canvasDecorationVp = &vp;
+    // TS L1043-1044: enter 随事件发到新装饰（ev 缺席 = 纯清除路径[onMouseLeave
+    // :958 / clearCanvasDecorationIfMarker]——参考同形不发 enter）。
+    if (ev != nullptr && dec != nullptr)
+        dec->onMouseEnter(*ev);
+
+    // TS L1046: vp.canvas.style.cursor = dec ? (dec.decorationCursor ?? "pointer")
+    //           : IModelApp.viewManager.cursor —— Marker 不设 decorationCursor
+    //（参考可选成员未移植，XE7）→ 恒 "pointer"。
+    vp.setCursor(dec != nullptr ? "pointer"
+                                : Application::Get().GetViewManager().cursor());
+    // TS L1047: vp.invalidateDecorations()。
+    vp.InvalidateDecorations();
+}
+
+// Ported from: itwinjs-core ToolAdmin.pickCanvasDecoration (ToolAdmin.ts:1050-1057)。
+Marker* ToolAdmin::pickCanvasDecoration(BeButtonEvent& ev)
+{
+    Viewport* vp = ev.viewport;
+    if (vp == nullptr)
+        return nullptr;
+    // TS L1054: (undefined === this.viewTool) ? vp.pickCanvasDecoration(
+    // ev.viewPoint) : undefined —— 视图工具活跃时悬停面关闭。
+    // XE7：Viewport::pickCanvasDecoration 返回 CanvasDecoration 条目；handler
+    // 身份经 Marker::fromDecoration 恢复（非 Marker 产出的 pick 条目[当前无]
+    // → nullptr，与参考的"无 handler 方法"语义等价）。
+    Marker* decoration = nullptr;
+    if (m_viewTool == nullptr) {
+        if (auto const* dec = vp->pickCanvasDecoration(
+                dqGeom::Point2d::From(ev.viewPoint.x, ev.viewPoint.y)))
+            decoration = Marker::fromDecoration(*dec);
+    }
+    setCanvasDecoration(*vp, decoration, &ev);
+    return decoration;
+}
+
+// C++ 生命周期缝（XE14——参考靠 GC；TD-22 同族）。
+void ToolAdmin::clearCanvasDecorationIfMarker(Marker const* marker)
+{
+    if (marker == nullptr || marker != m_canvasDecoration)
+        return;
+    // 不调死对象的 onMouseLeave（正在析构）——光标复位 + 装饰失效的净效果与
+    // setCanvasDecoration(vp, undefined) 同（ToolAdmin.ts:1046-1047）。
+    m_canvasDecoration = nullptr;
+    if (m_canvasDecorationVp != nullptr) {
+        m_canvasDecorationVp->setCursor(Application::Get().GetViewManager().cursor());
+        m_canvasDecorationVp->InvalidateDecorations();
+    }
+    m_canvasDecorationVp = nullptr;
+}
+
 // Ported from: itwinjs-core ToolAdmin.onMouseLeave (ToolAdmin.ts:952-960)。
-// _mouseMoveOverTimeout 清理与 setCanvasDecoration(vp) 未移植（无对应子系统）。
+// _mouseMoveOverTimeout 清理未移植（无对应子系统）。
 void ToolAdmin::onMouseLeave(Viewport* vp)
 {
     // TS L957: IModelApp.accuSnap.clear() —— 参考 clear 经 setCurrHit(undefined)
@@ -1308,6 +1371,11 @@ void ToolAdmin::onMouseLeave(Viewport* vp)
     // TS L958: this.currentInputState.clearViewport(vp) —— cursorView 变空 →
     // ToolAdmin.decorate 的光圈守卫（:2063-2064）失效，光圈停画。
     m_currentInputState.clearViewport(vp);
+
+    // TS L958: this.setCanvasDecoration(vp)——离开视口即清 canvas 装饰悬停
+    //（M-X X-b1 接通；参考序：clearViewport 之后、invalidateDecorations 之前）。
+    if (vp)
+        setCanvasDecoration(*vp, nullptr, nullptr);
 
     // TS L960: vp.invalidateDecorations()（"stop drawing locate circle..."）。
     if (vp)
@@ -1450,9 +1518,19 @@ void ToolAdmin::onMotion(Viewport* vp, dqGeom::Point2d pt2d, InputSource inputSo
     current.fromPoint(vp, pt2d, inputSource);
     current.toEvent(ev, /*useSnap=*/false);
 
-    // TS L1108-1115: pickCanvasDecoration overlay-hit path. Step 3 stub —
-    // Viewport::pickCanvasDecoration is not yet ported (TODO Task 8+).
-    // TODO: pickCanvasDecoration overlay-hit path.
+    // TS L1134-1141: pickCanvasDecoration overlay-hit path（M-X X-b1 接通）。
+    //   const overlayHit = this.pickCanvasDecoration(ev);
+    //   if (undefined !== overlayHit) {
+    //     if (overlayHit.onMouseMove) overlayHit.onMouseMove(ev);
+    //     if (undefined === overlayHit.propagateMouseMove || !overlayHit.propagateMouseMove(ev))
+    //       return;  // inside a pickable decoration that doesn't want the event
+    //   }
+    // Marker 恒有 onMouseMove（Marker.ts:140）且从不实现 propagateMouseMove
+    // → 命中即吞掉 motion（不进 processMotion——locate/动态皆停）。
+    if (Marker* overlayHit = pickCanvasDecoration(ev)) {
+        overlayHit->onMouseMove(ev);
+        return;
+    }
 
     // TS L1117-1120: setTimeout(async () => { onMotionEnd(...); processMotion(); }, 100).
     // TS L1155-1172: snapPromise = this.onMotionSnap(ev); snapPromise.then(processMotion).
@@ -1571,8 +1649,13 @@ void ToolAdmin::onWheel(ToolEvent const& event)
     wheelEvent.wheelDelta = delta;
     current.toEvent(wheelEvent, /*useSnap=*/true);
 
-    // TS L592-594: pickCanvasDecoration overlay-hit path. Step 3 stub.
-    // TODO: pickCanvasDecoration overlay-hit path.
+    // TS L618-620: const overlayHit = this.pickCanvasDecoration(wheelEvent);
+    //   if (undefined !== overlayHit && undefined !== overlayHit.onWheel
+    //       && overlayHit.onWheel(wheelEvent)) return EventHandled.Yes;
+    // M-X X-b1：拾取面接通（悬停副作用——enter/leave/光标随滚轮位更新）。
+    // onWheel 早退臂不可达：onWheel 是 CanvasDecoration 的可选成员
+    //（CanvasDecoration.ts:54-55），Marker 未实现（Marker.ts 无该成员）。
+    pickCanvasDecoration(wheelEvent);
 
     // TS L596-599: const tool = this.activeTool;
     //               if (undefined === tool ||

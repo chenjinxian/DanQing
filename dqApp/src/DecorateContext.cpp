@@ -46,9 +46,16 @@ void DecorateContext::AddDecoration(dqRender::GraphicType type, dqRender::Render
 // Ported from: itwinjs-core DecorateContext.addCanvasDecoration (ViewContext.ts:312-325).
 void DecorateContext::AddCanvasDecoration(dqRender::CanvasDecoration decoration, bool atFront)
 {
-    // :314-315 — _curCacheableDecorator 的 canvas 装饰缓存（DecorationsCache）未移植
-    // （DanQing DecorationsCache 只缓存 cacheable decorator 的图形装饰）；TODO 随
-    // CachedDecoration 机制落地。
+    // :314-315 — _curCacheableDecorator 的 canvas 装饰缓存（M-X X-b1 接通——
+    // useCachedDecorations 的 decorator[IncidentMarkerDemo]需要画布条目随缓存
+    // 重放）。缓存持有拷贝——函子捕获的 Marker* 与列表条目同一（XE7）。
+    if (m_curCacheableDecorator) {
+        CachedDecoration entry;
+        entry.type = CachedDecoration::Type::Canvas;
+        entry.canvasDecoration = decoration;
+        entry.atFront = atFront;
+        m_cache.add(m_curCacheableDecorator, std::move(entry));
+    }
     // :317-318 — canvasDecorations 惰性建表：C++ 成员恒在，无需判空。
     auto& list = m_decorations.canvasDecorations;
     // :320-324 — atFront 或空表 → push 尾部；否则 unshift 头部。
@@ -87,14 +94,21 @@ void DecorateContext::AddFromDecorator(IDecorator* decorator)
 }
 
 // Ported from: itwinjs-core DecorateContext.restoreCache (ViewContext.ts:238-252)。
-// DanQing CachedDecoration 只有 Graphic 一种类型（canvas/html 未移植）。
 void DecorateContext::RestoreCache(std::vector<CachedDecoration> const& cached)
 {
     for (auto const& entry : cached) {
+        // :241-247——graphic 分支：同一 graphicOwner 重新入列（不重新入缓存——
+        // 重放时 _curCacheableDecorator 为空，AddDecoration/AddCanvasDecoration
+        // 的缓存腿自然跳过；参考经同一公开方法重放，语义同构）。
         if (entry.type == CachedDecoration::Type::Graphic && entry.graphic) {
-            // :241-243 — 同一 graphicOwner 重新入列（不重新入缓存）。
             m_decorations.add(static_cast<dqRender::GraphicType>(entry.graphicType),
                               entry.graphic);
+        }
+        // :248-250——canvas 分支（M-X X-b1）：addCanvasDecoration(canvasDecoration,
+        // atFront)。html 分支（:251-252）随 XE6 不移植。
+        else if (entry.type == CachedDecoration::Type::Canvas) {
+            dqRender::CanvasDecoration copy = entry.canvasDecoration;
+            AddCanvasDecoration(std::move(copy), entry.atFront);
         }
     }
 }

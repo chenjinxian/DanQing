@@ -18,6 +18,7 @@
 #include "dqApp/Application.h"
 #include "dqApp/DecorateContext.h"
 #include "dqApp/IModelConnection.h"
+#include "dqApp/Marker.h"   // M-X X-b1：RemoveCanvasDecorationsForMarker 的 fromDecoration 缝
 #include "dqApp/ViewManager.h"
 #include "dqApp/ViewTool.h"
 #include "dqApp/Decorator.h"
@@ -3226,6 +3227,57 @@ dqGeom::Vector3d Viewport::viewDelta() const
 double Viewport::PixelsFromInches(double inches) const
 {
     return inches * 96.0;
+}
+
+// Ported from: itwinjs-core Viewport.pickCanvasDecoration (Viewport.ts:3542) →
+//              TargetImpl.pickOverlayDecoration (Target.ts:1428-1440——逆序遍历，
+//              后绘制[数组尾部]者优先)。
+dqRender::CanvasDecoration const* Viewport::pickCanvasDecoration(dqGeom::Point2d pt) const
+{
+    auto const& overlays = m_decorations.canvasDecorations;
+    // loop over array backwards, because later entries are drawn on top（:1432）。
+    for (auto it = overlays.rbegin(); it != overlays.rend(); ++it) {
+        if (it->pick && it->pick(pt))
+            return &(*it);
+    }
+    return nullptr;
+}
+
+// Ported from: itwinjs-core Viewport.openToolTip (Viewport.ts:3360-3362)。
+void Viewport::openToolTip(std::string const& message, dqGeom::Point3d const* location)
+{
+    // 参考经 toolTipDiv（视口内 DOM 定位）；DanQing 的 NotificationManager.
+    // OpenToolTip 扇出 OnToolTip（M-O(1) 链）——宿主以光标全局位定位
+    //（DtaTools setupDecorationToolTip 的 +15/-20 偏移），视口内坐标随参
+    // 透传（XE3 登记）。
+    Application::Get().GetNotificationManager().OpenToolTip(
+        message, nullptr != location ? location->x : 0.0,
+        nullptr != location ? location->y : 0.0);
+}
+
+// Ported from: itwinjs-core Viewport.invalidateCachedDecorations
+//              (Viewport.ts:3235-3239)。
+void Viewport::InvalidateCachedDecorations(IDecorator* decorator)
+{
+    m_decorationCache.remove(decorator);   // :3236——_decorationCache.delete
+    // :3238——Always invalidate decorations（decorator 当前可无缓存）。
+    InvalidateDecorations();
+}
+
+// XE14 生命周期缝（~Marker 调用——头注/Viewport.h 登记）。修复轮 1
+// Important-1 扩展：活列表与 DecorationsCache 的 Canvas 缓存条目同点双扫
+//（缓存命中重放复活死 marker 的 UAF 路径——cacheable decorator 存活期
+// erase marker 的可达序：erase→析构→再收集→重放）。
+void Viewport::RemoveCanvasDecorationsForMarker(Marker const& marker)
+{
+    auto& list = m_decorations.canvasDecorations;
+    for (auto it = list.begin(); it != list.end();) {
+        if (Marker::fromDecoration(*it) == &marker)
+            it = list.erase(it);
+        else
+            ++it;
+    }
+    m_decorationCache.removeCanvasDecorationsForMarker(marker);
 }
 
 }  // namespace dqApp

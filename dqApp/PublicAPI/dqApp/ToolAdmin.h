@@ -13,6 +13,8 @@
 
 #include <dqBase/DqEvent.h>
 
+#include <QPointer>  // m_canvasDecorationVp（视口先亡自动置空——M-X X-b1）
+
 #include <cstdint>
 #include <cstddef>
 #include <deque>
@@ -27,6 +29,8 @@ namespace dqApp {
 
 class Viewport;
 class ViewTool;          // Forward decl — full port in <dqApp/ViewTool.h> (Task 9).
+class Marker;            // Forward decl — M-X X-b1（canvas decoration 悬停路由，
+                         // Marker.ts）; full port in <dqApp/Marker.h>.
 class HitDetail;        // Forward decl — full port lands with DecorateContext (later task).
 class DynamicsContext;  // Forward decl — full port lands with DecorateContext (later task).
 
@@ -939,8 +943,12 @@ public:
     void setLocateCircleOn(bool on);
     // Whether the locate circle currently shows (mouse always; touch only with a
     // virtual cursor — :2072-2078; touch input is TODO so this collapses to
-    // toolState.locateCircleOn).
-    bool isLocateCircleOn() const { return toolState.locateCircleOn; }
+    // toolState.locateCircleOn + the canvas-decoration hover gate :2073
+    // [M-X X-b1 接通——悬停 marker 时光圈熄灭]).
+    bool isLocateCircleOn() const
+    {
+        return toolState.locateCircleOn && nullptr == m_canvasDecoration;
+    }
 
     // Set the cursor + locate circle consistently for tools that locate
     // elements (ToolAdmin.setLocateCursor, :2214-2219).
@@ -1314,6 +1322,28 @@ public:
     // Ported from: itwinjs-core ToolAdmin.onButtonUp (ToolAdmin.ts:1405-1421)
     void onButtonUp(Viewport* vp, dqGeom::Point2d pt2d, BeButton button, InputSource inputSource);
 
+    // --- Canvas decoration hover/click 路由（M-X X-b1——Marker.ts 移植配套） ---
+    // Ported from: itwinjs-core ToolAdmin._canvasDecoration (:355) +
+    //              setCanvasDecoration (:1036-1048) + pickCanvasDecoration
+    //              (:1050-1057，参考 private——本类同名私有方法)。参考的
+    // CanvasDecoration 接口携 handler 方法族；DanQing 的 CanvasDecoration 是
+    // std::function 结构体（dqRender，W4 面），handler 族在 dqApp::Marker 本体
+    // ——路由经 Marker::fromDecoration 恢复身份（XE7 缝——Marker.h 头注）。
+    // pickCanvasDecoration 的调用点：onMotion（:1134-1141）/ sendButtonEvent
+    //（:1325-1327）/ onWheel（:618-620，拾取的悬停副作用）/ onMouseLeave
+    //（:958）/ sendTapEvent（:632——touch 面未移植，TODO 锚）。
+
+    // C++ 生命周期缝（XE14）：marker 析构时清悬停指针（参考靠 GC——JS 对象
+    // 不死；TD-22 同族适配）。不调死对象的 onMouseLeave；光标/装饰失效的
+    // 净效果与 setCanvasDecoration(vp, undefined) 同。
+    void clearCanvasDecorationIfMarker(Marker const* marker);
+
+#ifdef DANQING_TESTING
+    // Test-only 观察面：当前悬停的 canvas decoration marker（XE7 路由锁）。
+    // Authored: test affordance — no reference equivalent.
+    Marker const* GetCanvasDecorationMarkerForTest() const noexcept { return m_canvasDecoration; }
+#endif
+
 private:
     // Saved cursor while an incompatible-viewport suspension is active
     // (ToolAdmin._saveCursor, ToolAdmin.ts:111). Empty = no suspension.
@@ -1458,6 +1488,21 @@ private:
     // Reentry guard for processEvent.
     // Ported from: itwinjs-core ToolAdmin._processingEvent (ToolAdmin.ts:826)
     bool m_processingEvent = false;
+
+    // 当前悬停的 canvas decoration marker + 其视口（ToolAdmin.ts:355
+    // _canvasDecoration；M-X X-b1）。m_canvasDecorationVp 是 DanQing 簿记
+    // （参考从事件取 vp——clearCanvasDecorationIfMarker 的析构缝无事件上下文，
+    //  光标复位需视口）；QPointer 承载视口先亡场景（QObject 销毁自动置空——
+    //  M-V V-e 面板生命周期教训同族）。
+    Marker* m_canvasDecoration = nullptr;
+    QPointer<Viewport> m_canvasDecorationVp;
+
+    // setCanvasDecoration（ToolAdmin.ts:1036-1048——leave/enter + 光标 +
+    // invalidateDecorations）。
+    void setCanvasDecoration(Viewport& vp, Marker* dec, BeButtonEvent* ev);
+    // pickCanvasDecoration（ToolAdmin.ts:1050-1057——viewTool 活跃时恒空 +
+    // setCanvasDecoration 驱动）。
+    Marker* pickCanvasDecoration(BeButtonEvent& ev);
 
     // Static FIFO event queue.
     // Ported from: itwinjs-core ToolAdmin._toolEvents (ToolAdmin.ts:768)
