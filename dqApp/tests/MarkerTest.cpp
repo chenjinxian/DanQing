@@ -81,6 +81,7 @@ struct TestMarker : public Marker {
     using Marker::m_hiliteColor;
     using Marker::m_isHilited;
     using Marker::m_scaleFactor;
+    using Marker::m_lastDecorateViewport;   // 终审 I-1 锁的观测面
     using Marker::m_scaleFactorRange;
 
     int mouseButtonCalls = 0;
@@ -703,6 +704,44 @@ TEST(MarkerTest, CanvasDecorationsReplayFromCacheOnSecondCollect)
     EXPECT_EQ(holder.vp->GetDecorations().canvasDecorations.size(), 1u);
 
     Application::Get().GetViewManager().DropDecorator(&decorator);
+}
+
+// Authored: 终审 I-1（视口先亡向）机制锁——MarkerSet+marker 存活期直接析构
+// 承载视口（不触发 OnChangeView；~Viewport 幂等 Shutdown 面 = 直接 delete 安全）：
+// m_lastDecorateViewport/MarkerSet::m_viewport 换 QPointer 后随 QObject 析构
+// 置空（GREEN 形态）；修复前裸指针悬垂非空——~Marker 反引用死 QWidget =
+// teardown UAF（Debug 堆读多静默、崩溃非确定，故机制锁钉 QPointer 空转 +
+// 析构路径跑通无崩，UB 面随承载类型结构性消除）。
+TEST(MarkerTest, ViewportDeathBeforeMarkerShortCircuitsCleanup)
+{
+    MarkerViewportFixture f = makeMarkerViewport();
+    {
+        TestMarkerSet set(f.vp);
+        auto const center = atViewPixel(f.vp, 320, 240);
+        TestMarker* raw = set.markers().add(
+            std::make_unique<TestMarker>(center, dqGeom::Point2d::From(30, 30)));
+        {
+            dqRender::Decorations decorations;
+            dqApp::DecorationsCache cache;
+            DecorateContext context(*f.vp, decorations, cache);
+            set.addDecoration(context);   // addMarker → m_lastDecorateViewport = f.vp
+        }
+        ASSERT_NE(raw->m_lastDecorateViewport, nullptr);
+        ASSERT_EQ(set.viewport(), f.vp);
+
+        // 视口先亡：直接 delete（QObject 析构 → 全部 QPointer 置空）。
+        delete f.vp;
+        f.vp = nullptr;
+
+        // 机制断言（GREEN 形态——修复前两指针悬垂非空，断言红）。
+        EXPECT_EQ(raw->m_lastDecorateViewport, nullptr);
+        EXPECT_EQ(set.viewport(), nullptr);
+
+        // marker 析构（~Marker → 空指针门短路；集合析构同向）——无 UAF。
+        set.markers().erase(raw);
+    }
+    ToolAdmin::clearQueue();
+    SUCCEED();
 }
 
 // Authored: XE14 扩展清扫（修复轮 1 Important-1）——cacheable decorator 存活

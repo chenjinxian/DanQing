@@ -763,6 +763,9 @@ void RenderCommands::pushAndPopBranchForPass(RenderPass pass, Branch& branch,
     push->setLocalToWorld(branch.getLocalToWorld());  // M-S S-d：携分支模型变换
     if (branch.hasViewFlags())
         push->setViewFlags(branch.getViewFlags());
+    // TODO（M-X 终审 Minor-3）：此处不拷 branch.getContourLine()——
+    // GraphicBranchOptions.contours 生产者启用前必须补拷
+    // （pushAndPopBranchInternal :1014 的同款 setContourLine 腿）。
     DrawCommand const* const pushRaw = push.get();
     cmds.push_back(std::move(push));
 
@@ -1049,6 +1052,8 @@ void RenderCommands::setupClassificationByVolume()
                             clone->setTransform(src.getMv(), src.getMvp());
                             if (src.hasViewFlags())
                                 clone->setViewFlags(src.getViewFlags());
+                            // TODO（M-X 终审 Minor-3）：此处不拷 contourLine——
+                            // GraphicBranchOptions.contours 生产者启用前必须补拷。
                             byIndexCmds.push_back(std::move(clone));
                             break;
                         }

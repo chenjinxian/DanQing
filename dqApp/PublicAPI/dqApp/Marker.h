@@ -66,6 +66,8 @@
 #include <dqRender/CanvasDecoration.h>
 #include <dqRender/rhi/Handle.h>
 
+#include <QPointer>  // m_lastDecorateViewport / MarkerSet::m_viewport（终审 I-1 视口先亡向）
+
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
@@ -239,6 +241,17 @@ protected:
     bool m_isHilited = false;                            // :78
     std::optional<dqCommon::ColorDef> m_hiliteColor;     // :80
 
+    // XE14 生命周期簿记（终审 I-1 扩维）：最近一次 addMarker 的目标视口
+    //（~Marker 清扫该视口当前装饰列表 + 装饰缓存里的本 marker 条目——
+    // Viewport::RemoveCanvasDecorationsForMarker）。**QPointer 承载视口先亡向**
+    //（终审 I-1）：承载视口直接关闭/析构（不触发 OnChangeView）后 ~Marker
+    // 反引用该指针 = teardown UAF——QPointer 随 QObject 析构自动置空，~Marker
+    // 的空指针门自然短路（先例=ToolAdmin.m_canvasDecorationVp）。边界如实登记：
+    // 同一 marker 若被 addMarker 进多个视口的装饰列表，仅簿记最近一处——
+    // MarkerSet 语义上 marker 从属单一视口（MarkerSet.addDecoration 的视口门
+    // Marker.ts:429-430），跨视口复用裸 Marker 为边界态（参考无此场景）。
+    QPointer<Viewport> m_lastDecorateViewport;
+
     // drawHilited（:187-192）——XE8：CanvasContext 无 shadowBlur/shadowColor/
     // scale 面，视觉效（发光+放大 25%）登记为缺口；恒返回 false（继续正常绘制）
     // 的参考语义保留。返回 true = 不再绘制本 marker。
@@ -249,15 +262,6 @@ private:
     // MarkerSet 完整类型）。
     template<typename T>
     bool setPositionT(Viewport& vp, MarkerSet<T>* markerSet);
-
-    // XE14 生命周期簿记：最近一次 addMarker 的目标视口（~Marker 清扫该视口
-    // 当前装饰列表 + 装饰缓存里的本 marker 条目——Viewport::
-    // RemoveCanvasDecorationsForMarker）。边界如实登记：同一 marker 若被
-    // addMarker 进多个视口的装饰列表，仅清扫最近一处——MarkerSet 语义上
-    // marker 从属单一视口（MarkerSet.addDecoration 的视口门 Marker.ts:
-    // 429-430 保证集合内 marker 只装饰其绑定视口），跨视口复用裸 Marker 为
-    // 边界态（参考无此场景——Marker 经 MarkerSet 与视口 1:1）。
-    Viewport* m_lastDecorateViewport = nullptr;
 
     friend struct MarkerDrawFunctor;
 };
@@ -409,7 +413,11 @@ protected:
     std::optional<double> m_minScaleViewW;         // :365
 
 private:
-    Viewport* m_viewport = nullptr;                // :358
+    // :358 _viewport。**QPointer 承载视口先亡向**（终审 I-1）：绑定视口直接
+    // 关闭/析构后，集合存活期对它的任何反引用（addDecoration 的视口门比较/
+    // viewport() 消费者）走空而非悬垂——QObject 析构自动置空；仅指针比较的
+    // 用法语义不变。
+    QPointer<Viewport> m_viewport;
     std::vector<std::unique_ptr<T>> m_markers;     // :366 的 C++ 所有权承载
     Markers m_markersFacade{*this};
 };

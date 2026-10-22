@@ -15,6 +15,7 @@
 #include <gtest/gtest.h>
 #include <QApplication>
 #include <QCoreApplication>
+#include <QPointer>  // 终审 I-1 机制锁的观测面
 
 #include "Gui/IncidentMarkerDemo.h"
 #include "Gui/DtaTools.h"  // registerDtaTools（宿主注册面）
@@ -322,6 +323,31 @@ TEST(IncidentMarkerDemoLock, IncidentIconsCycleSlotsOneThroughFive)
 // ---------------------------------------------------------------------------
 // toggle 状态机（:229-250——start/stop/toggle + ViewManager 注册对账）
 // ---------------------------------------------------------------------------
+// Authored: 终审 I-1（视口先亡向）机制锁——demo 存活期直接析构承载视口
+//（MDI closeEvent drop+析构的等价压缩序；不触发 OnChangeView，demo 的
+// OnChangeView.AddOnce(stop) 永不 fire）：demo 的 m_vp 与 marker 的
+// m_lastDecorateViewport 均换 QPointer 后随 QObject 析构置空，~demo 的
+// getDriver 纹理回收与 ~Marker 清扫空指针门短路。修复前两处裸指针反引用
+// 死 QWidget = teardown UAF（Debug 堆读多静默、崩溃非确定，故机制锁钉
+// QPointer 空转 + 析构路径跑通无崩）。
+TEST(IncidentMarkerDemoLock, ViewportDeathBeforeDemoDestructsSafely)
+{
+    DemoViewportFixture f = makeDemoViewport();
+    QPointer<dqApp::Viewport> const mirror = f.vp;   // 机制观测面（与 demo.m_vp 同源）
+    {
+        Gui::IncidentMarkerDemo demo(*f.vp, kDemoExtents, seededRand(42));
+        QCoreApplication::processEvents();   // 装载完成（417 marker 建立）
+        ASSERT_FALSE(demo.isLoading());
+        ASSERT_EQ(demo.incidents().markers().size(), 417u);
+
+        // 视口先亡：直接 delete（~Viewport 幂等 Shutdown 面 = 安全）。
+        delete f.vp;
+        f.vp = nullptr;
+        EXPECT_EQ(mirror, nullptr);   // GREEN 形态（QObject 析构 → QPointer 置空）
+    }   // ~demo：m_vp 空 → 纹理回收短路；417 marker ~Marker → 清扫短路——无 UAF。
+    SUCCEED();
+}
+
 TEST(IncidentMarkerDemoLock, ToggleStartsAndStopsDecorator)
 {
     auto& vm = dqApp::Application::Get().GetViewManager();

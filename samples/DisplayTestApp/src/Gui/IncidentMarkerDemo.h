@@ -38,6 +38,7 @@
 #include <dqGeom/Range3d.h>
 
 #include <QImage>
+#include <QPointer>  // m_vp（终审 I-1 视口先亡向）
 
 #include <array>
 #include <functional>
@@ -190,8 +191,12 @@ private:
     std::mt19937 m_engine;                    // XE16 缺省引擎（成员——禁
                                               // shared_ptr[§9]，值持有）
     std::unique_ptr<QObject> m_lifetimeToken; // XE9 timer 上下文（析构即取消）
-    dqApp::Viewport* m_vp = nullptr;          // 纹路上传视口（XE15——start 时
-                                              // = m_incidents.viewport()）
+    // 纹路上传视口（XE15——start 时 = m_incidents.viewport()）。**QPointer
+    // 承载视口先亡向**（终审 I-1）：承载视口直接关闭/析构（不触发 OnChangeView
+    // ——demo 的 OnChangeView.AddOnce(stop) 永不 fire）后 ~IncidentMarkerDemo
+    // 反引用 m_vp->getDriver() = teardown UAF——QPointer 随 QObject 析构自动
+    // 置空，析构函数的空指针门短路（Marker.h/ToolAdmin 同款先例）。
+    QPointer<dqApp::Viewport> m_vp;
 
     static std::unique_ptr<IncidentMarkerDemo> s_decorator;   // :156
 };
