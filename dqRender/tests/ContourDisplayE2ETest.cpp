@@ -137,9 +137,12 @@ dqCommon::ContourDisplay makeContours(bool display, bool showGeometry) {
     return d;
 }
 
-// 单特征 Batch 包裹的蓝盒（x∈[-0.6,0.6]，y∈[-0.3,0.3]，z∈[-0.9,0.9]——
-// 前表面 y=-0.3 朝相机；屏幕 x∈[20,80]、行∈[5,95]）。
-std::unique_ptr<Batch> makeBoxBatch(ContourOffscreenEnv& env) {
+// 蓝盒图元（x∈[-0.6,0.6]，y∈[-0.3,0.3]，z∈[-0.9,0.9]——前表面 y=-0.3
+// 朝相机；屏幕 x∈[20,80]、行∈[5,95]）。
+// 蓝填充（PolyfaceGraphic defaultColor 打包=(a<<24)|(b<<16)|(g<<8)|r
+// [PolyfaceGraphic.cpp:57-64——TD-17 修正后的字节序] → 不透明蓝 =
+// 0xFFFF0000；红=0xFF0000FF[RenderSmokeTest 钉值]）。
+std::unique_ptr<Graphic> makeBoxPrim(ContourOffscreenEnv& env) {
     dqGeom::Point3d const b1(-0.6, -0.3, -0.9), b2(0.6, -0.3, -0.9),
                           b3(0.6, 0.3, -0.9), b4(-0.6, 0.3, -0.9);
     dqGeom::Point3d const t1(-0.6, -0.3, 0.9), t2(0.6, -0.3, 0.9),
@@ -155,21 +158,49 @@ std::unique_ptr<Batch> makeBoxBatch(ContourOffscreenEnv& env) {
         box->AddQuadFacet(q1); box->AddQuadFacet(q2); box->AddQuadFacet(q3);
         box->AddQuadFacet(q4); box->AddQuadFacet(q5); box->AddQuadFacet(q6);
     }
-    // 蓝填充（PolyfaceGraphic defaultColor 打包=(a<<24)|(b<<16)|(g<<8)|r
-    // [PolyfaceGraphic.cpp:57-64——TD-17 修正后的字节序] → 不透明蓝 =
-    // 0xFFFF0000；红=0xFF0000FF[RenderSmokeTest 钉值]）。
     auto* geom = new PolyfaceGraphic(*env.driver, *box->ClaimPolyface(),
                                      /*defaultColor=*/0xFFFF0000u);
-    auto* prim = new Primitive(geom);
+    return std::unique_ptr<Graphic>(new Primitive(geom));
+}
 
-    // FeatureTable(1)：特征 elementId=42 / subCategoryId=0x10（默认组空
-    // subCategories 兜住一切[defaultNdx 切换]——组映射非本锁变量面）。
+// 单特征 Batch 包裹的蓝盒（FeatureTable(1)：特征 elementId=42 /
+// subCategoryId=0x10——默认组空 subCategories 兜住一切[defaultNdx 切换]，
+// 组映射非本锁变量面）。
+std::unique_ptr<Batch> makeBoxBatch(ContourOffscreenEnv& env) {
     auto featureTable = std::make_unique<dqCommon::FeatureTable>(1);
     featureTable->insert(dqCommon::Feature(dqBase::DqId(42), dqBase::DqId(0x10),
                                            dqCommon::GeometryClass::Primary));
     auto batch = std::make_unique<Batch>(1, std::move(featureTable));
-    batch->setChild(std::unique_ptr<Graphic>(prim));
+    batch->setChild(makeBoxPrim(env));
     return batch;
+}
+
+// contourLine={displayContours=false, 1 组} 覆写 Branch 包裹的黄倾斜四边形
+//（评审修复轮 1 锁的场景件——BatchUniforms.ts:91 否臂语义的消费面：
+//   branch contourLine 覆写[Graphic.ts:353 Branch.contourLine →
+//   BranchState.fromBranch 的 `branch.contourLine ?? prev.contourLine` 继承
+//   消费面 BranchState.ts:123]使该 draw 的 wantContourLines=false）。
+// 几何（世界系）：x∈[0.62,0.9]（px 81-95——与 boxLeft 的 x≤0.6 无叠）、
+// z∈[-0.8,0.8]（行 10-90）、y=-0.5+0.5z 倾斜——面向相机的面跨世界 z 全域
+//（陈旧 LUT 武装时：u_modelToWorldC 持陈旧恒等[wantContourLines=false 使
+//   m_model 不刷新——BranchUniforms.ts:240-245 填充门]，coord=rawPos.z/0.25
+//   跨 ±3.2 → 整数等高线必跨面 → 红/绿带污染可观测）；法线 -y 朝相机
+//（(b-a)×(d-a)=(0,-0.448,0.224)）。黄填充=0xFF00FFFF（同蓝盒打包注）。
+std::unique_ptr<Graphic> makeContoursOffQuadBranch(ContourOffscreenEnv& env) {
+    dqGeom::Point3d const a(0.62, -0.9, -0.8), b(0.9, -0.9, -0.8),
+                          c(0.9, -0.1, 0.8), d(0.62, -0.1, 0.8);
+    auto quad = dqGeom::PolyfaceBuilder::create();
+    {
+        dqGeom::Point3d const q[4] = {a, b, c, d};
+        quad->AddQuadFacet(q);
+    }
+    auto* geom = new PolyfaceGraphic(*env.driver, *quad->ClaimPolyface(),
+                                     /*defaultColor=*/0xFF00FFFFu);
+    auto* prim = new Primitive(geom);
+    auto branch = std::make_unique<Branch>();
+    branch->setContourLine(makeContours(/*display=*/false, /*showGeometry=*/true));
+    branch->setChild(std::unique_ptr<Graphic>(prim));
+    return branch;
 }
 
 // 读列（屏幕 x=50——盒中央）的全行 RGB（GL 原点在左下：row 0=底）。
@@ -286,4 +317,73 @@ TEST(ContourDisplayE2ETest, SideViewRendersContourBandsWhereExpected) {
     }
     EXPECT_FALSE(offRed) << "toggle-off: no contour red remains";
     EXPECT_FALSE(offGreen) << "toggle-off: no contour green remains";
+}
+
+// 评审修复轮 1（Important-1）锁：同 batch 跨度内 contourLine 覆写
+// displayContours=false 的 branch 必须解除 LUT 武装（BatchUniforms.ts:91 的
+// `_contours = (undefined !== batch && this.wantContourLines) ?
+// batch.getContours(this._target) : undefined` **无条件赋值**语义——仅靠
+// PopBatch 清除会让该 draw 带着上一组的陈旧 LUT[u_contourLUTWidth≠0、
+// 单元 14 纹理仍绑] → 上一组样式错盖到本 branch 的几何）。
+//
+// 场景：batchA（1 特征表）child=GraphicsArray[蓝盒 boxLeft，
+//   Branch{contourLine=displayContours=false} 包裹黄倾斜四边形]。
+// 绘制序：PushBatch(A) → boxLeft draw（want=true → 武装 A 的 LUT）→
+//   PushBranch(off) → quadRight draw（want=false——getCurrentContours=栈顶
+//   contourLine）→ PopBranch → PopBatch。
+// 判据（§5(g)/§11.11——WHERE=列探针 + 内容在场锚）：
+//   - 列 25（boxLeft 域）：行 50 主红带（sanity——batch 武装面仍生效）。
+//   - 列 88（quadRight 域）：行 50 黄基色 + 全列零红零绿（LUT 解除武装、
+//     shader 早退[glsl/Contours.ts:17-18]）。无 else 臂时陈旧武装把 batchA
+//     组的等高线盖上倾斜面（coord=z/0.25 整数 0 在 z=0 → 行 50 主红带）
+//     → 本断言 RED。
+// Authored: no reference test exists in itwinjs-core for per-batch contour
+//           LUT reset（core/frontend 无 webgl BatchUniforms/Contours 单测面
+//           ——行为锚=BatchUniforms.ts:91 + webgl/Contours.ts 逐行 + 本文件
+//           头推导）。
+TEST(ContourDisplayE2ETest, MidSpanContoursOffBranchDisarmsLut) {
+    ContourOffscreenEnv env;
+    auto target = makeSideViewTarget(env);
+    ASSERT_NE(target, nullptr) << "offscreen GL environment unavailable";
+
+    // batchA（1 特征表——makeBoxBatch 同形）child=[boxLeft, off-branch]。
+    auto featureTable = std::make_unique<dqCommon::FeatureTable>(1);
+    featureTable->insert(dqCommon::Feature(dqBase::DqId(42), dqBase::DqId(0x10),
+                                           dqCommon::GeometryClass::Primary));
+    auto batch = std::make_unique<Batch>(1, std::move(featureTable));
+    auto children = std::make_unique<GraphicsArray>();
+    children->add(makeBoxPrim(env));
+    children->add(makeContoursOffQuadBranch(env));
+    batch->setChild(std::move(children));
+
+    Scene scene;
+    scene.foreground.push_back(batch.release());
+    target->changeScene(scene);
+
+    auto planOn = sideViewPlan();
+    planOn.contours = makeContours(true, true);
+    target->changeRenderPlan(planOn);
+    target->drawFrame();
+
+    // Sanity：boxLeft 的等高线武装面仍在（列 25 行 50 主红带）。
+    auto const left = readColumn(*target, 25);
+    expectBandHits(left, {50}, 255, 0, 0,
+                   "sanity: boxLeft major contour band at row 50");
+
+    // 锁面：off-branch 四边形（列 88）——解除武装 → 黄基色透传、零污染。
+    auto const right = readColumn(*target, 88);
+    EXPECT_TRUE(colorNear(right[50], 255, 255, 0))
+        << "off-branch quad row 50 keeps its base yellow (stale LUT would paint"
+           " the major contour line red here)";
+    bool anyRed = false, anyGreen = false, anyYellow = false;
+    for (auto const& c : right) {
+        anyRed = anyRed || colorNear(c, 255, 0, 0);
+        anyGreen = anyGreen || colorNear(c, 0, 255, 0);
+        anyYellow = anyYellow || colorNear(c, 255, 255, 0);
+    }
+    EXPECT_TRUE(anyYellow) << "off-branch quad rendered at column 88 (content anchor)";
+    EXPECT_FALSE(anyRed)
+        << "off-branch (displayContours=false): no stale-LUT red contamination";
+    EXPECT_FALSE(anyGreen)
+        << "off-branch (displayContours=false): no stale-LUT green contamination";
 }

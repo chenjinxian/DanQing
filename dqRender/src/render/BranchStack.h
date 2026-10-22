@@ -214,38 +214,45 @@ public:
     /// M-S S-d：localToWorldDelta 可选参——携带时组合进子态的 localToWorld
     ///（参考 BranchState.fromBranch 的 transform 组合[BranchState.ts:101-125]，
     ///  缺席=恒等 → 纯继承父态）。
+    /// M-X X-a2-fix：contourOverride 可选参——fromBranch :123 的
+    /// `contourLine: branch.contourLine ?? prev.contourLine` 双臂（在场覆写/
+    /// 缺席继承）。
     void push(std::array<float, 16> const& branchMv,
               std::array<float, 16> const& branchMvp,
               ViewFlags const& flags,
-              dqGeom::Transform const* localToWorldDelta = nullptr);
+              dqGeom::Transform const* localToWorldDelta = nullptr,
+              dqCommon::ContourDisplay const* contourOverride = nullptr);
 
     /// Push with raw float pointers (convenience overload).
     void push(float const* mv16, float const* mvp16, ViewFlags const& flags,
-              dqGeom::Transform const* localToWorldDelta = nullptr)
+              dqGeom::Transform const* localToWorldDelta = nullptr,
+              dqCommon::ContourDisplay const* contourOverride = nullptr)
     {
         std::array<float, 16> mv, mvp;
         for (int i = 0; i < 16; ++i) {
             mv[i] = mv16[i];
             mvp[i] = mvp16[i];
         }
-        push(mv, mvp, flags, localToWorldDelta);
+        push(mv, mvp, flags, localToWorldDelta, contourOverride);
     }
 
     /// Push with transform only (view flags inherited from parent).
     void pushTransform(std::array<float, 16> const& branchMv,
                        std::array<float, 16> const& branchMvp,
-                       dqGeom::Transform const* localToWorldDelta = nullptr);
+                       dqGeom::Transform const* localToWorldDelta = nullptr,
+                       dqCommon::ContourDisplay const* contourOverride = nullptr);
 
     /// Push with raw float pointers (convenience overload).
     void pushTransform(float const* mv16, float const* mvp16,
-                       dqGeom::Transform const* localToWorldDelta = nullptr)
+                       dqGeom::Transform const* localToWorldDelta = nullptr,
+                       dqCommon::ContourDisplay const* contourOverride = nullptr)
     {
         std::array<float, 16> mv, mvp;
         for (int i = 0; i < 16; ++i) {
             mv[i] = mv16[i];
             mvp[i] = mvp16[i];
         }
-        pushTransform(mv, mvp, localToWorldDelta);
+        pushTransform(mv, mvp, localToWorldDelta, contourOverride);
     }
 
     /// Push with view flags only (transform inherited from parent).

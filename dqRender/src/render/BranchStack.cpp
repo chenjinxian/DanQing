@@ -246,7 +246,8 @@ void BranchStack::pushState(BranchState const& state)
 void BranchStack::push(std::array<float, 16> const& branchMv,
                         std::array<float, 16> const& branchMvp,
                         ViewFlags const& flags,
-                        dqGeom::Transform const* localToWorldDelta)
+                        dqGeom::Transform const* localToWorldDelta,
+                        dqCommon::ContourDisplay const* contourOverride)
 {
     BranchState state;
     state.m_mv = multiplyMatrix(m_stack.back().getMv(), branchMv);
@@ -267,9 +268,12 @@ void BranchStack::push(std::array<float, 16> const& branchMv,
     state.m_is3d = m_stack.back().m_is3d;
     state.m_frustumScale = m_stack.back().m_frustumScale;
     state.m_forceViewCoords = m_stack.back().m_forceViewCoords;
-    // M-X X-a2：contourLine 继承（fromBranch `?? prev.contourLine` 臂的
-    //   便路径等价——BranchState.ts:123）。
-    state.m_contourLine = m_stack.back().m_contourLine;
+    // M-X X-a2：contourLine 继承/覆写（fromBranch `?? prev.contourLine`
+    //   双臂——BranchState.ts:123；X-a2-fix：在场覆写臂接通[此前只有继承臂，
+    //   branch 级 contour 生产源从不到达绘制栈]）。
+    state.m_contourLine = contourOverride
+        ? std::optional<dqCommon::ContourDisplay>(*contourOverride)
+        : m_stack.back().m_contourLine;
     m_stack.push_back(state);
 }
 
@@ -278,7 +282,8 @@ void BranchStack::push(std::array<float, 16> const& branchMv,
 // ---------------------------------------------------------------------------
 void BranchStack::pushTransform(std::array<float, 16> const& branchMv,
                                  std::array<float, 16> const& branchMvp,
-                                 dqGeom::Transform const* localToWorldDelta)
+                                 dqGeom::Transform const* localToWorldDelta,
+                                 dqCommon::ContourDisplay const* contourOverride)
 {
     BranchState state;
     state.m_mv = multiplyMatrix(m_stack.back().getMv(), branchMv);
@@ -298,8 +303,10 @@ void BranchStack::pushTransform(std::array<float, 16> const& branchMv,
     state.m_is3d = m_stack.back().m_is3d;
     state.m_frustumScale = m_stack.back().m_frustumScale;
     state.m_forceViewCoords = m_stack.back().m_forceViewCoords;
-    // M-X X-a2：contourLine 继承（同 push 臂注）。
-    state.m_contourLine = m_stack.back().m_contourLine;
+    // M-X X-a2-fix：contourLine 继承/覆写双臂（同 push 臂注）。
+    state.m_contourLine = contourOverride
+        ? std::optional<dqCommon::ContourDisplay>(*contourOverride)
+        : m_stack.back().m_contourLine;
     m_stack.push_back(state);
 }
 

@@ -2797,48 +2797,58 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     }
                     // Contours（M-X X-a3）——逐 batch 特征→等高线组 LUT 供给。
                     // Ported from: itwinjs-core BatchUniforms._setCurrentBatch
-                    //   :91（`this._contours = undefined !== batch &&
-                    //   this.wantContourLines ? batch.getContours(this._target)
-                    //   : undefined`）+ Contours.ts:121-127/:148-151 的
-                    //   bindContourLUT（GPU 绑=本绘制环——EQUIVALENCE
-                    //   §11.10：参考绑定位=GraphicUniform lambda 内
+                    //   （BatchUniforms.ts:91——`this._contours = undefined !== batch
+                    //   && this.wantContourLines ? batch.getContours(this._target)
+                    //   : undefined`——**每次赋值无条件**：否臂置 undefined。仅靠
+                    //   PopBatch 清除会让同 batch 跨度内 wantContourLines=false
+                    //   的 draw[branch contourLine 覆写 displayContours=false]
+                    //   带着上一组的陈旧 LUT 武装（评审 Important-1——else 臂
+                    //   即该否臂；featureTable 缺席细分在参考不可达[Batch 恒
+                    //   携 featureMap]，DanQing 无表 batch→nullptr=否臂等价
+                    //   面）+ webgl/Contours.ts:144-151 的
+                    //   bindContourLUTWidth/bindContourLUT（GPU 绑=本绘制环——
+                    //   EQUIVALENCE §11.10：参考绑定位=GraphicUniform lambda 内
                     //   bindSampler；DanQing=绘制环 driver.bindTexture[
                     //   s_sensorSampler 同族先例，同值同序——本段在
                     //   shader->draw 前]；sampler 索引 uniform 仍由
-                    //   GraphicUniform 恒写[防 loopback 注 Contours.ts:123-124]；
-                    //   发散=未发现；验证法=ContoursTest + X-a5 像素锁）。
+                    //   GraphicUniform 恒写[防 loopback 注
+                    //   glsl/Contours.ts:123-124]；发散=未发现；验证法=
+                    //   ContoursTest + X-a5 像素锁 +
+                    //   MidSpanContoursOffBranchDisarmsLut 锁）。
                     {
                         bool const wantContours = m_target.getUniforms().batch.wantContourLines();
                         // TEMP-DIAG（X-a5 取证，env 门控——§13.1 族；定位后留探针登记）。
                         static bool const s_contourTrace = std::getenv("DANQING_CONTOUR_TRACE") != nullptr;
                         if (s_contourTrace) {
                             auto const* cc = m_target.getCurrentContours();
-                            auto* curBatch = m_batchState.getCurrentBatch();
+                            auto* traceBatch = m_batchState.getCurrentBatch();
                             fprintf(stderr, "[CONTOUR] want=%d currentContours=%s(display=%d,groups=%zu) batch=%s ft=%s\n",
                                     (int)wantContours,
                                     cc ? "set" : "null", cc ? (int)cc->displayContours : -1,
                                     cc ? cc->groups.size() : (size_t)0,
-                                    curBatch ? "set" : "null",
-                                    (curBatch && curBatch->getFeatureTable()) ? "set" : "null");
+                                    traceBatch ? "set" : "null",
+                                    (traceBatch && traceBatch->getFeatureTable()) ? "set" : "null");
                             fflush(stderr);
                         }
-                        if (wantContours) {
-                        if (auto* curBatch = m_batchState.getCurrentBatch()) {
-                            if (curBatch->getFeatureTable()) {
-                                auto& contours = curBatch->getContours(m_target);
-                                m_target.getUniforms().batch.setContours(&contours);
-                                if (auto const tex = contours.getTexture();
-                                    tex != rhi::TextureHandle{}) {
-                                    constexpr uint32_t kContourTexUnit =
-                                        static_cast<uint32_t>(GL::TextureUnit::Contours)
-                                        - static_cast<uint32_t>(GL::TextureUnit::Zero);  // =14
-                                    driver.bindTexture(kContourTexUnit, tex);
-                                    params.setInt("u_contourLUT",
-                                                  static_cast<int>(kContourTexUnit));
-                                }
+                        auto* curBatch = m_batchState.getCurrentBatch();
+                        if (wantContours && nullptr != curBatch
+                            && nullptr != curBatch->getFeatureTable()) {
+                            auto& contours = curBatch->getContours(m_target);
+                            m_target.getUniforms().batch.setContours(&contours);
+                            if (auto const tex = contours.getTexture();
+                                tex != rhi::TextureHandle{}) {
+                                constexpr uint32_t kContourTexUnit =
+                                    static_cast<uint32_t>(GL::TextureUnit::Contours)
+                                    - static_cast<uint32_t>(GL::TextureUnit::Zero);  // =14
+                                driver.bindTexture(kContourTexUnit, tex);
+                                params.setInt("u_contourLUT",
+                                              static_cast<int>(kContourTexUnit));
                             }
+                        } else {
+                            // BatchUniforms.ts:91 否臂（无条件赋值的 reset 半——
+                            // 见段首注）。
+                            m_target.getUniforms().batch.setContours(nullptr);
                         }
-                        }  // if (wantContours)
                     }  // contour trace/feed block
                     {
                         auto const tBind0 = std::chrono::steady_clock::now();
@@ -2990,12 +3000,20 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                 auto* branchCmd = static_cast<PushBranchCommand*>(cmd.get());
                 // M-S S-d：携 localToWorld 进栈组合（参考 BranchState.fromBranch
                 // 的 transform 组合——BranchUniforms.update 的 model 入参源）。
+                // M-X X-a2-fix：contourLine 覆写进栈（参考 execute →
+                // Target.pushBranch → BranchStack.pushBranch → fromBranch :123
+                // 的 `branch.contourLine ?? prev.contourLine` 双臂）。
+                dqCommon::ContourDisplay const* contourOverride = nullptr;
+                if (branchCmd->getContourLine().has_value())
+                    contourOverride = &*branchCmd->getContourLine();
                 if (branchCmd->hasViewFlags()) {
                     m_branchStack.push(branchCmd->getMv(), branchCmd->getMvp(),
-                                      branchCmd->getViewFlags(), &branchCmd->getLocalToWorld());
+                                      branchCmd->getViewFlags(), &branchCmd->getLocalToWorld(),
+                                      contourOverride);
                 } else {
                     m_branchStack.pushTransform(branchCmd->getMv(), branchCmd->getMvp(),
-                                                &branchCmd->getLocalToWorld());
+                                                &branchCmd->getLocalToWorld(),
+                                                contourOverride);
                 }
                 break;
             }

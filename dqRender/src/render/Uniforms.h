@@ -204,8 +204,8 @@ public:
 
     /// Bind the per-batch contour LUT sampler（Contours.bindContourLUT
     ///   [:148-151]面——GPU 纹理绑=绘制环 EQUIVALENCE[s_sensorSampler 同族]；
-    ///   本面=sampler 单元索引 uniform 恒写[Contours.ts:123-124 的防 loopback
-    ///   注]）。
+    ///   本面=sampler 单元索引 uniform 恒写[glsl/Contours.ts:123-124 的防
+    ///   loopback 注]）。
     void bindContourLUT(UniformHandle& uniform) const;
 
     /// Bind the contour LUT width（Contours.bindContourLUTWidth[:144-146]；

@@ -45,7 +45,7 @@ bool BatchUniforms::wantContourLines() const noexcept
 void BatchUniforms::bindContourLUT(UniformHandle& uniform) const
 {
     // TextureUnit.Contours - TextureUnit.Zero（RenderFlags.h:169 的 0x84CE 相对
-    // 单元 14）——Contours.ts:123-124 的防 loopback 恒写。
+    // 单元 14）——glsl/Contours.ts:123-124 的防 loopback 恒写。
     uniform.setUniform1i(static_cast<int>(GL::TextureUnit::Contours)
                          - static_cast<int>(GL::TextureUnit::Zero));
 }

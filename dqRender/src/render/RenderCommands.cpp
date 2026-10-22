@@ -828,6 +828,8 @@ void RenderCommands::pushAndPop(DrawCommand& push, DrawCommand& pop,
                     clone->setLocalToWorld(src.getLocalToWorld());  // M-S S-d
                     if (src.hasViewFlags())
                         clone->setViewFlags(src.getViewFlags());
+                    if (src.getContourLine().has_value())  // M-X X-a2-fix
+                        clone->setContourLine(*src.getContourLine());
                     cmds.push_back(std::move(clone));
                     break;
                 }
@@ -864,6 +866,8 @@ void RenderCommands::pushAndPop(DrawCommand& push, DrawCommand& pop,
                     clone->setLocalToWorld(src.getLocalToWorld());  // M-S S-d
                     if (src.hasViewFlags())
                         clone->setViewFlags(src.getViewFlags());
+                    if (src.getContourLine().has_value())  // M-X X-a2-fix
+                        clone->setContourLine(*src.getContourLine());
                     cmds.push_back(std::move(clone));
                     break;
                 }
@@ -1004,6 +1008,11 @@ void RenderCommands::pushAndPopBranchInternal(Branch& branch,
     push->setLocalToWorld(branch.getLocalToWorld());  // M-S S-d：携分支模型变换
     if (branch.hasViewFlags())
         push->setViewFlags(branch.getViewFlags());
+    // M-X X-a2-fix：携分支 contourLine 覆写（参考 _pushAndPopBranch :468 的
+    // PushBranchCommand(branch) 持整个 Branch；DanQing 拷贝适配面此前丢此
+    // 字段——branch 级 contour 生产源从不到达绘制栈）。
+    if (branch.getContourLine().has_value())
+        push->setContourLine(*branch.getContourLine());
     auto pop = std::make_unique<PopBranchCommand>();
     pushAndPop(*push, *pop, std::move(func));
 

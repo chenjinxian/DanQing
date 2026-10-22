@@ -10,6 +10,7 @@
 #include "ClipVolume.h"  // PushClipCommand 的 RefPtr<ClipVolume>（M-P P-C）
 #include "ViewFlags.h"  // Must be before namespace opening (includes dqCommon headers)
 #include "dqGeom/Transform.h"  // PushBranchCommand 的 localToWorld 载体（M-S S-d）
+#include <dqCommon/ContourDisplay.h>  // PushBranchCommand 的 contourLine 载体（M-X X-a2-fix）
 
 #ifndef BEGIN_DQ_RENDER_NAMESPACE
 #define BEGIN_DQ_RENDER_NAMESPACE namespace dqRender {
@@ -113,6 +114,21 @@ public:
     BranchViewFlags const& getViewFlags() const noexcept { return m_viewFlags; }
     bool hasViewFlags() const noexcept { return m_hasViewFlags; }
 
+    // M-X X-a2-fix：携带分支的 contourLine 覆写（参考 PushBranchCommand 持
+    // Branch，execute → Target.pushBranch → BranchStack.pushBranch →
+    // BranchState.fromBranch :123 的 `contourLine: branch.contourLine ??
+    // prev.contourLine`——DanQing 的命令拷贝适配面原先丢此字段，branch 级
+    // contour 生产源[Branch.setContourLine]从不到达绘制栈 = ported-but-
+    // uncalled 半段）。
+    void setContourLine(dqCommon::ContourDisplay const& contours)
+    {
+        m_contourLine = contours;
+    }
+    std::optional<dqCommon::ContourDisplay> const& getContourLine() const noexcept
+    {
+        return m_contourLine;
+    }
+
     void execute(ShaderProgramExecutor& executor) override;
 
 private:
@@ -120,6 +136,7 @@ private:
     float m_mvp[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
     dqGeom::Transform m_localToWorld;  // 默认恒等（ctor 列）
     BranchViewFlags m_viewFlags;
+    std::optional<dqCommon::ContourDisplay> m_contourLine;  // ← Graphic.ts:353 Branch.contourLine
     bool m_hasViewFlags = false;
 };
 
