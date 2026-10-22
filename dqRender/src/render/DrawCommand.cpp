@@ -149,12 +149,16 @@ void PushBatchCommand::execute(ShaderProgramExecutor& /*exec*/)
 
 // ---------------------------------------------------------------------------
 // PopBatchCommand::execute — pop batch from batch state
-// Ported from: itwinjs-core DrawCommand.ts PopBatchCommand.execute()
+// Ported from: itwinjs-core DrawCommand.ts PopBatchCommand.execute()（:115
+// `exec.target.popBatch()`——Target.ts:379-381 → BatchUniforms.
+// clearCurrentBatch → _setCurrentBatch(undefined)）。原形式的整表 reset()
+// 偏离参考（pop≠reset——注册表跨帧保活是参考语义，reset 仅 readPixels
+// 边界）且为死路径（compositor 内联执行命令）；AV 修复轮归位。
 // ---------------------------------------------------------------------------
 void PopBatchCommand::execute(ShaderProgramExecutor& exec)
 {
     auto& target = exec.getTarget();
-    target.getBatchState().reset();
+    target.getUniforms().batch.clearCurrentBatch(target.getBatchState());
 }
 
 // ---------------------------------------------------------------------------

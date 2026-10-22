@@ -238,13 +238,19 @@ public:
     }
 
     /// Clear the current batch.
-    /// Ported from: itwinjs-core BatchUniforms.clearCurrentBatch()
+    /// Ported from: itwinjs-core BatchUniforms.clearCurrentBatch()（:47-49 →
+    ///   _setCurrentBatch(undefined)——全 uniforms 面清态：overrides/featureMode/
+    ///   batchId/**contours[:91 否臂的 `_contours = undefined`——原内联散置在
+    ///   compositor PopBatch 案，AV 修复轮归位到本批次面]**。AV 专案 §3⑤：
+    ///   compositor 内联 `case PopBatch: pop()` 缺本清态面（参考 PopBatch-
+    ///   Command.execute → Target.popBatch[Target.ts:379-381] → 本函数）。
     void clearCurrentBatch(BatchState& state)
     {
         state.pop();
         m_overrides = nullptr;
         m_featureMode = 0;
         setBatchId(0);
+        setContours(nullptr);
     }
 
     uint32_t getBatchId() const noexcept { return m_batchId; }

@@ -87,6 +87,68 @@ TEST(BatchStateTest, Reset)
     EXPECT_EQ(state.getCurrentBatchId(), 0u);
 }
 
+// 幂等守卫（AV 专案修复轮——BatchState.ts:110-117 的
+// `if (allowAdd && 0 === batch.batchId)` 门）：已注册批（batchId!=0）重复
+// assignBatchId 时不得二次入表/不得推进 id 段。无守卫时每帧重复注册使
+// 注册表膨胀（TD-35 pickable ACS 每帧 dispose+重建批）且 id 段位与表项
+// 错配 → findBatch 二分比较读垃圾 batchId（2026-10-22 四真窗 SEH AV 根因
+// 之一——av-rootcause-report.md §3①）。
+// Authored: no reference test exists in itwinjs-core for BatchState
+//           （core/frontend 无 BatchState 单测面；行为锚=BatchState.ts:110-117）。
+TEST(BatchStateTest, AssignBatchIdIsIdempotentForRegisteredBatch)
+{
+    BatchState state;
+    Batch batch1(10);
+    Batch batch2(20);
+
+    state.assignBatchId(batch1);
+    uint32_t const id1 = batch1.getBatchId();
+    ASSERT_NE(id1, 0u);
+
+    state.assignBatchId(batch1);  // 同批重复注册（每帧 addBatch 面同形）
+    EXPECT_EQ(state.getNumBatches(), 1u) << "registered batch must not re-enter the registry";
+    EXPECT_EQ(batch1.getBatchId(), id1) << "batchId must stay stable";
+    EXPECT_EQ(state.getNumFeatureIds(), 11u)
+        << "id segment must advance once (1 + 10 features), not per duplicate call";
+
+    state.assignBatchId(batch2);
+    EXPECT_EQ(state.getNumBatches(), 2u);
+    EXPECT_EQ(batch2.getBatchId(), 11u) << "next batch starts after batch1's segment";
+}
+
+// ~Batch 自摘除（C++ 生命周期适配——TD-22 同族）：参考注册表由 GC 保活
+//（BatchState._batches 持强引用至 reset()）；DanQing 的 Batch 归 graphic 树
+// 所有，装饰每帧 dispose+重建时裸指针条目悬垂 → findBatch 经死批读/写已
+// 释放内存（av-rootcause-report.md §3② site C 崩栈实锤）。摘除后注册表
+// 任意时刻只含活批。
+// Authored: no reference test exists in itwinjs-core for Batch destruction
+//          （GC 语义在 JS 无对应物——C++ 显式所有权适配，TD-22 先例形态）。
+TEST(BatchStateTest, BatchDestructionUnregistersFromBatchState)
+{
+    BatchState state;
+    {
+        Batch batch(10);
+        state.assignBatchId(batch);
+        ASSERT_EQ(state.getNumBatches(), 1u);
+        uint32_t const id = batch.getBatchId();
+        ASSERT_NE(id, 0u);
+        EXPECT_NE(state.findBatch(id), nullptr);
+
+    }  // ~Batch —— 批随 graphic 树销毁（装饰 dispose 同形）
+
+    EXPECT_TRUE(state.isEmpty()) << "dead batch must self-unregister";
+    // findBatch 不得踩死批内存（AV site C：经死指针读 getBatchId）。
+    EXPECT_EQ(state.findBatch(1u), nullptr);
+    EXPECT_EQ(state.findBatch(5u), nullptr);
+    EXPECT_EQ(state.getCurrentBatch(), nullptr);
+
+    // 后续注册继续工作（id 空间无残留）。
+    Batch next(4);
+    state.assignBatchId(next);
+    EXPECT_EQ(state.getNumBatches(), 1u);
+    EXPECT_NE(state.findBatch(next.getBatchId()), nullptr);
+}
+
 // ============================================================================
 // BranchStack tests
 // ============================================================================

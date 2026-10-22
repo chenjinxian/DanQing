@@ -12,7 +12,14 @@ BEGIN_DQ_RENDER_NAMESPACE
 // ---------------------------------------------------------------------------
 // Batch
 // ---------------------------------------------------------------------------
-Batch::~Batch() = default;  // unique_ptr<Contours> 不完全类型的出列点（Batch.h 注）
+// unique_ptr<Contours> 不完全类型的出列点（Batch.h 注）+ 注册表自摘除
+//（AV 专案修复轮——见 Batch.h setBatchState 注：参考 GC 保活在 C++ 无
+// 对应物，裸指针条目随装饰每帧 dispose+重建悬垂 → findBatch 经死批读/写）。
+Batch::~Batch()
+{
+    if (m_batchState)
+        m_batchState->unregisterBatch(*this);
+}
 
 Batch::Batch(uint32_t featureCount)
     : m_featureCount(featureCount)
@@ -289,17 +296,57 @@ void Batch::unionRange(dqGeom::Range3d& range) const
 
 // ---------------------------------------------------------------------------
 // BatchState — assignBatchId
-// Ported from: itwinjs-core BatchState.getBatchId() (line 104-117)
+// Ported from: itwinjs-core BatchState.getBatchId() (BatchState.ts:110-117)
 // ---------------------------------------------------------------------------
 void BatchState::assignBatchId(Batch& batch)
 {
+    // 幂等守卫（BatchState.ts:111 的 `allowAdd && 0 === batch.batchId` 门
+    //——DanQing 的调用点[RenderCommands::addBatch + BatchUniforms::
+    // setCurrentBatch]均 allowAdd 形）：仅未注册批（batchId==0）入表，已
+    // 注册批直接保持原 id。AV 专案（2026-10-22，av-rootcause-report.md
+    // §3①）：缺守卫使 TD-35 pickable ACS 原点批每帧 dispose+重建时同批
+    // 重复入表 + id 段逐次推进 → 注册表膨胀全悬垂且段位与表项错配 →
+    // findBatch 二分比较读垃圾 batchId。
+    if (0 != batch.getBatchId())
+        return;
+
     batch.setContext(m_nextBatchId);
+    // C++ 生命周期适配（TD-22 同族——Batch.h setBatchState 注）：登记反
+    // 指针，~Batch 自摘除（参考 getBatchId 的 setContext+push 原子对，
+    // BatchState.ts:112-113——GC 保活语义的显式所有权等价面）。
+    batch.setBatchState(this);
     m_batches.push_back(&batch);
 
     // advance by the number of features (at least 1 to avoid zero-width range).
     uint32_t numFeatures = batch.getFeatureCount();
     if (numFeatures == 0) numFeatures = 1;
     m_nextBatchId += numFeatures;
+}
+
+// ---------------------------------------------------------------------------
+// BatchState — unregisterBatch（~Batch 自摘除）
+// Authored: no reference equivalent exists——参考注册表由 GC 保活（死批在
+// JS 不可能留在 _batches）；DanQing 的 Batch 归 graphic 树所有，摘除使
+// 注册表任意时刻只含活批（av-rootcause-report.md §4.2——TD-22 同族形态）。
+// ---------------------------------------------------------------------------
+void BatchState::unregisterBatch(Batch& batch)
+{
+    auto it = std::find(m_batches.begin(), m_batches.end(), &batch);
+    if (it != m_batches.end())
+        m_batches.erase(it);
+
+    // 防御性清扫（正常死亡发生在帧间——绘制期无 dispose；此处兜底帧内
+    // 死亡时 current/栈不留悬垂）。
+    if (m_currentBatch == &batch) {
+        m_currentBatch = nullptr;
+        m_currentBatchId = 0;
+    }
+    for (auto& entry : m_batchStack) {
+        if (entry.batch == &batch) {
+            entry.batch = nullptr;
+            entry.batchId = 0;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -311,6 +358,7 @@ void BatchState::reset()
     // Reset context on all registered batches.
     for (auto* batch : m_batches) {
         batch->resetContext();
+        batch->setBatchState(nullptr);  // 表已清空——反指针同步摘除（见 Batch.h 注）
     }
     m_batches.clear();
     m_nextBatchId = 1;

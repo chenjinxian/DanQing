@@ -28,6 +28,7 @@
 
 BEGIN_DQ_RENDER_NAMESPACE
 
+class BatchState;   // m_batchState 反指针（AV 专案修复轮——GC 生命周期适配）
 class Contours;    // M-X X-a3（m_contours unique_ptr 不完全类型面）
 class TargetImpl;
 
@@ -95,6 +96,17 @@ public:
         m_batchId = 0;
         m_context = BatchContext{};
     }
+
+    /// Owner-registry back-pointer（AV 专案修复轮——C++ 生命周期适配，
+    /// TD-22 同族先例形态）。参考 BatchState._batches 由 GC 保活（注册表持
+    /// 强引用至 reset()，死批在 JS 不可能留在表内）；DanQing 的 Batch 归
+    /// graphic 树所有——装饰每帧 dispose+重建（TD-35 pickable ACS 原点批）
+    /// 使裸指针条目悬垂 → findBatch 二分比较经死批读/写已释放内存
+    /// （av-rootcause-report.md §2.3 site A/B/C）。~Batch 经此反指针自摘除
+    /// （BatchState::unregisterBatch），注册表任意时刻只含活批。登记于
+    /// assignBatchId（参考 getBatchId 的 setContext+push 原子对，
+    /// BatchState.ts:112-113）。
+    void setBatchState(BatchState* state) noexcept { m_batchState = state; }
 
     /// Get the number of features in this batch.
     uint32_t getFeatureCount() const noexcept { return m_featureCount; }
@@ -256,6 +268,7 @@ private:
     dqGeom::Range3d m_range;
     uint32_t m_featureCount = 0;
     uint32_t m_batchId = 0;
+    BatchState* m_batchState = nullptr;  // ← 注册表反指针（setBatchState 注）
     uint32_t m_lastHiliteVersion = 0;
     uint32_t m_lastSubCategoryVisibilityVersion = 0;  // M-N(1)
     uint32_t m_lastAppearanceOverridesVersion = 0;    // M-O(2) I10
@@ -277,6 +290,13 @@ public:
     /// Assign a batch ID to the given batch.
     /// Ported from: itwinjs-core BatchState.getBatchId() (line 104-117)
     void assignBatchId(Batch& batch);
+
+    /// Self-deregistration from ~Batch（C++ 生命周期适配——TD-22 同族；
+    /// 参考 GC 保活语义在 C++ 无对应物，见 Batch::setBatchState 注）。
+    /// 幂等：不在表内时 no-op（reset 后死亡/重复摘除安全）。
+    /// Authored: no reference equivalent exists（GC 保活的 C++ 显式所有权
+    /// 适配面——av-rootcause-report.md §4.2）。
+    void unregisterBatch(Batch& batch);
 
     /// Reset for a new frame.
     /// Ported from: itwinjs-core BatchState.reset() (line 81-87)

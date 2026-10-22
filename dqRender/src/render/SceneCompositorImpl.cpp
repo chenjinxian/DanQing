@@ -3154,13 +3154,13 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                 break;
             }
             case DrawCommandType::PopBatch:
-                m_batchState.pop();
-                // M-X X-a3：批次弹栈清 contours 供给（参考 BatchUniforms.
-                //   clearCurrentBatch/_setCurrentBatch(undefined) 的
-                //   `_contours = undefined` 语义[:47-49/:91 否臂]——不清则后续
-                //   无 batch 图元（装饰）的 u_contourLUTWidth 读残留宽，
-                //   采样单元 14 的上一 batch LUT=跨 batch 污染[TD-28③ 同族]）。
-                m_target.getUniforms().batch.setContours(nullptr);
+                // 参考 PopBatchCommand.execute → Target.popBatch
+                //（Target.ts:379-381）→ BatchUniforms.clearCurrentBatch →
+                // _setCurrentBatch(undefined)（弹栈 + 清批次 uniforms 面：
+                // batchId/featureMode/overrides/contours[:91 否臂]）。原内联
+                // 仅 pop() 漏清 uniforms 面（AV 专案 §3⑤ 保真项）；contours
+                // 清除腿随 X-a3 修复轮散置于此，现归位进 clearCurrentBatch。
+                m_target.getUniforms().batch.clearCurrentBatch(m_batchState);
                 break;
             case DrawCommandType::PushClip: {
                 // Ported from: itwinjs-core DrawCommand.ts PushClipCommand.execute()
