@@ -385,6 +385,7 @@ if(TARGET gtest_main AND TARGET dqApp)
         tests/AnalysisStyleE2ETest.cpp  # M-W W-a6：分析样式 E2E 像素锁（Authored §5(g)）
         src/Gui/AnalysisStyleExample.cpp  # M-W W-a6：被测面双注册（app+DtaTest 双目标，M-M(6) 先例）
         # B-lane 锚（M-W 起——B 道代理只在此锚下追加[注册序尾]；勿动他区）
+        tests/IncidentMarkerPixelTest.cpp  # M-X 主会话集成：IncidentMarker 真窗像素锁（XE15 GPU 腿活体——Authored §5(g)）
         tests/PathDecorationTestLock.cpp  # M-W W-b1：几何/toggle/拾取/canvas 占位锁 + 真窗像素锁（主会话收口跑）
         src/Gui/PathDecorationTest.cpp    # M-W W-b1 被测面
         src/Gui/PathDecorationTest.h      # include-path parity
