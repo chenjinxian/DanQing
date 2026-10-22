@@ -287,6 +287,14 @@ class BatchState {
 public:
     BatchState() = default;
 
+    // 反指针生命周期闭合（AV 修复轮 2——X-batch-fix2）：本表先于批死亡时
+    //（dump 族 teardown 实测序——view[TargetImpl/BatchState] 先析构、瓦树
+    // 后析构[M-Q 同款析构序注记的对面形态]）清各批反指针，否则 ~Batch 经
+    // 悬垂 m_batchState 调 unregisterBatch = UAF（dump 族 12 败簇 SEH
+    // 0xc0000005 崩点——Mirukuru content 打印后崩）。参考 GC 无此面（无
+    // 手动析构序）；批先亡→unregister / 表先亡→此处摘除——双向闭合。
+    ~BatchState();
+
     /// Assign a batch ID to the given batch.
     /// Ported from: itwinjs-core BatchState.getBatchId() (line 104-117)
     void assignBatchId(Batch& batch);

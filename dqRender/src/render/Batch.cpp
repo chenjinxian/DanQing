@@ -350,6 +350,20 @@ void BatchState::unregisterBatch(Batch& batch)
 }
 
 // ---------------------------------------------------------------------------
+// BatchState — ~BatchState（反指针生命周期闭合）
+// Authored: no reference equivalent exists——参考注册表由 GC 保活（表与批的
+// 死亡序在 JS 不存在）；dump 族 teardown 实测序 = view[TargetImpl/BatchState]
+// 先析构、瓦树后析构（X-batch-fix2 崩点）。
+// ---------------------------------------------------------------------------
+BatchState::~BatchState()
+{
+    for (auto* batch : m_batches) {
+        if (batch)
+            batch->setBatchState(nullptr);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // BatchState — reset
 // Ported from: itwinjs-core BatchState.reset() (line 81-87)
 // ---------------------------------------------------------------------------
