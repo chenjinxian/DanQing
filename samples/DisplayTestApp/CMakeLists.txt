@@ -112,6 +112,8 @@ add_executable(DisplayTestApp WIN32
     src/Gui/SurfaceTools.h
     src/Gui/IncidentMarkerDemo.cpp   # M-X X-b2：IncidentMarkerDemo（IncidentMarkerDemo.ts）
     src/Gui/IncidentMarkerDemo.h
+    src/Gui/ContoursPanel.cpp        # M-X 主会话集成：Contours 面板（Contours.ts ContoursSettings）
+    src/Gui/ContoursPanel.h          # MOC needs this for Q_OBJECT
 )
 
 target_include_directories(DisplayTestApp PRIVATE
@@ -399,6 +401,9 @@ if(TARGET gtest_main AND TARGET dqApp)
         tests/IncidentMarkerDemoTest.cpp  # M-X X-b2：toggle 状态机/makeColor 插值钉值/聚类合成计数/loading 门/资产装载锁（无头面）
         src/Gui/IncidentMarkerDemo.cpp    # M-X X-b2 被测面（app+DtaTest 双注册，M-M(6) 先例）
         src/Gui/IncidentMarkerDemo.h      # include-path parity
+        tests/ContoursPanelTest.cpp      # M-X 主会话集成：Contours 面板状态机 + item 24 wiring 锁（Authored）
+        src/Gui/ContoursPanel.cpp        # M-X 主会话集成被测面（app+DtaTest 双注册）
+        src/Gui/ContoursPanel.h          # MOC needs this for Q_OBJECT
         resources.qrc                 # DTA 图标资源（字体 + SVG——图标断言测试需要）
     )
     target_include_directories(DisplayTestAppDtaTest PRIVATE

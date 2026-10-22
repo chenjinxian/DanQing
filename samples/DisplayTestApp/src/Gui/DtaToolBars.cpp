@@ -36,6 +36,7 @@
 #include "SectionsPanel.h"           // M-P P-G Sectioning 弹出面板
 #include "TimelinePanel.h"           // M-U U-f Animation/Timeline 弹出面板
 #include "CameraPathsPanel.h"        // M-V Camera Paths 弹出面板
+#include "ContoursPanel.h"           // M-X 主会话集成 Contours 弹出面板（item 24）
 #include "SavedViewsPanel.h"         // M-O(2) I9 Saved Views 弹出面板
 #include "MainWindow.h"               // M-O(1) R2 addPanelToggle（dock 面板开关）
 #include "View3DInventor.h"
@@ -724,9 +725,32 @@ void DtaToolBarSet::buildMainToolBar(QMainWindow* mw)
         oa->setIcon(dtaGlyphIcon(0xe90a));
     }
 
-    // ── 23/24/25. Point cloud / Contours / Format Set（:400-421——置灰）──
+    // ── 23/24/25. Point cloud / Contours / Format Set（:400-421）──
     addDisabled(tb, QStringLiteral("Point Cloud"), 0xe923, QStringLiteral("Point cloud settings"));
-    addDisabled(tb, QStringLiteral("Contours"), 0xe94b, QStringLiteral("Contour display"));
+
+    // 24. Contours（:411-427——M-X 主会话集成 live：ContoursPanel，
+    //     createDropDown 构造即 ContoursSettings）
+    {
+        auto* btn = new QToolButton(tb);
+        btn->setText(QStringLiteral("Contours"));
+        btn->setIcon(dtaGlyphIcon(0xe94b));
+        btn->setToolTip(QStringLiteral("Contour display"));
+        btn->setPopupMode(QToolButton::InstantPopup);
+        DtaToolBarSet* self = this;
+        QObject::connect(btn, &QToolButton::clicked, btn, [btn, self]() {
+            auto* vp = activeViewport();
+            if (!vp)
+                return;
+            auto* panel = new Gui::ContoursPanel(vp, btn);
+            panel->setAttribute(Qt::WA_DeleteOnClose);
+            panel->move(btn->mapToGlobal(QPoint(0, btn->height())));
+            self->openDropDown(panel);
+        });
+        QAction* ca = tb->addWidget(btn);
+        ca->setText(QStringLiteral("Contours"));
+        ca->setIcon(dtaGlyphIcon(0xe94b));
+    }
+
     addDisabled(tb, QStringLiteral("Format Set"), 0xe9cc, QStringLiteral("Load Format Set from JSON file"));
 
     // ── 26. Google Maps（:424-434——config googleMapsUi 门；DanQing 无该
