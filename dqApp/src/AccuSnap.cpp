@@ -10,14 +10,21 @@
 #define DANQING_SPRITE_ASSETS_DIR "."
 #endif
 
+#include <cstdlib>  // P-4：getenv（DANQING_SPRITE_ASSETS_DIR 运行时覆写）
+
 namespace dqApp {
 
 void AccuSnap::activateCrossAt(Viewport& vp, double viewX, double viewY)
 {
     // Lazy sprite load (the reference's IconSprites cache-by-url,
     // Sprites.ts:66-73 — first use loads, later uses reuse).
-    if (!m_snapCrossHot.isLoaded())
-        m_snapCrossHot.loadFromFile(DANQING_SPRITE_ASSETS_DIR "/SnapCross.png", vp);
+    if (!m_snapCrossHot.isLoaded()) {
+        // P-4：运行时 env 覆写（二进制包 run.cmd 注入；编译期宏为默认）。
+        char const* spriteDir = DANQING_SPRITE_ASSETS_DIR;
+        if (char const* env = std::getenv("DANQING_SPRITE_ASSETS_DIR"))
+            spriteDir = env;
+        m_snapCrossHot.loadFromFile(std::string(spriteDir) + "/SnapCross.png", vp);
+    }
     if (!m_snapCrossHot.isLoaded())
         return;   // sprite assets missing — degrade to no cross (no crash path)
 

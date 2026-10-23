@@ -86,10 +86,9 @@ std::map<std::string, std::string> App::Application::m_config;
 // === M-H(4)：Start 页双模型打开入口支撑 ===
 // assets 根寻址（与 tests 同惯例——RpcDumpRenderTest.cpp:226-228）：编译期
 // DANQING_TILE_ASSETS_DIR（DisplayTestApp 目标同 DtaTest 定义，CMakeLists）+
-// 运行时 DANQING_RPC_DUMP env 覆写整个 dump 根。
-#ifndef DANQING_TILE_ASSETS_DIR
-#define DANQING_TILE_ASSETS_DIR "."
-#endif
+// 运行时 DANQING_RPC_DUMP env 覆写整个 dump 根（消费面在 DumpOpenHelper.cpp
+// ——本文件无宏消费，P-4 死定义已清；资产四族 env 覆写同型：SPRITE/CURSOR/
+// DTA_ASSETS_DIR）。
 
 namespace {
 
@@ -430,14 +429,29 @@ int main(int argc, char** argv)
                     }
             }
             if (autoClip) {
-                // 居中水平剖切（viewRange z 中位 + 内法向 +Z）+ 装饰。
+                // 水平剖切（内容域 z 分位 + 内法向 +Z——P-4 实录修正：原
+                // computeViewRange z 中位落在内容之下全裁空；z 中位对部分
+                // 模型又在内容之上。DANQING_AUTO_CLIP=<f> 取内容 z 跨度的
+                // 分位 f（缺省 0.35——切穿球阵/屋身而非切顶）+ 装饰。
                 auto* view3d = vp->GetView() ? vp->GetView()->AsViewState3d() : nullptr;
                 if (view3d) {
-                    dqGeom::Range3d const vr = vp->computeViewRange();
-                    double const zMid = 0.5 * (vr.low.z + vr.high.z);
+                    double zPlane = 0.0;
+                    if (auto* imodel = vp->GetIModel()) {
+                        dqGeom::Range3d const pe = imodel->GetProjectExtents();
+                        double f = 0.35;
+                        if (char const* c = std::getenv("DANQING_AUTO_CLIP")) {
+                            double const v = std::atof(c);
+                            if (v > 0.0 && v < 1.0)
+                                f = v;
+                        }
+                        zPlane = pe.low.z + f * (pe.high.z - pe.low.z);
+                    } else {
+                        dqGeom::Range3d const vr = vp->computeViewRange();
+                        zPlane = 0.5 * (vr.low.z + vr.high.z);
+                    }
                     if (dqApp::ViewClipTool::doClipToPlane(
-                            *vp, dqGeom::Point3d::From(0, 0, zMid),
-                            dqGeom::Vector3d::From(0, 0, 1), true))
+                            *vp, dqGeom::Point3d::From(0, 0, zPlane),
+                            dqGeom::Vector3d::From(0, 0, -1), true))  // 内法向 -Z：保 z ≤ plane（球阵），裁面上方高件
                         dqApp::ViewClipDecorationProvider::create().onNewClipPlane(*vp);
                 }
             }

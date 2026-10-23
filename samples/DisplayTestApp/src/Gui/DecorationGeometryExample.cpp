@@ -403,7 +403,11 @@ QString GeometryDecorator::GetDecorationToolTip(uint32_t) const
 // ---------------------------------------------------------------------------
 static rhi::TextureHandle LoadExampleTexture(dqApp::Viewport& vp, char const* file)
 {
-    std::string const path = std::string(DANQING_SPRITE_ASSETS_DIR "/") + file;
+    // P-4：运行时 env 覆写（二进制包 run.cmd 注入；编译期宏为默认）。
+    char const* spriteDir = DANQING_SPRITE_ASSETS_DIR;
+    if (char const* env = std::getenv("DANQING_SPRITE_ASSETS_DIR"))
+        spriteDir = env;
+    std::string const path = std::string(spriteDir) + "/" + file;
     std::ifstream f(path, std::ios::binary | std::ios::ate);
     if (!f.is_open()) {
         fprintf(stderr, "[DECgeo] failed to open %s\n", path.c_str());

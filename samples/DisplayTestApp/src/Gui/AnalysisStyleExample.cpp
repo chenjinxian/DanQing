@@ -32,6 +32,7 @@
 #include <cmath>
 #include <fstream>
 #include <sstream>
+#include <cstdlib>  // P-4：getenv（DANQING_DTA_ASSETS_DIR 运行时覆写）
 #include <utility>
 
 #ifndef DANQING_DTA_ASSETS_DIR
@@ -228,7 +229,11 @@ void populateAnalysisStyles(AnalysisMesh& mesh, double displacementScale)
 // Ported from: AnalysisStyleExample.ts createCantilever（:66-77）。
 dqBase::RefPtr<dqGeom::IndexedPolyface> createCantilever()
 {
-    std::string const path = std::string(DANQING_DTA_ASSETS_DIR) + "/cantilever.imjs";
+    // P-4：运行时 env 覆写（二进制包 run.cmd 注入；编译期宏为默认）。
+    char const* dtaDir = DANQING_DTA_ASSETS_DIR;
+    if (char const* env = std::getenv("DANQING_DTA_ASSETS_DIR"))
+        dtaDir = env;
+    std::string const path = std::string(dtaDir) + "/cantilever.imjs";
     std::ifstream ifs(path, std::ios::binary);
     if (!ifs)
         return nullptr;

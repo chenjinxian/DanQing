@@ -22,6 +22,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>  // P-4：getenv（DANQING_DTA_ASSETS_DIR 运行时覆写）
 #include <random>
 
 namespace Gui {
@@ -268,7 +269,11 @@ IncidentMarkerDemo::~IncidentMarkerDemo()
 // Ported from: loadOne（:161-170——失败记日志继续[catch 分支]）。
 void IncidentMarkerDemo::loadOne(size_t index, char const* src)
 {
-    std::string const path = std::string(DANQING_DTA_ASSETS_DIR) + "/" + src;
+    // P-4：运行时 env 覆写（二进制包 run.cmd 注入；编译期宏为默认）。
+    char const* dtaDir = DANQING_DTA_ASSETS_DIR;
+    if (char const* env = std::getenv("DANQING_DTA_ASSETS_DIR"))
+        dtaDir = env;
+    std::string const path = std::string(dtaDir) + "/" + src;
     QImageReader reader(QString::fromStdString(path));
     QImage const img = reader.read();
     if (img.isNull()) {

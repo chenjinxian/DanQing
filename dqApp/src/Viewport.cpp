@@ -290,8 +290,13 @@ void Viewport::setCursor(std::string const& cursor)
             {"grabbing", 8, 10},   {"walk", 16, 15},     {"rotate", 16, 15},
             {"look", 16, 15},      {"zoom", 16, 15},
         };
+        // P-4：运行时 env 覆写（二进制包 run.cmd 注入——DumpOpenHelper.cpp 的
+        // DANQING_RPC_DUMP 先例同型）；编译期宏为默认。
+        char const* cursorDir = DANQING_CURSOR_ASSETS_DIR;
+        if (char const* env = std::getenv("DANQING_CURSOR_ASSETS_DIR"))
+            cursorDir = env;
         for (auto const& e : entries) {
-            QPixmap pm(QString(DANQING_CURSOR_ASSETS_DIR "/%1.png").arg(e.name));
+            QPixmap pm(QString("%1/%2.png").arg(cursorDir, e.name));
             if (!pm.isNull())
                 out.emplace(e.name, QCursor(pm, e.hotX, e.hotY));
         }
