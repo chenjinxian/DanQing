@@ -26,7 +26,10 @@ try {
         }
     }
     Write-Output ("renamed aside: " + $renamed.Count + " roots -- running ctest...")
-    & ctest --test-dir D:\Github\DanQing\build -C Debug ($CtestArgs -split " ")
+    # --timeout 240: a hung real-window test must not stall the whole gate
+    # (CursorState.RotateAnchorDragKeepsSceneAlive hung 8+ min on 2026-10-23
+    # full run -- desktop-state flake family; ctest kills it and moves on).
+    & ctest --test-dir D:\Github\DanQing\build -C Debug --timeout 240 ($CtestArgs -split " ")
     $script:ctestExit = $LASTEXITCODE
     Write-Output ("ctest exit = " + $ctestExit)
 } finally {
