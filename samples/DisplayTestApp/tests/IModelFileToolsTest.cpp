@@ -198,6 +198,15 @@ TEST(SurfaceFileTools, ModelIdForIModelKeyMapsDumpKeys)
     EXPECT_EQ(dta::modelIdForIModelKey(
                   "D:/test/newbridge.bim"),
                   std::optional<QString>(QStringLiteral("newbridge")));
+    // P-3：compatseed-sweep-v1/mirukuru-sweep-v1 的 imodel.json 实测
+    // rpcProps.key（itwinjs-core DTA assets 绝对路径——一 .bim 一 .ibim，
+    // 正/反斜杠双形态）。
+    EXPECT_EQ(dta::modelIdForIModelKey(
+                  "D:\\Github\\itwinjs-core\\test-apps\\display-test-app\\assets\\CompatibilityTestSeed.bim"),
+                  std::optional<QString>(QStringLiteral("compatseed")));
+    EXPECT_EQ(dta::modelIdForIModelKey(
+                  "D:/Github/itwinjs-core/test-apps/display-test-app/assets/mirukuru.ibim"),
+                  std::optional<QString>(QStringLiteral("mirukuru")));
 
     // 未映射/空键 → nullopt（E-Y8 no-op 腿）。
     EXPECT_EQ(dta::modelIdForIModelKey(""), std::nullopt);
@@ -276,6 +285,24 @@ TEST(SurfaceFileTools, DumpPackageForModelTableIntact)
         }
     }
     EXPECT_TRUE(nb->frameToWorldContent);  // 坑 24 型空域默认视图 → 取景路径
+
+    // P-3：compatseed/mirukuru 单根包（imodel.json+树 props+瓦同根齐备，无
+    // fallback；两模型默认视图均非坑 24 → frameToWorldContent=false——
+    // compatseed 正交 iso 视图与内容域相交 / mirukuru 视域完整包含内容域，
+    // 见两 sweep 根 README"非坑 24"节）。
+    auto const compat = dta::dumpPackageForModel(QStringLiteral("compatseed"));
+    ASSERT_TRUE(compat.has_value());
+    EXPECT_TRUE(compat->imodelRoot.find("compatseed-sweep-v1") != std::string::npos);
+    ASSERT_EQ(compat->tileRoots.size(), 1u);
+    EXPECT_TRUE(compat->tileRoots[0].find("compatseed-sweep-v1") != std::string::npos);
+    EXPECT_FALSE(compat->frameToWorldContent);
+
+    auto const miru = dta::dumpPackageForModel(QStringLiteral("mirukuru"));
+    ASSERT_TRUE(miru.has_value());
+    EXPECT_TRUE(miru->imodelRoot.find("mirukuru-sweep-v1") != std::string::npos);
+    ASSERT_EQ(miru->tileRoots.size(), 1u);
+    EXPECT_TRUE(miru->tileRoots[0].find("mirukuru-sweep-v1") != std::string::npos);
+    EXPECT_FALSE(miru->frameToWorldContent);
 
     EXPECT_EQ(dta::dumpPackageForModel(QStringLiteral("bogus")), std::nullopt);
 }

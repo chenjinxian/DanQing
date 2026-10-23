@@ -149,6 +149,22 @@ void StartView::configureModelButtons(QLayout* layout)
             "frames its geometry volume"),
          {}, dtaIcons, QChar(0xe9cc)}
     );
+    // P-3：compatseed/mirukuru 入口（P3-a 全量重采——compatseed-sweep-v1 212 瓦
+    // 全树自然收敛 / mirukuru-sweep-v1 双树根即叶 2 瓦全树固有形态；两模型默认
+    // 视图均非坑 24，saved 视图直渲）。英文原名卡片（House_Model/Baytown
+    // 先例，用户 2026-10-23 裁决）。
+    auto compatSeed = new NewFileButton(
+        {tr("Compatibility Test Seed"),
+         tr("Opens the saved CompatibilityTestSeed iModel (itwinjs backend test asset) "
+            "and renders its default orthographic view"),
+         {}, dtaIcons, QChar(0xe9cc)}
+    );
+    auto mirukuru = new NewFileButton(
+        {tr("Mirukuru"),
+         tr("Opens the saved mirukuru iModel (V8 bridge, Japanese plane coordinates) "
+            "and renders its default view"),
+         {}, dtaIcons, QChar(0xe9cc)}
+    );
     connect(joesHouse, &QPushButton::clicked, this, [this]() {
         Q_EMIT requestOpenDumpModel(QStringLiteral("joeshouse"));
     });
@@ -167,6 +183,12 @@ void StartView::configureModelButtons(QLayout* layout)
     connect(newBridge, &QPushButton::clicked, this, [this]() {
         Q_EMIT requestOpenDumpModel(QStringLiteral("newbridge"));
     });
+    connect(compatSeed, &QPushButton::clicked, this, [this]() {
+        Q_EMIT requestOpenDumpModel(QStringLiteral("compatseed"));
+    });
+    connect(mirukuru, &QPushButton::clicked, this, [this]() {
+        Q_EMIT requestOpenDumpModel(QStringLiteral("mirukuru"));
+    });
 
     layout->addWidget(joesHouse);
     layout->addWidget(instances60);
@@ -174,6 +196,8 @@ void StartView::configureModelButtons(QLayout* layout)
     layout->addWidget(baytown);
     layout->addWidget(bridgeEdit);
     layout->addWidget(newBridge);
+    layout->addWidget(compatSeed);
+    layout->addWidget(mirukuru);
 }
 
 void StartView::configureExampleButtons(QLayout* layout)

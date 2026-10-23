@@ -423,6 +423,12 @@ void openDumpIModelAsync(Gui::View3DInventor& view, DumpOpenPackage const& pkg,
 //                             子瓦范围 longest-axis 修复后深层泵请求的放大链
 //                             m16..m131072 + d13 空间瓦 254 键，真后端 key-list
 //                             回放 6.57MB）]
+//   compatseed  = imodel+tiles 单根 compatseed-sweep-v1（P-3——M-D 早期 compatseed-v1
+//                 的全量重采：CompatibilityTestSeed.bim 212 瓦全树自然收敛 +
+//                 imodel.json；正交默认视图非坑 24 直渲）
+//   mirukuru    = imodel+tiles 单根 mirukuru-sweep-v1（P-3——mirukuru.ibim 双树
+//                 根即叶 2 瓦全树固有形态 + imodel.json；默认视图完整包含
+//                 内容域，saved 直渲）
 // （与 DumpOpenChainTest.cpp 各锁的包定义一致。）
 std::optional<DumpOpenPackage> dumpPackageForModel(QString const& modelId)
 {
@@ -505,6 +511,23 @@ std::optional<DumpOpenPackage> dumpPackageForModel(QString const& modelId)
         // 取景路径同机制）。
         pkg.frameToWorldContent = true;
     }
+    else if (modelId == QLatin1String("compatseed")) {
+        // P-3：compatseed-sweep-v1 单根包（imodel.json + 树 props + 212 瓦同根
+        // 齐备，无 fallback）。默认视图 0x41 正交 iso（origin [0.133,2.733,
+        // -2.033] + extents [3.677,4.246,4.503]）与世界内容域 ≈[-0.25,2.25]³
+        // 相交 → 非坑 24，saved 视图直渲（frameToWorldContent=false）。
+        pkg.imodelRoot = dumpRoot + "/compatseed-sweep-v1";
+        pkg.tileRoots = {dumpRoot + "/compatseed-sweep-v1"};
+    }
+    else if (modelId == QLatin1String("mirukuru")) {
+        // P-3：mirukuru-sweep-v1 单根包（imodel.json + 2 树 props + 2 瓦——
+        // 双树根即叶的全树固有形态）。默认视图 0x24 identity 旋转视域
+        // x∈[288444,289588]/y∈[3803583,3804137] 完整包含内容域
+        //（projectExtents [288874..289161]×[3803761..3803959]）→ 非坑 24，
+        // saved 视图直渲（frameToWorldContent=false）。
+        pkg.imodelRoot = dumpRoot + "/mirukuru-sweep-v1";
+        pkg.tileRoots = {dumpRoot + "/mirukuru-sweep-v1"};
+    }
     else {
         return std::nullopt;
     }
@@ -535,6 +558,12 @@ std::optional<QString> modelIdForIModelKey(std::string const& key)
     // 大小写不敏比对）。
     if (lower == QLatin1String("newbridge.bim"))
         return QStringLiteral("newbridge");
+    // P-3：compatseed/mirukuru（rpcProps.key = itwinjs-core DTA assets 绝对路径；
+    // 注意一 .bim 一 .ibim 后缀差异）。
+    if (lower == QLatin1String("compatibilitytestseed.bim"))
+        return QStringLiteral("compatseed");
+    if (lower == QLatin1String("mirukuru.ibim"))
+        return QStringLiteral("mirukuru");
     return std::nullopt;
 }
 

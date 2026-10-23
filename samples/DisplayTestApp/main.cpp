@@ -115,6 +115,12 @@ QString windowTitleForModel(QString const& modelId)
     // P-2 P2-d：newBridge（R6 显示名——"编辑大桥测试"中文映射先例对齐）。
     if (modelId == QLatin1String("newbridge"))
         return QObject::tr("New Bridge (新大桥测试)");
+    // P-3：compatseed/mirukuru（英文原名——House_Model/Baytown ASCII 先例，
+    // 用户 2026-10-23 裁决）。
+    if (modelId == QLatin1String("compatseed"))
+        return QObject::tr("Compatibility Test Seed");
+    if (modelId == QLatin1String("mirukuru"))
+        return QObject::tr("Mirukuru");
     return modelId;
 }
 

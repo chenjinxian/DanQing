@@ -1911,3 +1911,352 @@ TEST(DumpOpenChain, OpensNewBridgeWithFramedContent)
     view.close();
     spin(200);
 }
+
+// ---------------------------------------------------------------------------
+// 锁 8：compatseed 打开链同构（P-3——CompatibilityTestSeed.bim，itwinjs 后端
+// 测试资产；compatseed-sweep-v1 全树 212 瓦单根包）。
+// ---------------------------------------------------------------------------
+// 判据（首绿实测钉值见各断言处；采集面 = compatseed-sweep-v1 sweep[d10 自然
+// 收敛，前沿枚举 d11 missing=0]）：
+//   ① 装载面 = imodel.json saved 视图 0x41（BisCore:OrthographicViewDefinition
+//      ——baytown 同型类选择面用例）逐项钉值。
+//   ② 树装载 = modelSelector 驱动（1 model 0x1c → 1 树）。
+//   ③ 泵至静默 + 请求面 ↔ manifest 212 键域逐一对账 + Completed→graphics 对账。
+//   ④ 像素锚（iso 视图 2.5m 立方内容上屏）。
+// Authored: no reference test exists in itwinjs-core for offline dump open-chain
+// replay（§5(g) 授权——像素级回归 + 请求面对账）。
+TEST(DumpOpenChain, OpensCompatSeedWithSavedView)
+{
+    auto& app = dqApp::Application::Get();
+    if (!app.isInitialized()) {
+        dqApp::Application::Options opts;
+        opts.applicationId = "DumpOpenChain";
+        opts.applicationVersion = "1.0";
+        ASSERT_TRUE(app.Startup(opts));
+    }
+
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    // 窗 = 采集窗 1263x831（compatseed-sweep-v1 manifest provenance.defaultView.
+    // viewRect）——请求面瓦数随窗尺寸分档，同构判据在采集窗尺寸下成立
+    //（bridge-edit/newbridge 锁同先例）。
+    view.resize(1263, 831);
+    view.show();
+    spin(400);
+
+    // 与 dumpPackageForModel("compatseed") 同源映射（单根包）。
+    auto pkg = dta::dumpPackageForModel(QStringLiteral("compatseed"));
+    ASSERT_TRUE(pkg.has_value());
+    ASSERT_EQ(1u, pkg->tileRoots.size());
+    auto opened = dta::openDumpIModel(view, *pkg);
+    ASSERT_TRUE(opened.has_value()) << "open chain failed: " << pkg->imodelRoot;
+
+    // ② 树装载 = modelSelector 驱动（1 model 0x1c → 1 树；visEdges → ":6_"）。
+    ASSERT_EQ(1u, opened->treeLoadLog.size());
+    EXPECT_EQ("25_1d-E:6_0x1c", opened->treeLoadLog[0]);
+    ASSERT_EQ(1u, opened->trees.size());
+
+    // ① 装载面 = saved 视图 0x41 原样（值 = imodel.json viewDefinitionProps
+    //    逐字实测；rotation = saved angles[yaw30/pitch-35.264/roll-45] 的 YPR
+    //    矩阵——参考公式 rZ(yaw)·rY(-pitch)·rX(roll) 离线复算与采集器
+    //    provenance.defaultView.rotation 逐位吻合，双源互证）。
+    {
+        dqApp::ViewList reloadViews = dqApp::ViewList::create(opened->connection.Get());
+        auto reloaded = reloadViews.getDefaultView(opened->connection.Get());
+        ASSERT_TRUE(reloaded.IsValid());
+        auto const* loaded = reloaded->AsViewState3d();
+        ASSERT_NE(loaded, nullptr);
+        auto const lorg = loaded->GetOrigin();
+        EXPECT_NEAR(0.13333333333333286, lorg.x, 1.0e-9);
+        EXPECT_NEAR(2.7333333333333334, lorg.y, 1.0e-9);
+        EXPECT_NEAR(-2.0333333333333337, lorg.z, 1.0e-9);
+        auto const lext = loaded->GetExtents();
+        EXPECT_NEAR(3.6769552621700488, lext.x, 1.0e-9);
+        EXPECT_NEAR(4.245782220824176, lext.y, 1.0e-9);
+        EXPECT_NEAR(4.503332099679081, lext.z, 1.0e-9);
+        EXPECT_FALSE(loaded->IsCameraOn());
+        double const kExpectedRot[9] = {
+            0.7071067811865476, -0.7071067811865475, 2.7755575615628914e-16,
+            0.4082482904638628, 0.40824829046386324, 0.816496580927726,
+            -0.5773502691896258, -0.5773502691896256, 0.5773502691896257,
+        };
+        for (int i = 0; i < 9; ++i)
+            EXPECT_NEAR(kExpectedRot[i], loaded->getRotation().coffs[static_cast<size_t>(i)],
+                        1.0e-9)
+                << "rotation differs at coffs[" << i << "]";
+    }
+
+    // ③ 泵至静默（saved 正交 iso 视图冷启动驱动）。
+    PumpContext ctx{&view, &*opened};
+    int const quiesceIter = pumpToQuiesce(ctx);
+    ASSERT_GE(quiesceIter, 0)
+        << "open-chain tile load never quiesced (log="
+        << opened->fetcher->requestLog().size() << " ready=" << ctx.readyTiles << ")";
+    view.getUeViewport()->RenderFrame();
+
+    // --- 对账：请求日志 vs 联合域（单根 manifest 212 键） ---
+    std::set<std::string> unionKeys;
+    for (auto const& rootPath : pkg->tileRoots) {
+        auto manifest = dqApp::loadDumpManifest(rootPath);
+        ASSERT_TRUE(manifest.has_value()) << "manifest unreadable: " << rootPath;
+        for (auto const& t : manifest->tiles)
+            unionKeys.insert(t.treeId + "/" + t.contentId);
+    }
+    ASSERT_EQ(212u, unionKeys.size()) << "sweep domain drifted (asset mutated?)";
+    auto const& log = opened->fetcher->requestLog();
+    std::set<std::string> requestedKeys;
+    size_t numCompleted = 0, numNotFound = 0, numError = 0;
+    std::vector<std::string> misses;
+    for (auto const& rec : log) {
+        std::string const key = rec.treeId + "/" + rec.contentId;
+        requestedKeys.insert(key);
+        EXPECT_EQ("25_1d-E:6_0x1c", rec.treeId) << "request escaped the tree domain";
+        switch (rec.outcome) {
+        case dqApp::DumpTileFetcher::DumpFetchOutcome::Completed:
+            ++numCompleted;
+            EXPECT_TRUE(unionKeys.count(key) > 0)
+                << "Completed key not in the union domain: " << rec.contentId;
+            break;
+        case dqApp::DumpTileFetcher::DumpFetchOutcome::NotFound:
+            ++numNotFound;
+            misses.push_back(rec.contentId);
+            break;
+        case dqApp::DumpTileFetcher::DumpFetchOutcome::Error:
+            ++numError;
+            break;
+        }
+    }
+    printf("[OPEN-CHAIN] compatseed reconcile: requested=%zu (completed=%zu "
+           "notFound=%zu error=%zu) ready=%ld/%ld union=%zu\n",
+           log.size(), numCompleted, numNotFound, numError, ctx.readyTiles,
+           ctx.totalTiles, unionKeys.size());
+    for (auto const& rec : log)
+        printf("[OPEN-CHAIN]   log %d %s\n", static_cast<int>(rec.outcome),
+               rec.contentId.c_str());
+    for (auto const& m : misses)
+        printf("[OPEN-CHAIN]   miss %s\n", m.c_str());
+
+    EXPECT_EQ(0u, numError) << "dump asset integrity break";
+    EXPECT_EQ(requestedKeys.size(), log.size()) << "duplicate tile requests";
+    EXPECT_EQ(0u, numNotFound) << "saved-view request face left the union domain";
+    // ③a **请求序列同构实钉（主判据——首绿实测）**：saved 视图请求面 = 恰
+    //    1 枚 "-b-5-0-0-0-1"（Completed——root..d4 canSkip 穿透
+    //    [maxInitialTilesToSkip=6]后首个 Visible 瓦；1263×831 采集窗 SSE
+    //    分档实钉——M-D 原采集窗较小故当时首请求为 -b-6，同机制不同窗档；
+    //    baytown 锁 ③a 同分档逻辑）。
+    ASSERT_EQ(1u, log.size()) << "saved-view request face drifted from the "
+                                 "captured default-view face";
+    EXPECT_EQ("-b-5-0-0-0-1", log[0].contentId);
+    EXPECT_EQ(dqApp::DumpTileFetcher::DumpFetchOutcome::Completed, log[0].outcome);
+    EXPECT_EQ(1l, ctx.readyTiles) << "Completed → graphics reconciliation broke";
+    // ③b 树侧终态（首绿实测）：root→…→d5 六瓦结构——root..d4 canSkip 不请求
+    //    （参考跳过语义），d5 有 graphics。
+    EXPECT_EQ(6l, ctx.totalTiles);
+
+    // ④ 像素锚（正交 iso 视图下 2.5m 立方上屏——首绿实测 204422 px=帧 4.869%
+    //    @2526x1662 设备像素[dpr2]、bbox (1020,551)-(1505,1110) 中央区块、
+    //    质心 (1262,831) 对帧心 (1263,831) 偏移 (1,0)≈ 逐位对中）。
+    std::vector<uint8_t> frame;
+    uint32_t w = 0, h = 0;
+    ASSERT_TRUE(view.getUeViewport()->ReadFrameForTest(frame, w, h));
+    dumpBmp(frame, w, h,
+            DANQING_TILE_ASSETS_DIR "/../../build/open-chain-compatseed.bmp");
+    long count = 0;
+    double cx = 0, cy = 0;
+    uint32_t minX = 0, maxX = 0, minY = 0, maxY = 0;
+    ASSERT_TRUE(contentStats(frame, w, h, count, cx, cy, minX, maxX, minY, maxY))
+        << "no compatseed content rendered at the saved view (see BMP)";
+    printf("[OPEN-CHAIN] compatseed saved-view: content=%ld px (%.3f%% of %ux%u) "
+           "bbox=(%u,%u)-(%u,%u) centroid=(%.0f,%.0f) frame center=(%.0f,%.0f)\n",
+           count, 100.0 * count / (static_cast<double>(w) * h), w, h,
+           minX, minY, maxX, maxY, cx, cy, w / 2.0, h / 2.0);
+    // 内容存活阈值 = 首绿实测 204422 px 的 0.2×——打开链断裂/正交类选择面
+    //    失效/instances 消费链（瓦携 instances 修饰，TD-25 链）退化必红
+    //    （WHERE：质心中央带 ±20%——首绿偏移 0.04%/0% 的宽余量；§11.11
+    //    位置断言）。
+    EXPECT_GE(count, 40000l)
+        << "saved-view content barely visible — threshold pinned at 0.2x of "
+           "the first GREEN measurement 204422";
+    EXPECT_LT(std::abs(cx - w / 2.0), w * 0.2) << "content centroid x off-center";
+    EXPECT_LT(std::abs(cy - h / 2.0), h * 0.2) << "content centroid y off-center";
+
+    view.getUeViewport()->DropTiledGraphicsProvider(opened->provider.get());
+    view.close();
+    spin(200);
+}
+
+// ---------------------------------------------------------------------------
+// 锁 9：mirukuru 打开链同构（P-3——mirukuru.ibim，V8 桥转换模型；mirukuru-
+// sweep-v1 双树根即叶 2 瓦单根包——全树固有形态）。
+// ---------------------------------------------------------------------------
+// 判据（首绿实测钉值见各断言处；采集面 = mirukuru-sweep-v1 sweep[双树根即叶]）：
+//   ① 装载面 = imodel.json saved 视图 0x24（BisCore:SpatialViewDefinition，
+//      identity 旋转）逐项钉值。
+//   ② 树装载 = modelSelector 驱动（2 models [0x1c,0x28] → 2 树——打开链多树
+//      装载用例；0x28 为空叶树）。
+//   ③ 泵至静默 + 请求面 ↔ manifest 2 键域逐一对账（多树集合断言）。
+//   ④ 像素锚（日本平面坐标 287×199m 平地上屏——location 平移消费链用例）。
+// Authored: no reference test exists in itwinjs-core for offline dump open-chain
+// replay（§5(g) 授权——像素级回归 + 请求面对账）。
+TEST(DumpOpenChain, OpensMirukuruWithSavedView)
+{
+    auto& app = dqApp::Application::Get();
+    if (!app.isInitialized()) {
+        dqApp::Application::Options opts;
+        opts.applicationId = "DumpOpenChain";
+        opts.applicationVersion = "1.0";
+        ASSERT_TRUE(app.Startup(opts));
+    }
+
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    // 窗 = 采集窗 1263x831（mirukuru-sweep-v1 manifest provenance.defaultView.
+    // viewRect）——compatseed 锁同先例。
+    view.resize(1263, 831);
+    view.show();
+    spin(400);
+
+    // 与 dumpPackageForModel("mirukuru") 同源映射（单根包）。
+    auto pkg = dta::dumpPackageForModel(QStringLiteral("mirukuru"));
+    ASSERT_TRUE(pkg.has_value());
+    ASSERT_EQ(1u, pkg->tileRoots.size());
+    auto opened = dta::openDumpIModel(view, *pkg);
+    ASSERT_TRUE(opened.has_value()) << "open chain failed: " << pkg->imodelRoot;
+
+    // ② 树装载 = modelSelector 驱动（2 models [0x1c,0x28] → 2 树，装载序 =
+    //    modelSelector 序）。
+    ASSERT_EQ(2u, opened->treeLoadLog.size());
+    EXPECT_EQ("25_1d-E:6_0x1c", opened->treeLoadLog[0]);
+    EXPECT_EQ("25_1d-E:6_0x28", opened->treeLoadLog[1]);
+    ASSERT_EQ(2u, opened->trees.size());
+
+    // ① 装载面 = saved 视图 0x24 原样（值 = imodel.json viewDefinitionProps
+    //    逐字实测；rotation = identity——angles {} 缺席）。
+    {
+        dqApp::ViewList reloadViews = dqApp::ViewList::create(opened->connection.Get());
+        auto reloaded = reloadViews.getDefaultView(opened->connection.Get());
+        ASSERT_TRUE(reloaded.IsValid());
+        auto const* loaded = reloaded->AsViewState3d();
+        ASSERT_NE(loaded, nullptr);
+        auto const lorg = loaded->GetOrigin();
+        EXPECT_NEAR(288444.03466109437, lorg.x, 1.0e-6);
+        EXPECT_NEAR(3803583.3390689, lorg.y, 1.0e-6);
+        EXPECT_NEAR(-219.2968266363897, lorg.z, 1.0e-9);
+        auto const lext = loaded->GetExtents();
+        EXPECT_NEAR(1144.2069282259326, lext.x, 1.0e-9);
+        EXPECT_NEAR(553.6292897504754, lext.y, 1.0e-9);
+        EXPECT_NEAR(787.8491636972026, lext.z, 1.0e-9);
+        EXPECT_FALSE(loaded->IsCameraOn());
+        double const kExpectedRot[9] = {
+            1.0, 0.0, 0.0,
+            0.0, 1.0, 0.0,
+            0.0, 0.0, 1.0,
+        };
+        for (int i = 0; i < 9; ++i)
+            EXPECT_NEAR(kExpectedRot[i], loaded->getRotation().coffs[static_cast<size_t>(i)],
+                        1.0e-9)
+                << "rotation differs at coffs[" << i << "]";
+    }
+
+    // ③ 泵至静默（saved 视图冷启动驱动）。
+    PumpContext ctx{&view, &*opened};
+    int const quiesceIter = pumpToQuiesce(ctx);
+    ASSERT_GE(quiesceIter, 0)
+        << "open-chain tile load never quiesced (log="
+        << opened->fetcher->requestLog().size() << " ready=" << ctx.readyTiles << ")";
+    view.getUeViewport()->RenderFrame();
+
+    // --- 对账：请求日志 vs 联合域（单根 manifest 2 键，多树集合断言） ---
+    std::set<std::string> unionKeys;
+    for (auto const& rootPath : pkg->tileRoots) {
+        auto manifest = dqApp::loadDumpManifest(rootPath);
+        ASSERT_TRUE(manifest.has_value()) << "manifest unreadable: " << rootPath;
+        for (auto const& t : manifest->tiles)
+            unionKeys.insert(t.treeId + "/" + t.contentId);
+    }
+    ASSERT_EQ(2u, unionKeys.size()) << "sweep domain drifted (asset mutated?)";
+    const std::set<std::string> kMirukuruTrees = {"25_1d-E:6_0x1c", "25_1d-E:6_0x28"};
+    auto const& log = opened->fetcher->requestLog();
+    std::set<std::string> requestedKeys;
+    size_t numCompleted = 0, numNotFound = 0, numError = 0;
+    std::vector<std::string> misses;
+    for (auto const& rec : log) {
+        std::string const key = rec.treeId + "/" + rec.contentId;
+        requestedKeys.insert(key);
+        EXPECT_TRUE(kMirukuruTrees.count(rec.treeId) > 0)
+            << "request escaped the tree domain: " << rec.treeId;
+        switch (rec.outcome) {
+        case dqApp::DumpTileFetcher::DumpFetchOutcome::Completed:
+            ++numCompleted;
+            EXPECT_TRUE(unionKeys.count(key) > 0)
+                << "Completed key not in the union domain: " << rec.contentId;
+            break;
+        case dqApp::DumpTileFetcher::DumpFetchOutcome::NotFound:
+            ++numNotFound;
+            misses.push_back(rec.contentId);
+            break;
+        case dqApp::DumpTileFetcher::DumpFetchOutcome::Error:
+            ++numError;
+            break;
+        }
+    }
+    printf("[OPEN-CHAIN] mirukuru reconcile: requested=%zu (completed=%zu "
+           "notFound=%zu error=%zu) ready=%ld/%ld union=%zu\n",
+           log.size(), numCompleted, numNotFound, numError, ctx.readyTiles,
+           ctx.totalTiles, unionKeys.size());
+    for (auto const& rec : log)
+        printf("[OPEN-CHAIN]   log %d %s %s\n", static_cast<int>(rec.outcome),
+               rec.treeId.c_str(), rec.contentId.c_str());
+    for (auto const& m : misses)
+        printf("[OPEN-CHAIN]   miss %s\n", m.c_str());
+
+    EXPECT_EQ(0u, numError) << "dump asset integrity break";
+    EXPECT_EQ(requestedKeys.size(), log.size()) << "duplicate tile requests";
+    EXPECT_EQ(0u, numNotFound) << "saved-view request face left the union domain";
+    // ③a **请求序列同构实钉（主判据——首绿实测）**：saved 视图请求面 = 恰
+    //    2 枚——双树根各一（0x1c 内容根 + 0x28 空叶根，均 Completed；
+    //    maxInitialTilesToSkip=2 对叶根无穿透对象——根即内容/根即空叶）。
+    ASSERT_EQ(2u, log.size()) << "saved-view request face drifted from the "
+                                 "captured default-view face";
+    EXPECT_EQ("25_1d-E:6_0x1c", log[0].treeId);
+    EXPECT_EQ("-b-0-0-0-0-1", log[0].contentId);
+    EXPECT_EQ(dqApp::DumpTileFetcher::DumpFetchOutcome::Completed, log[0].outcome);
+    EXPECT_EQ("25_1d-E:6_0x28", log[1].treeId);
+    EXPECT_EQ("-b-0-0-0-0-1", log[1].contentId);
+    EXPECT_EQ(dqApp::DumpTileFetcher::DumpFetchOutcome::Completed, log[1].outcome);
+    EXPECT_EQ(1l, ctx.readyTiles) << "Completed → graphics reconciliation broke "
+                                      "(0x28 empty leaf yields no graphics)";
+    // ③b 树侧终态（首绿实测钉值：countGraphicsReady 双树遍历 10 节点——
+    //    0x1c 内容根 + 0x28 空树结构节点族；空树节点结构为后端 props 驱动
+    //    的实测形态，如实钉值）。
+    EXPECT_EQ(10l, ctx.totalTiles);
+
+    // ④ 像素锚（identity 旋转下平地上屏——location 大坐标平移 [289793,
+    //    3804398, 0] 消费链用例——首绿实测 699123 px=帧 16.653%@2526x1662
+    //    设备像素[dpr2]、bbox 满幅展布（平地平面投影特性）、质心 (1270,835)
+    //    对帧心 (1263,831) 偏移 (7,4)）。
+    std::vector<uint8_t> frame;
+    uint32_t w = 0, h = 0;
+    ASSERT_TRUE(view.getUeViewport()->ReadFrameForTest(frame, w, h));
+    dumpBmp(frame, w, h,
+            DANQING_TILE_ASSETS_DIR "/../../build/open-chain-mirukuru.bmp");
+    long count = 0;
+    double cx = 0, cy = 0;
+    uint32_t minX = 0, maxX = 0, minY = 0, maxY = 0;
+    ASSERT_TRUE(contentStats(frame, w, h, count, cx, cy, minX, maxX, minY, maxY))
+        << "no mirukuru content rendered at the saved view (see BMP)";
+    printf("[OPEN-CHAIN] mirukuru saved-view: content=%ld px (%.3f%% of %ux%u) "
+           "bbox=(%u,%u)-(%u,%u) centroid=(%.0f,%.0f) frame center=(%.0f,%.0f)\n",
+           count, 100.0 * count / (static_cast<double>(w) * h), w, h,
+           minX, minY, maxX, maxY, cx, cy, w / 2.0, h / 2.0);
+    // 内容存活阈值 = 首绿实测 699123 px 的 0.2×——打开链断裂/location 平移
+    //    链失效/多树装载退化必红（WHERE：质心中央带 ±20%——首绿偏移
+    //    0.28%/0.24% 的宽余量；§11.11 位置断言）。
+    EXPECT_GE(count, 139000l)
+        << "saved-view content barely visible — threshold pinned at 0.2x of "
+           "the first GREEN measurement 699123";
+    EXPECT_LT(std::abs(cx - w / 2.0), w * 0.2) << "content centroid x off-center";
+    EXPECT_LT(std::abs(cy - h / 2.0), h * 0.2) << "content centroid y off-center";
+
+    view.getUeViewport()->DropTiledGraphicsProvider(opened->provider.get());
+    view.close();
+    spin(200);
+}
