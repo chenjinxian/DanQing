@@ -559,6 +559,14 @@ Windows 呈现链路的结构规则（每条都有真实事故背书，案例 §
 5. CDP 驱动参考 app（DTA）的坑：`Page.reload` 丢 blank connection 视口；合成点击开的视口 `renderTarget:none`（画布零内容，采集不可信）；rAF 被遮挡挂死（用 setTimeout 泵）；大数组 returnByValue 极慢（页内分析/`Page.captureScreenshot`+canvas rect 裁剪替代）。
 6. **像素级回归锁**：`GltfStandardView.TopViewRendersTopFaceNotBottom`（BoxTexturedDots 色点资产，断言 Top 视图蓝点在面右/红点在左 = +Z 面忠实场）——修复前 RED、修复后 GREEN，已双向验证。
 
+### 12.11 worktree 基线对照的数据面 parity 陷阱——幻影基线失败（2026-10-23，M-X 三处同源实录）
+**错误**：在 lane worktree 里做"stash 净基线对照"判定失败是否与改动面相关，把 worktree 上复现的失败判为"净基线同败=非本道问题"并移交。实际上 .gitignore 本地持有件（大瓦 10.imdl/12.imdl 等）不随 worktree 传播——基线二进制跑在**缺数据的 worktree**上，dump 族/桥族确定性失败=数据面伪影，与代码 delta 无关。M-X 里 B 道报告（2 桥败）、A 道 fix 轮 2（BridgeEditLodCoverage 移交）、终审移交项三处同源，主仓实跑全过（859 请求 0 NotFound 0 Error）才定案销账。
+**教训**：
+1. **worktree 基线对照前先盘点数据面 parity**：逐项核对 .gitignore 本地持有件在 worktree 是否在位（junction/硬链接补齐——C 道 agent 有同款先例），缺数据=对照无效。
+2. **"净基线同败"结论的证据效力取决于基线环境与主环境的数据等价性**——代码 delta 对照只在同数据面上成立；跨数据面的"同败"是两个不同失败。
+3. 复核成本极低：主仓直接单跑目标锁一次即可分辨（本例 2 分钟终结三处移交）。
+
+
 ---
 
 ## 13. 构建与测试

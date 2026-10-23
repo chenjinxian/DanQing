@@ -168,6 +168,6 @@ ClassifierTileTree 全文定案。
 
 **AV saga 全账**：收口门禁四真窗 SEH 0xc0000005 翻转态 → A/B 净基线对照（基线 12/12 vs 合并后翻转）→ 主会话增量 bisect 作废（跨公共头 stale-obj 混合——§11.11 教训第四次实录）→ 专案定音 H4（TD-35 每帧产批 × TD-36 注册表双缺口=悬垂 Batch* UAF；M-X 为布局/时序放大器非引入者）→ batch-fix（装饰路径 ×40 160/160）→ 门禁抓出瓦批路径回归（fix1 在 dump teardown 序下反指针悬垂——验证面盲区实证）→ batch-fix2（析构双向闭合）→ 正确二进制门禁 99.9%+2 隔离绿。**TD-36 登记+清偿**（CLAUDE.md §14）；TD-35 增注（暴露器角色）。
 
-**移交项（M-X 域外）**：①bridge-edit 数据面 `-b-1-0-0-0-1` 键全根 error=1（净基线三轮同败——B 道报告+fix 轮 2 两次移交；数据补采域调查）；②BridgeEditLodCoverageDiagnostic 同 signature（与①同源候选）；③MdiAcsDisc 机器态内核冻结 ×2（修复后干净证据 52 轮在案——留痕观察）；④P-2 newBridge 采集进行中（独立任务，sweep 20GB budget-capped 已收口/d9 续采波待跑/仓内集成排 M-X 后）。
+**移交项（M-X 域外）**：①~~bridge-edit 数据面 `-b-1-0-0-0-1` 键全根 error=1~~ **已销账（2026-10-23 调查定案）**：该键在 bridge-edit-sweep-v1 存在且 size==byteLength（files/10.imdl 33.9MB），主仓两桥锁实跑全过（859/0/0+L4/L8 钉值吻合）——**lane worktree 数据面伪象**（.gitignore 本地持有件不随 worktree 传播→lane 的 stash 净基线对照被污染=幻影基线失败；教训：worktree 基线对照须先盘点数据面 parity——B 道 4 败/A 道 fix2 移交/终审移交三处同源）；②BridgeEditLodCoverageDiagnostic 同 signature（同源，同销）；③MdiAcsDisc 机器态内核冻结 ×2（修复后干净证据 52 轮在案——留痕观察）；④P-2 newBridge 采集进行中（独立任务，sweep 20GB budget-capped 已收口/d9 续采波待跑/仓内集成排 M-X 后）。
 
 **裁决全录**：见 .superpowers/sdd/…M-X…/progress.md（A/B 并行编排、Marker 分 B 道、Important-2 锁重推导、AV 根因 H4、验证规模×40→×10→一轮门禁[用户流程纠偏：低概率缺陷 A/B 定案后立即升级专案，不做无仪器概率轮]）。
