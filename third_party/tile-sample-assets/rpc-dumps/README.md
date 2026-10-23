@@ -2,10 +2,13 @@
 
 > **P-4 数据外置（2026-10-23）**：五大模型族（**joeshouse / housemodel / baytown /
 > bridge-edit / instances60**，合计 ~7.4GB）的 `files/` 载荷与 manifest/imodel.json
-> 已移出 git HEAD，打包发布于数据仓 **github.com/chenjinxian/DanQing-Data** 的
-> `data-v1` release。回灌 = 仓根运行
-> `powershell -ExecutionPolicy Bypass -File scripts/data/download_dumps.ps1`
-> （下载→sha256 校验→解包回本目录，幂等）。本仓内保留：各根 README（provenance
+> 已移出 git HEAD，发布于数据仓 **github.com/chenjinxian/DanQing-Data**，双通道：
+> ① `data-v1` release zip（sha256 见仓内 checksums.md——回灌 = 仓根运行
+> `powershell -ExecutionPolicy Bypass -File scripts/data/download_dumps.ps1`）；
+> ② **git 直克隆**（`git clone git@github.com:chenjinxian/DanQing-Data.git`——SSH
+> 免代理可用；目录布局与本目录一致，`DANQING_RPC_DUMP=<克隆目录>` 直用。两点
+> 差异见该仓 README：sweep 134MB 瓦 12.imdl 缺席[父瓦兜底]/sweep manifest 紧凑形
+> 37.2MB[字节级原件在 release zip]）。本仓内保留：各根 README（provenance
 > 文档）、compatseed/mirukuru 两小族完整数据（~22MB，克隆即跑）、newbridge 八根
 > manifest+imodel.json（files/ 始终本地持有不入库——既定 junction 形态）。
 > git 历史未改写：全量克隆仍含旧数据 pack，新检出建议 `git clone --depth 1`。

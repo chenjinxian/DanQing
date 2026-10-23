@@ -164,6 +164,11 @@ collected with the out-of-repo CDP tooling against itwinjs display-test-app
 | Mirukuru | V8 bridge, Japanese plane coords, 2-tree open chain | 2 | 2 KB | in-repo (`rpc-dumps/mirukuru-sweep-v1`) |
 | New Bridge | 10 km bridge, d1–d13 full tree | 169,920 | 47.9 GB | not published (too large; regenerable via the collector) |
 
+All five big models are also available as a plain git clone (SSH — works without
+a proxy): `git clone git@github.com:chenjinxian/DanQing-Data.git`, then point the
+app at it with `DANQING_RPC_DUMP=<clone dir>`. Two GitHub-100MB-limit caveats are
+listed in that repo's README.
+
 ### Modules
 
 | Module | Namespace | Role |
@@ -307,6 +312,9 @@ ctest --test-dir build -C Debug --output-on-failure
 | Compatibility Test Seed | itwinjs 后端测试资产 | 212 | 21 MB | 随仓（`rpc-dumps/compatseed-sweep-v1`） |
 | Mirukuru | V8 桥，日本平面坐标，双树打开链 | 2 | 2 KB | 随仓（`rpc-dumps/mirukuru-sweep-v1`） |
 | New Bridge | 10km 大桥，d1–d13 全树 | 169,920 | 47.9 GB | 不发布（体量过大；可经采集工具再生成） |
+
+五个大模型同时支持 git 直克隆（SSH 免代理）：`git clone git@github.com:chenjinxian/DanQing-Data.git`，
+用 `DANQING_RPC_DUMP=<克隆目录>` 指向即可；GitHub 100MB 限制导致的两点差异见该仓 README。
 
 ### 模块
 
