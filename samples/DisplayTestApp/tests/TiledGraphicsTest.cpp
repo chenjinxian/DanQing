@@ -240,7 +240,7 @@ struct TiledGraphicsFixture {
 TEST(TiledGraphicsTest, SecondaryIModelOverlaysAndTogglesOff)
 {
     // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRootTG + "/instances60-imodel-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRootTG + "/instances60-imodel-v1");
     TiledGraphicsFixture s;
     ASSERT_TRUE(s.setup());
 

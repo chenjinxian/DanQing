@@ -249,7 +249,7 @@ dqGeom::Point3d viewCenterWorld(dqApp::ViewState3d const* view3d)
 TEST(DumpOpenChain, OpensInstances60WithReferenceIsomorphicSequence)
 {
     // P-4 数据门禁：instances60 族已外置（download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRoot + "/instances60-imodel-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/instances60-imodel-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;
@@ -516,7 +516,7 @@ TEST(DumpOpenChain, OpensInstances60WithReferenceIsomorphicSequence)
 TEST(DumpOpenChain, OpensJoesHouseWithTenModelTrees)
 {
     // P-4 数据门禁：joeshouse 族已外置（download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRoot + "/joeshouse-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/joeshouse-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;
@@ -866,7 +866,7 @@ TEST(DumpOpenChain, OpensJoesHouseWithTenModelTrees)
 TEST(DumpOpenChain, Instances60SavedViewSpheresRenderSolid)
 {
     // P-4 数据门禁：instances60 族已外置（download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRoot + "/instances60-imodel-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/instances60-imodel-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;
@@ -1015,7 +1015,7 @@ TEST(DumpOpenChain, Instances60SavedViewSpheresRenderSolid)
 TEST(DumpOpenChain, OpensHouseModelWithPerspectiveSavedView)
 {
     // P-4 数据门禁：housemodel 族已外置（download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRoot + "/housemodel-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/housemodel-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;
@@ -1295,7 +1295,7 @@ TEST(DumpOpenChain, OpensHouseModelWithPerspectiveSavedView)
 TEST(DumpOpenChain, OpensBaytownOrthographicSavedView)
 {
     // P-4 数据门禁：baytown 族已外置（download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRoot + "/baytown-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/baytown-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;
@@ -1521,7 +1521,7 @@ TEST(DumpOpenChain, OpensBaytownOrthographicSavedView)
 TEST(DumpOpenChain, OpensBridgeEditWithWorldContentFraming)
 {
     // P-4 数据门禁：bridge-edit 族已外置（download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRoot + "/bridge-edit-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/bridge-edit-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;
@@ -1758,7 +1758,7 @@ TEST(DumpOpenChain, OpensNewBridgeWithFramedContent)
 {
     // P-4 数据门禁：newbridge 的 manifest 全入 git 而 files/ 本地持有从不入库
     // ——manifest 存在性判据对其无效（新检出假红根治）；判 files/ 非空。
-    dta::requireDumpFilesOrSkip(kDumpRoot + "/newbridge-sweep-v1");
+    DTA_REQUIRE_DUMP_FILES(kDumpRoot + "/newbridge-sweep-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;

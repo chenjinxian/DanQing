@@ -352,7 +352,7 @@ struct DumpPick {
 TEST(PickDumpScene, PickAtTileContentPixelReturnsElementId)
 {
     // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRoot + "/instances60-imodel-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/instances60-imodel-v1");
     DumpPick s;
     ASSERT_TRUE(s.setup());
 
@@ -374,7 +374,7 @@ TEST(PickDumpScene, PickAtTileContentPixelReturnsElementId)
 TEST(PickDumpScene, ClickSelectsTileFeatureIntoSelectionSet)
 {
     // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRoot + "/instances60-imodel-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/instances60-imodel-v1");
     DumpPick s;
     ASSERT_TRUE(s.setup());
 
@@ -425,7 +425,7 @@ TEST(PickDumpScene, ClickSelectsTileFeatureIntoSelectionSet)
 TEST(PickDumpScene, SelectionHilitesTilePixelsAndUnselectRestores)
 {
     // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRoot + "/instances60-imodel-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/instances60-imodel-v1");
     DumpPick s;
     ASSERT_TRUE(s.setup());
 
@@ -573,7 +573,7 @@ TEST(PickDumpScene, SelectionHilitesTilePixelsAndUnselectRestores)
 TEST(PickDumpScene, FeatureOverrideProviderRestylesHitElement)
 {
     // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRoot + "/instances60-imodel-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/instances60-imodel-v1");
     DumpPick s;
     ASSERT_TRUE(s.setup());
 

@@ -69,7 +69,7 @@ long contentPixels(std::vector<uint8_t> const& f, uint32_t w, uint32_t h)
 TEST(ModelsPanelWiring, ProviderIsolateChangesRenderedContent)
 {
     // P-4 数据门禁：joeshouse 族已外置（scripts/data/download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRootMpw + "/joeshouse-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRootMpw + "/joeshouse-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;

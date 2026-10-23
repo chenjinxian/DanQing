@@ -426,7 +426,7 @@ TEST(DtaToolsWiring, SyncViewportsAllConnectsAndFollows)
 TEST(DtaToolsWiring, ZoomToSelectedFramesSelectedElement)
 {
     // P-4 数据门禁：instances60(placements) 族已外置（scripts/data/download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(std::string(DANQING_TILE_ASSETS_DIR) + "/rpc-dumps/instances60-placements-v1");
+    DTA_REQUIRE_DUMP_ROOT(std::string(DANQING_TILE_ASSETS_DIR) + "/rpc-dumps/instances60-placements-v1");
     ensureAppStubReady();
     ensureEngineReady();
     ViewGuardDtw guard(900, 640);

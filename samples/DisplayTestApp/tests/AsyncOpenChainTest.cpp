@@ -98,7 +98,7 @@ dta::DumpOpenPackage instances60Package()
 TEST(AsyncOpenChain, AsyncOpenReconcilesSyncTerminalState)
 {
     // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRoot + "/instances60-imodel-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/instances60-imodel-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;
@@ -153,7 +153,7 @@ TEST(AsyncOpenChain, AsyncOpenReconcilesSyncTerminalState)
 TEST(AsyncOpenChain, SubmitDoesNotBlockMainThreadOnManifestParse)
 {
     // P-4 数据门禁：joeshouse 族已外置（scripts/data/download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRoot + "/joeshouse-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/joeshouse-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;

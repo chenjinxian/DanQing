@@ -510,7 +510,7 @@ void runHoverAndSelect(PickCollapse& s, char const* label)
 TEST(PickCollapse, BaytownHoverAndSelectKeepContent)
 {
     // P-4 数据门禁：baytown 族已外置（scripts/data/download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRoot + "/baytown-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/baytown-v1");
     PickCollapse s;
     ASSERT_TRUE(s.setup("baytown")) << "baytown open chain failed";
     runHoverAndSelect(s, "baytown");
@@ -520,7 +520,7 @@ TEST(PickCollapse, BaytownHoverAndSelectKeepContent)
 TEST(PickCollapse, BridgeHoverAndSelectKeepContent)
 {
     // P-4 数据门禁：bridge-edit 族已外置（scripts/data/download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRoot + "/bridge-edit-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/bridge-edit-v1");
     PickCollapse s;
     ASSERT_TRUE(s.setup("bridge")) << "bridge open chain failed";
     runHoverAndSelect(s, "bridge");

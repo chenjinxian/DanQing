@@ -695,7 +695,7 @@ TEST(RpcDumpRender, Instances60RendersAllInstances)
     if (char const* env = std::getenv("DANQING_RPC_DUMP"))
         dumpRoot = env;
     // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(dumpRoot);
+    DTA_REQUIRE_DUMP_ROOT(dumpRoot);
 
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
@@ -924,7 +924,7 @@ TEST(RpcDumpRender, Instances60FullLoadReconcilesManifestKeys)
     if (char const* env = std::getenv("DANQING_RPC_DUMP"))
         dumpRoot = env;
     // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(dumpRoot);
+    DTA_REQUIRE_DUMP_ROOT(dumpRoot);
 
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
@@ -1301,7 +1301,7 @@ TEST(RpcDumpRender, Instances60DrillReplaysViewportChain)
     if (char const* env = std::getenv("DANQING_RPC_DUMP"))
         dumpRoot = env;
     // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(dumpRoot);
+    DTA_REQUIRE_DUMP_ROOT(dumpRoot);
 
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {

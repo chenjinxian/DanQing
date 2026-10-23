@@ -17,6 +17,9 @@
 #include <cmath>
 #include <string>
 
+// P-4 数据门禁（相对路径单源——宏形 GTEST_SKIP 须在 TEST 体展开）。
+#include "../../samples/DisplayTestApp/tests/DumpDataGate.h"
+
 #ifndef DANQING_TEST_ASSET_ROOT
 #define DANQING_TEST_ASSET_ROOT "."
 #endif
@@ -52,6 +55,7 @@ void expectMatrix(dqGeom::Matrix3d const& m, double const (&expected)[9],
 // Authored: 见文件头。
 TEST(DumpIModelConnectionTest, ParsesJoesHouseIModelJson)
 {
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/joeshouse-v1");
     auto conn = dqApp::DumpIModelConnection::open(kDumpRoot + "/joeshouse-v1/imodel.json");
     ASSERT_TRUE(conn.IsValid()) << "open failed (asset missing or schema drift)";
     EXPECT_TRUE(conn->IsOpen());
@@ -158,6 +162,7 @@ TEST(DumpIModelConnectionTest, ParsesJoesHouseIModelJson)
 // Authored: 见文件头。
 TEST(DumpIModelConnectionTest, ParsesInstances60IModelJson)
 {
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/instances60-imodel-v1");
     auto conn = dqApp::DumpIModelConnection::open(
         kDumpRoot + "/instances60-imodel-v1/imodel.json");
     ASSERT_TRUE(conn.IsValid()) << "open failed (asset missing or schema drift)";
@@ -220,6 +225,7 @@ TEST(DumpIModelConnectionTest, ParsesInstances60IModelJson)
 // Authored: 见文件头。
 TEST(DumpIModelConnectionTest, ViewsHooksLoadSavedViewWithAllFieldsApplied)
 {
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/instances60-imodel-v1");
     auto conn = dqApp::DumpIModelConnection::open(
         kDumpRoot + "/instances60-imodel-v1/imodel.json");
     ASSERT_TRUE(conn.IsValid());
@@ -366,6 +372,7 @@ TEST(DumpIModelConnectionTest, ViewsHooksLoadSavedViewWithAllFieldsApplied)
 // Authored: 见文件头。
 TEST(DumpIModelConnectionTest, LoadOfNonCapturedViewFallsBackToManufacturedView)
 {
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/instances60-imodel-v1");
     auto conn = dqApp::DumpIModelConnection::open(
         kDumpRoot + "/instances60-imodel-v1/imodel.json");
     ASSERT_TRUE(conn.IsValid());
@@ -394,6 +401,7 @@ TEST(DumpIModelConnectionTest, LoadOfNonCapturedViewFallsBackToManufacturedView)
 // Authored: 见文件头。
 TEST(DumpIModelConnectionTest, ParsesTreePropsLocation)
 {
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/instances60-v1");
     // instances60-v1 单树：location = 纯平移 [81.66…, 35.41…, 24.75…]——
     // contentRange + location ≈ projectExtents（imodel.json 逐项——采集域
     // 自洽性的活体证据；容差 1e-6——两段（树 props 与 iModel 属性）是独立
@@ -434,6 +442,7 @@ TEST(DumpIModelConnectionTest, ParsesTreePropsLocation)
 //           SavedViews.ts 直接 stringify/parse 消费；本锁钉 round-trip 契约）。
 TEST(DumpIModelConnectionTest, ViewPropsJsonRoundTripRestoresAllFields)
 {
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/instances60-imodel-v1");
     auto conn = dqApp::DumpIModelConnection::open(
         kDumpRoot + "/instances60-imodel-v1/imodel.json");
     ASSERT_TRUE(conn.IsValid());

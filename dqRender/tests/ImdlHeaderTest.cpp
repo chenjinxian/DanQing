@@ -37,6 +37,9 @@
 #include <optional>
 #include <vector>
 
+// P-4 数据门禁（相对路径单源——宏形 GTEST_SKIP 须在 TEST 体展开）。
+#include "../../samples/DisplayTestApp/tests/DumpDataGate.h"
+
 using namespace dqRender::fixtures;
 
 namespace {
@@ -529,6 +532,9 @@ TEST(ImdlGraphicsTest, LutPathUploadsVertexTableVerbatim)
 //           true/count 488+32）。
 TEST(ImdlGraphicsTest, UnquantizedLutTableProducesGraphics)
 {
+    // P-4 数据门禁：joeshouse 族已外置（download_dumps.ps1 回灌）。
+    DTA_REQUIRE_DUMP_ROOT(std::string(DANQING_TEST_ASSET_ROOT)
+        + "/third_party/tile-sample-assets/rpc-dumps/joeshouse-drill-v1");
     // 读真实 dump 瓦（只读，§11.11）。
     std::string const tilePath = std::string(DANQING_TEST_ASSET_ROOT)
         + "/third_party/tile-sample-assets/rpc-dumps/joeshouse-drill-v1/files/28.imdl";
@@ -594,6 +600,9 @@ TEST(ImdlGraphicsTest, UnquantizedLutTableProducesGraphics)
 //           （§5(f)）；资产字段为 dump 字节实测（2026-09-30 探针）。
 TEST(ImdlGraphicsTest, TexturedSurfaceAttachesEmbeddedTexture)
 {
+    // P-4 数据门禁：housemodel 族已外置。
+    DTA_REQUIRE_DUMP_ROOT(std::string(DANQING_TEST_ASSET_ROOT)
+        + "/third_party/tile-sample-assets/rpc-dumps/housemodel-v1");
     std::string const tilePath = std::string(DANQING_TEST_ASSET_ROOT)
         + "/third_party/tile-sample-assets/rpc-dumps/housemodel-v1/files/12.imdl";
     std::ifstream in(tilePath, std::ios::binary);
@@ -2127,6 +2136,9 @@ private:
 // == count*12*4 钉死）。
 TEST(ImdlInstancesTest, ParsesInstanceFieldsFromDump)
 {
+    // P-4 数据门禁：instances60 族已外置。
+    DTA_REQUIRE_DUMP_ROOT(std::string(DANQING_TEST_ASSET_ROOT)
+        + "/third_party/tile-sample-assets/rpc-dumps/instances60-v1");
     auto const bytes = readDumpBytes(Instances60RootPinned::kRelativePath);
     ASSERT_FALSE(bytes.empty());
     dqRender::ImdlByteStream stream(bytes.data(), bytes.size());
@@ -2192,6 +2204,9 @@ TEST(ImdlInstancesTest, ParsesInstanceFieldsFromDump)
 // 直传形态 + InstancedGeometry.ts create :385-409 的 attribute 组装输入）。
 TEST(ImdlInstancesTest, LutPathUploadsInstanceBuffersVerbatim)
 {
+    // P-4 数据门禁：instances60 族已外置。
+    DTA_REQUIRE_DUMP_ROOT(std::string(DANQING_TEST_ASSET_ROOT)
+        + "/third_party/tile-sample-assets/rpc-dumps/instances60-v1");
     auto const bytes = readDumpBytes(Instances60RootPinned::kRelativePath);
     ASSERT_FALSE(bytes.empty());
     dqRender::ImdlByteStream stream(bytes.data(), bytes.size());

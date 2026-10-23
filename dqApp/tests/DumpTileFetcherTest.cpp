@@ -36,6 +36,9 @@
 #include <utility>
 #include <vector>
 
+// P-4 数据门禁（相对路径单源——宏形 GTEST_SKIP 须在 TEST 体展开）。
+#include "../../samples/DisplayTestApp/tests/DumpDataGate.h"
+
 #ifndef DANQING_TEST_ASSET_ROOT
 #define DANQING_TEST_ASSET_ROOT "."
 #endif
@@ -239,6 +242,7 @@ TEST(DumpTileFetcherTest, ManifestLoadsAndServesTreePropsAndTiles)
 // 迭代面由 DisplayTestApp 挂载入口的多树装载消费）。
 TEST(DumpTileFetcherTest, Instances60LoadsAllTreesWithIModelInfo)
 {
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/instances60-imodel-v1");
     std::string const dumpRoot = kDumpRoot + "/instances60-v1";
 
     // ① load：trees/tiles 计数与 manifest 一致（instances60-v1 实态：
@@ -512,6 +516,7 @@ TEST(DumpTileFetcherTest, CancelAllDropsUndeliveredCompletion)
 // ---------------------------------------------------------------------------
 TEST(DumpTileFetcherTest, MergedRootsServeUnionDomain)
 {
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/joeshouse-v1");
     std::string const drillRoot = kDumpRoot + "/instances60-drill-v1";
     std::string const sweepRoot = kDumpRoot + "/instances60-v1";
 
@@ -591,6 +596,7 @@ TEST(DumpTileFetcherTest, MergedRootsServeUnionDomain)
 // ---------------------------------------------------------------------------
 TEST(DumpTileFetcherTest, InvalidFallbackRootWarnsButPrimaryServes)
 {
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/joeshouse-v1");
     std::string const drillRoot = kDumpRoot + "/instances60-drill-v1";
     std::string const badRoot = kDumpRoot + "/no-such-dump";
 
@@ -632,6 +638,7 @@ TEST(DumpTileFetcherTest, InvalidFallbackRootWarnsButPrimaryServes)
 // ---------------------------------------------------------------------------
 TEST(DumpTileFetcherTest, JoeshouseManifestSingleParseWithinBudget)
 {
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/joeshouse-v1");
     std::string const dumpRoot = kDumpRoot + "/joeshouse-v1";
 
     // 打开链解析段三步（DumpOpenHelper 单次解析共享后的实际序列）：
@@ -683,6 +690,7 @@ TEST(DumpTileFetcherTest, JoeshouseManifestSingleParseWithinBudget)
 // ---------------------------------------------------------------------------
 TEST(DumpTileFetcherTest, SharedManifestConstructorMatchesRootConstructor)
 {
+    DTA_REQUIRE_DUMP_ROOT(kDumpRoot + "/instances60-drill-v1");
     std::string const drillRoot = kDumpRoot + "/instances60-drill-v1";
     std::string const sweepRoot = kDumpRoot + "/instances60-v1";
 

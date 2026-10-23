@@ -162,7 +162,7 @@ TEST(OutputShadersTest, SkipThisShaderFiltersSixWays)
 TEST(OutputShadersTest, RegistryAccumulatesAndMarksUsed)
 {
     // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRootOS + "/instances60-imodel-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRootOS + "/instances60-imodel-v1");
     OutputShadersFixture s;
     ASSERT_TRUE(s.setup());
 
@@ -204,7 +204,7 @@ TEST(OutputShadersTest, RegistryAccumulatesAndMarksUsed)
 TEST(OutputShadersTest, CompileAllShadersRecordsEveryVariant)
 {
     // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRootOS + "/instances60-imodel-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRootOS + "/instances60-imodel-v1");
     OutputShadersFixture s;
     ASSERT_TRUE(s.setup());
 
@@ -236,7 +236,7 @@ TEST(OutputShadersTest, CompileAllShadersRecordsEveryVariant)
 TEST(OutputShadersTest, ParseAndRunWritesFilteredShaderFiles)
 {
     // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRootOS + "/instances60-imodel-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRootOS + "/instances60-imodel-v1");
     OutputShadersFixture s;
     ASSERT_TRUE(s.setup());
 

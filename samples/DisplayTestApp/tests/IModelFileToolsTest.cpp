@@ -31,6 +31,8 @@
 #include <dqApp/ToolAdmin.h>
 #include <dqApp/Viewport.h>
 
+#include "DumpDataGate.h"  // P-4 数据门禁
+
 namespace { struct QtEnvFT { QtEnvFT() { if (!qApp) { static int argc = 1; static char n[] = "t"; static char* av[] = {n, nullptr}; new QApplication(argc, av); } } }; }
 static QtEnvFT s_qtFT;
 
@@ -340,6 +342,10 @@ TEST(SurfaceFileTools, RegisteredWithKeyins)
 // ---------------------------------------------------------------------------
 TEST(SurfaceFileToolsE2E, ReopenReloadsSameViewWithSameKey)
 {
+    // P-4 数据门禁：instances60 族已外置（本测试经 dumpPackageForModel
+    // 打开真实 dump——无数据时 GTEST_SKIP 而非打开失败 FAIL）。
+    DTA_REQUIRE_DUMP_ROOT(std::string(DANQING_TILE_ASSETS_DIR)
+        + "/rpc-dumps/instances60-imodel-v1");
     // 视图堆持有（setWidget 移交子窗——子窗 WA_DeleteOnClose 连删；栈对象会
     // 被 deleteLater 双释放）。
     auto* view = new Gui::View3DInventor(nullptr, nullptr, nullptr);

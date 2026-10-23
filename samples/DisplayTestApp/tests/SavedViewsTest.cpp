@@ -160,7 +160,7 @@ void shiftViewOrigin(dqApp::Viewport* vp, dqApp::IModelConnection* imodel,
 TEST(SavedViewsTest, CreateRecallUpdateDeleteChain)
 {
     // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRootSV + "/instances60-imodel-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRootSV + "/instances60-imodel-v1");
     SavedViewsFixture s;
     ASSERT_TRUE(s.setup());
     freshStoreDir();
@@ -252,7 +252,7 @@ TEST(SavedViewsTest, CreateRecallUpdateDeleteChain)
 TEST(SavedViewsTest, RejectsDuplicateNamesAndSortsAlphabetically)
 {
     // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRootSV + "/instances60-imodel-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRootSV + "/instances60-imodel-v1");
     SavedViewsFixture s;
     ASSERT_TRUE(s.setup());
     freshStoreDir();
@@ -277,7 +277,7 @@ TEST(SavedViewsTest, RejectsDuplicateNamesAndSortsAlphabetically)
 TEST(SavedViewsTest, RecallRestoresSelectionAndOverrides)
 {
     // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
-    dta::requireDumpRootOrSkip(kDumpRootSV + "/instances60-imodel-v1");
+    DTA_REQUIRE_DUMP_ROOT(kDumpRootSV + "/instances60-imodel-v1");
     SavedViewsFixture s;
     ASSERT_TRUE(s.setup());
     freshStoreDir();
