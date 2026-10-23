@@ -15,6 +15,7 @@
 #include "View3DInventor.h"
 
 #include "DumpOpenHelper.h"
+#include "DumpDataGate.h"  // P-4：大模型 dump 数据门禁（缺席→GTEST_SKIP）
 
 #include <dqApp/Application.h>
 #include <dqApp/Viewport.h>
@@ -67,6 +68,8 @@ long contentPixels(std::vector<uint8_t> const& f, uint32_t w, uint32_t h)
 
 TEST(ModelsPanelWiring, ProviderIsolateChangesRenderedContent)
 {
+    // P-4 数据门禁：joeshouse 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRootMpw + "/joeshouse-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;

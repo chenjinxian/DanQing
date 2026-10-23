@@ -29,6 +29,7 @@
 #include "Gui/SavedViewsPanel.h"
 
 #include "DumpOpenHelper.h"
+#include "DumpDataGate.h"  // P-4：大模型 dump 数据门禁（缺席→GTEST_SKIP）
 
 #include <dqApp/Application.h>
 #include <dqApp/IModelConnection.h>
@@ -158,6 +159,8 @@ void shiftViewOrigin(dqApp::Viewport* vp, dqApp::IModelConnection* imodel,
 // ---------------------------------------------------------------------------
 TEST(SavedViewsTest, CreateRecallUpdateDeleteChain)
 {
+    // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRootSV + "/instances60-imodel-v1");
     SavedViewsFixture s;
     ASSERT_TRUE(s.setup());
     freshStoreDir();
@@ -248,6 +251,8 @@ TEST(SavedViewsTest, CreateRecallUpdateDeleteChain)
 // ---------------------------------------------------------------------------
 TEST(SavedViewsTest, RejectsDuplicateNamesAndSortsAlphabetically)
 {
+    // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRootSV + "/instances60-imodel-v1");
     SavedViewsFixture s;
     ASSERT_TRUE(s.setup());
     freshStoreDir();
@@ -271,6 +276,8 @@ TEST(SavedViewsTest, RejectsDuplicateNamesAndSortsAlphabetically)
 // ---------------------------------------------------------------------------
 TEST(SavedViewsTest, RecallRestoresSelectionAndOverrides)
 {
+    // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRootSV + "/instances60-imodel-v1");
     SavedViewsFixture s;
     ASSERT_TRUE(s.setup());
     freshStoreDir();

@@ -29,7 +29,8 @@ namespace { struct QtEnvSP { QtEnvSP() { if (!qApp) { static int argc = 1; stati
 #include <QPushButton>
 
 #include "View3DInventor.h"
-#include "DumpOpenHelper.h"   // dta::openDumpIModel（DumpOpenChain 同源）
+#include "DumpOpenHelper.h"
+#include "DumpDataGate.h"  // P-4：大模型 dump 数据门禁（缺席→GTEST_SKIP）   // dta::openDumpIModel（DumpOpenChain 同源）
 
 #include <dqApp/Application.h>
 #include <dqApp/BlankConnection.h>
@@ -173,6 +174,8 @@ TEST(SectionsPanelTest, EditTogglesDecorationAndClearClearsClip)
 // ---------------------------------------------------------------------------
 TEST(SectionsPanelTest, Instances60ToolEntryClipsContent)
 {
+    // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(std::string(DANQING_TILE_ASSETS_DIR) + "/rpc-dumps/instances60-imodel-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;

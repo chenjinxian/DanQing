@@ -35,6 +35,7 @@
 #include "View3DInventor.h"
 
 #include "DumpOpenHelper.h"
+#include "DumpDataGate.h"  // P-4：大模型 dump 数据门禁（缺席→GTEST_SKIP）
 
 #include <dqApp/Application.h>
 #include <dqApp/Viewport.h>
@@ -314,6 +315,8 @@ std::set<std::string> unionManifestKeys(std::vector<std::string> const& roots)
 //   钉死——内容存活 + 质心中央带）。
 TEST(DumpBrowse, Instances60BrowseSessionZeroMissing)
 {
+    // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRoot + "/instances60-imodel-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;
@@ -668,6 +671,8 @@ bool rowDepthChainHolds(RowColorLayout const& lay)
 
 TEST(DumpBrowse, Instances60RowColorLayout)
 {
+    // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRoot + "/instances60-imodel-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;
@@ -778,6 +783,8 @@ TEST(DumpBrowse, Instances60RowColorLayout)
 //   的 0.2× 门 + 质心中央带）+ 最深饱和帧（64×——首绿实测钉死）。
 TEST(DumpBrowse, JoesHouseBrowseSessionZeroMissing)
 {
+    // P-4 数据门禁：joeshouse 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRoot + "/joeshouse-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;
@@ -1111,6 +1118,8 @@ TEST(DumpBrowse, JoesHouseBrowseSessionZeroMissing)
 // ---------------------------------------------------------------------------
 TEST(DumpBrowse, BridgeEditLodCoverageDiagnostic)
 {
+    // P-4 数据门禁：bridge-edit 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRoot + "/bridge-edit-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;

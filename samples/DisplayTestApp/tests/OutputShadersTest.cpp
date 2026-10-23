@@ -27,6 +27,7 @@
 #include "Gui/OutputShadersTool.h"
 
 #include "DumpOpenHelper.h"
+#include "DumpDataGate.h"  // P-4：大模型 dump 数据门禁（缺席→GTEST_SKIP）
 
 #include <dqApp/Application.h>
 #include <dqApp/Viewport.h>
@@ -160,6 +161,8 @@ TEST(OutputShadersTest, SkipThisShaderFiltersSixWays)
 // ---------------------------------------------------------------------------
 TEST(OutputShadersTest, RegistryAccumulatesAndMarksUsed)
 {
+    // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRootOS + "/instances60-imodel-v1");
     OutputShadersFixture s;
     ASSERT_TRUE(s.setup());
 
@@ -200,6 +203,8 @@ TEST(OutputShadersTest, RegistryAccumulatesAndMarksUsed)
 // ---------------------------------------------------------------------------
 TEST(OutputShadersTest, CompileAllShadersRecordsEveryVariant)
 {
+    // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRootOS + "/instances60-imodel-v1");
     OutputShadersFixture s;
     ASSERT_TRUE(s.setup());
 
@@ -230,6 +235,8 @@ TEST(OutputShadersTest, CompileAllShadersRecordsEveryVariant)
 // ---------------------------------------------------------------------------
 TEST(OutputShadersTest, ParseAndRunWritesFilteredShaderFiles)
 {
+    // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRootOS + "/instances60-imodel-v1");
     OutputShadersFixture s;
     ASSERT_TRUE(s.setup());
 

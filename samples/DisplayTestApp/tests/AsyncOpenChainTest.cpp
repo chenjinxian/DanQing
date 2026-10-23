@@ -15,6 +15,7 @@
 // 代理侧只验证编译。
 
 #include "DumpOpenHelper.h"
+#include "DumpDataGate.h"  // P-4：大模型 dump 数据门禁（缺席→GTEST_SKIP）
 
 #include "Gui/View3DInventor.h"
 
@@ -96,6 +97,8 @@ dta::DumpOpenPackage instances60Package()
 // Authored: no reference test (see file head).
 TEST(AsyncOpenChain, AsyncOpenReconcilesSyncTerminalState)
 {
+    // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRoot + "/instances60-imodel-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;
@@ -149,6 +152,8 @@ TEST(AsyncOpenChain, AsyncOpenReconcilesSyncTerminalState)
 // Authored: no reference test (see file head).
 TEST(AsyncOpenChain, SubmitDoesNotBlockMainThreadOnManifestParse)
 {
+    // P-4 数据门禁：joeshouse 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRoot + "/joeshouse-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;

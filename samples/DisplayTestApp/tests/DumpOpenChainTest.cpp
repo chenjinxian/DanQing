@@ -22,6 +22,8 @@
 
 #include "DumpOpenHelper.h"
 
+#include "DumpDataGate.h"  // P-4：大模型 dump 数据门禁（数据缺席→GTEST_SKIP）
+
 #include <dqApp/Application.h>
 #include <dqApp/Viewport.h>
 #include <dqApp/ViewState.h>
@@ -246,6 +248,8 @@ dqGeom::Point3d viewCenterWorld(dqApp::ViewState3d const* view3d)
 //   四角探针 ≤1%；阈值 = 首绿 0.2×（82000）。
 TEST(DumpOpenChain, OpensInstances60WithReferenceIsomorphicSequence)
 {
+    // P-4 数据门禁：instances60 族已外置（download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRoot + "/instances60-imodel-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;
@@ -511,6 +515,8 @@ TEST(DumpOpenChain, OpensInstances60WithReferenceIsomorphicSequence)
 //   域——首绿实测钉死；§11.11 位置断言）。
 TEST(DumpOpenChain, OpensJoesHouseWithTenModelTrees)
 {
+    // P-4 数据门禁：joeshouse 族已外置（download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRoot + "/joeshouse-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;
@@ -859,6 +865,8 @@ TEST(DumpOpenChain, OpensJoesHouseWithTenModelTrees)
 // 过阈（洗白把像素推离黑背景反而抬高计数）。实心性维度由本锁补齐。
 TEST(DumpOpenChain, Instances60SavedViewSpheresRenderSolid)
 {
+    // P-4 数据门禁：instances60 族已外置（download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRoot + "/instances60-imodel-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;
@@ -1006,6 +1014,8 @@ TEST(DumpOpenChain, Instances60SavedViewSpheresRenderSolid)
 //           §5(g) 像素回归授权——复现配方 = 打开链 + saved 透视视图）。
 TEST(DumpOpenChain, OpensHouseModelWithPerspectiveSavedView)
 {
+    // P-4 数据门禁：housemodel 族已外置（download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRoot + "/housemodel-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;
@@ -1284,6 +1294,8 @@ TEST(DumpOpenChain, OpensHouseModelWithPerspectiveSavedView)
 //           （§5(f)；§5(g) 像素回归授权）。
 TEST(DumpOpenChain, OpensBaytownOrthographicSavedView)
 {
+    // P-4 数据门禁：baytown 族已外置（download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRoot + "/baytown-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;
@@ -1508,6 +1520,8 @@ TEST(DumpOpenChain, OpensBaytownOrthographicSavedView)
 //           （§5(f)；§5(g) 像素回归授权——复现配方 = 打开链 + 取景路径）。
 TEST(DumpOpenChain, OpensBridgeEditWithWorldContentFraming)
 {
+    // P-4 数据门禁：bridge-edit 族已外置（download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRoot + "/bridge-edit-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;
@@ -1742,6 +1756,9 @@ TEST(DumpOpenChain, OpensBridgeEditWithWorldContentFraming)
 //           泵至静默；bridge-edit 锁 6 同型先例）。
 TEST(DumpOpenChain, OpensNewBridgeWithFramedContent)
 {
+    // P-4 数据门禁：newbridge 的 manifest 全入 git 而 files/ 本地持有从不入库
+    // ——manifest 存在性判据对其无效（新检出假红根治）；判 files/ 非空。
+    dta::requireDumpFilesOrSkip(kDumpRoot + "/newbridge-sweep-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;

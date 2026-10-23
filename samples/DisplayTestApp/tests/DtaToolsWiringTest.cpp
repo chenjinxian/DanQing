@@ -45,6 +45,7 @@
 #include "Gui/CategoriesPanel.h"
 #include "Gui/View3DInventor.h"
 #include "DumpOpenHelper.h"
+#include "DumpDataGate.h"  // P-4：大模型 dump 数据门禁（缺席→GTEST_SKIP）
 #include "InputHint.h"
 
 #include <dqApp/Application.h>
@@ -424,6 +425,8 @@ TEST(DtaToolsWiring, SyncViewportsAllConnectsAndFollows)
 // origin ± 0.531（Y90 旋转下 xy 对调不变并集）。
 TEST(DtaToolsWiring, ZoomToSelectedFramesSelectedElement)
 {
+    // P-4 数据门禁：instances60(placements) 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(std::string(DANQING_TILE_ASSETS_DIR) + "/rpc-dumps/instances60-placements-v1");
     ensureAppStubReady();
     ensureEngineReady();
     ViewGuardDtw guard(900, 640);

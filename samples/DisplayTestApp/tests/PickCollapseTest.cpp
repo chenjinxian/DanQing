@@ -24,6 +24,7 @@
 #include "View3DInventor.h"
 
 #include "DumpOpenHelper.h"
+#include "DumpDataGate.h"  // P-4：大模型 dump 数据门禁（缺席→GTEST_SKIP）
 
 #include <dqApp/Application.h>
 #include <dqApp/Viewport.h>
@@ -508,6 +509,8 @@ void runHoverAndSelect(PickCollapse& s, char const* label)
 // Baytown（正交 saved 视图 + polyline/pointString 大头）。
 TEST(PickCollapse, BaytownHoverAndSelectKeepContent)
 {
+    // P-4 数据门禁：baytown 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRoot + "/baytown-v1");
     PickCollapse s;
     ASSERT_TRUE(s.setup("baytown")) << "baytown open chain failed";
     runHoverAndSelect(s, "baytown");
@@ -516,6 +519,8 @@ TEST(PickCollapse, BaytownHoverAndSelectKeepContent)
 // Bridge（坑 24 取景 + 全树域 + compact 边 + 超大单瓦）。
 TEST(PickCollapse, BridgeHoverAndSelectKeepContent)
 {
+    // P-4 数据门禁：bridge-edit 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRoot + "/bridge-edit-v1");
     PickCollapse s;
     ASSERT_TRUE(s.setup("bridge")) << "bridge open chain failed";
     runHoverAndSelect(s, "bridge");

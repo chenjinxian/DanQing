@@ -45,7 +45,8 @@
 
 #include "View3DInventor.h"
 
-#include "DumpMount.h"  // 多树全量挂载入口（M-E Task 2——manifest trees 迭代 + fit 并集）
+#include "DumpMount.h"
+#include "DumpDataGate.h"  // P-4：大模型 dump 数据门禁（缺席→GTEST_SKIP）  // 多树全量挂载入口（M-E Task 2——manifest trees 迭代 + fit 并集）
 
 #include <dqApp/Application.h>
 #include <dqApp/Viewport.h>
@@ -693,6 +694,8 @@ TEST(RpcDumpRender, Instances60RendersAllInstances)
                            + "/rpc-dumps/instances60-v1";
     if (char const* env = std::getenv("DANQING_RPC_DUMP"))
         dumpRoot = env;
+    // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(dumpRoot);
 
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
@@ -920,6 +923,8 @@ TEST(RpcDumpRender, Instances60FullLoadReconcilesManifestKeys)
                            + "/rpc-dumps/instances60-v1";
     if (char const* env = std::getenv("DANQING_RPC_DUMP"))
         dumpRoot = env;
+    // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(dumpRoot);
 
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
@@ -1295,6 +1300,8 @@ TEST(RpcDumpRender, Instances60DrillReplaysViewportChain)
                            + "/rpc-dumps/instances60-drill-v1";
     if (char const* env = std::getenv("DANQING_RPC_DUMP"))
         dumpRoot = env;
+    // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(dumpRoot);
 
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {

@@ -27,6 +27,7 @@
 #include "Gui/TiledGraphics.h"
 
 #include "DumpOpenHelper.h"
+#include "DumpDataGate.h"  // P-4：大模型 dump 数据门禁（缺席→GTEST_SKIP）
 
 #include <dqApp/Application.h>
 #include <dqApp/Viewport.h>
@@ -238,6 +239,8 @@ struct TiledGraphicsFixture {
 // ---------------------------------------------------------------------------
 TEST(TiledGraphicsTest, SecondaryIModelOverlaysAndTogglesOff)
 {
+    // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRootTG + "/instances60-imodel-v1");
     TiledGraphicsFixture s;
     ASSERT_TRUE(s.setup());
 

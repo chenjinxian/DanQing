@@ -51,6 +51,7 @@
 #include "Gui/FeatureOverridesPanel.h"  // M-O(2) I10——Provider 引擎通道
 
 #include "DumpOpenHelper.h"
+#include "DumpDataGate.h"  // P-4：大模型 dump 数据门禁（缺席→GTEST_SKIP）
 
 #include <dqApp/Application.h>
 #include <dqApp/IModelConnection.h>
@@ -350,6 +351,8 @@ struct DumpPick {
 // ---------------------------------------------------------------------------
 TEST(PickDumpScene, PickAtTileContentPixelReturnsElementId)
 {
+    // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRoot + "/instances60-imodel-v1");
     DumpPick s;
     ASSERT_TRUE(s.setup());
 
@@ -370,6 +373,8 @@ TEST(PickDumpScene, PickAtTileContentPixelReturnsElementId)
 // ---------------------------------------------------------------------------
 TEST(PickDumpScene, ClickSelectsTileFeatureIntoSelectionSet)
 {
+    // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRoot + "/instances60-imodel-v1");
     DumpPick s;
     ASSERT_TRUE(s.setup());
 
@@ -419,6 +424,8 @@ TEST(PickDumpScene, ClickSelectsTileFeatureIntoSelectionSet)
 // ---------------------------------------------------------------------------
 TEST(PickDumpScene, SelectionHilitesTilePixelsAndUnselectRestores)
 {
+    // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRoot + "/instances60-imodel-v1");
     DumpPick s;
     ASSERT_TRUE(s.setup());
 
@@ -565,6 +572,8 @@ TEST(PickDumpScene, SelectionHilitesTilePixelsAndUnselectRestores)
 // ---------------------------------------------------------------------------
 TEST(PickDumpScene, FeatureOverrideProviderRestylesHitElement)
 {
+    // P-4 数据门禁：instances60 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRoot + "/instances60-imodel-v1");
     DumpPick s;
     ASSERT_TRUE(s.setup());
 

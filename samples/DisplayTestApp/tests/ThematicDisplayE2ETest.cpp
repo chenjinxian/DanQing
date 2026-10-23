@@ -44,6 +44,7 @@
 #include "View3DInventor.h"
 #include "FileTileFetcher.h"  // dqApp/src（测试隔离重挂——TD-31，见 MinimalSolidBox 注）
 #include "DumpOpenHelper.h"
+#include "DumpDataGate.h"  // P-4：大模型 dump 数据门禁（缺席→GTEST_SKIP）
 
 #include <dqApp/Application.h>
 #include <dqApp/StandardView.h>
@@ -626,6 +627,8 @@ TEST(ThematicDisplayE2E, TallBoxGradientSweepIsExact)
 // ---------------------------------------------------------------------------
 TEST(ThematicDisplayE2E, HeightGradientColorsByWorldZAndRestores)
 {
+    // P-4 数据门禁：joeshouse 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRoot + "/joeshouse-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;
@@ -761,6 +764,8 @@ TEST(ThematicDisplayE2E, HeightGradientColorsByWorldZAndRestores)
 
 TEST(ThematicDisplayE2E, SlopeDistinguishesVerticalFromFlat)
 {
+    // P-4 数据门禁：joeshouse 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRoot + "/joeshouse-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;
@@ -865,6 +870,8 @@ TEST(ThematicDisplayE2E, SlopeDistinguishesVerticalFromFlat)
 // ---------------------------------------------------------------------------
 TEST(ThematicDisplayE2E, SensorIdwColorSeparatesNearEachSensor)
 {
+    // P-4 数据门禁：joeshouse 族已外置（scripts/data/download_dumps.ps1 回灌）。
+    dta::requireDumpRootOrSkip(kDumpRoot + "/joeshouse-v1");
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
         dqApp::Application::Options opts;
