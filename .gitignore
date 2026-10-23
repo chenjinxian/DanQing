@@ -67,14 +67,83 @@ ui_*.h
 qrc_*.cpp
 build-asan/
 
-# M-K(1) 编辑大桥测试 dump 的 d2 粗瓦（140,675,160 B = 134.2MB，sha256
-# afe95030…）——超 GitHub 单文件 100MB 硬门，本地持有不入库（登记于两 dump
-# README"大瓦本地持有"节；回放缺该瓦走父瓦 LOD 兜底，桥锁不依赖）。
-third_party/tile-sample-assets/rpc-dumps/bridge-edit-v1/files/8.imdl
-third_party/tile-sample-assets/rpc-dumps/bridge-edit-drill-v1/files/8.imdl
-# M-M(5) bridge-edit 全树 sweep：134MB 大瓦本地持有（同一字节 -b-2-0-0-0-1，
-# 跨会话确定性；manifest sha256 不变，回放缺瓦走父瓦兜底）
-third_party/tile-sample-assets/rpc-dumps/bridge-edit-sweep-v1/files/12.imdl
+# P-4 数据外置（2026-10-23）：五大模型 dump 根（joeshouse×4 / housemodel×2 /
+# baytown×2 / bridge-edit×8 / instances60×5，合计 ~7.4GB）移出 git HEAD，经
+# 数据仓（DanQing-Data）release 资产分发——scripts/data/download_dumps.ps1
+# 下载+校验+解包回灌此目录。git 历史未改写（全量克隆仍含旧 pack——README
+# 推荐 git clone --depth 1）。各根 README.md（provenance 文档）保留在库，
+# 忽略面 = files/ + manifest.json + imodel.json（采集器每根落 imodel.json）。
+# 注：被吞并的原文件级登记——bridge-edit v1/drill/sweep 三根的 134.2MB 大瓦
+#（8.imdl/12.imdl，超 GitHub 100MB 硬门本地持有）随整根外置条款一并覆盖。
+# joeshouse 族（4 根）
+third_party/tile-sample-assets/rpc-dumps/joeshouse-v1/files/
+third_party/tile-sample-assets/rpc-dumps/joeshouse-v1/manifest.json
+third_party/tile-sample-assets/rpc-dumps/joeshouse-v1/imodel.json
+third_party/tile-sample-assets/rpc-dumps/joeshouse-drill-v1/files/
+third_party/tile-sample-assets/rpc-dumps/joeshouse-drill-v1/manifest.json
+third_party/tile-sample-assets/rpc-dumps/joeshouse-drill-v1/imodel.json
+third_party/tile-sample-assets/rpc-dumps/joeshouse-drill-v2/files/
+third_party/tile-sample-assets/rpc-dumps/joeshouse-drill-v2/manifest.json
+third_party/tile-sample-assets/rpc-dumps/joeshouse-drill-v2/imodel.json
+third_party/tile-sample-assets/rpc-dumps/joeshouse-mag-missing-v1/files/
+third_party/tile-sample-assets/rpc-dumps/joeshouse-mag-missing-v1/manifest.json
+third_party/tile-sample-assets/rpc-dumps/joeshouse-mag-missing-v1/imodel.json
+# housemodel 族（2 根）
+third_party/tile-sample-assets/rpc-dumps/housemodel-v1/files/
+third_party/tile-sample-assets/rpc-dumps/housemodel-v1/manifest.json
+third_party/tile-sample-assets/rpc-dumps/housemodel-v1/imodel.json
+third_party/tile-sample-assets/rpc-dumps/housemodel-drill-v1/files/
+third_party/tile-sample-assets/rpc-dumps/housemodel-drill-v1/manifest.json
+third_party/tile-sample-assets/rpc-dumps/housemodel-drill-v1/imodel.json
+# baytown 族（2 根）
+third_party/tile-sample-assets/rpc-dumps/baytown-v1/files/
+third_party/tile-sample-assets/rpc-dumps/baytown-v1/manifest.json
+third_party/tile-sample-assets/rpc-dumps/baytown-v1/imodel.json
+third_party/tile-sample-assets/rpc-dumps/baytown-drill-v1/files/
+third_party/tile-sample-assets/rpc-dumps/baytown-drill-v1/manifest.json
+third_party/tile-sample-assets/rpc-dumps/baytown-drill-v1/imodel.json
+# bridge-edit 族（8 根）
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-v1/files/
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-v1/manifest.json
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-v1/imodel.json
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-drill-v1/files/
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-drill-v1/manifest.json
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-drill-v1/imodel.json
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-sweep-v1/files/
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-sweep-v1/manifest.json
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-sweep-v1/imodel.json
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-mag-missing-v1/files/
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-mag-missing-v1/manifest.json
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-mag-missing-v1/imodel.json
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-mag-missing-v2/files/
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-mag-missing-v2/manifest.json
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-mag-missing-v2/imodel.json
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-mag-missing-v3/files/
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-mag-missing-v3/manifest.json
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-mag-missing-v3/imodel.json
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-mag-missing-v4/files/
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-mag-missing-v4/manifest.json
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-mag-missing-v4/imodel.json
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-coverage-v1/files/
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-coverage-v1/manifest.json
+third_party/tile-sample-assets/rpc-dumps/bridge-edit-coverage-v1/imodel.json
+# instances60 族（5 根）
+third_party/tile-sample-assets/rpc-dumps/instances60-v1/files/
+third_party/tile-sample-assets/rpc-dumps/instances60-v1/manifest.json
+third_party/tile-sample-assets/rpc-dumps/instances60-v1/imodel.json
+third_party/tile-sample-assets/rpc-dumps/instances60-imodel-v1/files/
+third_party/tile-sample-assets/rpc-dumps/instances60-imodel-v1/manifest.json
+third_party/tile-sample-assets/rpc-dumps/instances60-imodel-v1/imodel.json
+third_party/tile-sample-assets/rpc-dumps/instances60-drill-v1/files/
+third_party/tile-sample-assets/rpc-dumps/instances60-drill-v1/manifest.json
+third_party/tile-sample-assets/rpc-dumps/instances60-drill-v1/imodel.json
+third_party/tile-sample-assets/rpc-dumps/instances60-mag-missing-v1/files/
+third_party/tile-sample-assets/rpc-dumps/instances60-mag-missing-v1/manifest.json
+third_party/tile-sample-assets/rpc-dumps/instances60-mag-missing-v1/imodel.json
+third_party/tile-sample-assets/rpc-dumps/instances60-placements-v1/files/
+third_party/tile-sample-assets/rpc-dumps/instances60-placements-v1/manifest.json
+third_party/tile-sample-assets/rpc-dumps/instances60-placements-v1/imodel.json
+third_party/tile-sample-assets/rpc-dumps/instances60-placements-v1/placements.json
 
 # 2026-10-20 bridge-edit LOD 取证的一次性大体积采集（合计 ~5GB）——仅作
 # 本地取证/邻域数据源，不入库（其小瓦邻域贡献已并入 bridge-edit-coverage-v1）。

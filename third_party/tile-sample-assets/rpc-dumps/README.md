@@ -1,5 +1,15 @@
 # rpc-dumps — itwinjs-core 真实后端 RPC 数据回放资产（M-D Task 0+1 采集）
 
+> **P-4 数据外置（2026-10-23）**：五大模型族（**joeshouse / housemodel / baytown /
+> bridge-edit / instances60**，合计 ~7.4GB）的 `files/` 载荷与 manifest/imodel.json
+> 已移出 git HEAD，打包发布于数据仓 **github.com/chenjinxian/DanQing-Data** 的
+> `data-v1` release。回灌 = 仓根运行
+> `powershell -ExecutionPolicy Bypass -File scripts/data/download_dumps.ps1`
+> （下载→sha256 校验→解包回本目录，幂等）。本仓内保留：各根 README（provenance
+> 文档）、compatseed/mirukuru 两小族完整数据（~22MB，克隆即跑）、newbridge 八根
+> manifest+imodel.json（files/ 始终本地持有不入库——既定 junction 形态）。
+> git 历史未改写：全量克隆仍含旧数据 pack，新检出建议 `git clone --depth 1`。
+
 **来源**：itwinjs-core display-test-app（electron + vite dev）经 CDP 注入 patch
 （`IModelApp.tileAdmin.generateTileContent` / `requestTileTreeProps` 实例级包裹，
 打点对齐参考 `IModelTile.ts:91` / `PrimaryTileTree.ts:66` / `TileAdmin.ts:648-707`）
@@ -7,6 +17,7 @@
 （§8.2 零网络约束：DanQing 侧只做本地文件回放，网络获取归宿主层）。
 
 **§11.11**：入库后只读；重采=新目录名（不得覆盖/突变本目录）。
+
 
 ## 共同 provenance
 
