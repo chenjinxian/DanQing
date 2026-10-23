@@ -29,11 +29,15 @@ function Get-Asset([string]$url, [string]$outFile) {
         Write-Output "  cached: $(Split-Path $outFile -Leaf)"; return
     }
     Write-Output "  download: $url"
+    # Invoke-WebRequest first: Start-BitsTransfer stalls on GitHub release
+    # assets (S3 redirect; job hangs silently - 2026-10-23 fresh-clone
+    # dogfood). IWR is slower per-byte but reliable; BITS kept as fallback.
     try {
-        Start-BitsTransfer -Source $url -Destination $outFile -ErrorAction Stop
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri $url -OutFile $outFile -UseBasicParsing -ErrorAction Stop
     } catch {
-        Write-Output "  BITS failed, fallback Invoke-WebRequest..."
-        Invoke-WebRequest -Uri $url -OutFile $outFile -UseBasicParsing
+        Write-Output "  IWR failed, fallback Start-BitsTransfer..."
+        Start-BitsTransfer -Source $url -Destination $outFile -ErrorAction Stop
     }
 }
 

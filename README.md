@@ -127,7 +127,9 @@ are not downloaded — see below).
 
 ```bash
 git clone --depth 1 https://github.com/chenjinxian/DanQing.git
-# full history is ~2.3 GiB (it predates the data externalization) — prefer --depth 1
+# shallow clone = ~160 MB on disk (source ~21 MB + in-repo small-model data
+# 22 MB + newbridge manifests ~60 MB + git pack ~39 MB); full history is
+# ~2.3 GiB (it predates the data externalization) — prefer --depth 1
 scripts\bootstrap_third_party.ps1   # Qt 6.11.1 via aqtinstall (see notes inside)
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j --config Debug
@@ -279,7 +281,8 @@ purposes.
 
 ```bash
 git clone --depth 1 https://github.com/chenjinxian/DanQing.git
-# 全量历史约 2.3 GiB（数据外置前的旧 pack）——建议 --depth 1
+# 浅克隆落盘约 160MB（源码 ~21MB + 仓内小模型数据 22MB + newbridge manifests
+# ~60MB + git pack ~39MB）；全量历史约 2.3 GiB（数据外置前的旧 pack）——建议 --depth 1
 scripts\bootstrap_third_party.ps1   # Qt 6.11.1（aqtinstall；注意事项见脚本内注释）
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j --config Debug
