@@ -1,0 +1,155 @@
+{
+  "provenance": {
+    "pageHref": "http://localhost:3000/",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7977.54 Electron/44.0.0 Safari/537.36",
+    "defaultView": {
+      "origin": [
+        288444.03466109437,
+        3803483.7340948693,
+        -219.2968266363897
+      ],
+      "extents": [
+        1144.2069282259326,
+        752.8392378113618,
+        787.8491636972026
+      ],
+      "rotation": [
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          1
+        ]
+      ],
+      "is3d": true,
+      "cameraOn": false,
+      "lens": 0,
+      "viewRect": {
+        "w": 1263,
+        "h": 831
+      },
+      "capturedAt": "2026-10-23T02:35:55.381Z"
+    },
+    "formatVersion": 2424832,
+    "done": true,
+    "iModel": {
+      "name": "DgnV8Bridge",
+      "projectExtents": {
+        "low": [
+          288874.1174466432,
+          3803761.1888925503,
+          -0.5
+        ],
+        "high": [
+          289160.8417204395,
+          3803959.118535,
+          0.5
+        ]
+      },
+      "iModelId": "20f0f4a0-64bb-4b2b-b060-11c25024d986"
+    },
+    "sweep": {
+      "phase": "done",
+      "tiles": 2,
+      "bytes": 2076,
+      "leaves": 2,
+      "branches": 0,
+      "trees": [
+        "25_1d-E:6_0x28",
+        "25_1d-E:6_0x1c"
+      ],
+      "perTree": {
+        "25_1d-E:6_0x28": {
+          "tiles": 1,
+          "leaves": 1,
+          "branches": 0,
+          "errs": 0,
+          "bytes": 424,
+          "magnifierCapped": 0
+        },
+        "25_1d-E:6_0x1c": {
+          "tiles": 1,
+          "leaves": 1,
+          "branches": 0,
+          "errs": 0,
+          "bytes": 1652,
+          "magnifierCapped": 0
+        }
+      },
+      "errors": [],
+      "providerSource": "negotiated",
+      "modulesVia": "resource-entries",
+      "fallbackUsed": false,
+      "caps": {
+        "tiles": 400000,
+        "depth": 10,
+        "bytes": 1610612736,
+        "mag": 8
+      },
+      "done": true
+    },
+    "seed": "mirukuru.ibim",
+    "seedPath": "D:\\Github\\itwinjs-core\\test-apps\\display-test-app\\assets\\mirukuru.ibim",
+    "collected": "2026-10-23T02:36:04.643Z",
+    "itwinjsCommit": "88da8fb98647d37632a5cef4d6bb6e2e5c007855",
+    "iModelId": "20f0f4a0-64bb-4b2b-b060-11c25024d986",
+    "changesetId": "",
+    "tool": "danqing-rpc-tools capture.mjs"
+  },
+  "stats": {
+    "trees": 2,
+    "tiles": 2,
+    "dupTiles": 1,
+    "dupTrees": 0,
+    "bytes": 2076
+  },
+  "trees": [
+    {
+      "treeId": "25_1d-E:6_0x28",
+      "iModelId": "20f0f4a0-64bb-4b2b-b060-11c25024d986",
+      "formatVersion": 2424832,
+      "byteLength": 531,
+      "file": "files/4.json",
+      "propsFile": "files/4.json"
+    },
+    {
+      "treeId": "25_1d-E:6_0x1c",
+      "iModelId": "20f0f4a0-64bb-4b2b-b060-11c25024d986",
+      "formatVersion": 2424832,
+      "byteLength": 713,
+      "file": "files/5.json",
+      "propsFile": "files/5.json"
+    }
+  ],
+  "tiles": [
+    {
+      "treeId": "25_1d-E:6_0x28",
+      "contentId": "-b-0-0-0-0-1",
+      "guid": "first_9423750c2e439c14",
+      "iModelId": "20f0f4a0-64bb-4b2b-b060-11c25024d986",
+      "changesetId": "",
+      "byteLength": 424,
+      "sha256": "38561bef6622a8faeed7511fdc91d8f8bf657f61d9fb2573f013d934a5db7cd0",
+      "file": "files/6.imdl"
+    },
+    {
+      "treeId": "25_1d-E:6_0x1c",
+      "contentId": "-b-0-0-0-0-1",
+      "guid": "first_9423750c2e439c14",
+      "iModelId": "20f0f4a0-64bb-4b2b-b060-11c25024d986",
+      "changesetId": "",
+      "byteLength": 1652,
+      "sha256": "fdecac50e7f291aaf8f9add70a193a69722cd7d146d4cb0efdf0c516b1fe01aa",
+      "file": "files/7.imdl"
+    }
+  ]
+}

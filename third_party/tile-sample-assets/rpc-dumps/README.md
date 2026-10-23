@@ -29,6 +29,7 @@
 | 树 | `25_1d-E:6_0x1c`（iModelId `048a431f-0398-4091-acbd-c92657680797`） |
 | 瓦 contentId | `-b-6-0-0-0-1` … `-b-0-0-0-0-1`（zoom 驱动的 LOD 链：6 层细化，root 25KB → 末级 4.3KB） |
 | root 瓦头 | 6 元素入/0 出，tolerance 0.00132，contentRange ≈ [-100.0, -97.5]³（与树 props contentRange 一致） |
+| 全量重采 | **P-3（2026-10-23）→ `compatseed-sweep-v1`**（212 瓦全树 + imodel.json——Start 页打开链走新根；本根只读供 RpcDumpRender 锁） |
 
 ### mirukuru-v1 — mirukuru.ibim（多树覆盖）
 
@@ -36,6 +37,7 @@
 |---|---|
 | 种子 | `core/backend/lib/cjs/test/assets/mirukuru.ibim` |
 | 统计 | 2 树 / 1 瓦 / 1652 B（模型极小；价值在第二个 treeId `25_1d-E:6_0x28`——回放 fetcher 的 byTreeId 键分发需多树才能被测到） |
+| 全量重采 | **P-3（2026-10-23）→ `mirukuru-sweep-v1`**（双树根即叶——全树固有形态 2 瓦 + imodel.json；Start 页打开链走新根，本根只读供 RpcDumpRender 锁） |
 
 ### instances60-v1 — Properties_60InstancesWithUrl2.ibim（BFS 全树 + instances 修饰）
 
@@ -134,6 +136,24 @@
 | 主根 | `newbridge-v1`（imodel.json + 树 props，0 瓦，整根入 git）；**树根域 ±4940×±425×±1294**、几何域 ≈1.18km（= projectExtents） |
 | 关键事实 | **默认视图 0x5387 坑 24 同型空域**（视域与几何 x 向相离 ~1180m）→ 打开链取景到世界域 contentRange；**后端生成非字节稳定**（根瓦两轮 135,983,728 vs 107,944,096 B——sha256 按轮内校验）；单瓦体量 ~1000× 常规模型（d1 310MB） |
 | git 落位 | 各根 manifest.json+imodel.json 入 git；**47.9GB files/ 本地持有**（`.gitignore` + junction → `D:/Github/danqing-rpc-tools/dumps/`——P-2 R2 不走 LFS）；接入 = `dumpPackageForModel("newbridge")` 每根 manifest 存在性条件接入。总览/复现命令 = 根内 `newbridge-v1/README.md` + 仓外 `D:/Github/danqing-rpc-tools/dumps/README.md` |
+
+## P-3 目录（2026-10-23——compatseed/mirukuru 全量重采，`D:\Github\itwinjs-core` @ `88da8fb9…`）
+
+### compatseed-sweep-v1 — CompatibilityTestSeed.bim（sweep 全树自然收敛，P-3）
+
+| 项 | 值 |
+|---|---|
+| 统计 | 1 树（`25_1d-E:6_0x1c`）/ **212 瓦 / 20.43 MB**（sweep done 自然收敛：请求 253/dup 42/errs=0；深度分布 d0-d10，d10 层全叶化——前沿枚举 d11 missing=0）+ imodel.json（3,391 B，3 视图/default 0x41/1 model，gaps=0） |
+| 关键事实 | 默认视图 = **BisCore:OrthographicViewDefinition**（正交，yaw30/pitch-35.26/roll-45 iso）——baytown 同型类选择面用例；视域与世界内容域相交（2.5m 立方 × location +99.755 → ≈[-0.25,2.25]³）→ 非坑 24，saved 直渲；全量 sha256 校验 0 mismatch |
+| 接入 | `dumpPackageForModel("compatseed")` 单根包；Start 页卡片 "Compatibility Test Seed" |
+
+### mirukuru-sweep-v1 — mirukuru.ibim（双树根即叶，全树=2 瓦固有形态，P-3）
+
+| 项 | 值 |
+|---|---|
+| 统计 | 2 树（`25_1d-E:6_0x1c` + `25_1d-E:6_0x28` 空叶树）/ **2 瓦 / 2,076 B**（双树根即叶——0x1c 根 1,652 B 含全部内容；sweep done，errs=0）+ imodel.json（3,703 B，1 视图/default 0x24/**2 models**，gaps=0） |
+| 关键事实 | iModel="DgnV8Bridge"；projectExtents=日本平面坐标 287×199m 平地（z 跨 1m）；默认视图 SpatialViewDefinition identity 旋转、视域完整包含内容域 → 非坑 24，saved 直渲；modelSelector.models=[0x1c,0x28] ⇔ 双树逐 model 派生（打开链多树装载用例）；全量 sha256 校验 0 mismatch |
+| 接入 | `dumpPackageForModel("mirukuru")` 单根包；Start 页卡片 "Mirukuru" |
 
 ## manifest 契约（Task 2 DumpTileFetcher/DumpTileTreeProps 消费）
 
