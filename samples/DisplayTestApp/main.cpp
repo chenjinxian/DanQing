@@ -112,6 +112,9 @@ QString windowTitleForModel(QString const& modelId)
         return QObject::tr("Baytown");
     if (modelId == QLatin1String("bridge-edit"))
         return QObject::tr("Bridge Edit (编辑大桥测试)");
+    // P-2 P2-d：newBridge（R6 显示名——"编辑大桥测试"中文映射先例对齐）。
+    if (modelId == QLatin1String("newbridge"))
+        return QObject::tr("New Bridge (新大桥测试)");
     return modelId;
 }
 

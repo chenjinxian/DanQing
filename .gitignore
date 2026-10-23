@@ -94,6 +94,23 @@ third_party/tile-sample-assets/rpc-dumps/bridge-edit-magnify-v1/
 # 应用侧按 manifest 存在性条件接入；复现工具 = capture.mjs key-list 模式 +
 # enumerate_frontier.py/merge_frontier.py）
 third_party/tile-sample-assets/rpc-dumps/bridge-edit-frontier-d13*/
+# 2026-10-22/23 P-2 newBridge.bim（2.95GB 种子，10km 级大桥）全树采集 8 根
+#（v1 主根[imodel.json+树 props，0 瓦，整根小文件入 git] + sweep-v1[d1-d8
+# 完整 5407 瓦 20GB] + d9/d9b[d9 层两波] + d10-d13[逐层波次]——169,920 瓦
+# sha256 全量校验 0 mismatch；**47.9GB files/ 本地持有不入 git/LFS**（P-2
+# 计划 R2 裁决——P-1b LFS 指针缺瓦 saga 教训，新大体量根不走 LFS）；
+# manifest.json+imodel.json 小文件入 git 作 provenance + fetcher 查找域，
+# files/ 目录（junction 指向 D:/Github/danqing-rpc-tools/dumps/ 对应根）
+# 忽略——主根 newbridge-v1 的 files/（树 props 9.json，678B）不在此列、整根
+# 入 git。dumpPackageForModel("newbridge") 按每根 manifest 存在性条件接入，
+# 缺席（新检出）静默跳过回退父瓦 LOD（bridge-edit frontier 同策略）。
+third_party/tile-sample-assets/rpc-dumps/newbridge-sweep-v1/files/
+third_party/tile-sample-assets/rpc-dumps/newbridge-d9-v1/files/
+third_party/tile-sample-assets/rpc-dumps/newbridge-d9b-v1/files/
+third_party/tile-sample-assets/rpc-dumps/newbridge-d10-v1/files/
+third_party/tile-sample-assets/rpc-dumps/newbridge-d11-v1/files/
+third_party/tile-sample-assets/rpc-dumps/newbridge-d12-v1/files/
+third_party/tile-sample-assets/rpc-dumps/newbridge-d13-v1/files/
 
 saved-views-test/
 output-shaders-test/

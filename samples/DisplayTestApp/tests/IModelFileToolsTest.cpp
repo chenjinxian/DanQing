@@ -190,6 +190,14 @@ TEST(SurfaceFileTools, ModelIdForIModelKeyMapsDumpKeys)
     EXPECT_EQ(dta::modelIdForIModelKey(
                   "D:\\Github\\itwinjs-core\\test-apps\\display-test-app\\assets\\编辑大桥测试.bim"),
                   std::optional<QString>(QStringLiteral("bridge-edit")));
+    // P-2 P2-d：newBridge.bim 的 rpcProps.key = D:\test\newBridge.bim（大小写
+    // 不敏——newbridge-v1/imodel.json 实测）。
+    EXPECT_EQ(dta::modelIdForIModelKey(
+                  "D:\\test\\newBridge.bim"),
+                  std::optional<QString>(QStringLiteral("newbridge")));
+    EXPECT_EQ(dta::modelIdForIModelKey(
+                  "D:/test/newbridge.bim"),
+                  std::optional<QString>(QStringLiteral("newbridge")));
 
     // 未映射/空键 → nullopt（E-Y8 no-op 腿）。
     EXPECT_EQ(dta::modelIdForIModelKey(""), std::nullopt);
@@ -232,6 +240,42 @@ TEST(SurfaceFileTools, DumpPackageForModelTableIntact)
         ASSERT_EQ(bridge->tileRoots.size(), hasFrontier ? 9u : 8u);
     }
     EXPECT_TRUE(bridge->frameToWorldContent);  // 坑 24 取景路径
+
+    // P-2 P2-d：newbridge 六键域映射——主根 newbridge-v1（imodel.json+树 props
+    // 0 瓦，整根入 git）+ 7 个本地持有 fallback 根（sweep d1-d8 / d9 / d9b /
+    // d10-d13——47.9GB files/ 经 .gitignore 本地持有，manifest 存在才接入，
+    // bridge-edit frontier 先例形态）。帧到世界域几何（saved 视图 0x5387 为
+    // 坑 24 型空域——见 DumpOpenHelper 注释）。
+    auto const nb = dta::dumpPackageForModel(QStringLiteral("newbridge"));
+    ASSERT_TRUE(nb.has_value());
+    EXPECT_TRUE(nb->imodelRoot.find("newbridge-v1") != std::string::npos);
+    {
+        // 候选源序（P2-d 指定）：v1 → d9 → sweep → d10 → d11 → d12 → d13 →
+        // d9b；每根 manifest.json 存在才接入（本机全在盘 → 8）。
+        char const* const kExpected[] = {
+            "/newbridge-v1", "/newbridge-d9-v1", "/newbridge-sweep-v1",
+            "/newbridge-d10-v1", "/newbridge-d11-v1", "/newbridge-d12-v1",
+            "/newbridge-d13-v1", "/newbridge-d9b-v1"};
+        int expected = 0;
+        for (char const* root : kExpected) {
+            std::error_code ec;
+            if (std::filesystem::exists(std::string(DANQING_TILE_ASSETS_DIR)
+                                            + "/rpc-dumps" + root + "/manifest.json",
+                                        ec))
+                ++expected;
+        }
+        ASSERT_EQ(nb->tileRoots.size(), static_cast<size_t>(expected));
+        for (size_t i = 0, k = 0; i < nb->tileRoots.size(); ++i, ++k) {
+            // 跳过 manifest 缺席的期望根（缺席静默跳过——接入序保持指定序）。
+            while (!std::filesystem::exists(
+                std::string(DANQING_TILE_ASSETS_DIR) + "/rpc-dumps"
+                    + kExpected[k] + "/manifest.json"))
+                ++k;
+            EXPECT_NE(nb->tileRoots[i].find(kExpected[k]), std::string::npos)
+                << "root[" << i << "] order drifted";
+        }
+    }
+    EXPECT_TRUE(nb->frameToWorldContent);  // 坑 24 型空域默认视图 → 取景路径
 
     EXPECT_EQ(dta::dumpPackageForModel(QStringLiteral("bogus")), std::nullopt);
 }

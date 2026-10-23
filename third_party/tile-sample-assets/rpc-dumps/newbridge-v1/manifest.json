@@ -1,0 +1,67 @@
+{
+  "provenance": {
+    "pageHref": "http://localhost:3000/",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7977.54 Electron/44.0.0 Safari/537.36",
+    "defaultView": {
+      "origin": [
+        -0.39827555579295537,
+        -0.4728395266821234,
+        -31.23084434133781
+      ],
+      "extents": [
+        12.4368877782877,
+        6.745972548120063,
+        46.188252476107806
+      ],
+      "rotation": [
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          1
+        ]
+      ],
+      "is3d": true,
+      "cameraOn": false,
+      "lens": 0,
+      "viewRect": {
+        "w": 1556,
+        "h": 844
+      },
+      "capturedAt": "2026-10-22T01:58:54.842Z"
+    },
+    "seed": "newBridge.bim",
+    "seedPath": "D:\\test\\newBridge.bim",
+    "collected": "2026-10-22T02:01:46.318Z",
+    "itwinjsCommit": "88da8fb98647d37632a5cef4d6bb6e2e5c007855",
+    "tool": "danqing-rpc-tools capture.mjs",
+    "formatVersion": 2424832
+  },
+  "stats": {
+    "trees": 1,
+    "tiles": 0,
+    "dupTiles": 0,
+    "dupTrees": 0,
+    "bytes": 0
+  },
+  "trees": [
+    {
+      "treeId": "25_1d-E:6_0x1b",
+      "iModelId": "9823750a-aa3c-406c-9e5a-876ce6e4c8e1",
+      "formatVersion": 2424832,
+      "byteLength": 678,
+      "file": "files/9.json",
+      "propsFile": "files/9.json"
+    }
+  ],
+  "tiles": []
+}

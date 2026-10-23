@@ -126,6 +126,15 @@
 | 统计 | 1 树 / 30 瓦 / 722.02 MB（d2-d6——桥跨两点 x=500/1400，radius=200 显式；**浏览深度界如实登记**：其他桥跨位置与 d≥7 无瓦，回放走父瓦 LOD 兜底） |
 | 特征 | edges compact 27/30 瓦（joeshouse 后首个 compact 命中）+ polylines 27/30 瓦 + 曲线 30/30；跨会话 2 键与 bridge-edit-v1 同 sha256（确定性实证） |
 
+### newbridge-* — newBridge.bim（P-2 全树 8 根包，2.95GB 种子 / 10km 级大桥）
+
+| 项 | 值 |
+|---|---|
+| 统计 | **8 根 / 169,920 瓦 / ~47.9GB；sha256 全量 0 mismatch 0 missing；d1-d13 全层完整**（sweep d1-d8 + d9/d9b + d10-d13 逐层波次——frontier 枚举逐层验收） |
+| 主根 | `newbridge-v1`（imodel.json + 树 props，0 瓦，整根入 git）；**树根域 ±4940×±425×±1294**、几何域 ≈1.18km（= projectExtents） |
+| 关键事实 | **默认视图 0x5387 坑 24 同型空域**（视域与几何 x 向相离 ~1180m）→ 打开链取景到世界域 contentRange；**后端生成非字节稳定**（根瓦两轮 135,983,728 vs 107,944,096 B——sha256 按轮内校验）；单瓦体量 ~1000× 常规模型（d1 310MB） |
+| git 落位 | 各根 manifest.json+imodel.json 入 git；**47.9GB files/ 本地持有**（`.gitignore` + junction → `D:/Github/danqing-rpc-tools/dumps/`——P-2 R2 不走 LFS）；接入 = `dumpPackageForModel("newbridge")` 每根 manifest 存在性条件接入。总览/复现命令 = 根内 `newbridge-v1/README.md` + 仓外 `D:/Github/danqing-rpc-tools/dumps/README.md` |
+
 ## manifest 契约（Task 2 DumpTileFetcher/DumpTileTreeProps 消费）
 
 ```jsonc

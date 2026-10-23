@@ -472,6 +472,39 @@ std::optional<DumpOpenPackage> dumpPackageForModel(QString const& modelId)
         // contentRange（DumpOpenHelper 的 zoomToVolume 应用面）。
         pkg.frameToWorldContent = true;
     }
+    else if (modelId == QLatin1String("newbridge")) {
+        // P-2 P2-d：newBridge.bim（2.95GB 种子，10km 级大桥——树根域
+        // ±4940×±425×±1294，root contentId "0/0/0/0/1" 叶）全树采集 8 根：
+        //   主根 newbridge-v1（imodel.json + 树 props——**0 瓦**：P2-a 基础面
+        //   采集在 10km 根内容到达前收口；整根小文件入 git）；fallback =
+        //   d9-v1 → sweep-v1 → d10 → d11 → d12 → d13 → d9b（候选源有序序列
+        //   ——sweep d1-d8 完整 5407 瓦 20GB[budget-capped 但逐层零缺] + d9/
+        //   d9b 两波补齐 d9 层 + d10-d13 逐层波次，**169,920 瓦 sha256 全量
+        //   校验 0 mismatch**；47.9GB files/ 本地持有经 .gitignore，每根
+        //   manifest.json 存在才接入——缺席静默跳过，bridge-edit frontier
+        //   同策略）。各 fallback 根的 imodel.json（采集器每根落一份）不
+        //   参与连接面——imodelRoot 恒指主根（DumpTileFetcher 多根 fallback
+        //   只查找瓦字节，树 props/imodel 单源主根）。
+        pkg.imodelRoot = dumpRoot + "/newbridge-v1";
+        pkg.tileRoots = {dumpRoot + "/newbridge-v1"};
+        for (char const* root : {"/newbridge-d9-v1", "/newbridge-sweep-v1",
+                                 "/newbridge-d10-v1", "/newbridge-d11-v1",
+                                 "/newbridge-d12-v1", "/newbridge-d13-v1",
+                                 "/newbridge-d9b-v1"}) {
+            std::string const candidate = dumpRoot + root;
+            std::error_code ec;
+            if (std::filesystem::exists(candidate + "/manifest.json", ec))
+                pkg.tileRoots.push_back(candidate);
+        }
+        // 坑 24 同型空域默认视图（P-2 R8 预案 + 几何实证）：默认视图 0x5387
+        // 视域 x∈[-0.40,12.04]（origin [-0.398,-0.361,-31.231] + extents
+        // [12.44,6.52,46.19]，rotation identity）与世界域几何 x∈[1192.46,
+        // 2375.36]（contentRange × location[6131.91,529.69,1154.68] = 恰
+        // projectExtents）x 向相离 ~1180m → 直接回放根瓦 OutsideFrustum
+        // 零请求 → 打开链取景到世界域几何 contentRange（bridge-edit 坑 24
+        // 取景路径同机制）。
+        pkg.frameToWorldContent = true;
+    }
     else {
         return std::nullopt;
     }
@@ -498,6 +531,10 @@ std::optional<QString> modelIdForIModelKey(std::string const& key)
         return QStringLiteral("baytown");
     if (lower == QString::fromUtf8("编辑大桥测试.bim"))
         return QStringLiteral("bridge-edit");
+    // P-2 P2-d：newBridge.bim（rpcProps.key = D:\test\newBridge.bim——basename
+    // 大小写不敏比对）。
+    if (lower == QLatin1String("newbridge.bim"))
+        return QStringLiteral("newbridge");
     return std::nullopt;
 }
 

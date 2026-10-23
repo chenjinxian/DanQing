@@ -138,6 +138,17 @@ void StartView::configureModelButtons(QLayout* layout)
             "geometry volume"),
          {}, dtaIcons, QChar(0xe9cc)}
     );
+    // P-2 P2-d：newBridge 入口（新大桥测试——R6 中文名映射对齐"编辑大桥
+    // 测试"先例；dump 目录名按 §11.11 用 ASCII "newbridge"）。2.95GB 种子的
+    // 10km 级大桥全树包（169,920 瓦 d1-d13 全层，47.9GB 本地持有）；默认
+    // 视图 0x5387 为坑 24 同型空域 → 打开链取景到世界域几何 contentRange
+    //（bridge-edit 坑 24 取景路径同机制）。
+    auto newBridge = new NewFileButton(
+        {tr("New Bridge (新大桥测试)"),
+         tr("Opens the saved newBridge iModel (10 km bridge, 170k tiles) and "
+            "frames its geometry volume"),
+         {}, dtaIcons, QChar(0xe9cc)}
+    );
     connect(joesHouse, &QPushButton::clicked, this, [this]() {
         Q_EMIT requestOpenDumpModel(QStringLiteral("joeshouse"));
     });
@@ -153,12 +164,16 @@ void StartView::configureModelButtons(QLayout* layout)
     connect(bridgeEdit, &QPushButton::clicked, this, [this]() {
         Q_EMIT requestOpenDumpModel(QStringLiteral("bridge-edit"));
     });
+    connect(newBridge, &QPushButton::clicked, this, [this]() {
+        Q_EMIT requestOpenDumpModel(QStringLiteral("newbridge"));
+    });
 
     layout->addWidget(joesHouse);
     layout->addWidget(instances60);
     layout->addWidget(houseModel);
     layout->addWidget(baytown);
     layout->addWidget(bridgeEdit);
+    layout->addWidget(newBridge);
 }
 
 void StartView::configureExampleButtons(QLayout* layout)
