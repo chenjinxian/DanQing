@@ -471,8 +471,18 @@ void TileAdmin::deliverTileContent(Tile& tile, std::vector<uint8_t> const& data)
     if (tile.readContentAsync(std::vector<uint8_t>(data)))
         return;
 
+    // P-7：同步径（noWorker 降级）decode 计时 + empty 统计（与异步 finisher
+    // 同面；completed 已在此路径上方记录）。
+    auto const tDecode0 = std::chrono::steady_clock::now();
     TileContent content = tile.readContent(data.data(), data.size());
+    TileAdmin::instance().recordDecodingTime(
+        std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - tDecode0)
+            .count());
+    bool const emptyContent = (nullptr == content.graphic);
     tile.setContent(std::move(content));
+    if (emptyContent)
+        recordEmptyTile();
 }
 
 void TileAdmin::reportTileFetchError(Tile& tile, std::string const& error)

@@ -91,6 +91,13 @@ public:
     std::vector<dqRender::RenderGraphic*> const& graphics() const noexcept { return m_graphics; }
     std::vector<dqRender::Tile*> const& missingTiles() const noexcept { return m_missingTiles; }
     std::vector<dqRender::Tile*> const& selectedTiles() const noexcept { return m_selectedTiles; }
+    /// 本帧 ready 集（markReady 收集，TileDrawArgs.readyTiles——参考
+    /// TileTree.ts:139 addTilesForUser 的第二参；P-7 前 Viewport 恒传空集
+    /// → Debug Info Ready:0/Progress 恒 100%）。
+    std::vector<dqRender::Tile*> const& readyTiles() const noexcept
+    {
+        return m_viewportDrawArgs.getReadyTiles();
+    }
     /// SceneContext.hasMissingTiles semantics: the children-loading flag OR a
     /// non-empty missing set. DanQing's SceneContext carries no
     /// _missingChildTiles face (that flag lives on TileDrawArgs,

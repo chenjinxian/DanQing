@@ -463,8 +463,13 @@ std::vector<ImdlChildTileProps> computeImdlChildTileProps(
         for (uint32_t j = 0; j < 2; ++j) {
             for (uint32_t k = 0; k < (root.is2d ? 1u : 2u); ++k) {
                 uint32_t const emptyBit = 1u << (i + j * 2 + k * 4);
-                if (0 != (emptyMask & emptyBit))
-                    continue;  // known-empty sub-volume (:826-830)
+                if (0 != (emptyMask & emptyBit)) {
+                    // known-empty sub-volume (:826-830)。P-7：elided 统计——
+                    // 参考 onTilesElided(kids.numEmpty)（IModelTile.ts:157
+                    // _loadChildren）逐空子域计数。
+                    TileAdmin::instance().recordElidedTile();
+                    continue;
+                }
 
                 dqGeom::Range3d range = parent.range;
                 if (root.is2d) {
@@ -662,14 +667,23 @@ bool ImdlTile::readContentAsync(std::vector<uint8_t>&& data)
     // WorkerProxy drain), the pending-parse registry reads it (later in the
     // same process() call) to invoke the finisher below.
     auto slot = std::make_shared<std::optional<ImdlParsedContent>>();
+    // P-7：decode 统计起点（submit→completion 墙钟；EQUIVALENCE——参考
+    // IModelTile.readContent 的 decodeStart 只量 decode 本体，本式含 worker
+    // 队列等待[专用解析器下近似]）。
+    auto const tDecode0 = std::chrono::steady_clock::now();
     TileAdmin::instance().pendingImdlParses().push(
         this, slot,
-        [this](ImdlParsedContent&& parsed) {
+        [this, tDecode0](ImdlParsedContent&& parsed) {
             // isCanceled gate at the completion (main thread): a tile no
             // longer loading (canceled request before data arrival / unloaded
             // content) does not build graphics — 取消的瓦不建 graphics。
             if (getLoadStatus() != TileLoadStatus::Loading)
                 return;
+            // P-7：decoding 统计（TileAdmin.ts 的 decoding mean/max 面）。
+            auto const decodeMs = std::chrono::duration<double, std::milli>(
+                                      std::chrono::steady_clock::now() - tDecode0)
+                                      .count();
+            TileAdmin::instance().recordDecodingTime(decodeMs);
             // 诊断探针（§13.1 DANQING_TILE_TIME）：graphics 创建[主线程 GL 半]耗时。
             auto const tG0 = std::chrono::steady_clock::now();
             auto content = createContentGraphics(std::move(parsed));
@@ -679,7 +693,14 @@ bool ImdlTile::readContentAsync(std::vector<uint8_t>&& data)
                 std::fprintf(stderr, "[TT] graphics %.2fms\n", us / 1000.0);
                 std::fflush(stderr);
             }
+            // P-7：empty 统计（解析成功但零图形 = 空瓦，参考 totalEmptyTiles）。
+            bool const emptyContent = (nullptr == content.graphic);
             setContent(std::move(content));
+            // completed 统计（同步径已在 TileAdmin::deliverTileContent 记，
+            // 异步径至此完成）。
+            TileAdmin::instance().recordCompleted();
+            if (emptyContent)
+                TileAdmin::instance().recordEmptyTile();
         });
 
     // Parse off-thread (E2 defaultParser). The parse leg touches nothing but

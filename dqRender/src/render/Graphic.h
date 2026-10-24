@@ -50,7 +50,7 @@ public:
 
     /// Collect render memory statistics.
     /// Ported from: itwinjs-core Graphic.ts collectStatistics()
-    virtual void collectStatistics(/* RenderMemory::Statistics& stats */) const {}
+    virtual void collectStatistics(RenderMemory::Statistics& stats) const { (void)stats; }
 
     /// Extend the range by this graphic's bounds.
     /// Ported from: itwinjs-core Graphic.ts unionRange()
@@ -137,11 +137,11 @@ public:
             child->addHiliteCommands(commands, pass);
     }
 
-    void collectStatistics(/* RenderMemory::Statistics& stats */) const override {
+    void collectStatistics(RenderMemory::Statistics& stats) const override {
         for (auto& child : m_children)
-            child->collectStatistics(/* stats */);
+            child->collectStatistics(stats);
         for (auto* child : m_nonOwningChildren)
-            child->collectStatistics(/* stats */);
+            child->collectStatistics(stats);
     }
 
     void unionRange(dqGeom::Range3d& range) const override {
@@ -230,7 +230,7 @@ public:
     void addHiliteCommands(RenderCommands& commands, RenderPass pass) override;
     void unionRange(dqGeom::Range3d& range) const override;
     bool isPickable() const override;
-    void collectStatistics(/* RenderMemory::Statistics& stats */) const override;
+    void collectStatistics(RenderMemory::Statistics& stats) const override;
 
     // Accessors
     float const* getMv() const noexcept { return m_mv; }

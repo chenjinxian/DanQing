@@ -6,6 +6,7 @@
 // order, the controls operate their reference data sources, and the window
 // shell carries the DebugWindow.ts identity/visibility semantics.
 #include <gtest/gtest.h>
+#include <filesystem>
 
 #include <QApplication>
 #include <QCheckBox>
@@ -31,6 +32,7 @@
 
 #include "View3DInventor.h"
 #include "DebugWindow.h"
+#include "DumpOpenHelper.h"
 
 namespace {
 struct QtEnvD {
@@ -423,5 +425,103 @@ TEST(DebugWindowDiag, WindowIdentityAndToggle)
     viewA.close();
     viewB.close();
     dqApp::Application::Get().GetViewManager().SetSelectedViewport(nullptr);
+    spin(200);
+}
+
+// ---------------------------------------------------------------------------
+// TEMP-DIAG（P-7 Debug Info 数据探针）：大桥模型重档视口下开启全部 tracker、
+// dump 每字段实值——与 DTA 同视口 Debug Info 对比的数据源（Authored：无参考
+// 对应测试；字段语义 1:1 DiagnosticsPanel 7 widget）。
+// ---------------------------------------------------------------------------
+TEST(DebugWindowDiag, BridgeDebugInfoProbe)
+{
+    std::string const dumpRoot = std::string(DANQING_TILE_ASSETS_DIR) + "/rpc-dumps";
+    if (!std::filesystem::exists(dumpRoot + "/bridge-edit-sweep-v1/manifest.json"))
+        GTEST_SKIP() << "bridge-edit sweep data not present";
+
+    auto& app = dqApp::Application::Get();
+    if (!app.isInitialized()) {
+        dqApp::Application::Options opts;
+        opts.applicationId = "DebugWindowDiag";
+        opts.applicationVersion = "1.0";
+        ASSERT_TRUE(app.Startup(opts));
+    }
+
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    view.resize(1556, 844);
+    view.show();
+    spin(400);
+
+    auto pkg = dta::dumpPackageForModel(QStringLiteral("bridge-edit"));
+    ASSERT_TRUE(pkg.has_value());
+    auto opened = dta::openDumpIModel(view, *pkg);
+    ASSERT_TRUE(opened.has_value());
+
+    // 泵到数据重档（kZoom=32 绕中心 + 双趟静默）。
+    auto* view3d = view.getUeViewport()->GetView()->AsViewState3d();
+    ASSERT_NE(view3d, nullptr);
+    dqGeom::Point3d const center = view3d->getCenter();
+    dqGeom::Vector3d const baseDiag = view3d->GetExtents();
+    for (int n = 1; n <= 5; ++n) {
+        double const kZoom = static_cast<double>(1u << n);
+        dqGeom::Range3d const zoomed = dqGeom::Range3d::CreateXYZXYZ(
+            center.x - baseDiag.x / (2.0 * kZoom), center.y - baseDiag.y / (2.0 * kZoom),
+            center.z - baseDiag.z / (2.0 * kZoom), center.x + baseDiag.x / (2.0 * kZoom),
+            center.y + baseDiag.y / (2.0 * kZoom), center.z + baseDiag.z / (2.0 * kZoom));
+        view3d->LookAtVolume(zoomed);
+        view.getUeViewport()->InvalidateController();
+        view.getUeViewport()->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+        for (int pass = 0; pass < 2; ++pass) {
+            size_t lastLog = 0;
+            int stable = 0;
+            for (int i = 0; i < 120; ++i) {
+                view.getUeViewport()->InvalidateController();
+                spin(100);
+                size_t const sz = opened->fetcher->requestLog().size();
+                if (!opened->fetcher->requestLog().empty() && sz == lastLog
+                    && opened->fetcher->getActiveCount() == 0) {
+                    if (++stable >= 5)
+                        break;
+                } else {
+                    stable = 0;
+                }
+                lastLog = sz;
+            }
+        }
+    }
+
+    // 开面板 + 全部 tracker。
+    Gui::DebugWindow win(view.getUeViewport(), &view);
+    win.showPanel();
+    spin(100);
+    if (auto* cb = findCheckBox(&win, QStringLiteral("Track FPS")))
+        cb->click();
+    if (auto* cb = findCheckBox(&win, QStringLiteral("Track Tile Requests")))
+        cb->click();
+    if (auto* cb = findCheckBox(&win, QStringLiteral("Tile Memory")))
+        cb->click();
+    if (auto* cb = findCheckBox(&win, QStringLiteral("Render Commands")))
+        cb->click();
+    // MemoryTracker：combobox 选 "Viewport"（index 5 = MemIndex::Viewport）。
+    if (auto* combo = win.findChild<QComboBox*>()) {
+        combo->setCurrentIndex(5);
+    }
+    spin(2200);  // > 1s memory interval + 2× 500ms stats interval
+
+    printf("[DBGINFO] ===== panel fields (bridge-edit kZoom=32) =====\n");
+    for (auto* lbl : win.findChildren<QLabel*>()) {
+        if (!lbl->text().isEmpty())
+            printf("[DBGINFO] [L] %s\n", lbl->text().toUtf8().constData());
+    }
+    for (auto* cb : win.findChildren<QCheckBox*>())
+        if (!cb->text().isEmpty())
+            printf("[DBGINFO] [C] %s\n", cb->text().toUtf8().constData());
+    for (auto* combo : win.findChildren<QComboBox*>())
+        printf("[DBGINFO] [X] combo idx=%d\n", combo->currentIndex());
+    printf("[DBGINFO] ===== end =====\n");
+
+    view.getUeViewport()->DropTiledGraphicsProvider(opened->provider.get());
+    win.hidePanel();
+    view.close();
     spin(200);
 }

@@ -2353,9 +2353,26 @@ void Viewport::CreateScene()
         // Report the frame's selection (batched equivalence of the per-tree
         // addTilesForUser + frame-tail requestMissingTiles,
         // TileTree.ts:136-142 + Viewport.ts:2656; registered 2026-09-21).
+        // P-7 订正：ready 集此前恒传空——Debug Info 的 Ready:0/Progress 恒
+        // 100% 的根因（args.readyTiles 由 ImdlTileTree markReady 正常填充，
+        // 参考 TileTree.ts:139 addTilesForUser(args.context.viewport, tiles,
+        // args.readyTiles, args.touchedTiles) 语义）。
         dqRender::TileAdmin::instance().addTilesForUser(
             *this, /*selected=*/context.selectedTiles(),
-            /*ready=*/{}, /*touched=*/{});
+            /*ready=*/context.readyTiles(), /*touched=*/{});
+        if (std::getenv("DANQING_TILE_TRACE")) {
+            std::fprintf(stderr, "[READY] selected=%zu ready=%zu missing=%zu\n",
+                         context.selectedTiles().size(), context.readyTiles().size(),
+                         context.missingTiles().size());
+            for (auto* t : context.selectedTiles())
+                std::fprintf(stderr, "[READY]   tile=%p status=%d hasGraphics=%d\n",
+                             static_cast<void*>(t), static_cast<int>(t->getLoadStatus()),
+                             t->hasGraphics() ? 1 : 0);
+        }
+
+        // P-7：viewport 计数器语义补齐——numReadyTiles/Progress 的数据源
+        // （TileDrawArgs.getReadyTiles 收集链 IModelTile.ts:221/:322 markReady
+        // 1:1 同位）。
 
         // Frame-tail request feed: the scene's missing tiles REPLACE this
         // user's pending request set. Ported from: Viewport.ts:2656

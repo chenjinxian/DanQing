@@ -200,9 +200,9 @@ bool Branch::isPickable() const
 // Branch — collectStatistics
 // Ported from: itwinjs-core Graphic.ts Branch.collectStatistics
 // ---------------------------------------------------------------------------
-void Branch::collectStatistics(/* RenderMemory::Statistics& stats */) const
+void Branch::collectStatistics(RenderMemory::Statistics& stats) const
 {
-    if (m_child) m_child->collectStatistics(/* stats */);
+    if (m_child) m_child->collectStatistics(stats);
 }
 
 // ---------------------------------------------------------------------------

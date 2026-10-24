@@ -269,9 +269,9 @@ void Batch::addHiliteCommands(RenderCommands& commands, RenderPass pass)
 // Batch — collectStatistics
 // Ported from: itwinjs-core Batch.collectStatistics()
 // ---------------------------------------------------------------------------
-void Batch::collectStatistics(/* RenderMemory::Statistics& stats */) const
+void Batch::collectStatistics(RenderMemory::Statistics& stats) const
 {
-    if (m_child) m_child->collectStatistics(/* stats */);
+    if (m_child) m_child->collectStatistics(stats);
     // Ported from: itwinjs-core Batch.collectStatistics()
     // FeatureTable byte length and perTargetData statistics will be
     // wired when RenderMemory::Statistics interface is ported.

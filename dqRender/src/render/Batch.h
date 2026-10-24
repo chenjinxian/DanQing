@@ -232,7 +232,7 @@ public:
 
     /// Collect render memory statistics.
     /// Ported from: itwinjs-core Batch.collectStatistics()
-    void collectStatistics(/* RenderMemory::Statistics& stats */) const override;
+    void collectStatistics(RenderMemory::Statistics& stats) const override;
 
     /// Extend the range by this batch's feature table range.
     /// Ported from: itwinjs-core Batch.unionRange()
