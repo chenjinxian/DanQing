@@ -468,15 +468,29 @@ vec4 reverseWhiteOnWhite(vec4 baseColor) {
 
     // Feature symbology (pick / overrides)
     if (featureMode != FeatureMode::None) {
-        vert.addVariable({"a_featureId", VariableType::Uint, VariableScope::Attribute, 0});
-        // 全局 pick 值 = u_batchId + featureIndex（polyline 分支同注，TD-34）。
+        // featureIndex 来源 = 参考 computeFeatureIndex（FeatureSymbology.ts:63-77）：
+        // 边缘几何恒为顶点表（LUT）形态（本文件无裸 a_position——上方 a_pos 注），
+        // 故 g_featureIndex = g_featureAndMaterialIndex.xyz（computeLUTFeatureIndex），
+        // **不存在 a_featureId 属性**——参考的非实例非顶点表臂为空串。此前误声明
+        // `in uint a_featureId` 属性：边缘 VAO 无此属性流 → 链接器自动分配的属性
+        // 槽位挤占 a_pos（位置恒为常量）→ 索引边 quad 以垃圾尺度展开（hover flash
+        // 时画面半屏"橙色板"残影的直接根因）；且 pick 全局 id（+u_batchId）被
+        // Overrides 片元当本地 LUT 行号消费 → 越界采样（SurfaceVariantCompiler
+        // 同位注 :236-241 的同族缺陷）。
         vert.addVariable({"u_batchId", VariableType::Float, VariableScope::Uniform, 0});
         // GLSL requires `flat` qualifier for integer varyings.
         vert.addCode("flat out uint v_featureId;\n");
         frag.addCode("flat in uint v_featureId;\n");
 
+        // Pick = 全局 pick 值 u_batchId + featureIndex（FeatureSymbology.ts:514
+        // computeIdVert——g_featureIndex 已含 LUT 解码来源）；Overrides = 本地
+        // 行号（LUT 逐 batch，computeLUTCoords(getFeatureIndex())——LookupTable
+        // .ts:24-28；u_batchId 偏移会采样到 LUT 之外）。
         vert.setVertexComponent(VertexShaderComponent::ComputeFeatureOverrides,
-            "    v_featureId = a_featureId + uint(u_batchId + 0.5);\n");
+            featureMode == FeatureMode::Pick
+                ? "    v_featureId = uint(decodeUInt24(g_featureAndMaterialIndex.xyz)\n"
+                  "        + u_batchId + 0.5);\n"
+                : "    v_featureId = uint(decodeUInt24(g_featureAndMaterialIndex.xyz));\n");
 
         if (featureMode == FeatureMode::Pick) {
             // 参考统一 pick 输出（SurfaceVariantCompiler Pick 段同款——

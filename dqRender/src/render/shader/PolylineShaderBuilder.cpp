@@ -349,14 +349,32 @@ ProgramBuilder createPolylineProgramBuilder(FeatureMode featureMode, PositionTyp
     // Ported from: itwinjs-core Polyline.ts addFeatureSymbology() — embedded
     // in createPolylineBuilder when featureMode != None.
     if (featureMode != FeatureMode::None) {
-        vert.addVariable({"a_featureId", VariableType::Uint, VariableScope::Attribute, 0});
+        // featureIndex 来源 = 参考 computeFeatureIndex（FeatureSymbology.ts:63-77）：
+        // 量化（顶点表）polylines 取 g_featureAndMaterialIndex.xyz（顶点表 texel2，
+        // addVertexTable 面），**无 a_featureId 属性**（非实例非顶点表臂参考为空串；
+        // 属性误声明在 pinned 槽位下不位移但 VAO 无流 → 恒 0）；VBO 属性形态
+        //（ACS/canvas unquantized）保留 a_featureId@3（AttributeMap 钉位真流）。
+        // Pick = u_batchId + featureIndex（FeatureSymbology.ts:514 computeIdVert，
+        // 此前缺 batchId 加法）；Overrides = 本地行号（LUT 逐 batch，+batchId 会
+        // 越界采样——edge 变体同族缺陷的 polyline 面）。
+        bool const quantizedFeature = quantized;
+        if (!quantizedFeature)
+            vert.addVariable({"a_featureId", VariableType::Uint, VariableScope::Attribute, 0});
+        vert.addVariable({"u_batchId", VariableType::Float, VariableScope::Uniform, 0});
         // GLSL 410 core requires `flat` qualifier for integer varyings on the
         // fragment side; addVarying emits `in uint v_featureId;` without `flat`
         // and fails to compile. Emit the declarations manually.
         vert.addCode("flat out uint v_featureId;\n");
         frag.addCode("flat in uint v_featureId;\n");
         vert.setVertexComponent(VertexShaderComponent::ComputeFeatureOverrides,
-            "    v_featureId = a_featureId;\n");
+            quantizedFeature
+                ? (featureMode == FeatureMode::Pick
+                      ? "    v_featureId = uint(decodeUInt24(g_featureAndMaterialIndex.xyz)\n"
+                        "        + u_batchId + 0.5);\n"
+                      : "    v_featureId = uint(decodeUInt24(g_featureAndMaterialIndex.xyz));\n")
+                : (featureMode == FeatureMode::Pick
+                      ? "    v_featureId = uint(float(a_featureId) + u_batchId + 0.5);\n"
+                      : "    v_featureId = a_featureId;\n"));
 
         if (featureMode == FeatureMode::Pick) {
             // 参考统一 pick 输出（SurfaceVariantCompiler Pick 段同款——

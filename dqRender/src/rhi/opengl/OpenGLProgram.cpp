@@ -70,7 +70,9 @@ bool OpenGLProgram::compile(char const* vertSource, char const* fragSource,
         printf("[SHDUMP-F] fshader-%d.glsl\n", n - 1);
     }
     // TEMP-DIAG（拾取 saga）：dump 顶点着色器源码（Pick 变体的 v_featureId 赋值核对）。
-    if (getenv("DANQING_SHADER_DUMP") && vertSource && strstr(vertSource, "v_featureId")) {
+    // =2 顶点源全量 dump（红色残影取证——门字符串不匹配的排查面）。
+    if (getenv("DANQING_SHADER_DUMP") && vertSource
+        && (strstr(vertSource, "v_featureId") || strcmp(getenv("DANQING_SHADER_DUMP"), "2") == 0)) {
         static int m = 0;
         char vpath[128];
         snprintf(vpath, sizeof(vpath), "build/vshader-%d-%s.glsl", m++, programName.c_str());
