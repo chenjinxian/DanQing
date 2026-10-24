@@ -162,7 +162,7 @@ collected with the out-of-repo CDP tooling against itwinjs display-test-app
 | 60 Instances | 60 instanced spheres + placements | 3,595 | 305 MB | DanQing-Data `instances60.zip` |
 | Compatibility Test Seed | itwinjs backend test asset | 212 | 21 MB | in-repo (`rpc-dumps/compatseed-sweep-v1`) |
 | Mirukuru | V8 bridge, Japanese plane coords, 2-tree open chain | 2 | 2 KB | in-repo (`rpc-dumps/mirukuru-sweep-v1`) |
-| New Bridge | 10 km bridge, d1–d13 full tree | 169,920 | 47.9 GB | not published (too large; regenerable via the collector) |
+| New Bridge | 10 km bridge, d1–d13 full tree | 169,920 | 47.5 GB | DanQing-Data `newbridge-*.zip` (v1 + sweep 12 parts = the browsing core; d9–d13 = deep zoom) |
 
 All five big models are also available as a plain git clone (SSH — works without
 a proxy): `git clone git@github.com:chenjinxian/DanQing-Data.git`, then point the
@@ -311,7 +311,7 @@ ctest --test-dir build -C Debug --output-on-failure
 | 60 Instances | 60 实例球 + placements | 3,595 | 305 MB | DanQing-Data `instances60.zip` |
 | Compatibility Test Seed | itwinjs 后端测试资产 | 212 | 21 MB | 随仓（`rpc-dumps/compatseed-sweep-v1`） |
 | Mirukuru | V8 桥，日本平面坐标，双树打开链 | 2 | 2 KB | 随仓（`rpc-dumps/mirukuru-sweep-v1`） |
-| New Bridge | 10km 大桥，d1–d13 全树 | 169,920 | 47.9 GB | 不发布（体量过大；可经采集工具再生成） |
+| New Bridge | 10km 大桥，d1–d13 全树 | 169,920 | 47.5 GB | DanQing-Data `newbridge-*.zip`（v1 + sweep 12 卷 = 浏览核心；d9–d13 = 深层缩放） |
 
 五个大模型同时支持 git 直克隆（SSH 免代理）：`git clone git@github.com:chenjinxian/DanQing-Data.git`，
 用 `DANQING_RPC_DUMP=<克隆目录>` 指向即可；GitHub 100MB 限制导致的两点差异见该仓 README。

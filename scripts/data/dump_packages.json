@@ -1,98 +1,262 @@
 {
-    "release":  "data-v1",
-    "repo":  "chenjinxian/DanQing-Data",
-    "baseUrl":  "https://github.com/chenjinxian/DanQing-Data/releases/download/data-v1",
-    "models":  {
-                   "joeshouse":  {
-                                     "roots":  [
-                                                   "joeshouse-v1",
-                                                   "joeshouse-drill-v1",
-                                                   "joeshouse-drill-v2",
-                                                   "joeshouse-mag-missing-v1"
-                                               ],
-                                     "assets":  [
-                                                    {
-                                                        "sizeBytes":  181162504,
-                                                        "sha256":  "6b4597b0fb066bfa28070870ad8e55ff021acdb5457c542c9ac78771775aa8c8",
-                                                        "name":  "DanQing-Data-v1-joeshouse.zip"
-                                                    }
-                                                ]
-                                 },
-                   "housemodel":  {
-                                      "roots":  [
-                                                    "housemodel-v1",
-                                                    "housemodel-drill-v1"
-                                                ],
-                                      "assets":  [
-                                                     {
-                                                         "sizeBytes":  253688862,
-                                                         "sha256":  "dd1d03de5b7a4a9c7612db4868038d1c0ff50e02e589c52bf938a5d3edb7aa37",
-                                                         "name":  "DanQing-Data-v1-housemodel.zip"
-                                                     }
-                                                 ]
-                                  },
-                   "baytown":  {
-                                   "roots":  [
-                                                 "baytown-v1",
-                                                 "baytown-drill-v1"
-                                             ],
-                                   "assets":  [
-                                                  {
-                                                      "sizeBytes":  350369817,
-                                                      "sha256":  "8fd70c386b76bd1863881864a250889ebce68867a2f7640d246e78921d740122",
-                                                      "name":  "DanQing-Data-v1-baytown.zip"
-                                                  }
-                                              ]
-                               },
-                   "instances60":  {
-                                       "roots":  [
-                                                     "instances60-v1",
-                                                     "instances60-imodel-v1",
-                                                     "instances60-drill-v1",
-                                                     "instances60-mag-missing-v1",
-                                                     "instances60-placements-v1"
-                                                 ],
-                                       "assets":  [
-                                                      {
-                                                          "sizeBytes":  141436551,
-                                                          "sha256":  "434d48f75137f607da92b2bd4b0c2e04ec63b927a4572172ba0237cbd5cb6aa9",
-                                                          "name":  "DanQing-Data-v1-instances60.zip"
-                                                      }
-                                                  ]
-                                   },
-                   "bridge-edit":  {
-                                       "roots":  [
-                                                     "bridge-edit-v1",
-                                                     "bridge-edit-drill-v1",
-                                                     "bridge-edit-mag-missing-v1",
-                                                     "bridge-edit-mag-missing-v2",
-                                                     "bridge-edit-mag-missing-v3",
-                                                     "bridge-edit-mag-missing-v4",
-                                                     "bridge-edit-coverage-v1",
-                                                     "bridge-edit-sweep-v1"
-                                                 ],
-                                       "assets":  [
-                                                      {
-                                                          "sizeBytes":  209053984,
-                                                          "sha256":  "f00844ab38bfb0ec29976eaab645bfdf169bca006228be43d48801b8e48b9d58",
-                                                          "name":  "DanQing-Data-v1-bridge-edit-base.zip"
-                                                      },
-                                                      {
-                                                          "sizeBytes":  658653634,
-                                                          "sha256":  "ba8c1c207e6442587b47836093e41c6d4e5b3414b008398329e3fa0f1de53cb7",
-                                                          "name":  "DanQing-Data-v1-bridge-edit-sweep-part1of3.zip"
-                                                      },
-                                                      {
-                                                          "sizeBytes":  732234246,
-                                                          "sha256":  "9a13334d65451e11655ef5da514e6ce4dc004c4132c6e691e0810fbefc2eb3ab",
-                                                          "name":  "DanQing-Data-v1-bridge-edit-sweep-part2of3.zip"
-                                                      },
-                                                      {
-                                                          "sizeBytes":  575149877,
-                                                          "sha256":  "677d6a4499bb33be96ea45286395c667b5e0f3d8a992cefeb434fe91075778bf",
-                                                          "name":  "DanQing-Data-v1-bridge-edit-sweep-part3of3.zip"
-                                                      }
-                                                  ]
-                                   }
-               }
+  "release": "data-v1",
+  "repo": "chenjinxian/DanQing-Data",
+  "baseUrl": "https://github.com/chenjinxian/DanQing-Data/releases/download/data-v1",
+  "models": {
+    "joeshouse": {
+      "roots": [
+        "joeshouse-v1",
+        "joeshouse-drill-v1",
+        "joeshouse-drill-v2",
+        "joeshouse-mag-missing-v1"
+      ],
+      "assets": [
+        {
+          "sizeBytes": 181162504,
+          "sha256": "6b4597b0fb066bfa28070870ad8e55ff021acdb5457c542c9ac78771775aa8c8",
+          "name": "DanQing-Data-v1-joeshouse.zip"
+        }
+      ]
+    },
+    "housemodel": {
+      "roots": [
+        "housemodel-v1",
+        "housemodel-drill-v1"
+      ],
+      "assets": [
+        {
+          "sizeBytes": 253688862,
+          "sha256": "dd1d03de5b7a4a9c7612db4868038d1c0ff50e02e589c52bf938a5d3edb7aa37",
+          "name": "DanQing-Data-v1-housemodel.zip"
+        }
+      ]
+    },
+    "baytown": {
+      "roots": [
+        "baytown-v1",
+        "baytown-drill-v1"
+      ],
+      "assets": [
+        {
+          "sizeBytes": 350369817,
+          "sha256": "8fd70c386b76bd1863881864a250889ebce68867a2f7640d246e78921d740122",
+          "name": "DanQing-Data-v1-baytown.zip"
+        }
+      ]
+    },
+    "instances60": {
+      "roots": [
+        "instances60-v1",
+        "instances60-imodel-v1",
+        "instances60-drill-v1",
+        "instances60-mag-missing-v1",
+        "instances60-placements-v1"
+      ],
+      "assets": [
+        {
+          "sizeBytes": 141436551,
+          "sha256": "434d48f75137f607da92b2bd4b0c2e04ec63b927a4572172ba0237cbd5cb6aa9",
+          "name": "DanQing-Data-v1-instances60.zip"
+        }
+      ]
+    },
+    "bridge-edit": {
+      "roots": [
+        "bridge-edit-v1",
+        "bridge-edit-drill-v1",
+        "bridge-edit-mag-missing-v1",
+        "bridge-edit-mag-missing-v2",
+        "bridge-edit-mag-missing-v3",
+        "bridge-edit-mag-missing-v4",
+        "bridge-edit-coverage-v1",
+        "bridge-edit-sweep-v1"
+      ],
+      "assets": [
+        {
+          "sizeBytes": 209053984,
+          "sha256": "f00844ab38bfb0ec29976eaab645bfdf169bca006228be43d48801b8e48b9d58",
+          "name": "DanQing-Data-v1-bridge-edit-base.zip"
+        },
+        {
+          "sizeBytes": 658653634,
+          "sha256": "ba8c1c207e6442587b47836093e41c6d4e5b3414b008398329e3fa0f1de53cb7",
+          "name": "DanQing-Data-v1-bridge-edit-sweep-part1of3.zip"
+        },
+        {
+          "sizeBytes": 732234246,
+          "sha256": "9a13334d65451e11655ef5da514e6ce4dc004c4132c6e691e0810fbefc2eb3ab",
+          "name": "DanQing-Data-v1-bridge-edit-sweep-part2of3.zip"
+        },
+        {
+          "sizeBytes": 575149877,
+          "sha256": "677d6a4499bb33be96ea45286395c667b5e0f3d8a992cefeb434fe91075778bf",
+          "name": "DanQing-Data-v1-bridge-edit-sweep-part3of3.zip"
+        }
+      ]
+    },
+    "newbridge": {
+      "assets": [
+        {
+          "name": "DanQing-Data-v1-newbridge-v1.zip",
+          "sha256": "86305980ea1ffee751e0e56334908091f3e5bf003f279b2e79c2535a3bd2f219",
+          "sizeBytes": 0
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-sweep-v1-part1of12.zip",
+          "sha256": "59d5f62bd054f06e8b8ecec4b383f6874decacba09a0b8a78ad6b3236768b6ac",
+          "sizeBytes": 570844774
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-sweep-v1-part2of12.zip",
+          "sha256": "f9366c25cce2504e7c7a5150d48a23533f11bb880fb5a6652c871e208bd648c0",
+          "sizeBytes": 515060531
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-sweep-v1-part3of12.zip",
+          "sha256": "1278ff6c1da67876b490607dc8e0945b30da6835a3c950ed1c2decc0388b8aeb",
+          "sizeBytes": 556164710
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-sweep-v1-part4of12.zip",
+          "sha256": "87496e0a0d8b1632bd3994f8d982295b9b4b482eff74444b9f5a8cfd8c7b2f0b",
+          "sizeBytes": 519149977
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-sweep-v1-part5of12.zip",
+          "sha256": "f81f48859ba9321d167ea09e20330e3267cfa18adca2569ae31e87a00a0354ae",
+          "sizeBytes": 558576435
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-sweep-v1-part6of12.zip",
+          "sha256": "cc019052de8a96e585cf57704bbb638da61a95c13a2f4fb5c71116200cee697f",
+          "sizeBytes": 520617984
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-sweep-v1-part7of12.zip",
+          "sha256": "6a81dbc86d4ba197a0c01fe0c60f8a76dda9cf39535e5e3f1f86379939b315f7",
+          "sizeBytes": 581645107
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-sweep-v1-part8of12.zip",
+          "sha256": "a4e3f5644c2fe468e69b690ad3cef74bd5c153686a33e96cc8e36d4960b0ebd3",
+          "sizeBytes": 577450803
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-sweep-v1-part9of12.zip",
+          "sha256": "7a0f33dbbb406a61e4b543e930402b2b51e00da55ca1a4e20dfc1670942b1f34",
+          "sizeBytes": 528272588
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-sweep-v1-part10of12.zip",
+          "sha256": "85b2a4f0e901122299f76dfbeb449315a9fbe46d7e67316da00710d40ab25801",
+          "sizeBytes": 557318144
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-sweep-v1-part11of12.zip",
+          "sha256": "7c3fa841529beb97d55eba58ecae9460831b66ddf769c6fdfced10062318d052",
+          "sizeBytes": 563924172
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-sweep-v1-part12of12.zip",
+          "sha256": "ce4ca77e6d4d496524a6cd54cb56e660c6ec757981734a7b2b770705bd3a2e8e",
+          "sizeBytes": 45822771
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-d9-v1.zip",
+          "sha256": "73ec4fc42cfd0843dcbbfa54e3d4422a78760178487ffb7b8573b0234fc640df",
+          "sizeBytes": 532991180
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-d9b-v1.zip",
+          "sha256": "78e240e10d340fb2ea6790cbfc7a8e89956cb90d0484809df511aa58c1ddb394",
+          "sizeBytes": 203318886
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-d10-v1-part1of4.zip",
+          "sha256": "2539e66e4be6fea4ec67bf8574dfa5840b23b07bfc7d4a3ac3da1c703c0718ff",
+          "sizeBytes": 652214272
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-d10-v1-part2of4.zip",
+          "sha256": "1999968637f452766e1a4ed9d2dfa55d3305cdc6ca5f5145951efb79de3acf34",
+          "sizeBytes": 619918131
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-d10-v1-part3of4.zip",
+          "sha256": "f5e8f9874e5494f8baa5e96d0594b2cade2532693e58c22a57838ecaca5f4e8b",
+          "sizeBytes": 647915110
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-d10-v1-part4of4.zip",
+          "sha256": "b10a72d6d22fafa26a1826718590b77f640f6a2ba16ff21ec89e9d1f4df39cce",
+          "sizeBytes": 98775859
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-d11-v1-part1of4.zip",
+          "sha256": "7e32bcbb7ef1b1b6ae3b551bc19077d1530145b9f3b677c2d818ab9b2b0438a8",
+          "sizeBytes": 665321472
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-d11-v1-part2of4.zip",
+          "sha256": "ebc1c9e3f0ad8b959daa35d62d30c49ad1c315b5eba946a3adf442b8f62729e6",
+          "sizeBytes": 648963686
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-d11-v1-part3of4.zip",
+          "sha256": "45530811c0ed161b492aed8489b6a43938fb762c391eaa505cff0cecac4e51d4",
+          "sizeBytes": 653472563
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-d11-v1-part4of4.zip",
+          "sha256": "cd1d1d0c19750ed8bde28a6da9163e08b754a0ff1de7a7c758faed47d2da86e3",
+          "sizeBytes": 554591846
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-d12-v1-part1of4.zip",
+          "sha256": "99f9b689669c2cb1f713e4433331276f075ea7ec6a7a6f8ff791ffe281297a9f",
+          "sizeBytes": 665740902
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-d12-v1-part2of4.zip",
+          "sha256": "30656bb25a8de6b4701f94bd549f3685111c4cbbafc98ea35e6ba189d698753a",
+          "sizeBytes": 689438720
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-d12-v1-part3of4.zip",
+          "sha256": "488e60248a0853dd6e31a3157c8da35d9c0fd468b86d135da84c5f57a833b2df",
+          "sizeBytes": 662804889
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-d12-v1-part4of4.zip",
+          "sha256": "ebd86f6c13f747ad67bab8f9baee99261c80411cfaea387a77ab5334bb13afe4",
+          "sizeBytes": 561931878
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-d13-v1-part1of3.zip",
+          "sha256": "e28cc14926081075c9baeaf6d1f8675ff1206b7a6079f09ee9f7afd03daba763",
+          "sizeBytes": 668362342
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-d13-v1-part2of3.zip",
+          "sha256": "1c57edca0ce1fbdebd0b29683113dbed064eebca8474b9dc9464da472994ca6a",
+          "sizeBytes": 674024652
+        },
+        {
+          "name": "DanQing-Data-v1-newbridge-d13-v1-part3of3.zip",
+          "sha256": "03389cb38e1186151dbeee1795171736b2aae2f0a4eb4cd9d8aee361dfd71cad",
+          "sizeBytes": 597164032
+        }
+      ],
+      "roots": [
+        "newbridge-v1",
+        "newbridge-sweep-v1",
+        "newbridge-d9-v1",
+        "newbridge-d9b-v1",
+        "newbridge-d10-v1",
+        "newbridge-d11-v1",
+        "newbridge-d12-v1",
+        "newbridge-d13-v1"
+      ]
+    }
+  }
 }
