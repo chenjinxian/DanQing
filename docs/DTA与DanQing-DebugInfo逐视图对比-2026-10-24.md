@@ -74,3 +74,57 @@ node debuginfo-capture.mjs --seed "D:/Github/itwinjs-core/test-apps/display-test
 # DanQing 侧
 ctest --test-dir build -C Debug -R StandardViewDebugInfoProbe
 ```
+
+---
+
+## 五、newBridge（旗舰模型）逐视图对比（2026-10-24 补）
+
+双侧同协议（8 标准视图 × 同缩放档）。**数据前提差异**：DanQing 从采集域本地
+流式（169,920 瓦/47.5GB 全在盘）；DTA 的 `newBridge.bim.Tiles` 本地缓存为
+**空**（采集会话的瓦未持久化到该缓存）——后端需按请求即时
+`generateTileContent`（10km 桥 d1-d2 级瓦单枚 100MB 级）。
+
+### DanQing（Release 构建；DANQING_PROBE_ZOOM=2 即取景域/2 档）
+
+| 视图 | Selected | Completed | Elided | 图元/批/分支 | FPS |
+|---|---|---|---|---|---|
+| Top | 2 | 5 | 0 | 86/3/6 | 8.9（巨瓦装载中）|
+| Bottom | 2 | 0 | 0 | 86/3/6 | 16.3 |
+| Left | 4 | 8 | 12 | **184**/5/8 | 16.3 |
+| Right | 4 | 0 | 0 | **184**/5/8 | 14.8 |
+| Front | 2 | 0 | 0 | 86/3/6 | 23.5 |
+| Back | 2 | 0 | 0 | 86/3/6 | 30.1 |
+| Iso | 2 | 0 | 0 | 86/3/6 | 28.2 |
+| RightIso | 2 | 0 | 0 | 86/3/6 | （装载期）|
+
+（FPS 低段 = Debug 构建装载 100MB 级巨瓦的工作集压力；稳态渲染同前节 62.5。）
+
+### DTA（空缓存 + 即时重生成）
+
+| 视图 | Selected | Completed | Elided | 图元 | FPS |
+|---|---|---|---|---|---|
+| 全部 8 视图 | **0** | **0** | 41→123（累计）| **14**（仅背景/装饰）| 60（空放）|
+
+Dispatched 8→24 递增但 **Completed 恒 0**——后端按需生成未在会话内交付
+（10km 桥瓦生成耗时超过采集窗）；DTA 对 newBridge 实际**渲染空视口**。
+
+### 判定
+
+- **newBridge 内容渲染：DanQing 完整（86-184 图元真内容）vs DTA 空
+  （14 图元零瓦）**——DanQing 的本地流式架构对巨型模型的可用性优势的直接
+  实证（DTA 需后端在线且生成完才能出内容）。
+- **发现（TD-38 登记）**：newBridge 深档视口（取景域/16、/8）的渐进细化
+  工作集无界 → `bad_alloc`（/2 有界可完成）——TileAdmin 内存预算对
+  pinned 请求集的治理需调优（巨型模型深缩放场景）。
+
+### 探针配方（newBridge）
+
+```bash
+# DanQing
+DANQING_PROBE_MODEL=newbridge DANQING_PROBE_ZOOM=2 \
+  ctest --test-dir build -C Release -R StandardViewDebugInfoProbe
+# DTA
+cd D:/Github/danqing-rpc-tools
+DTA_SETTLE_MS=45000 node debuginfo-capture.mjs \
+  --seed "D:/Github/itwinjs-core/test-apps/display-test-app/assets/newBridge.bim"
+```

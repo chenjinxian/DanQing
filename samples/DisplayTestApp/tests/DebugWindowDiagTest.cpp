@@ -536,9 +536,17 @@ TEST(DebugWindowDiag, BridgeDebugInfoProbe)
 // ---------------------------------------------------------------------------
 TEST(DebugWindowDiag, StandardViewDebugInfoProbe)
 {
+    // 模型可选（DANQING_PROBE_MODEL=bridge-edit|newbridge，缺省 bridge-edit）。
+    QString const modelId = [] {
+        char const* e = std::getenv("DANQING_PROBE_MODEL");
+        return QString::fromUtf8(e ? e : "bridge-edit");
+    }();
     std::string const dumpRoot = std::string(DANQING_TILE_ASSETS_DIR) + "/rpc-dumps";
-    if (!std::filesystem::exists(dumpRoot + "/bridge-edit-sweep-v1/manifest.json"))
-        GTEST_SKIP() << "bridge-edit sweep data not present";
+    std::string const sweepRoot = modelId == QLatin1String("newbridge")
+                                      ? "/newbridge-sweep-v1/manifest.json"
+                                      : "/bridge-edit-sweep-v1/manifest.json";
+    if (!std::filesystem::exists(dumpRoot + sweepRoot))
+        GTEST_SKIP() << "sweep data not present: " << sweepRoot;
 
     auto& app = dqApp::Application::Get();
     if (!app.isInitialized()) {
@@ -553,13 +561,14 @@ TEST(DebugWindowDiag, StandardViewDebugInfoProbe)
     view.show();
     spin(400);
 
-    auto pkg = dta::dumpPackageForModel(QStringLiteral("bridge-edit"));
+    auto pkg = dta::dumpPackageForModel(modelId);
     ASSERT_TRUE(pkg.has_value());
     auto opened = dta::openDumpIModel(view, *pkg);
     ASSERT_TRUE(opened.has_value());
 
     auto* view3d = view.getUeViewport()->GetView()->AsViewState3d();
     ASSERT_NE(view3d, nullptr);
+    printf("[SVDBG] ===== model=%s =====\n", modelId.toUtf8().constData());
 
     // 面板 + 全 tracker（一次性）。
     Gui::DebugWindow win(view.getUeViewport(), &view);
@@ -576,8 +585,11 @@ TEST(DebugWindowDiag, StandardViewDebugInfoProbe)
     spin(300);
 
     // 同一定比缩放体：当前取景域 × 1/16（数据重档）——只随视图旋转换朝向。
+    // DANQING_PROBE_ZOOM 可覆盖分母（newbridge /16 档渐进细化工作集超内存
+    // ——bad_alloc 实录；/8 = 较浅 LOD 档，视图需求有界）。
+    int const zoomDen = [] { char const* e = std::getenv("DANQING_PROBE_ZOOM"); return e ? atoi(e) : 16; }();
     dqGeom::Vector3d const base = view3d->GetExtents();
-    dqGeom::Vector3d const vol{base.x / 16.0, base.y / 16.0, base.z / 16.0};
+    dqGeom::Vector3d const vol{base.x / zoomDen, base.y / zoomDen, base.z / zoomDen};
     dqGeom::Point3d const center = view3d->getCenter();
 
     struct ViewEntry { const char* name; dqApp::StandardViewId id; };
