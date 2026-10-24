@@ -108,14 +108,17 @@ ctest --test-dir build -C Debug -R StandardViewDebugInfoProbe
 Dispatched 8→24 递增但 **Completed 恒 0**——后端按需生成未在会话内交付
 （10km 桥瓦生成耗时超过采集窗）；DTA 对 newBridge 实际**渲染空视口**。
 
-### 判定
+### 判定（2026-10-24 修订——初版判定有误，订正如下）
 
-- **newBridge 内容渲染：DanQing 完整（86-184 图元真内容）vs DTA 空
-  （14 图元零瓦）**——DanQing 的本地流式架构对巨型模型的可用性优势的直接
-  实证（DTA 需后端在线且生成完才能出内容）。
-- **发现（TD-38 登记）**：newBridge 深档视口（取景域/16、/8）的渐进细化
-  工作集无界 → `bad_alloc`（/2 有界可完成）——TileAdmin 内存预算对
-  pinned 请求集的治理需调优（巨型模型深缩放场景）。
+- **初版错误**：曾据 DTA Selected=0/图元 14 判"DTA 渲染空视口"——**结论
+  无效**。DTA 对 newBridge 是**首访即时生成**架构（.Tiles 缓存未持久化，
+  每枚瓦后端现生成，10km 桥生成量巨大）；采集窗内未生成完 ≠ 不能渲染。
+  Completed=0/Dispatched 8→24 恰是生成进行中的中间态（Elided 41→123 =
+  树派生在跑）。条件静默（Active+Pending 归零）复测后方可能出稳态对比。
+- **保持有效的发现（TD-38 登记）**：newBridge 深档视口（取景域/16、/8）
+  的渐进细化工作集无界 → `bad_alloc`（/2 有界可完成）——TileAdmin 内存
+  预算对 pinned 请求集的治理需调优（巨型模型深缩放场景，DanQing 侧独立
+  成立，与 DTA 对比无关）。
 
 ### 探针配方（newBridge）
 
