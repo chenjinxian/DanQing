@@ -982,6 +982,9 @@ private:
     bool m_hoverDirty = false;
     int32_t m_hoverCssX = 0;
     int32_t m_hoverCssY = 0;
+    // shouldSkipOnMotionSnap 的节流时间戳（ToolAdmin.ts:1092-1114——
+    // _lastHandledMotionTime 的等价物；ms epoch，0=尚无）。
+    qint64 m_lastHandledMotionTime = 0;
 
     // Animation (← itwinjs-core Viewport._animator)
     // Ported from: itwinjs-core Viewport.ts line 2537

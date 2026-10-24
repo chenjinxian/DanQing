@@ -2002,9 +2002,25 @@ void Viewport::RenderFrame()
     // hover locate（EQUIVALENCE——见 Viewport.h m_hoverDirty 注释）：参考在
     // 事件层（AccuSnap.onMotion）locate，Chromium 每帧合并；DanQing 在 renderFrame
     // 内对最新 hover 点做一次 PickAtPoint（SelectionTool 同款 doLocate 等价物）。
+    // 节流（ToolAdmin.ts:1095-1114 onMotionSnapOrSkip/shouldSkipOnMotionSnap 1:1）：
+    // 距上次处理的 motion snap < 1000/maxOnMotionSnapCallPerSecond（=66.7ms，
+    // ToolSettings.ts:79）即跳过本次 pick——参考注释原文 "avoid unnecessary
+    // ReadPixel calls"。无节流时逐帧 pick（60 次/秒 vs 参考 15 次/秒）在数据
+    // 重档视口单次 pick 重绘+readPixels 同步 ~30ms，交互帧率塌到 ~22fps
+    //（NewBridgeFrameCostDiagnostic PAN+PICK 相位 45.6ms 均值实测——P-6）。
+    // 发散登记（§11.10）：参考跳过即丢弃该 motion（指针停下时末位可能不补
+    // pick）；DanQing 保留 m_hoverDirty 延后重试 + RequestRedraw 保帧——静止
+    // 末位必被拾取，节流上界同为 15Hz。验证法 = 帧成本诊断 PAN+PICK 相位
+    //（pickAvg 显著下降）+ JoesHouseHover/Instances60Hover 锁全绿。
     if (m_hoverDirty) {
-        m_hoverDirty = false;
-        uint32_t const hit = PickAtPoint(m_hoverCssX, m_hoverCssY);
+        qint64 const nowMs = QDateTime::currentMSecsSinceEpoch();
+        qint64 const delayMs = 1000 / ToolSettings::maxOnMotionSnapCallPerSecond;
+        if (m_lastHandledMotionTime != 0 && nowMs - m_lastHandledMotionTime < delayMs) {
+            RequestRedraw();  // 延后重试的保帧（参考由后续 motion 事件驱动）
+        } else {
+            m_hoverDirty = false;
+            m_lastHandledMotionTime = nowMs;
+            uint32_t const hit = PickAtPoint(m_hoverCssX, m_hoverCssY);
         SetFlashedId(hit);
         // Snap cross（AccuSnap.onMotion → getSnap → cross.activate 的帧合并等价，
         // EQUIVALENCE 登记于 AccuSnap.cpp activateCrossAt）：命中元素时在光标处
@@ -2031,6 +2047,7 @@ void Viewport::RenderFrame()
                 notifications.ClearToolTip();
         } else {
             notifications.ClearToolTip();
+        }
         }
     }
     if (processFlash()) {

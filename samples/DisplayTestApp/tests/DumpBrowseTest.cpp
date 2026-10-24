@@ -1376,3 +1376,195 @@ TEST(DumpBrowse, BridgeEditLodCoverageDiagnostic)
     view.close();
     spin(200);
 }
+
+// ---------------------------------------------------------------------------
+// TEMP-DIAG（P-6 newbridge 帧率取证）：数据多档视口下的帧成本三相位测量。
+// Authored: no reference test exists — itwinjs WebGL 无进程内帧成本 harness；
+// 判据为诊断打印（无行为断言，门禁仅要求不崩）。
+//   A 相位：zoom 泵到数据重档（kZoom=16——瓦粒度细化后视口内瓦/图元最多档）；
+//   B 相位：静止帧成本（24 步管线 isRedrawNeeded 门应使空闲帧 ~0ms——若恒重绘
+//           即失效环 bug）；
+//   C 相位：交互帧成本（逐帧平移相机模拟拖拽，per-frame ms min/avg/max）。
+// 配 DANQING_UI_TRACE=1 取 [FRAME]/[COMP] 分段归因。
+// ---------------------------------------------------------------------------
+TEST(DumpBrowse, NewBridgeFrameCostDiagnostic)
+{
+    DTA_REQUIRE_DUMP_FILES(kDumpRoot + "/newbridge-sweep-v1");
+    auto& app = dqApp::Application::Get();
+    if (!app.isInitialized()) {
+        dqApp::Application::Options opts;
+        opts.applicationId = "DumpBrowse";
+        opts.applicationVersion = "1.0";
+        ASSERT_TRUE(app.Startup(opts));
+    }
+
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    view.resize(1556, 844);
+    view.show();
+    spin(400);
+
+    auto pkg = dta::dumpPackageForModel(QStringLiteral("newbridge"));
+    ASSERT_TRUE(pkg.has_value());
+    auto opened = dta::openDumpIModel(view, *pkg);
+    ASSERT_TRUE(opened.has_value());
+
+    PumpContext ctx{&view, &*opened, 0, 0};
+
+    // 打开档静默。
+    int const openQ = pumpToQuiesce(ctx);
+    printf("[NBFC] open quiesce=%d ready=%ld total=%ld\n",
+           openQ, ctx.readyTiles, ctx.totalTiles);
+
+    // 相位 A：zoom 泵到数据重档（kZoom=2^4=16 绕取景中心）。
+    auto* view3d = view.getUeViewport()->GetView()->AsViewState3d();
+    ASSERT_NE(view3d, nullptr);
+    dqGeom::Point3d const center = viewCenterWorld(view3d);  // 取景视域中心
+    dqGeom::Vector3d const baseDiag = view3d->GetExtents();   // aspect fix 后取景域
+    int lastQ = openQ;
+    for (int n = 1; n <= 8; ++n) {
+        double const kZoom = static_cast<double>(1u << n);
+        zoomViewAbout(view, center, baseDiag, kZoom);
+        // 双趟泵：首趟落定请求面，次趟喂深层派生请求（dump 渐进加载）。
+        pumpToQuiesce(ctx);
+        lastQ = pumpToQuiesce(ctx);
+        printf("[NBFC] level kZoom=%.0f quiesce=%d ready=%ld total=%ld reqLog=%zu\n",
+               kZoom, lastQ, ctx.readyTiles, ctx.totalTiles,
+               opened->fetcher->requestLog().size());
+    }
+
+    // 相位 B：静止帧成本（300 帧——isRedrawNeeded 门下应近似零成本）。
+    {
+        auto const t0 = QDateTime::currentMSecsSinceEpoch();
+        double maxMs = 0.0;
+        for (int i = 0; i < 300; ++i) {
+            auto const f0 = QDateTime::currentMSecsSinceEpoch();
+            view.getUeViewport()->RenderFrame();
+            double const ms = QDateTime::currentMSecsSinceEpoch() - f0;
+            if (ms > maxMs) maxMs = ms;
+            spin(1);
+        }
+        auto const total = QDateTime::currentMSecsSinceEpoch() - t0;
+        printf("[NBFC] IDLE 300 frames total=%lldms avg=%.2fms max=%.0fms\n",
+               static_cast<long long>(total),
+               static_cast<double>(total) / 300.0, maxMs);
+    }
+
+    // 相位 C：交互帧成本（240 帧逐帧小幅平移——模拟拖拽；per-frame 分布）。
+    {
+        double const panStepX = baseDiag.x / (16.0 * 400.0);  // 400 帧横穿 1/16 视域
+        double const panStepY = baseDiag.y / (16.0 * 400.0);
+        long long total = 0;
+        double minMs = 1e9, maxMs = 0.0;
+        int over33 = 0, over16 = 0;
+        for (int i = 0; i < 240; ++i) {
+            dqGeom::Range3d const panned = dqGeom::Range3d::CreateXYZXYZ(
+                center.x - baseDiag.x / 32.0 + panStepX * i,
+                center.y - baseDiag.y / 32.0 + panStepY * i,
+                center.z - baseDiag.z / 32.0,
+                center.x + baseDiag.x / 32.0 + panStepX * i,
+                center.y + baseDiag.y / 32.0 + panStepY * i,
+                center.z + baseDiag.z / 32.0);
+            view3d->LookAtVolume(panned);
+            view.getUeViewport()->InvalidateController();
+            view.getUeViewport()->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+            auto const f0 = QDateTime::currentMSecsSinceEpoch();
+            view.getUeViewport()->RenderFrame();
+            double const ms = static_cast<double>(QDateTime::currentMSecsSinceEpoch() - f0);
+            total += static_cast<long long>(ms);
+            if (ms < minMs) minMs = ms;
+            if (ms > maxMs) maxMs = ms;
+            if (ms > 33.0) ++over33;
+            if (ms > 16.0) ++over16;
+        }
+        printf("[NBFC] PAN 240 frames avg=%.2fms min=%.0fms max=%.0fms"
+               " over16=%d over33=%d\n",
+               static_cast<double>(total) / 240.0, minMs, maxMs, over16, over33);
+    }
+
+    // 相位 D：悬停 pick 成本（真实 app 鼠标移到几何上时 renderFrame step13 每
+    // 次悬停位移做 PickAtPoint = pick 重绘 + readPixels GPU 同步）。走真 Qt
+    // 事件链（PickHiliteSelection.HoverMotionFlashesDecoration 同形 sendEvent）
+    // ——含 P-6 节流（ToolAdmin.ts:1095-1114 shouldSkipOnMotionSync 1:1）后的
+    // 端到端交互帧成本。逐帧 pan + 中心 MouseMove。
+    {
+        double const panStepX = baseDiag.x / (16.0 * 400.0);
+        double const panStepY = baseDiag.y / (16.0 * 400.0);
+        long long total = 0;
+        double maxMs = 0.0;
+        int over16 = 0, over33 = 0;
+        int const cx = view.getUeViewport()->width() / 2;
+        int const cy = view.getUeViewport()->height() / 2;
+        for (int i = 0; i < 240; ++i) {
+            dqGeom::Range3d const panned = dqGeom::Range3d::CreateXYZXYZ(
+                center.x - baseDiag.x / 32.0 + panStepX * i,
+                center.y - baseDiag.y / 32.0 + panStepY * i,
+                center.z - baseDiag.z / 32.0,
+                center.x + baseDiag.x / 32.0 + panStepX * i,
+                center.y + baseDiag.y / 32.0 + panStepY * i,
+                center.z + baseDiag.z / 32.0);
+            view3d->LookAtVolume(panned);
+            view.getUeViewport()->InvalidateController();
+            view.getUeViewport()->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+            QPoint const cpt(cx + (i % 7), cy + ((i * 3) % 5));
+            QMouseEvent move(QEvent::MouseMove, cpt,
+                             view.getUeViewport()->mapToGlobal(cpt),
+                             Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(view.getUeViewport(), &move);
+            auto const f0 = QDateTime::currentMSecsSinceEpoch();
+            view.getUeViewport()->RenderFrame();
+            double const ms = static_cast<double>(QDateTime::currentMSecsSinceEpoch() - f0);
+            total += static_cast<long long>(ms);
+            if (ms > maxMs) maxMs = ms;
+            if (ms > 16.0) ++over16;
+            if (ms > 33.0) ++over33;
+            spin(2);
+        }
+        printf("[NBFC] PAN+HOVER 240 frames avg=%.2fms max=%.0fms over16=%d over33=%d\n",
+               static_cast<double>(total) / 240.0, maxMs, over16, over33);
+    }
+
+    // 相位 E：flash 激活态平移（hover 命中后 SetFlashedId 补间期逐帧
+    // hiliteVersion++ → 全 batch updateFeatureStates 重算——[BATCH] push
+    // 70ms/瓦的触发面）。中心 pick 命中元素挂 flash，再平移 60 帧。
+    {
+        uint32_t const hit = view.getUeViewport()->PickAtPoint(778, 422);
+        printf("[NBFC] FLASH phase hit=%08x\n", hit);
+        if (hit != 0) {
+            view.getUeViewport()->SetFlashedId(hit);
+            double const panStepX = baseDiag.x / (16.0 * 400.0);
+            double const panStepY = baseDiag.y / (16.0 * 400.0);
+            long long total = 0;
+            double maxMs = 0.0;
+            int over16 = 0, over33 = 0;
+            for (int i = 0; i < 120; ++i) {
+                dqGeom::Range3d const panned = dqGeom::Range3d::CreateXYZXYZ(
+                    center.x - baseDiag.x / 32.0 + panStepX * i,
+                    center.y - baseDiag.y / 32.0 + panStepY * i,
+                    center.z - baseDiag.z / 32.0,
+                    center.x + baseDiag.x / 32.0 + panStepX * i,
+                    center.y + baseDiag.y / 32.0 + panStepY * i,
+                    center.z + baseDiag.z / 32.0);
+                view3d->LookAtVolume(panned);
+                view.getUeViewport()->InvalidateController();
+                view.getUeViewport()->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+                auto const f0 = QDateTime::currentMSecsSinceEpoch();
+                view.getUeViewport()->RenderFrame();
+                double const ms = static_cast<double>(QDateTime::currentMSecsSinceEpoch() - f0);
+                total += static_cast<long long>(ms);
+                if (ms > maxMs) maxMs = ms;
+                if (ms > 16.0) ++over16;
+                if (ms > 33.0) ++over33;
+            }
+            printf("[NBFC] FLASH+PAN 120 frames avg=%.2fms max=%.0fms"
+                   " over16=%d over33=%d\n",
+                   static_cast<double>(total) / 120.0, maxMs, over16, over33);
+            view.getUeViewport()->SetFlashedId(0);
+        }
+    }
+
+    printf("[NBFC] final quiesce=%d ready=%ld total=%ld\n",
+           lastQ, ctx.readyTiles, ctx.totalTiles);
+    view.getUeViewport()->DropTiledGraphicsProvider(opened->provider.get());
+    view.close();
+    spin(200);
+}
