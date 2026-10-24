@@ -20,9 +20,12 @@ constants.
 
 ### Why DanQing
 
-- **Massive models, smooth interaction** — streams and renders a 380,738-tile
-  bridge (5 GB imdl payload) with continuous zoom LOD refinement; a 170k-tile /
-  47.9 GB 10-km bridge opens and browses from local tile dumps.
+- **Massive models, smooth interaction** — the flagship stress model **New
+  Bridge** is a 10 km bridge captured as **169,920 tiles / 47.5 GB** of imdl
+  payload — it opens to the first rendered view in **2.25 s** with only **4 ms**
+  of UI-thread blocking, then streams d1–d13 LOD levels live as you zoom. A
+  380,738-tile 1.5 km bridge (5 GB) and five other real-backend models browse
+  the same way.
 - **Real performance engineering, measured** — every number below is reproduced
   by the in-repo harness (see [Performance](#performance)).
 - **Reference-fidelity methodology** — 2,956 automated tests including
@@ -98,6 +101,7 @@ NVIDIA desktop GPU); sources: in-repo pixel-lock harness and the
 
 | Scenario | Measurement |
 |---|---|
+| Open **"New Bridge" — the flagship stress model (169,920 tiles / 47.5 GB on disk, 10 km span)** to first rendered saved view | **2.25 s**, UI thread blocked only **4 ms** (`DANQING_OPEN_TRACE` `chain-done`) |
 | Open "Joe's House" (173,876-tile package, 278 MB manifest) to first rendered saved view | **0.57 s** (2.87 s before the P-1 pipeline work) |
 | Open "60 Instances" | **0.45 s** |
 | Open "Bridge Edit" (380,738 tiles available) | **2.0 s** |
@@ -105,10 +109,11 @@ NVIDIA desktop GPU); sources: in-repo pixel-lock harness and the
 | UI thread longest stall during a 20-step continuous zoom on the bridge | **≤ 235 ms** (was 10.4 s before async fetch/parse) |
 | Zoom / pan with LOD refinement | live in the hero GIF above |
 
-Open-to-first-frame, all eight demo models (Release, same machine): Compatibility
-Test Seed **0.45 s** / Mirukuru **0.44 s** / Baytown **0.44 s** / 60 Instances
-**0.45 s** / House_Model **0.47 s** / Joe's House **0.57 s** / Bridge Edit
-**2.0 s** (380k-tile domain) / New Bridge seconds (local-disk streaming).
+Open-to-first-frame, all eight demo models (Release, same machine): **New Bridge
+2.25 s (47.5 GB / 169,920 tiles — the largest, main-thread block 4 ms)** /
+Compatibility Test Seed **0.45 s** / Mirukuru **0.44 s** / Baytown **0.44 s** /
+60 Instances **0.45 s** / House_Model **0.47 s** / Joe's House **0.57 s** /
+Bridge Edit **2.0 s** (380k-tile domain).
 
 > Full loading-pipeline walkthrough (five-stage async pipeline, per-tile cost
 > breakdown, streaming/LOD behavior, per-model verification recipes, diagnostics
@@ -175,7 +180,7 @@ collected with the out-of-repo CDP tooling against itwinjs display-test-app
 | 60 Instances | 60 instanced spheres + placements | 3,595 | 305 MB | DanQing-Data `instances60.zip` |
 | Compatibility Test Seed | itwinjs backend test asset | 212 | 21 MB | in-repo (`rpc-dumps/compatseed-sweep-v1`) |
 | Mirukuru | V8 bridge, Japanese plane coords, 2-tree open chain | 2 | 2 KB | in-repo (`rpc-dumps/mirukuru-sweep-v1`) |
-| New Bridge | 10 km bridge, d1–d13 full tree | 169,920 | 47.5 GB | DanQing-Data `newbridge-*.zip` (v1 + sweep 12 parts = the browsing core; d9–d13 = deep zoom) |
+| New Bridge | **10 km bridge, d1–d13 full tree — the flagship stress model** | 169,920 | 47.5 GB | DanQing-Data `newbridge-*.zip` (v1 + sweep 12 parts = the browsing core; d9–d13 = deep zoom) |
 
 All five big models are also available as a plain git clone (SSH — works without
 a proxy): `git clone git@github.com:chenjinxian/DanQing-Data.git`, then point the
@@ -236,7 +241,7 @@ purposes.
 
 ### 为什么是丹青
 
-- **大体量模型，流畅交互**——38 万瓦级桥梁（5GB imdl）流式加载 + 连续缩放 LOD 实时细化；17 万瓦 / 47.9GB 十公里大桥本地回放浏览。
+- **大体量模型，流畅交互**——旗舰压轴模型 **New Bridge：10km 大桥，169,920 瓦 / 47.5GB** imdl 载荷，打开至首帧 **2.25s**、主线程阻塞仅 **4ms**，缩放时 d1–d13 各级 LOD 实时流式细化；38 万瓦 1.5km 桥梁（5GB）与另外五个真实后端模型同构浏览。
 - **性能工程全部实测**——下表每个数字都可由仓内 harness 复核（见[性能](#性能)）。
 - **参考保真方法论**——2956 项自动化测试，含真实后端 RPC dump 回放的像素级回归锁；示例程序与 itwinjs display-test-app 的 UI 与交互 1:1。
 - **可嵌入 SDK**——引擎模块 `dqBase/dqGeom/dqCommon/dqRender` 公开 API 零 Qt、可独立构建；Qt 桌面端只是宿主。引擎构造性零网络。
@@ -280,6 +285,7 @@ purposes.
 
 | 场景 | 实测 |
 |---|---|
+| 打开旗舰压轴模型 **New Bridge（169,920 瓦 / 47.5GB 落盘，10km 跨度）**至 saved 视图首帧 | **2.25s**，主线程仅阻塞 **4ms**（`DANQING_OPEN_TRACE` `chain-done`） |
 | 打开 Joe's House（173,876 瓦包，278MB manifest）至 saved 视图上屏 | **0.57s**（P-1 管线化前 2.87s） |
 | 打开 60 Instances | **0.45s** |
 | 打开 Bridge Edit（380,738 瓦可用域） | **2.0s** |
@@ -287,9 +293,9 @@ purposes.
 | 桥模型 20 级连续缩放 UI 线程最长停顿 | **≤235ms**（异步化前 10.4s） |
 | 缩放/平移 LOD 细化 | 见顶部 hero 动图 |
 
-八模型打开耗时（Release 同机实测）：Compatibility Test Seed **0.45s** / Mirukuru
-**0.44s** / Baytown **0.44s** / 60 Instances **0.45s** / House_Model **0.47s** /
-Joe's House **0.57s** / Bridge Edit **2.0s**（38 万瓦域）/ New Bridge 秒级（本地盘流式）。
+八模型打开耗时（Release 同机实测）：**New Bridge 2.25s（47.5GB / 169,920 瓦——最大模型，主线程阻塞 4ms）** /
+Compatibility Test Seed **0.45s** / Mirukuru **0.44s** / Baytown **0.44s** /
+60 Instances **0.45s** / House_Model **0.47s** / Joe's House **0.57s** / Bridge Edit **2.0s**（38 万瓦域）。
 
 > 加载管线五段走读（异步管线/逐瓦耗时账/流式 LOD 行为/逐模型验证配方/诊断开关
 > 与故障排查）：**[大规模模型加载渲染性能与验证指南](docs/大规模模型加载渲染性能与验证指南.md)**。
@@ -336,7 +342,7 @@ ctest --test-dir build -C Debug --output-on-failure
 | 60 Instances | 60 实例球 + placements | 3,595 | 305 MB | DanQing-Data `instances60.zip` |
 | Compatibility Test Seed | itwinjs 后端测试资产 | 212 | 21 MB | 随仓（`rpc-dumps/compatseed-sweep-v1`） |
 | Mirukuru | V8 桥，日本平面坐标，双树打开链 | 2 | 2 KB | 随仓（`rpc-dumps/mirukuru-sweep-v1`） |
-| New Bridge | 10km 大桥，d1–d13 全树 | 169,920 | 47.5 GB | DanQing-Data `newbridge-*.zip`（v1 + sweep 12 卷 = 浏览核心；d9–d13 = 深层缩放） |
+| New Bridge | **10km 大桥，d1–d13 全树——旗舰压轴模型** | 169,920 | 47.5 GB | DanQing-Data `newbridge-*.zip`（v1 + sweep 12 卷 = 浏览核心；d9–d13 = 深层缩放） |
 
 五个大模型同时支持 git 直克隆（SSH 免代理）：`git clone git@github.com:chenjinxian/DanQing-Data.git`，
 用 `DANQING_RPC_DUMP=<克隆目录>` 指向即可；GitHub 100MB 限制导致的两点差异见该仓 README。
