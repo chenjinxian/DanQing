@@ -24,6 +24,7 @@
 #include <QToolButton>
 
 #include <dqApp/Application.h>
+#include <dqApp/StandardView.h>
 #include <dqApp/ToolSettings.h>
 #include <dqApp/Viewport.h>
 #include <dqApp/ViewManager.h>
@@ -519,6 +520,112 @@ TEST(DebugWindowDiag, BridgeDebugInfoProbe)
     for (auto* combo : win.findChildren<QComboBox*>())
         printf("[DBGINFO] [X] combo idx=%d\n", combo->currentIndex());
     printf("[DBGINFO] ===== end =====\n");
+
+    view.getUeViewport()->DropTiledGraphicsProvider(opened->provider.get());
+    win.hidePanel();
+    view.close();
+    spin(200);
+}
+
+// ---------------------------------------------------------------------------
+// TEMP-DIAG（P-7 Debug Info 8 视图对比探针）：DTA StandardRotations 同款 8 标
+// 准旋转（Top/Bottom/Left/Right/Front/Back/Iso/RightIso——View.Standard idx
+// 0-7 同序），每视图**同一定比缩放体**（kZoom=16 取景域），瓦静默后 dump
+// Debug Info 全字段。输出 = 与 DTA debuginfo-capture.mjs 逐视图对比的
+// DanQing 侧行。（Authored：无参考对应测试；字段语义 1:1。）
+// ---------------------------------------------------------------------------
+TEST(DebugWindowDiag, StandardViewDebugInfoProbe)
+{
+    std::string const dumpRoot = std::string(DANQING_TILE_ASSETS_DIR) + "/rpc-dumps";
+    if (!std::filesystem::exists(dumpRoot + "/bridge-edit-sweep-v1/manifest.json"))
+        GTEST_SKIP() << "bridge-edit sweep data not present";
+
+    auto& app = dqApp::Application::Get();
+    if (!app.isInitialized()) {
+        dqApp::Application::Options opts;
+        opts.applicationId = "DebugWindowDiag";
+        opts.applicationVersion = "1.0";
+        ASSERT_TRUE(app.Startup(opts));
+    }
+
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    view.resize(2000, 1400);
+    view.show();
+    spin(400);
+
+    auto pkg = dta::dumpPackageForModel(QStringLiteral("bridge-edit"));
+    ASSERT_TRUE(pkg.has_value());
+    auto opened = dta::openDumpIModel(view, *pkg);
+    ASSERT_TRUE(opened.has_value());
+
+    auto* view3d = view.getUeViewport()->GetView()->AsViewState3d();
+    ASSERT_NE(view3d, nullptr);
+
+    // 面板 + 全 tracker（一次性）。
+    Gui::DebugWindow win(view.getUeViewport(), &view);
+    win.showPanel();
+    spin(100);
+    if (auto* cb = findCheckBox(&win, QStringLiteral("Track FPS")))
+        cb->click();
+    if (auto* cb = findCheckBox(&win, QStringLiteral("Track Tile Requests")))
+        cb->click();
+    if (auto* cb = findCheckBox(&win, QStringLiteral("Render Commands")))
+        cb->click();
+    if (auto* combo = win.findChild<QComboBox*>())
+        combo->setCurrentIndex(5);  // MemoryTracker = Viewport
+    spin(300);
+
+    // 同一定比缩放体：当前取景域 × 1/16（数据重档）——只随视图旋转换朝向。
+    dqGeom::Vector3d const base = view3d->GetExtents();
+    dqGeom::Vector3d const vol{base.x / 16.0, base.y / 16.0, base.z / 16.0};
+    dqGeom::Point3d const center = view3d->getCenter();
+
+    struct ViewEntry { const char* name; dqApp::StandardViewId id; };
+    ViewEntry const views[] = {
+        {"Top", dqApp::StandardViewId::Top},         {"Bottom", dqApp::StandardViewId::Bottom},
+        {"Left", dqApp::StandardViewId::Left},       {"Right", dqApp::StandardViewId::Right},
+        {"Front", dqApp::StandardViewId::Front},     {"Back", dqApp::StandardViewId::Back},
+        {"Iso", dqApp::StandardViewId::Iso},         {"RightIso", dqApp::StandardViewId::RightIso},
+    };
+
+    for (auto const& v : views) {
+        dqRender::TileAdmin::instance().resetStatistics();
+        view3d->SetRotation(dqApp::StandardView::GetStandardRotation(v.id));
+        dqGeom::Range3d const volume = dqGeom::Range3d::CreateXYZXYZ(
+            center.x - vol.x / 2.0, center.y - vol.y / 2.0, center.z - vol.z / 2.0,
+            center.x + vol.x / 2.0, center.y + vol.y / 2.0, center.z + vol.z / 2.0);
+        view3d->LookAtVolume(volume);
+        view.getUeViewport()->InvalidateController();
+        view.getUeViewport()->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+        // 泵至静默（双趟）。
+        for (int pass = 0; pass < 2; ++pass) {
+            size_t lastLog = opened->fetcher->requestLog().size();
+            int stable = 0;
+            for (int i = 0; i < 100; ++i) {
+                view.getUeViewport()->InvalidateController();
+                spin(100);
+                size_t const sz = opened->fetcher->requestLog().size();
+                if (sz == lastLog && opened->fetcher->getActiveCount() == 0) {
+                    if (++stable >= 4)
+                        break;
+                } else {
+                    stable = 0;
+                }
+                lastLog = sz;
+            }
+        }
+        spin(1200);  // > 1s memory + 2× stats 刷新
+        printf("[SVDBG] ===== view=%s =====\n", v.name);
+        for (auto* lbl : win.findChildren<QLabel*>()) {
+            QString const t = lbl->text();
+            if (!t.isEmpty())
+                printf("[SVDBG] [L] %s\n", t.toUtf8().constData());
+        }
+        for (auto* cb : win.findChildren<QCheckBox*>())
+            if (cb->text().startsWith(QStringLiteral("FPS:")))
+                printf("[SVDBG] [C] %s\n", cb->text().toUtf8().constData());
+    }
+    printf("[SVDBG] ===== end =====\n");
 
     view.getUeViewport()->DropTiledGraphicsProvider(opened->provider.get());
     win.hidePanel();
