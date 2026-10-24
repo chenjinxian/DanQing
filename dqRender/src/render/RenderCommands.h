@@ -263,7 +263,10 @@ private:
 
     // --- Frustum culling ---
     // Ported from: itwinjs-core RenderCommands._frustumPlanes
-    FrustumPlanes m_frustumPlanes;
+    // （P-7/TD-37：存原始 check MVP[S 子框仿射]——逐 batch × 栈顶 mvp 现提
+    // 平面后测局部 range，clip 空间等价参考 transformBy(currentTransform)。）
+    std::array<float, 16> m_checkMvp = {};
+    bool m_checkMvpValid = false;
 };
 
 END_DQ_RENDER_NAMESPACE

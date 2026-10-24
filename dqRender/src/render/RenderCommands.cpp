@@ -307,11 +307,43 @@ void RenderCommands::addBatch(Batch& batch)
 
     // Frustum culling: skip batches outside the frustum.
     // Ported from: itwinjs-core addBatch (line 655-662)
-    if (m_frustumPlanes.isValid()) {
+    if (m_checkMvpValid) {
         auto range = dqGeom::Range3d::CreateNull();
         batch.unionRange(range);
-        if (!range.isNull() && !m_frustumPlanes.computeBoxContainment(range))
-            return;
+        if (!range.isNull()) {
+            auto const& stackMvp = m_stack->getCurrentMvp();
+            float batchMvp[16];
+            for (int col = 0; col < 4; ++col)
+                for (int row = 0; row < 4; ++row)
+                    batchMvp[col * 4 + row] =
+                        m_checkMvp[col * 4 + 0] * stackMvp[0 * 4 + row]
+                        + m_checkMvp[col * 4 + 1] * stackMvp[1 * 4 + row]
+                        + m_checkMvp[col * 4 + 2] * stackMvp[2 * 4 + row]
+                        + m_checkMvp[col * 4 + 3] * stackMvp[3 * 4 + row];
+            FrustumPlanes const planes(batchMvp);
+            bool const contained = planes.computeBoxContainment(range);
+            if (std::getenv("DANQING_PICK_TRACE")) {
+                // 自检：range 中心过 batchMvp → 剪裁空间落点（contained 应与
+                // 中心落点粗一致）。
+                double const c[3] = {(range.low.x + range.high.x) / 2.0,
+                                     (range.low.y + range.high.y) / 2.0,
+                                     (range.low.z + range.high.z) / 2.0};
+                float clip[4];
+                for (int row = 0; row < 4; ++row)
+                    clip[row] = batchMvp[0 * 4 + row] * static_cast<float>(c[0])
+                                + batchMvp[1 * 4 + row] * static_cast<float>(c[1])
+                                + batchMvp[2 * 4 + row] * static_cast<float>(c[2])
+                                + batchMvp[3 * 4 + row];
+                float const wInv = 1.0f / (0.0f != clip[3] ? clip[3] : 1.0f);
+                std::fprintf(stderr, "[CULL] batch=%u range=[%.1f %.1f %.1f]-[%.1f %.1f %.1f] contained=%d"
+                                     " centerNdc=(%.3f,%.3f,%.3f)\n",
+                             batch.getBatchId(), range.low.x, range.low.y, range.low.z,
+                             range.high.x, range.high.y, range.high.z, contained ? 1 : 0,
+                             clip[0] * wInv, clip[1] * wInv, clip[2] * wInv);
+            }
+            if (!contained)
+                return;
+        }
     }
 
     // Assign the batch id BEFORE pushing — the reference does it inside
@@ -1207,13 +1239,14 @@ bool RenderCommands::isOpaquePass(RenderPass pass)
 void RenderCommands::setCheckRange(float const* mvp16)
 {
     // Ported from: itwinjs-core RenderCommands.setCheckRange() (line 704)
-    m_frustumPlanes = FrustumPlanes(mvp16);
+    std::copy(mvp16, mvp16 + 16, m_checkMvp.begin());
+    m_checkMvpValid = true;
 }
 
 void RenderCommands::clearCheckRange()
 {
     // Ported from: itwinjs-core RenderCommands.clearCheckRange() (line 706)
-    m_frustumPlanes.invalidate();
+    m_checkMvpValid = false;
 }
 
 END_DQ_RENDER_NAMESPACE

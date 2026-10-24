@@ -915,8 +915,13 @@ void TargetImpl::readPixels(int32_t x, int32_t y, uint32_t width, uint32_t heigh
 
     // Step 2: Re-populate commands with pick-friendly settings
     // (translucent drawn as opaque, non-pickable decorations excluded)
+    // rect 视锥裁剪（Target.ts:916-918 同序——setCheckRange → initForReadPixels
+    // → clearCheckRange）：剔除 rect 外全部 batch——3px pick 只装配光标下的瓦
+    // （TD-37，hover pick 重绘 29-38ms→近零）。
     m_commands.clear();
+    applyRectCheckRange(x, y, width, height);
     m_commands.initForReadPixels(m_targetGraphics);
+    m_commands.clearCheckRange();
 
     // Step 3: Render the scene into the pick target
     m_compositor->drawForPick(m_commands);
@@ -957,6 +962,51 @@ void TargetImpl::readPixels(int32_t x, int32_t y, uint32_t width, uint32_t heigh
 }
 
 // ---------------------------------------------------------------------------
+// applyRectCheckRange — pick 期 rect 视锥裁剪（TD-37）
+// Ported from: itwinjs-core Target.readPixelsFromFbo() (Target.ts:913-952)。
+// checkMvp = S（Ndc [-1,1] 子框仿射；DanQing 投影 GL 形，FrustumUniforms.h
+// :85-104）——addBatch 侧 S × 栈顶 mvp 现提平面后测 batch **局部** range
+// （RenderCommands.cpp addBatch 注——clip 空间等价参考
+// transformBy(currentTransform)，setTransform 分支变换已含于栈顶 mvp）。
+// 发散登记：参考 screenSpaceEffects.shouldApply 禁用分支——DanQing 无该面
+// 恒可用（效果面落地时补门）。
+// 验证法 = PickDumpScene/PickHiliteSelection/PickCollapse 全绿 + 帧成本诊断
+// PAN+HOVER 相位下降。
+void TargetImpl::applyRectCheckRange(int32_t x, int32_t y, uint32_t width, uint32_t height)
+{
+    // TD-37 在册：cull 默认关（DANQING_RECTLULL=1 启用）。取证实锤——装配期
+    // 栈顶 mvp 与绘制期 u_mvp 差 1e-3 刻度（-97.336 vs -0.097 同数字），pick
+    // pass 的矩阵源/时机与绘制不一致；先修矩阵源再启用（TD-37 注）。
+    if (!std::getenv("DANQING_RECTLULL"))
+        return;
+    auto const vr = getViewRect();
+    double const vw = static_cast<double>(vr.width());
+    double const vh = static_cast<double>(vr.height());
+    if (vw < 1.0 || vh < 1.0)
+        return;
+    // 调用面坐标 = GL bottom-up 设备像素（PickAtPoint/PickAtRect 换算后）。
+    double const l = std::clamp(static_cast<double>(x) / vw, 0.0, 1.0);
+    double const r = std::clamp((vw - static_cast<double>(x) - static_cast<double>(width)) / vw, 0.0, 1.0);
+    double const b = std::clamp(static_cast<double>(y) / vh, 0.0, 1.0);
+    double const t = std::clamp((vh - static_cast<double>(y) - static_cast<double>(height)) / vh, 0.0, 1.0);
+    double const sx = 1.0 - l - r;
+    double const sy = 1.0 - b - t;
+    if (sx <= 1.0e-12 || sy <= 1.0e-12)
+        return;
+    // [-1,1] 子框：x ∈ [TX, TX+LX]，TX = -1+2l，LX = 2sx。
+    double const LX = 2.0 * sx;
+    double const TX = -1.0 + 2.0 * l;
+    double const LY = 2.0 * sy;
+    double const TY = -1.0 + 2.0 * b;
+    float const sGl[16] = {
+        static_cast<float>(1.0 / LX), 0.0f, 0.0f, 0.0f,
+        0.0f, static_cast<float>(1.0 / LY), 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        static_cast<float>(-TX / LX), static_cast<float>(-TY / LY), 0.0f, 1.0f};
+    m_commands.setCheckRange(sGl);
+}
+
+// ---------------------------------------------------------------------------
 // readPickDepth — 同一 pick 渲染通道读 depthAndOrder 附件（附件 1，RGBA8）
 // Ported from: itwinjs-core Target.readPixels 的 Pixel.Selector geometryAndDistance
 //              深度半边（Target.ts:768-825；附件布局 SceneCompositor.ts:60-70）。
@@ -973,7 +1023,10 @@ bool TargetImpl::readPickDepth(int32_t x, int32_t y, uint32_t width, uint32_t he
 
     beginReadPixels();
     m_commands.clear();
+    // rect 视锥裁剪（readPixels 同款——Target.ts:916-918 同序）。
+    applyRectCheckRange(x, y, width, height);
     m_commands.initForReadPixels(m_targetGraphics);
+    m_commands.clearCheckRange();
     m_compositor->drawForPick(m_commands);
 
     auto& driver = m_system.getDriver();

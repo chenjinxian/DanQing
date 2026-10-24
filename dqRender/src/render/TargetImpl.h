@@ -515,6 +515,10 @@ public:
 private:
     bool glTimerActive() const noexcept;            // isGLTimerSupported + resultsCallback
 
+    // pick 期 rect 视锥裁剪（TD-37——readPixelsFromFbo Target.ts:913-952 的
+    // setCheckRange 腿；hover pick 重绘 29-38ms→近零）。
+    void applyRectCheckRange(int32_t x, int32_t y, uint32_t width, uint32_t height);
+
     // M-W W-a6：analysisTexture 重建（setAnalysisStyle 调用）——RenderPlan.ts:143-144
     // 的 getGradientTexture 承载点；scalar.themeticSettings → GradientSymb → 1×N 纹理。
     void updateAnalysisTexture();
