@@ -105,8 +105,17 @@ NVIDIA desktop GPU); sources: in-repo pixel-lock harness and the
 | UI thread longest stall during a 20-step continuous zoom on the bridge | **≤ 235 ms** (was 10.4 s before async fetch/parse) |
 | Zoom / pan with LOD refinement | live in the hero GIF above |
 
+Open-to-first-frame, all eight demo models (Release, same machine): Compatibility
+Test Seed **0.45 s** / Mirukuru **0.44 s** / Baytown **0.44 s** / 60 Instances
+**0.45 s** / House_Model **0.47 s** / Joe's House **0.57 s** / Bridge Edit
+**2.0 s** (380k-tile domain) / New Bridge seconds (local-disk streaming).
+
+> Full loading-pipeline walkthrough (five-stage async pipeline, per-tile cost
+> breakdown, streaming/LOD behavior, per-model verification recipes, diagnostics
+> switches and troubleshooting): **[大规模模型加载渲染性能与验证指南](docs/大规模模型加载渲染性能与验证指南.md)**.
+
 Test gate: **2,956 tests — 2,928 pass, 28 skip (headless-GL family), 0 fail**
-(Debug, full suite; 38 dump-driven locks self-skip when the big data packages
+(Debug, full suite; 54 dump-driven locks self-skip when the big data packages
 are not downloaded — see below).
 
 ### Quick start
@@ -122,6 +131,10 @@ are not downloaded — see below).
    Geometry / Cesium gallery / Analysis Style) and the two small models
    (Compatibility Test Seed, Mirukuru — bundled in the repo) work with zero
    data download.
+4. **Verify**: click a model card — the status bar must read
+   `Opened <model> (N tile trees) — saved view rendered` within the times above;
+   per-model expected visuals, timing baselines, diagnostics switches and the
+   source-side test locks are in the [verification guide](docs/大规模模型加载渲染性能与验证指南.md).
 
 #### B. Build from source
 
@@ -200,6 +213,8 @@ part of the SDK).
 - `docs/DTA功能对照与专业化分析-2026-09-30.md` — 85-row feature-parity matrix vs
   itwinjs display-test-app
 - `docs/DisplayTestApp-模型打开与数据加载说明.md` — model-open / data-loading explainer
+- `docs/大规模模型加载渲染性能与验证指南.md` — **large-model loading & rendering
+  performance guide + per-model download/run/verify recipes**
 - `docs/DanQing-C++代码规范.md` — C++ format rules (subordinate to CLAUDE.md)
 - Milestone plan/record docs (`docs/阶段*-实现计划-*.md`) — per-milestone
   forensic records
@@ -272,7 +287,14 @@ purposes.
 | 桥模型 20 级连续缩放 UI 线程最长停顿 | **≤235ms**（异步化前 10.4s） |
 | 缩放/平移 LOD 细化 | 见顶部 hero 动图 |
 
-测试门禁：**2956 项 = 2928 通过 + 28 跳过（headless-GL 族）+ 0 失败**（Debug 全量；未下载大数据包时 38 只 dump 锁自动跳过——见下）。
+八模型打开耗时（Release 同机实测）：Compatibility Test Seed **0.45s** / Mirukuru
+**0.44s** / Baytown **0.44s** / 60 Instances **0.45s** / House_Model **0.47s** /
+Joe's House **0.57s** / Bridge Edit **2.0s**（38 万瓦域）/ New Bridge 秒级（本地盘流式）。
+
+> 加载管线五段走读（异步管线/逐瓦耗时账/流式 LOD 行为/逐模型验证配方/诊断开关
+> 与故障排查）：**[大规模模型加载渲染性能与验证指南](docs/大规模模型加载渲染性能与验证指南.md)**。
+
+测试门禁：**2956 项 = 2928 通过 + 28 跳过（headless-GL 族）+ 0 失败**（Debug 全量；未下载大数据包时 54 只 dump 锁自动跳过——见下）。
 
 ### 快速开始
 
@@ -281,6 +303,9 @@ purposes.
 1. 从 [Releases](https://github.com/chenjinxian/DanQing/releases) 下载 `DanQing-DisplayTestApp-v0.1.0-win64.zip` 并解压。
 2.（可选，五个大模型）从 [DanQing-Data](https://github.com/chenjinxian/DanQing-Data) 的 `data-v1` release 下载数据包，解压到 `run.cmd` 旁的 `data\rpc-dumps\`。
 3. 运行 `run.cmd`。四张示例卡片（Blank Connection / Decoration Geometry / Cesium 陈列馆 / Analysis Style）与两个小模型（Compatibility Test Seed、Mirukuru——随仓）零下载即可用。
+4. **验证**：点模型卡——状态条应在上述耗时内转为
+   `Opened <model> (N tile trees) — saved view rendered`；逐模型预期画面/耗时
+   基准/诊断开关/源码侧测试锁见[验证指南](docs/大规模模型加载渲染性能与验证指南.md)。
 
 #### B. 源码构建
 
@@ -344,6 +369,7 @@ ctest --test-dir build -C Debug --output-on-failure
 - `docs/itwinjs-core-渲染系统执行流程分析.md` — 渲染管线全流程分析
 - `docs/DTA功能对照与专业化分析-2026-09-30.md` — 与 itwinjs display-test-app 的 85 行功能对照矩阵
 - `docs/DisplayTestApp-模型打开与数据加载说明.md` — 模型打开/数据加载说明
+- `docs/大规模模型加载渲染性能与验证指南.md` — **大体量模型加载与渲染性能指南 + 逐模型下载/运行/验证配方**
 - `docs/DanQing-C++代码规范.md` — C++ 格式规范（CLAUDE.md 的从属参考）
 - 里程碑计划/实录文档（`docs/阶段*-实现计划-*.md`）——逐里程碑取证台账
 
