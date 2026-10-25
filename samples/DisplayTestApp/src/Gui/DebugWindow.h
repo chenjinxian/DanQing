@@ -4,7 +4,7 @@
 //              + frontend/Window.ts (the floating-window shell: title bar with
 //              close, drag-to-move, isPinned; DebugWindow.ts:45 isResizable=false
 //              ——2026-10-25 用户指令转可缩放[标题栏 QSizeGrip=resize corner 等价物]，
-//              且面板双列化+高窗化，见 buildUi 的 HOST UI DEVIATION 注)
+//              且打开高度铺满宿主窗口、宽度保持参考 480px 单列，见 buildUi/showPanel)
 //              + core/frontend-devtools/src/widgets/DiagnosticsPanel.ts
 //              (the 7-widget panel; DTA excludes KeyinField — DebugWindow.ts:20)
 //

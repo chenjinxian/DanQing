@@ -22,9 +22,6 @@
 
 namespace Gui {
 
-// 每列保底宽（HOST UI DEVIATION——参考单列 480px 的双列化，2026-10-25 用户指令）。
-constexpr int kDebugPanelColumnWidth = 400;
-
 // ---------------------------------------------------------------------------
 // Construction — DebugWindow.ts:17-37 + DiagnosticsPanel.ts:53-103
 // ---------------------------------------------------------------------------
@@ -124,13 +121,10 @@ void DebugWindow::buildUi()
 
     // Content — DiagnosticsPanel.ts:53-103: each widget in order, <hr>
     // separators between (the QFrame HLine rows below). DTA excludes keyin.
-    // HOST UI DEVIATION（2026-10-25 用户指令"面板太小/信息太少/滚动麻烦"）：
-    // 参考 .debugPanel { width: 480px } 是单列（浏览器浮层，滚动自然）；
-    // DanQing 改双列（左=统计族 FPS/TileStats/TileMem，右=诊断族
-    // RenderCmds/Memory/Gpu/ToolSettings）+ 最小宽 2×400 + 打开即高窗
-    // （85% 宿主高，见 showPanel）+ 标题栏 QSizeGrip 缩放。7 组件集合与
-    // 行为不变（逐个仍是移植的 frontend-devtools 组件；行为面锁在
-    // DebugWindowDiagTest——findChild 按 objectName/text 寻址，布局无关）。
+    // 宽度保持参考形 .debugPanel { width: 480px } 单列（2026-10-25 用户裁决：
+    // 双列/加宽方案否决——"面板不需要加宽，要的是加高"）；高度经 showPanel
+    // 铺满宿主窗口（同左侧停靠面板），滚动只剩长内容兜底。标题栏 QSizeGrip
+    // 缩放保留（Window.ts resize corner 语义，用户可按需微调）。
     auto* scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
@@ -139,69 +133,59 @@ void DebugWindow::buildUi()
     // 自动横滚（"滚动条一下在动、窗口显示跳动"的完整链）。常驻后宽度从打开起
     // 就稳定，跟踪开启只长纵向、永不出横向滚动。
     scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
-    // ← .debugPanel { width: 480px } (public/index.css:341-355) 的双列化：
-    // 每列保底 400（统计表两个 50% 列各 ~200px，"Decoding mean time (ms): 0"
-    // 等长行完整落列），setMinimumWidth 替代原 setFixedWidth——用户可经
-    // QSizeGrip 放大，不可缩到两列以下。宽度从打开起稳定，永不出横向滚动。
+    // ← .debugPanel { width: 480px } (public/index.css:341-355) — 面板宽度由
+    // CSS 固定，不是内容收缩宽度。固定 scroll area 使视口恒为 480：统计表的
+    // 两个 50% 列各得 ~240px，"Decoding mean time (ms): 0" 等长行完整落列。
     int const sbExtent = style()->pixelMetric(QStyle::PM_ScrollBarExtent);
-    scroll->setMinimumWidth(2 * kDebugPanelColumnWidth + 8 + sbExtent + 2 * scroll->frameWidth());
+    scroll->setFixedWidth(480 + sbExtent + 2 * scroll->frameWidth());
     auto* content = new QWidget(scroll);
     m_content = content;
-    auto* columns = new QHBoxLayout(content);
-    columns->setContentsMargins(3, 3, 3, 3);  // .debugPanel padding: 3px
-    columns->setSpacing(4);
+    auto* panel = new QVBoxLayout(content);
+    panel->setContentsMargins(3, 3, 3, 3);  // .debugPanel padding: 3px
+    panel->setSpacing(4);
 
-    auto* colStat = new QVBoxLayout;
-    colStat->setSpacing(4);
-    auto* colDiag = new QVBoxLayout;
-    colDiag->setSpacing(4);
-    auto addSeparator = [content](QVBoxLayout* col) {  // DiagnosticsPanel.ts:120-122
+    auto addSeparator = [&panel, content]() {  // DiagnosticsPanel.ts:120-122 addSeparator
         auto* sep = new QFrame(content);
         sep->setFrameShape(QFrame::HLine);
         sep->setStyleSheet(QStringLiteral("color: #c0c0c0;"));
-        col->addWidget(sep);
+        panel->addWidget(sep);
     };
 
-    // 左列 = 统计族（:59-62 FPS → :76-79 TileStats → :81-84 TileMem）。
+    // :59-62 FpsTracker.
     m_fpsTracker = new FpsTracker(m_vp, content);
-    colStat->addWidget(m_fpsTracker);
-    addSeparator(colStat);
+    panel->addWidget(m_fpsTracker);
+    addSeparator();
 
     // :64-74 KeyinField — EXCLUDED by DTA (DebugWindow.ts:20).
 
+    // :76-79 TileStatisticsTracker.
     m_statsTracker = new TileStatisticsTracker(m_vp, content);
-    colStat->addWidget(m_statsTracker);
-    addSeparator(colStat);
+    panel->addWidget(m_statsTracker);
+    addSeparator();
 
+    // :81-84 TileMemoryBreakdown.
     m_tileMemoryBreakdown = new TileMemoryBreakdown(content);
-    colStat->addWidget(m_tileMemoryBreakdown);
-    colStat->addStretch(1);
+    panel->addWidget(m_tileMemoryBreakdown);
+    addSeparator();
 
-    // 列间分隔（单列时代是行间 HLine；双列下为竖线）。
-    auto* vline = new QFrame(content);
-    vline->setFrameShape(QFrame::VLine);
-    vline->setStyleSheet(QStringLiteral("color: #c0c0c0;"));
-    columns->addLayout(colStat, 1);
-    columns->addWidget(vline);
-
-    // 右列 = 诊断族（:86-89 RenderCmds → :91-94 Memory → :96-99 Gpu →
-    // :101-102 ToolSettings，末位无分隔——同参考）。
+    // :86-89 RenderCommandBreakdown.
     m_renderCommands = new RenderCommandBreakdown(content);
-    colDiag->addWidget(m_renderCommands);
-    addSeparator(colDiag);
+    panel->addWidget(m_renderCommands);
+    addSeparator();
 
+    // :91-94 MemoryTracker.
     m_memoryTracker = new MemoryTracker(m_vp, content);
-    colDiag->addWidget(m_memoryTracker);
-    addSeparator(colDiag);
+    panel->addWidget(m_memoryTracker);
+    addSeparator();
 
+    // :96-99 GpuProfiler.
     m_gpuProfiler = new GpuProfiler(content);
-    colDiag->addWidget(m_gpuProfiler);
-    addSeparator(colDiag);
+    panel->addWidget(m_gpuProfiler);
+    addSeparator();
 
+    // :101-102 ToolSettingsTracker (last — no separator after, matches :101-102).
     m_toolSettingsTracker = new ToolSettingsTracker(m_vp, content);
-    colDiag->addWidget(m_toolSettingsTracker);
-    colDiag->addStretch(1);
-    columns->addLayout(colDiag, 1);
+    panel->addWidget(m_toolSettingsTracker);
 
     scroll->setWidget(content);
     outer->addWidget(scroll, 1);
@@ -262,19 +246,12 @@ void DebugWindow::showPanel()
     m_isOpen = true;
     m_content->ensurePolished();
     auto const margins = layout()->contentsMargins();
-    int const w = 2 * kDebugPanelColumnWidth + 8
-                + style()->pixelMetric(QStyle::PM_ScrollBarExtent)
+    int const w = 480 + style()->pixelMetric(QStyle::PM_ScrollBarExtent)
                 + margins.left() + margins.right();
     int h = m_titleBar->height() + m_content->sizeHint().height()
           + margins.top() + margins.bottom();
-    if (parentWidget()) {
-        // HOST UI DEVIATION（2026-10-25 用户指令）：参考打开高度=内容天然高
-        // （跟踪折叠态，之后展开全靠滚动）；DanQing 打开即 85% 宿主高
-        // （双列内容一眼可见，滚动只剩兜底），不低于 560（折叠态也有用）。
-        int const cap = static_cast<int>(parentWidget()->height() * 0.85);
-        h = std::min(h, cap);
-        h = std::max(h, std::min(560, parentWidget()->height()));
-    }
+    if (parentWidget())  // 铺满宿主窗口高（2026-10-25 用户指令——同左侧停靠面板）
+        h = parentWidget()->height();
     resize(w, h);
     setVisible(vpSelected);
     raise();
