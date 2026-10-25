@@ -66,6 +66,19 @@ public:
     bool isAtlas() const noexcept { return m_isAtlas; }
     void setIsAtlas(bool val) noexcept { m_isAtlas = val; }
 
+    // Material atlas 载体（参考 Imdl.SurfaceMaterial atlas 形态——
+    // ParseImdlDocument.ts:912-917：vertexTableOffset=numColors[着色器
+    // u_numColors——readMaterialAtlas 在 LUT 内的材质色条目基行]、
+    // numMaterials/hasTranslucency/overridesAlpha）。
+    uint32_t getVertexTableOffset() const noexcept { return m_vertexTableOffset; }
+    void setVertexTableOffset(uint32_t v) noexcept { m_vertexTableOffset = v; }
+    uint32_t getNumMaterials() const noexcept { return m_numMaterials; }
+    void setNumMaterials(uint32_t v) noexcept { m_numMaterials = v; }
+    bool atlasHasTranslucency() const noexcept { return m_atlasHasTranslucency; }
+    void setAtlasHasTranslucency(bool v) noexcept { m_atlasHasTranslucency = v; }
+    bool atlasOverridesAlpha() const noexcept { return m_atlasOverridesAlpha; }
+    void setAtlasOverridesAlpha(bool v) noexcept { m_atlasOverridesAlpha = v; }
+
     bool hasTransform() const noexcept { return m_hasTransform; }
     void setHasTransform(bool val) noexcept { m_hasTransform = val; }
 
@@ -123,6 +136,10 @@ private:
     float m_alpha = 1.0f;
     MonochromeMode m_monochromeMode = MonochromeMode::None;
     bool m_isAtlas = false;
+    uint32_t m_vertexTableOffset = 0;
+    uint32_t m_numMaterials = 0;
+    bool m_atlasHasTranslucency = false;
+    bool m_atlasOverridesAlpha = false;
     bool m_hasTransform = false;
     bool m_hasVertexColors = false;
 

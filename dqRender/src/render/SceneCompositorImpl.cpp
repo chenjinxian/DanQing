@@ -2652,6 +2652,12 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                                 : RenderMaterialInternal::defaultMaterial();
                         drawParams.setMaterialColor(mat.getRgba());
                         drawParams.setMaterialParams(mat.getFragUniforms());
+                        // u_numColors——atlas 材质的 LUT 材质色条目基行
+                        // （Surface.ts:538-542 numColors = info.vertexTableOffset）。
+                        drawParams.setNumColors(
+                            (matInfo && matInfo->isAtlas())
+                                ? static_cast<float>(matInfo->getVertexTableOffset())
+                                : 0.0f);
                     }
                     // Surface flags: read from the current geometry (u_surfaceFlags[12]).
                     // Ported from: itwinjs-core SurfaceGeometry.computeSurfaceFlags() +

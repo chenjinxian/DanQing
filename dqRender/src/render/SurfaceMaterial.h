@@ -92,7 +92,7 @@ inline void addMaterial(ProgramBuilder& builder, bool instanced, bool quantized)
     if (!instanced && quantized) {
         vert.addFunction(std::string(kUnpackFloat));
         vert.addFunction(std::string(kReadMaterialAtlas));
-        vert.addUniform("u_numColors", VariableType::Float, nullptr);
+        wireNumColors(vert);  // ← per-draw vertexTableOffset（原 nullptr 恒 0——atlas 行集永不命中）
     }
 
     // Vertex globals

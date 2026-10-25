@@ -63,6 +63,10 @@ void wireModelViewMatrix(ShaderBuilder& vert);
 /// Ported from: itwinjs-core SurfaceMaterial.ts addMaterialColor()
 void wireMaterialColor(ShaderBuilder& vert);
 
+/// Wire u_numColors (material-atlas color-table base row in the vertex LUT).
+/// Ported from: itwinjs-core Surface.ts addMaterial u_numColors (:538-542)
+void wireNumColors(ShaderBuilder& vert);
+
 /// Wire u_surfaceFlags[12] (per-surface boolean flag array, SurfaceBitIndex).
 /// Ported from: itwinjs-core Surface.ts addSurfaceFlags() (line 519-527)
 void wireSurfaceFlags(ShaderBuilder& vert);

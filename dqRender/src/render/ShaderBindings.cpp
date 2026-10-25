@@ -163,6 +163,20 @@ void wireMaterialColor(ShaderBuilder& vert)
     });
 }
 
+// u_numColors — material-atlas color-table base row (vertex LUT offset).
+// Ported from: itwinjs-core Surface.ts addMaterial u_numColors
+//   (uniform.setUniform1f(numColors) — info.vertexTableOffset, :538-542).
+// DanQing: the atlas base row is stored on DrawParams by the live draw loop
+//        (0 for non-atlas geometry — readMaterialAtlas produces no override).
+void wireNumColors(ShaderBuilder& vert)
+{
+    vert.addUniform("u_numColors", VariableType::Float, [](ShaderProgram& prog) {
+        prog.addGraphicUniform("u_numColors", [](UniformHandle& u, DrawParams const& dp) {
+            u.setUniform1f(dp.getNumColors());
+        });
+    });
+}
+
 // u_surfaceFlags[12] — per-surface boolean flag array (SurfaceBitIndex).
 // Ported from: itwinjs-core Surface.ts addSurfaceFlags() (line 519-527)
 // Reference: params.geometry.asSurface.computeSurfaceFlags(...) → uniform.setUniform1iv(arr)

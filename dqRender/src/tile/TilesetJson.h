@@ -316,6 +316,16 @@ struct ImdlVertexTableProps {
     // 跨 4 texel .w 通道转置重组的 IEEE f32，VertexTableBuilder.ts Unquantized
     // 命名空间）。ParseImdlDocument.ts:1031 原样透传。
     bool usesUnquantizedPositions = false;
+    // Material atlas（ImdlSchema.ts:131/:152 + ParseImdlDocument.ts:910-915——
+    // 顶点表携带材质色图集：LUT 内 numColors 行后跟材质色条目，着色器
+    // readMaterialAtlas 按顶点 materialIndex 取色——烘焙的子类别 fillColor
+    // [newBridge 黄/红构件的机制]。参考 parseSurface：atlas && numColors !==
+    // undefined → surface material = atlas 形态，renderMaterials 不再覆写色）。
+    bool hasMaterialAtlas = false;
+    bool atlasHasTranslucency = false;
+    bool atlasOverridesAlpha = false;
+    uint32_t atlasNumMaterials = 0;
+    uint32_t numColors = 0;
 };
 
 // Ported from: ImdlSchema.ts:86-97 SurfaceMaterialParams（内联形态——
@@ -548,6 +558,23 @@ inline std::vector<ImdlPrimitiveProps> parseImdlMeshPrimitives(JsonValue const& 
                 if (JsonValue const* uq = verts->find("usesUnquantizedPositions")) {
                     if (uq->type == JsonValue::Type::Bool)
                         props.vertices.usesUnquantizedPositions = uq->boolean;
+                }
+                // Material atlas（ImdlSchema.ts:131/:152——ParseImdlDocument.ts:910-915
+                // 的 atlas 判定输入；atlas 对象字段名 :116-121 ImdlMaterialAtlas）。
+                if (JsonValue const* nc = verts->find("numColors"))
+                    props.vertices.numColors = static_cast<uint32_t>(nc->number);
+                if (JsonValue const* ma = verts->find("materialAtlas")) {
+                    if (ma->type == JsonValue::Type::Object) {
+                        props.vertices.hasMaterialAtlas = true;
+                        if (JsonValue const* ht = ma->find("hasTranslucency"))
+                            props.vertices.atlasHasTranslucency =
+                                (ht->type == JsonValue::Type::Bool) ? ht->boolean : false;
+                        if (JsonValue const* oa = ma->find("overridesAlpha"))
+                            props.vertices.atlasOverridesAlpha =
+                                (oa->type == JsonValue::Type::Bool) ? oa->boolean : false;
+                        if (JsonValue const* nm = ma->find("numMaterials"))
+                            props.vertices.atlasNumMaterials = static_cast<uint32_t>(nm->number);
+                    }
                 }
             }
             if (JsonValue const* surf = prim.find("surface")) {

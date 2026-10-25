@@ -108,6 +108,11 @@ int const* SurfaceGeometry::computeSurfaceFlags(CachedGeometry const& geom,
                         ((ffBits & static_cast<uint8_t>(FillFlags::Lit)) != 0);
         translucent = (st == SurfaceType::Translucent) ||
                       ((ffBits & static_cast<uint8_t>(FillFlags::AlwaysTranslucent)) != 0);
+        // atlas 材质的 hasTranslucency 项（参考 SurfaceGeometry.ts translucent 的
+        // materialInfo.hasTranslucency 项——Imdl atlas 形态，ParseImdlDocument.ts:913）。
+        if (auto const* mi = geom.getMaterialInfo();
+            mi != nullptr && mi->isAtlas() && mi->atlasHasTranslucency())
+            translucent = true;
     } else {
         // PolyfaceGraphic path: texture presence via getSurfaceTexture()
         // (Surface.ts addTexture routing — spec §4.2 decision 1).

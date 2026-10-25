@@ -94,6 +94,13 @@ public:
     }
     int const* getSurfaceFlags() const noexcept { return m_surfaceFlags.data(); }
 
+    // --- Per-draw material atlas color-table base row (u_numColors) ---
+    // Ported from: itwinjs-core Surface.ts addMaterial u_numColors
+    //   (uniform.setUniform1f(info.vertexTableOffset)——readMaterialAtlas 在
+    //   顶点 LUT 内的材质色条目基行；非 atlas 几何 = 0 → atlas 分支不产出)。
+    void setNumColors(float n) noexcept { m_numColors = n; }
+    float getNumColors() const noexcept { return m_numColors; }
+
     // --- Per-draw normal matrix (u_normalMatrix, mat3 = 9 floats) ---
     // Ported from: itwinjs-core Vertex.ts addNormalMatrix()
     void setNormalMatrix(float const* nm) noexcept { m_normalMatrix = nm; }
@@ -148,6 +155,7 @@ private:
     rhi::TextureHandle m_texture;            // s_texture
     int m_textureUnit = -1;                  // sampler unit for s_texture
     std::array<int, 12> m_surfaceFlags = {};  // u_surfaceFlags[SurfaceBitIndex::Count]
+    float m_numColors = 0.0f;                 // u_numColors（材质色图集基行，非 atlas=0）
 
     // --- Animation displacement state ---
     rhi::TextureHandle m_animLutTexture;     // u_animLUT

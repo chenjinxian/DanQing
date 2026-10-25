@@ -641,8 +641,24 @@ createImdlLutGraphics(ImdlDocument const& doc, RenderSystem& system)
         // params.surface.material) → SurfaceGeometry.materialInfo :312 →
         // u_materialColor/u_materialParams 的 per-draw 源）。无材质/键缺席
         // → 不挂（compositor 落 Material.default——参考 undefined 语义）。
+        // Material atlas 分支（ParseImdlDocument.ts:910-915 parseSurface +
+        // :469-474 convertMaterial——2026-10-25 newBridge 黄/红构件根因）：
+        // 顶点表 materialAtlas+numColors → atlas 形态材质（isAtlas=true，
+        // vertexTableOffset=numColors）。着色器 readMaterialAtlas 从 LUT 的
+        // 材质色条目取色（烘焙的子类别 fillColor），u_materialColor 经
+        // SceneCompositorImpl 的 !isAtlas 门落 Material.default 哨兵——
+        // 顶点色（fillColor 黄/红）胜过 renderMaterials 的灰蓝 diffuse。
         // -------------------------------------------------------------------
-        if (prim.surface.material) {
+        if (prim.vertices.hasMaterialAtlas && prim.vertices.numColors != 0) {
+            auto mat = std::make_unique<RenderMaterialInternal>(
+                RenderMaterialInternal::fromParams(RenderMaterialParams{}));
+            mat->setIsAtlas(true);
+            mat->setVertexTableOffset(prim.vertices.numColors);
+            mat->setNumMaterials(prim.vertices.atlasNumMaterials);
+            mat->setAtlasHasTranslucency(prim.vertices.atlasHasTranslucency);
+            mat->setAtlasOverridesAlpha(prim.vertices.atlasOverridesAlpha);
+            geom->setMaterialInfo(std::move(mat));
+        } else if (prim.surface.material) {
             if (auto mp = resolveSurfaceMaterial(*prim.surface.material, renderMaterials)) {
                 geom->setMaterialInfo(std::make_unique<RenderMaterialInternal>(
                     RenderMaterialInternal::fromParams(*mp)));
