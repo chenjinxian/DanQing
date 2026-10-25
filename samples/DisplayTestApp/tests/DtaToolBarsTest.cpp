@@ -14,6 +14,7 @@
 #include <QStringList>
 #include <QWidgetAction>
 #include "DtaToolBars.h"
+#include "Gui/MainWindow.h"      // Debug 按钮 lambda 的 parent 单例（满高几何锁）
 
 #include <cstdlib>
 #include <filesystem>
@@ -213,6 +214,67 @@ TEST(DtaToolBarsMain, CameraPathsButtonOpensLivePanel)
     // 否则 panel 退订阅死 DqEvent = UB（挂死实锤，[CP-DIAG] 探针定位）。
     QCoreApplication::processEvents();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    dqApp::Application::Get().GetViewManager().DropViewport(vp);
+    delete vp;
+}
+
+// Debug 按钮 → 真实 app 打开链几何锁（2026-10-25 用户裁决"面板高度铺满宿主
+// 窗口"——回归根因：工具栏 lambda 曾用 QWidget::show() 打开面板，跳过
+// showPanel 的满高几何，"示例程序高度没变"实录）。按 DockTest 同形构造
+// Gui::MainWindow，使 lambda 的 MainWindow::getInstance() 非 null——面板
+// parent 化后满高可断言。
+// Authored: no reference test exists in display-test-app (the test app ships
+//           no tests); geometry contract = showPanel 的满宿主高 + 480 宽。
+TEST(DtaToolBarsMain, DebugActionOpensFullHeightPanel)
+{
+    // ensureAppReady 同款（CommandTest.cpp 定义不在本目标——就地保证 App 单例）。
+    if (!App::Application::_pcSingleton)
+        App::Application::_pcSingleton = new App::Application();
+    Gui::MainWindow mw;
+    mw.resize(1600, 1000);
+    mw.show();
+    qApp->processEvents();
+    Gui::DtaToolBarSet bars(&mw);
+
+    // 活动视口（activeViewport 面——NoToolbarsUntilViewportFocused 同形）。
+    dqApp::BlankConnectionProps props;
+    props.extents = dqGeom::Range3d(-1000, -1000, -100, 1000, 1000, 100);
+    auto conn = dqApp::BlankConnection::create(props);
+    auto view = dqApp::ViewList::create(conn.Get()).getDefaultView(conn.Get());
+    auto* vp = dqApp::Viewport::Create(nullptr, view);
+    dqApp::Application::Get().GetViewManager().AddViewport(vp);
+
+    QAction* debug = bars.mainToolBar()->actions()[0];  // 位 0 = Debug
+    ASSERT_NE(debug, nullptr);
+    debug->trigger();
+
+    // DebugWindow 顶层窗（objectName=debugPanel——ctor 设置；parent =
+    // MainWindow::getInstance() = 上面的 mw）。
+    QWidget* panel = nullptr;
+    for (QWidget* w : QApplication::topLevelWidgets()) {
+        if (w->objectName() == QStringLiteral("debugPanel") && w->isVisible()) {
+            panel = w;
+            break;
+        }
+    }
+    ASSERT_NE(panel, nullptr);
+    ASSERT_NE(panel->parentWidget(), nullptr);
+    // 满高：panel 高 == parent（MainWindow）高；宽 = 参考 480 + 滚动条 + 边框。
+    EXPECT_EQ(panel->height(), panel->parentWidget()->height());
+    EXPECT_EQ(panel->width(),
+              480 + panel->style()->pixelMetric(QStyle::PM_ScrollBarExtent) + 4);
+
+    // toggle 关：hidePanel + close（WA_DeleteOnClose 的 deleteLater 需事件循环
+    // 落地——CameraPathsButtonOpensLivePanel 同款析构序）。
+    debug->trigger();
+    QCoreApplication::processEvents();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QWidget* gone = nullptr;
+    for (QWidget* w : QApplication::topLevelWidgets())
+        if (w->objectName() == QStringLiteral("debugPanel"))
+            gone = w;
+    EXPECT_EQ(gone, nullptr);
+
     dqApp::Application::Get().GetViewManager().DropViewport(vp);
     delete vp;
 }

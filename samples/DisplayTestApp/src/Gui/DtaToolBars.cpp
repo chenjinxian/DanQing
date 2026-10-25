@@ -389,6 +389,7 @@ void DtaToolBarSet::buildMainToolBar(QMainWindow* mw)
         static QPointer<Gui::DebugWindow> s_debugWindow;
         QObject::connect(debugInfo, &QAction::triggered, tb, [] {
             if (s_debugWindow) {
+                s_debugWindow->hidePanel();  // ← DebugWindow.ts:73-75 isOpen=false（close 的 WA_DeleteOnClose 随后析构）
                 s_debugWindow->close();
                 return;
             }
@@ -397,7 +398,10 @@ void DtaToolBarSet::buildMainToolBar(QMainWindow* mw)
                 return;
             s_debugWindow = new Gui::DebugWindow(vp, MainWindow::getInstance());
             s_debugWindow->setAttribute(Qt::WA_DeleteOnClose);
-            s_debugWindow->show();
+            // ← DebugWindow.ts:55-64 open：必须走 showPanel（参考 resizeContent
+            // 链——满宿主高 + 状态置位），不能用 QWidget::show()——后者跳过
+            // 几何（折叠内容默认尺寸；2026-10-25 "示例程序高度没变"根因）。
+            s_debugWindow->showPanel();
         });
     }
 

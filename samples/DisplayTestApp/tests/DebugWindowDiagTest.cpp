@@ -14,6 +14,7 @@
 #include <QDateTime>
 #include <QHash>
 #include <QLabel>
+#include <QPixmap>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollArea>
@@ -67,6 +68,44 @@ QCheckBox* findCheckBox(QWidget* root, QString const& text)
 }
 
 }  // namespace
+
+// Authored: no reference test exists (host UI geometry); 2026-10-25 用户裁决
+// "面板高度铺满宿主窗口"的几何锁 + 活体截图（grab() 落 PNG 亲眼看——
+// §11.9 取证纪律：坐标不推算，亲眼量）。
+TEST(DebugWindowDiag, PanelGeometryProbe)
+{
+    Gui::View3DInventor view(nullptr, nullptr, nullptr);
+    view.resize(2000, 1400);
+    view.show();
+    spin(400);
+
+    Gui::DebugWindow win(view.getUeViewport(), &view);
+    win.showPanel();
+    spin(300);
+
+    QRect const vg = view.geometry();
+    QRect const wg = win.geometry();
+    printf("[PANELGEO] view=%dx%d panel=%dx%d at (%d,%d) parentH=%d\n",
+           vg.width(), vg.height(), wg.width(), wg.height(),
+           wg.x(), wg.y(), view.height());
+    printf("[PANELGEO] expectation: panel.height == view.height(%d), width=480+chrome\n",
+           view.height());
+    fflush(stdout);
+    EXPECT_EQ(wg.height(), view.height());
+    EXPECT_EQ(wg.width(), 480 + win.style()->pixelMetric(QStyle::PM_ScrollBarExtent) + 4);
+
+    // 活体截图（widget 离屏渲染，无需桌面注入）——路径绝对（cwd 相对陷阱在案）。
+    QPixmap const shot = win.grab();
+    QString const path = QStringLiteral("D:/Github/DanQing/build/debugpanel-grab.png");
+    ASSERT_TRUE(shot.save(path));
+    printf("[PANELGEO] screenshot: %s (%dx%d)\n", path.toUtf8().constData(),
+           shot.width(), shot.height());
+    fflush(stdout);
+
+    win.hidePanel();
+    view.close();
+    spin(200);
+}
 
 // Authored: 见文件头 — 7 sections present, in DiagnosticsPanel order.
 TEST(DebugWindowDiag, PanelHasSevenSectionsInOrder)
