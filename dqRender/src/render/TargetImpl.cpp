@@ -346,10 +346,32 @@ void TargetImpl::drawFrame()
     populateCommandsFromScene();
     endPerfMetricRecord();
 
-    // ← Target.ts:686-698 Planar Classifiers / Shadow Maps / Texture Drapes 三段
-    // perf 记录——DanQing 的对应 draw 调用（drawPlanarClassifiers/drawSolarShadowMap/
-    // drawTextureDrapes）尚未接入 drawFrame，记录随 draw 接入时落地（无 draw 不包
-    // 空段——行集待这三段绘制移植后与参考对齐）。
+    // ← Target.ts:686-688 Planar Classifiers——参考 _planarClassifiers 集合逐个
+    // classifier.draw(this)。DanQing 的 PlanarClassifier 今日为声明面
+    // （PlanarClassifier.h 无 .cpp 实现、setPlanarClassifier 零调用方）：行随
+    // 参考保留（参考无分类器注册时同形 ~0ms），逐个 draw 随子系统实现+接线落地。
+    beginPerfMetricRecord("Planar Classifiers");
+    // TODO(P): m_planarClassifier 逐个 draw（PlanarClassifier.draw 实现+接线）。
+    endPerfMetricRecord();
+
+    // ← Target.ts:692-694 Shadow Maps——SolarShadowMap.draw = 深度 pass 渲染
+    // （SolarShadowMap.ts + ShadowMapExecutor 族）。DanQing 的 SolarShadowMap
+    // 今日是均匀载体（struct isEnabled/projection/color/bias——ShadowUniforms.h
+    // :33-43，M-U 日照方向消费面），深度 pass 未移植：结构 1:1、行随参考保留
+    // （isEnabled=false 态与参考同形 ~0ms），draw 体随渲染子系统移植落地。
+    beginPerfMetricRecord("Shadow Maps");
+    if (m_shadowMap && m_shadowMap->isEnabled) {
+        // TODO(P): SolarShadowMap.draw(*this)——参考深度 pass 未移植。
+    }
+    endPerfMetricRecord();
+
+    // ← Target.ts:697-699 Texture Drapes——参考 _textureDrapes 集合逐个
+    // drape.draw(this)。DanQing 的 TextureDrape 纹理载体已移植
+    // （TextureDrape.h——create/setUvTransform）而 drape 集合与绘制面未接入：
+    // 同上，行随参考保留、集合逐个 draw 随接线落地。
+    beginPerfMetricRecord("Texture Drapes");
+    // TODO(P): _textureDrapes 集合逐个 drape.draw(*this)——集合接线待移植。
+    endPerfMetricRecord();
 
     // Render-command breakdown snapshot for the diagnostics panel
     // (RenderCommands.dump, RenderCommands.ts:742-771 — Target.getRenderCommands

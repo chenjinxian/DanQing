@@ -1551,6 +1551,9 @@ void SceneCompositor::renderPointClouds(RenderCommands& commands, CompositeFlags
 {
     auto const& cmds = commands.getCommands(RenderPass::PointClouds);
     if (cmds.empty()) return;
+    // TODO(P): EDL 臂（SceneCompositor.ts:1100-1130——借 hilite/depth MS 缓冲
+    // 绘制点云 + eyeDomeLighting.draw 的 "Calc EDL" perf 段）——点云 EDL 子系统
+    // 未移植，GpuProfiler 的 "Calc EDL" 行随该臂落地。
 
     auto& driver = m_target.getDriver();
     auto rect = m_target.getViewRect();
