@@ -28,6 +28,7 @@
 #include <dqApp/ToolSettings.h>
 #include <dqApp/Viewport.h>
 #include <dqApp/ViewManager.h>
+#include <dqApp/ViewTool.h>  // StandardViewTool（fitrotate 协议的标准视图参考机制）
 #include <dqRender/RenderSystem.h>
 #include <dqRender/tile/TileAdmin.h>
 
@@ -584,9 +585,51 @@ TEST(DebugWindowDiag, StandardViewDebugInfoProbe)
         combo->setCurrentIndex(5);  // MemoryTracker = Viewport
     spin(300);
 
+    // DANQING_PROBE_PROTOCOL=fitrotate（2026-10-25 用户裁定协议——DTA 侧同款）：
+    // 打开后 Fit 一次（View3DInventor::viewAll = IModelApp.tools.run("View.Fit",vp,true)
+    // 同构——projectExtents LookAtVolume + synchWithView），随后 8 视图仅旋转
+    // （SetRotation 原位换朝向，frustum 不动），零缩放操作。缺省 = 旧定比缩放体
+    // 协议（LookAtVolume ×1/zoomDen——保留做对照）。
+    bool const fitRotate = [] {
+        char const* e = std::getenv("DANQING_PROBE_PROTOCOL");
+        return e && QLatin1String(e) == QLatin1String("fitrotate");
+    }();
+    if (fitRotate) {
+        // ViewManip.fitView（ViewTool.ts:826-831）同构——FitViewTool.doFit →
+        // fitViewWithGlobeAnimation 的非地球分支：range = computeFitRange
+        // （Viewport.computeViewRange 的 ViewState 同名移植，Viewport.cpp:1381
+        // 同源）→ lookAtVolume(range, aspect) + synchWithView。viewAll 的
+        // projectExtents 是 blank 兜底面，内容域 ≠ projectExtents 时 fit 档
+        // 发散（DTA Selected=1 vs DanQing 6→100 实录）——本探针按参考形。
+        dqGeom::Range3d const fitRange = view3d->AsSpatialViewState()->ComputeFitRange();
+        double const aspect = view.getUeViewport()->viewRect().aspect();
+        view3d->LookAtVolume(fitRange, &aspect, nullptr);
+        view.getUeViewport()->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+        view.getUeViewport()->update();
+        // Fit 静默泵（与逐视图同款双趟）。
+        for (int pass = 0; pass < 2; ++pass) {
+            size_t lastLog = opened->fetcher->requestLog().size();
+            int stable = 0;
+            for (int i = 0; i < 100; ++i) {
+                view.getUeViewport()->InvalidateController();
+                spin(100);
+                size_t const sz = opened->fetcher->requestLog().size();
+                if (sz == lastLog && opened->fetcher->getActiveCount() == 0) {
+                    if (++stable >= 4)
+                        break;
+                } else {
+                    stable = 0;
+                }
+                lastLog = sz;
+            }
+        }
+        spin(1200);
+    }
+
     // 同一定比缩放体：当前取景域 × 1/16（数据重档）——只随视图旋转换朝向。
     // DANQING_PROBE_ZOOM 可覆盖分母（newbridge /16 档渐进细化工作集超内存
-    // ——bad_alloc 实录；/8 = 较浅 LOD 档，视图需求有界）。
+    // ——bad_alloc 实录；/8 = 较浅 LOD 档，视图需求有界）。fitrotate 协议下
+    // 缩放体不适用（Fit 的 frustum 原位旋转）——跳过 LookAtVolume。
     int const zoomDen = [] { char const* e = std::getenv("DANQING_PROBE_ZOOM"); return e ? atoi(e) : 16; }();
     dqGeom::Vector3d const base = view3d->GetExtents();
     dqGeom::Vector3d const vol{base.x / zoomDen, base.y / zoomDen, base.z / zoomDen};
@@ -602,13 +645,27 @@ TEST(DebugWindowDiag, StandardViewDebugInfoProbe)
 
     for (auto const& v : views) {
         dqRender::TileAdmin::instance().resetStatistics();
-        view3d->SetRotation(dqApp::StandardView::GetStandardRotation(v.id));
-        dqGeom::Range3d const volume = dqGeom::Range3d::CreateXYZXYZ(
-            center.x - vol.x / 2.0, center.y - vol.y / 2.0, center.z - vol.z / 2.0,
-            center.x + vol.x / 2.0, center.y + vol.y / 2.0, center.z + vol.z / 2.0);
-        view3d->LookAtVolume(volume);
-        view.getUeViewport()->InvalidateController();
-        view.getUeViewport()->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+        if (fitRotate) {
+            // 参考机制（StandardViewTool.onPostInstall，ViewTool.ts:3504-3522）：
+            // 绕 getDefaultTargetPointWorld（视心）定点旋转 frustum 点集 →
+            // setupFromFrustum → synchWithView({animateFrustumChange:true})。
+            // 裸 SetRotation 换矩阵会让 frustum 绕 origin 角点甩——视心漂移后
+            // 根瓦被视锥剔除（[SEL] cull 实录：Top/Bottom/Front 三视图内容
+            // 消失）——app 的 ViewTop 等按钮全走本工具（View3DInventor:280）。
+            auto* tool = new dqApp::StandardViewTool(view.getUeViewport(), v.id);
+            if (!tool->run())
+                delete tool;
+        } else {
+            // 旧定比缩放协议路径（SetRotation 换矩阵 + LookAtVolume 重新定心
+            // ——重定心掩盖旋转中心偏差，故旧协议下内容不丢）。
+            view3d->SetRotation(dqApp::StandardView::GetStandardRotation(v.id));
+            dqGeom::Range3d const volume = dqGeom::Range3d::CreateXYZXYZ(
+                center.x - vol.x / 2.0, center.y - vol.y / 2.0, center.z - vol.z / 2.0,
+                center.x + vol.x / 2.0, center.y + vol.y / 2.0, center.z + vol.z / 2.0);
+            view3d->LookAtVolume(volume);
+            view.getUeViewport()->InvalidateController();
+            view.getUeViewport()->synchWithView(dqApp::ViewChangeOptions{/*noSaveInUndo=*/true});
+        }
         // 泵至静默（双趟）。
         for (int pass = 0; pass < 2; ++pass) {
             size_t lastLog = opened->fetcher->requestLog().size();

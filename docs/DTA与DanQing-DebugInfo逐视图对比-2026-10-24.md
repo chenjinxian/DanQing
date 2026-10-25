@@ -131,3 +131,59 @@ cd D:/Github/danqing-rpc-tools
 DTA_SETTLE_MS=45000 node debuginfo-capture.mjs \
   --seed "D:/Github/itwinjs-core/test-apps/display-test-app/assets/newBridge.bim"
 ```
+
+## newBridge fit+rotate 协议逐视图对比（2026-10-25——用户裁定协议，本节为权威版）
+
+**协议（用户 2026-10-25 裁定）**：打开模型 → **Fit 一次** → 8 个标准视图旋转逐个抓
+Debug Info。**零缩放操作**——上文 zoom 泵/定比缩放体协议废弃（"之前对比方式有问题"）。
+瓦已进 `.Tiles` 缓存（用户手动测试 + 采集轮均已生成），Fit 态只有根瓦呈现，八视图
+旋转零新请求——稳态纯渲染帧率对比。
+
+**前置条件**：DTA 实例须前台可见（Electron 后台页 rAF 节流，tracker 全空；带
+`--disable-backgrounding-occluded-windows` 等三 flag 的自管实例 + `Page.bringToFront`
+后仍为真值——FPS=PerformanceMetrics.completeFrameTimings 50 帧滚动，遮挡只压低
+采集便利性不影响真值，消融实验在案：前后台 15.4-16.9 vs 15.4-16.9 持平）。
+
+### 双侧矩阵（newBridge，Fit → 8×View.Standard，2000×1400，2026-10-25）
+
+| 视图 | DTA FPS | DanQing FPS | DTA 瓦态 | DanQing 瓦态 |
+|---|---|---|---|---|
+| Top | 16.67 | 15.30（首视图暖场） | Sel 1 / Elid 7 / **85 prims** | Sel 1 / **80 prims** |
+| Bottom | 16.76 | 29.32 | 同上（八视图恒定） | 同上（八视图恒定） |
+| Left | 16.85 | 29.69 | 同 | 同 |
+| Right | 16.58 | 30.09 | 同 | 同 |
+| Front | 15.38 | 30.02 | 同 | 同 |
+| Back | 15.71 | 30.09 | 同 | 同 |
+| IsoLeft | 16.30 | 29.57 | 同 | 同 |
+| IsoRight | 16.76 | 28.98 | 同 | 同 |
+
+- 两侧八视图瓦状态**逐字段同构**（Selected 1、旋转零请求、根瓦 LOD 呈现；85 vs 80
+  prims = DTA 计入背景/装饰图元的细微差）。
+- **FPS ≈ 2×**：DanQing 稳态 29-30 vs DTA 15.4-16.9（同窗径、同瓦态、同 LOD）。
+  双侧首视图均偏低（着色器编译暖场：DanQing Top 15.3 / DTA 无明显首帧尖峰）。
+
+### 本轮取证附赠：探针旋转机制根因（§11.8/§11.9 实录）
+
+fitrotate 首版探针用裸 `SetRotation(matrix)` 换矩阵——**Top/Bottom/Front 三视图瓦
+内容消失**（[SEL] cull 实录：根瓦球心恰=fit 域中心，若绕视心旋转永不被剔 → 旋转
+没绕视心）。参考机制（StandardViewTool.onPostInstall，ViewTool.ts:3504-3522）=
+**绕 `getDefaultTargetPointWorld`（视心）定点旋转 frustum 点集**（`Transform.
+createFixedPointAndMatrix`）→ `setupFromFrustum` → synchWithView——frustum 刚体
+旋转内容永在锥内。DanQing 的 `dqApp::StandardViewTool` 早已 1:1 移植（app 的
+ViewTop 等按钮全走它，View3DInventor:280）——**引擎无缺陷，是探针绕过了参考机制**
+（旧定比缩放协议的 LookAtVolume 重定心掩盖了该偏差）。探针已改走 StandardViewTool。
+
+### 探针配方（fit+rotate，2026-10-25）
+
+```bash
+# DanQing（DebugWindowDiag.StandardViewDebugInfoProbe，DANQING_PROBE_PROTOCOL=fitrotate）
+DANQING_PROBE_MODEL=newbridge DANQING_PROBE_PROTOCOL=fitrotate \
+  ./build/samples/DisplayTestApp/Debug/DisplayTestAppDtaTest.exe \
+  --gtest_filter='DebugWindowDiag.StandardViewDebugInfoProbe'
+# DTA（debuginfo-capture.mjs 自管实例 + 防节流 flag + bringToFront；Fit 后 8×View.Standard）
+cd D:/Github/danqing-rpc-tools
+node debuginfo-capture.mjs --seed "D:/Github/itwinjs-core/test-apps/display-test-app/assets/newBridge.bim"
+```
+
+上文"Plan A 驻留生成"（park-wheel.ps1）**不再需要**——fit+rotate 协议下瓦态有界
+（根瓦），生成债已由手动测试清偿。
