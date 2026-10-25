@@ -781,8 +781,11 @@ void SceneCompositor::draw(RenderCommands& commands)
     m_target.endPerfMetricRecord();
 
     // Enable Clipping（SceneCompositor.ts:1441-1444——pushViewClip 使栈底视图
-    // clip 生效；popViewClip 与 Overlay Layers 后配对，M-P P-C）。
+    // clip 生效；popViewClip 与 Overlay Layers 后配对，M-P P-C）。perf 段随
+    // 参考补齐（GpuProfiler 行集对齐——2026-10-25 用户对照"比 DTA 要少"）。
+    m_target.beginPerfMetricRecord("Enable Clipping");  // :1441
     m_target.pushViewClip();
+    m_target.endPerfMetricRecord();
 
     // Step 6: Render volume classification
     m_target.beginPerfMetricRecord("Render VolumeClassification");  // :1450
@@ -1101,6 +1104,8 @@ void SceneCompositor::renderAmbientOcclusion(rhi::Driver& driver)
                                    static_cast<float>(ao.blurTexelStepSize)};
 
     // —— Pass 1：AO 计算 → occlusion FBO（:1223-1229）——
+    // perf 段 1:1（:1225 "Compute AO"——GpuProfiler 行集对齐）。
+    m_target.beginPerfMetricRecord("Compute AO");  // :1225
     {
         rhi::RenderPassParams params;
         params.flags.clear = rhi::TargetBufferFlags::COLOR_ALL;
@@ -1128,8 +1133,10 @@ void SceneCompositor::renderAmbientOcclusion(rhi::Driver& driver)
         deactivateProgram(driver);
         driver.endRenderPass();
     }
+    m_target.endPerfMetricRecord();  // End "Compute AO"（:1229）
 
     // —— Pass 2：X 向高斯（occlusion → occlusionBlur——:1231-1239）——
+    m_target.beginPerfMetricRecord("Blur AO X");  // :1233
     {
         rhi::RenderPassParams params;
         params.viewport = {0, 0, rect.width(), rect.height()};
@@ -1153,11 +1160,13 @@ void SceneCompositor::renderAmbientOcclusion(rhi::Driver& driver)
         deactivateProgram(driver);
         driver.endRenderPass();
     }
+    m_target.endPerfMetricRecord();  // End "Blur AO X"（:1239）
 
     // —— Pass 3：Y 向高斯 TestOrder 臂（occlusionBlur → occlusion——
     //  :1241-1249；u_pickDepthAndOrder=单元 1[Blur.ts:110-116]——
     //  needHiddenEdges 的隐藏边替换纹理面随 E3 登记不落[DanQing 无该
     //  纹理——参考的 useMsBuffers/pingPong 复用面]）——
+    m_target.beginPerfMetricRecord("Blur AO Y");  // :1243
     {
         rhi::RenderPassParams params;
         params.viewport = {0, 0, rect.width(), rect.height()};
@@ -1181,8 +1190,7 @@ void SceneCompositor::renderAmbientOcclusion(rhi::Driver& driver)
         deactivateProgram(driver);
         driver.endRenderPass();
     }
-
-
+    m_target.endPerfMetricRecord();  // End "Blur AO Y"（:1249）
 }
 
 // ---------------------------------------------------------------------------

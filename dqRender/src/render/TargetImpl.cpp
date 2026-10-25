@@ -346,6 +346,11 @@ void TargetImpl::drawFrame()
     populateCommandsFromScene();
     endPerfMetricRecord();
 
+    // ← Target.ts:686-698 Planar Classifiers / Shadow Maps / Texture Drapes 三段
+    // perf 记录——DanQing 的对应 draw 调用（drawPlanarClassifiers/drawSolarShadowMap/
+    // drawTextureDrapes）尚未接入 drawFrame，记录随 draw 接入时落地（无 draw 不包
+    // 空段——行集待这三段绘制移植后与参考对齐）。
+
     // Render-command breakdown snapshot for the diagnostics panel
     // (RenderCommands.dump, RenderCommands.ts:742-771 — Target.getRenderCommands
     // source). Captured post-population; the panel reads it between frames.
@@ -355,13 +360,19 @@ void TargetImpl::drawFrame()
     // Ported from: itwinjs-core Target.paintScene() line 704
     m_compositor->draw(m_commands);
 
-    // ← Target.ts:707-715 Overlay Draws（World/View Overlays 嵌套）
+    // ← Target.ts:707-715 Overlay Draws（World Overlays → View Overlays 嵌套，
+    // 各自独立段——世界/视图 overlay 行分开呈现）
     beginPerfMetricRecord("Overlay Draws");
-    beginPerfMetricRecord("World Overlays");
     // Step 4: Overlay rendering — world and view overlay passes
     // Ported from: itwinjs-core Target.paintScene() lines 706-707
     drawOverlays();
     endPerfMetricRecord();
+
+    // ← Target.ts:725-727 beginPerfMetricRecord("Screenspace Effects") →
+    // renderSystem.screenSpaceEffects.apply(this)。DanQing 的效果注册表
+    // （System.ts:967 screenSpaceEffects）未移植——apply 今日为 no-op，行随
+    // 参考保留（参考空注册表时同形 ~0ms 行）；注册表移植时填实现。
+    beginPerfMetricRecord("Screenspace Effects");
     endPerfMetricRecord();
 
     // ← Target.ts:732 beginPerfMetricRecord("End Paint")
@@ -514,8 +525,14 @@ void TargetImpl::drawOverlays()
     if (std::getenv("DANQING_DP_TRACE"))
         fprintf(stderr, "[DP] drawOverlays woCmds=%zu\n",
                 m_commands.getCommands(RenderPass::WorldOverlay).size());
+    // ← Target.ts:709-714 的嵌套 perf 段：World Overlays 与 View Overlays
+    // 各自独立（此前共占 "World Overlays" 一段——GpuProfiler 行集对齐）。
+    beginPerfMetricRecord("World Overlays");   // :709
     m_compositor->drawPass(m_commands, RenderPass::WorldOverlay);
+    endPerfMetricRecord();                     // :711
+    beginPerfMetricRecord("View Overlays");    // :712
     m_compositor->drawPass(m_commands, RenderPass::ViewOverlay);
+    endPerfMetricRecord();                     // :714
 
     driver.endRenderPass();
 }
