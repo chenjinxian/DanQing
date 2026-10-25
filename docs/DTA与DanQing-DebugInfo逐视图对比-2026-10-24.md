@@ -187,3 +187,32 @@ node debuginfo-capture.mjs --seed "D:/Github/itwinjs-core/test-apps/display-test
 
 上文"Plan A 驻留生成"（park-wheel.ps1）**不再需要**——fit+rotate 协议下瓦态有界
 （根瓦），生成债已由手动测试清偿。
+
+### 帧分段账（2026-10-25 续——"只快 2× 是否符合语言差距"的归因定案）
+
+fit 态帧分段双侧实测（同条件：Track FPS 强制连续渲染、前台、2000×1400/1562×1020）：
+
+| 侧 | 帧总耗时 | 语言敏感段 | 呈现/合成段 |
+|---|---|---|---|
+| DTA | **61.3ms**（spf 50 帧均值；FPS 16.3=真实帧时，非 vsync 量化） | **~60ms**（JS 24 步管线+逐帧装饰重建+2D canvas 装饰——GL 27 分段合计仅 ~1ms，`performanceMetrics.frameTimings` 实测） | Chromium 合成 |
+| DanQing | 32-33ms | **~9.5ms**（prep 0.8 + scene 0.01 + draw 8.7[含 GL 内 canvas 装饰光栅化——登记偏差]，`[FRAMESUM]` 实测） | **present 22-25ms（SwapBuffers vsync 等待）** |
+
+**结论**：
+1. **渲染工作量之比 ≈ 6.3×（60ms : 9.5ms）**——这才是该状态下 C++/TS 的真实差距面。
+2. FPS 表观 2×（16 vs 30）是**架构噪声合成**：DanQing 的工作量 9.5ms 被 vsync 槽位
+   封顶（60Hz 下 9.5ms 工作 + 槽位错过 → 稳定 2 槽 30fps）；DTA 61ms 是真 JS 成本。
+   若 present 不阻塞，DanQing 该态理论 ~100fps。
+3. 语言帮不了的段：present/vsync（WGL SwapBuffers 与 Chromium 合成器，两边架构面）；
+   数据重档 GPU/几何主导态（编辑大桥 62.5 vs 56.4 = 1.1×，同因）。
+4. 用户问题"只快一倍符合 C++/TS 差距吗"——**不符合，且实测不是**：分段账定案 ≈6×。
+
+### 帧分段账配方
+
+```bash
+# DanQing：[FRAMESUM] 每 120 帧分段均值（DANQING_UI_TRACE 门控，零常开销）
+DANQING_PROBE_MODEL=newbridge DANQING_PROBE_PROTOCOL=fitrotate DANQING_UI_TRACE=1 \
+  ./build/samples/DisplayTestApp/Release/DisplayTestAppDtaTest.exe \
+  --gtest_filter='DebugWindowDiag.StandardViewDebugInfoProbe'
+# DTA：node debuginfo-frametime.mjs（danqing-rpc-tools——自管实例 + 面板直构 +
+# Track FPS[=vp.target.performanceMetrics 活体] + Fit 后读 frameTimings/spf）
+```

@@ -2130,12 +2130,32 @@ void Viewport::RenderFrame()
             return std::chrono::duration<double, std::milli>(b - a).count();
         };
         double const total = ms(tFrame0, tEnd);
+        // 分段均值聚合（2026-10-25 fit+rotate 帧分段账——轻帧态 >40ms 门全静默，
+        // 每 120 帧落一行均值供语言差距归因：prep/scene=语言敏感段，
+        // present=呈现架构差段）。
+        static double sSumTotal = 0.0, sSumPrep = 0.0, sSumScene = 0.0, sSumDraw = 0.0, sSumPresent = 0.0;
+        static uint64_t sSumN = 0;
+        double const prepMs = ms(tFrame0, tPrep) - sceneMs;
+        double const drawMs = ms(tDraw0, tDraw1);
+        double const presentMs = ms(tDraw1, tEnd);
+        sSumTotal += total; sSumPrep += prepMs; sSumScene += sceneMs;
+        sSumDraw += drawMs; sSumPresent += presentMs;
+        if (++sSumN >= 120) {
+            fprintf(stderr,
+                    "[FRAMESUM] n=%llu avgTotal=%.2f avgPrep=%.2f avgScene=%.2f avgDraw=%.2f avgPresent=%.2f"
+                    " w=%d h=%d\n",
+                    (unsigned long long)sSumN, sSumTotal / sSumN, sSumPrep / sSumN, sSumScene / sSumN,
+                    sSumDraw / sSumN, sSumPresent / sSumN, width(), height());
+            fflush(stderr);
+            sSumTotal = sSumPrep = sSumScene = sSumDraw = sSumPresent = 0.0;
+            sSumN = 0;
+        }
         if (total > 40.0) {
             fprintf(stderr,
                     "[FRAME] total=%.1f prep=%.1f scene=%.1f draw=%.1f present=%.1f"
                     " redraw=%d w=%d h=%d\n",
-                    total, ms(tFrame0, tPrep) - sceneMs, sceneMs,
-                    ms(tDraw0, tDraw1), ms(tDraw1, tEnd), isRedrawNeeded ? 1 : 0,
+                    total, prepMs, sceneMs,
+                    drawMs, presentMs, isRedrawNeeded ? 1 : 0,
                     width(), height());
             fflush(stderr);
         }
