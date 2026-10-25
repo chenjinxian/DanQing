@@ -16,10 +16,14 @@
 #include <QMouseEvent>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSizeGrip>
 #include <QStyle>
 #include <QVBoxLayout>
 
 namespace Gui {
+
+// 每列保底宽（HOST UI DEVIATION——参考单列 480px 的双列化，2026-10-25 用户指令）。
+constexpr int kDebugPanelColumnWidth = 400;
 
 // ---------------------------------------------------------------------------
 // Construction — DebugWindow.ts:17-37 + DiagnosticsPanel.ts:53-103
@@ -101,6 +105,15 @@ void DebugWindow::buildUi()
     m_titleLabel = new QLabel(m_titleBar);
     headerLayout->addWidget(m_titleLabel);
     headerLayout->addStretch(1);
+    // ← Window.ts:141-146 resize corner（isResizable==true 时右下/标题栏缩放柄）。
+    // DebugWindow.ts:45 isResizable=false——2026-10-25 用户指令（"面板太小/滚动
+    // 麻烦"）转可缩放：标题栏右侧 QSizeGrip 承载（frameless 窗的 resize corner
+    // 等价物）。拖拽移动（DragState）在标题栏空白区，与柄互不干扰（柄自消费
+    // 鼠标事件）。
+    m_resizeGrip = new QSizeGrip(m_titleBar);
+    m_resizeGrip->setFixedSize(16, 16);
+    m_resizeGrip->setToolTip(QStringLiteral("Resize"));
+    headerLayout->addWidget(m_resizeGrip);
     m_closeButton = new QPushButton(QStringLiteral("x"), m_titleBar);
     m_closeButton->setFixedSize(16, 16);
     m_closeButton->setToolTip(QStringLiteral("Close"));
@@ -111,6 +124,13 @@ void DebugWindow::buildUi()
 
     // Content — DiagnosticsPanel.ts:53-103: each widget in order, <hr>
     // separators between (the QFrame HLine rows below). DTA excludes keyin.
+    // HOST UI DEVIATION（2026-10-25 用户指令"面板太小/信息太少/滚动麻烦"）：
+    // 参考 .debugPanel { width: 480px } 是单列（浏览器浮层，滚动自然）；
+    // DanQing 改双列（左=统计族 FPS/TileStats/TileMem，右=诊断族
+    // RenderCmds/Memory/Gpu/ToolSettings）+ 最小宽 2×400 + 打开即高窗
+    // （85% 宿主高，见 showPanel）+ 标题栏 QSizeGrip 缩放。7 组件集合与
+    // 行为不变（逐个仍是移植的 frontend-devtools 组件；行为面锁在
+    // DebugWindowDiagTest——findChild 按 objectName/text 寻址，布局无关）。
     auto* scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
@@ -119,61 +139,69 @@ void DebugWindow::buildUi()
     // 自动横滚（"滚动条一下在动、窗口显示跳动"的完整链）。常驻后宽度从打开起
     // 就稳定，跟踪开启只长纵向、永不出横向滚动。
     scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
-    // ← .debugPanel { width: 480px } (public/index.css:341-355) — 面板宽度由
-    // CSS 固定，不是内容收缩宽度。固定 scroll area 使视口恒为 480：统计表的
-    // 两个 50% 列各得 ~240px，"Decoding mean time (ms): 0" 等长行完整落列。
-    // （此前自创的内容 min 350 + 窗口 adjustSize 走 QScrollArea 默认 sizeHint
-    // ~256 → 窗口过窄，右列滚出视口被裁。）
+    // ← .debugPanel { width: 480px } (public/index.css:341-355) 的双列化：
+    // 每列保底 400（统计表两个 50% 列各 ~200px，"Decoding mean time (ms): 0"
+    // 等长行完整落列），setMinimumWidth 替代原 setFixedWidth——用户可经
+    // QSizeGrip 放大，不可缩到两列以下。宽度从打开起稳定，永不出横向滚动。
     int const sbExtent = style()->pixelMetric(QStyle::PM_ScrollBarExtent);
-    scroll->setFixedWidth(480 + sbExtent + 2 * scroll->frameWidth());
+    scroll->setMinimumWidth(2 * kDebugPanelColumnWidth + 8 + sbExtent + 2 * scroll->frameWidth());
     auto* content = new QWidget(scroll);
     m_content = content;
-    auto* panel = new QVBoxLayout(content);
-    panel->setContentsMargins(3, 3, 3, 3);  // .debugPanel padding: 3px
-    panel->setSpacing(4);
+    auto* columns = new QHBoxLayout(content);
+    columns->setContentsMargins(3, 3, 3, 3);  // .debugPanel padding: 3px
+    columns->setSpacing(4);
 
-    auto addSeparator = [&panel, content]() {  // DiagnosticsPanel.ts:120-122 addSeparator
+    auto* colStat = new QVBoxLayout;
+    colStat->setSpacing(4);
+    auto* colDiag = new QVBoxLayout;
+    colDiag->setSpacing(4);
+    auto addSeparator = [content](QVBoxLayout* col) {  // DiagnosticsPanel.ts:120-122
         auto* sep = new QFrame(content);
         sep->setFrameShape(QFrame::HLine);
         sep->setStyleSheet(QStringLiteral("color: #c0c0c0;"));
-        panel->addWidget(sep);
+        col->addWidget(sep);
     };
 
-    // :59-62 FpsTracker.
+    // 左列 = 统计族（:59-62 FPS → :76-79 TileStats → :81-84 TileMem）。
     m_fpsTracker = new FpsTracker(m_vp, content);
-    panel->addWidget(m_fpsTracker);
-    addSeparator();
+    colStat->addWidget(m_fpsTracker);
+    addSeparator(colStat);
 
     // :64-74 KeyinField — EXCLUDED by DTA (DebugWindow.ts:20).
 
-    // :76-79 TileStatisticsTracker.
     m_statsTracker = new TileStatisticsTracker(m_vp, content);
-    panel->addWidget(m_statsTracker);
-    addSeparator();
+    colStat->addWidget(m_statsTracker);
+    addSeparator(colStat);
 
-    // :81-84 TileMemoryBreakdown.
     m_tileMemoryBreakdown = new TileMemoryBreakdown(content);
-    panel->addWidget(m_tileMemoryBreakdown);
-    addSeparator();
+    colStat->addWidget(m_tileMemoryBreakdown);
+    colStat->addStretch(1);
 
-    // :86-89 RenderCommandBreakdown.
+    // 列间分隔（单列时代是行间 HLine；双列下为竖线）。
+    auto* vline = new QFrame(content);
+    vline->setFrameShape(QFrame::VLine);
+    vline->setStyleSheet(QStringLiteral("color: #c0c0c0;"));
+    columns->addLayout(colStat, 1);
+    columns->addWidget(vline);
+
+    // 右列 = 诊断族（:86-89 RenderCmds → :91-94 Memory → :96-99 Gpu →
+    // :101-102 ToolSettings，末位无分隔——同参考）。
     m_renderCommands = new RenderCommandBreakdown(content);
-    panel->addWidget(m_renderCommands);
-    addSeparator();
+    colDiag->addWidget(m_renderCommands);
+    addSeparator(colDiag);
 
-    // :91-94 MemoryTracker.
     m_memoryTracker = new MemoryTracker(m_vp, content);
-    panel->addWidget(m_memoryTracker);
-    addSeparator();
+    colDiag->addWidget(m_memoryTracker);
+    addSeparator(colDiag);
 
-    // :96-99 GpuProfiler.
     m_gpuProfiler = new GpuProfiler(content);
-    panel->addWidget(m_gpuProfiler);
-    addSeparator();
+    colDiag->addWidget(m_gpuProfiler);
+    addSeparator(colDiag);
 
-    // :101-102 ToolSettingsTracker (last — no separator after, matches :101-102).
     m_toolSettingsTracker = new ToolSettingsTracker(m_vp, content);
-    panel->addWidget(m_toolSettingsTracker);
+    colDiag->addWidget(m_toolSettingsTracker);
+    colDiag->addStretch(1);
+    columns->addLayout(colDiag, 1);
 
     scroll->setWidget(content);
     outer->addWidget(scroll, 1);
@@ -234,12 +262,19 @@ void DebugWindow::showPanel()
     m_isOpen = true;
     m_content->ensurePolished();
     auto const margins = layout()->contentsMargins();
-    int const w = 480 + style()->pixelMetric(QStyle::PM_ScrollBarExtent)
+    int const w = 2 * kDebugPanelColumnWidth + 8
+                + style()->pixelMetric(QStyle::PM_ScrollBarExtent)
                 + margins.left() + margins.right();
     int h = m_titleBar->height() + m_content->sizeHint().height()
           + margins.top() + margins.bottom();
-    if (parentWidget())  // stay inside the surface (DragState clamp domain)
-        h = std::min(h, parentWidget()->height());
+    if (parentWidget()) {
+        // HOST UI DEVIATION（2026-10-25 用户指令）：参考打开高度=内容天然高
+        // （跟踪折叠态，之后展开全靠滚动）；DanQing 打开即 85% 宿主高
+        // （双列内容一眼可见，滚动只剩兜底），不低于 560（折叠态也有用）。
+        int const cap = static_cast<int>(parentWidget()->height() * 0.85);
+        h = std::min(h, cap);
+        h = std::max(h, std::min(560, parentWidget()->height()));
+    }
     resize(w, h);
     setVisible(vpSelected);
     raise();

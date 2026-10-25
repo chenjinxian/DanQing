@@ -2,7 +2,9 @@
 // DanQing DisplayTestApp — Debug info window
 // Ported from: itwinjs-core test-apps/display-test-app/src/frontend/DebugWindow.ts
 //              + frontend/Window.ts (the floating-window shell: title bar with
-//              close, drag-to-move, isPinned, isResizable=false)
+//              close, drag-to-move, isPinned; DebugWindow.ts:45 isResizable=false
+//              ——2026-10-25 用户指令转可缩放[标题栏 QSizeGrip=resize corner 等价物]，
+//              且面板双列化+高窗化，见 buildUi 的 HOST UI DEVIATION 注)
 //              + core/frontend-devtools/src/widgets/DiagnosticsPanel.ts
 //              (the 7-widget panel; DTA excludes KeyinField — DebugWindow.ts:20)
 //
@@ -24,6 +26,7 @@
 
 class QLabel;
 class QPushButton;
+class QSizeGrip;
 
 namespace dqApp {
 class Viewport;
@@ -74,6 +77,9 @@ private:
     QWidget* m_titleBar = nullptr;     // ← Window.ts WindowHeader
     QLabel* m_titleLabel = nullptr;    // ← :129-136 _titleElement
     QPushButton* m_closeButton = nullptr;  // ← :140-143 _closeElement
+    QSizeGrip* m_resizeGrip = nullptr; // ← Window.ts resize corner（2026-10-25 用户指令：
+                                       //   DebugWindow.ts:45 isResizable false→true 化——
+                                       //   frameless 窗的缩放柄等价物）
     QWidget* m_content = nullptr;      // ← contentDiv 内的 debugPanel（show 时量其天然高度）
     QPoint m_dragOffset;               // DragState position tracking
 
