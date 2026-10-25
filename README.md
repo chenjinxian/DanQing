@@ -28,7 +28,7 @@ constants.
   the same way.
 - **Real performance engineering, measured** — every number below is reproduced
   by the in-repo harness (see [Performance](#performance)).
-- **Reference-fidelity methodology** — 2,956 automated tests including
+- **Reference-fidelity methodology** — 2,960 automated tests including
   pixel-level regression locks replaying real-backend RPC tile dumps; the
   sample app mirrors itwinjs display-test-app's UI and interaction 1:1.
 - **Embeddable SDK** — engine modules `dqBase/dqGeom/dqCommon/dqRender` have
@@ -89,6 +89,10 @@ Developer surface
 - itwinjs display-test-app parity UI: 26-item main toolbar, key-in console
   (`dta ...` tools: save image, record fps, output shaders, macro playback,
   tile-tree inspector…), status bar with FPS / tile-load / snap modes.
+- **Debug Info panel at full DTA parity** (FPS / tile-statistics 18 fields /
+  tile & system memory / render-command breakdown / GPU / tool settings),
+  plus an 8-standard-view probe that replays the reference's rotation set
+  for same-view performance comparison (`docs/DTA与DanQing-DebugInfo逐视图对比-2026-10-24.md`).
 - `ITileFetcher` / `ITileTreePropsProvider` DI seams: the engine consumes
   bytes; hosts decide where bytes come from (the sample app replays local
   dump packages — zero network by construction).
@@ -107,6 +111,8 @@ NVIDIA desktop GPU); sources: in-repo pixel-lock harness and the
 | Open "Bridge Edit" (380,738 tiles available) | **2.0 s** |
 | Per-tile feature-table build on the largest tiles (108k features) | **1,635 ms → 48 ms** (O(n²) → O(n log n) port-fidelity fix) |
 | UI thread longest stall during a 20-step continuous zoom on the bridge | **≤ 235 ms** (was 10.4 s before async fetch/parse) |
+| Hover-pick cost during pan on the heavy bridge viewport | **45.6 → 25.0 ms/frame** (15 Hz pick throttle, ported `ToolAdmin` semantics) |
+| Frame render-work vs the reference display-test-app (fit view, identical tile state, 8 standard rotations) | DanQing **~9.5 ms** vs DTA **~60 ms** per frame (≈ **6×**; raw FPS shows only 2× because DanQing is capped by vsync slot quantization — segment breakdown in the comparison doc) |
 | Zoom / pan with LOD refinement | live in the hero GIF above |
 
 Open-to-first-frame, all eight demo models (Release, same machine): **New Bridge
@@ -119,9 +125,10 @@ Bridge Edit **2.0 s** (380k-tile domain).
 > breakdown, streaming/LOD behavior, per-model verification recipes, diagnostics
 > switches and troubleshooting): **[大规模模型加载渲染性能与验证指南](docs/大规模模型加载渲染性能与验证指南.md)**.
 
-Test gate: **2,956 tests — 2,928 pass, 28 skip (headless-GL family), 0 fail**
-(Debug, full suite; 54 dump-driven locks self-skip when the big data packages
-are not downloaded — see below).
+Test gate: **2,960 tests — 2,939 pass, 20 skip (headless-GL family), 1
+registered environment-family failure** (screen-capture-layer flake, isolated
+re-runs pass; see CLAUDE.md TD-26). Debug, full suite; 54 dump-driven locks
+self-skip when the big data packages are not downloaded — see below.
 
 ### Quick start
 
@@ -220,6 +227,9 @@ part of the SDK).
 - `docs/DisplayTestApp-模型打开与数据加载说明.md` — model-open / data-loading explainer
 - `docs/大规模模型加载渲染性能与验证指南.md` — **large-model loading & rendering
   performance guide + per-model download/run/verify recipes**
+- `docs/DTA与DanQing-DebugInfo逐视图对比-2026-10-24.md` — per-view performance
+  comparison vs the reference app through the Debug Info panel (fit+rotate
+  protocol, frame-segment breakdown, ≈6× render-work ratio)
 - `docs/DanQing-C++代码规范.md` — C++ format rules (subordinate to CLAUDE.md)
 - Milestone plan/record docs (`docs/阶段*-实现计划-*.md`) — per-milestone
   forensic records
@@ -243,7 +253,7 @@ purposes.
 
 - **大体量模型，流畅交互**——旗舰压轴模型 **New Bridge：10km 大桥，169,920 瓦 / 47.5GB** imdl 载荷，打开至首帧 **2.25s**、主线程阻塞仅 **4ms**，缩放时 d1–d13 各级 LOD 实时流式细化；38 万瓦 1.5km 桥梁（5GB）与另外五个真实后端模型同构浏览。
 - **性能工程全部实测**——下表每个数字都可由仓内 harness 复核（见[性能](#性能)）。
-- **参考保真方法论**——2956 项自动化测试，含真实后端 RPC dump 回放的像素级回归锁；示例程序与 itwinjs display-test-app 的 UI 与交互 1:1。
+- **参考保真方法论**——2960 项自动化测试，含真实后端 RPC dump 回放的像素级回归锁；示例程序与 itwinjs display-test-app 的 UI 与交互 1:1。
 - **可嵌入 SDK**——引擎模块 `dqBase/dqGeom/dqCommon/dqRender` 公开 API 零 Qt、可独立构建；Qt 桌面端只是宿主。引擎构造性零网络。
 
 ### 截图与演示
@@ -277,6 +287,7 @@ purposes.
 
 开发者面
 - 与 itwinjs display-test-app 对齐的 UI：26 项主工具栏、key-in 控制台（`dta ...` 工具族：save image/record fps/output shaders/macro/瓦树检查器…）、状态栏（FPS/瓦装载/捕捉模式）。
+- **Debug Info 面板与 DTA 完全对齐**（FPS / 瓦统计 18 字段 / 瓦与系统内存 / 渲染命令分解 / GPU / 工具设置），附 8 标准视图探针回放参考旋转集做同视图性能对比（`docs/DTA与DanQing-DebugInfo逐视图对比-2026-10-24.md`）。
 - `ITileFetcher`/`ITileTreePropsProvider` DI 缝隙：引擎只消费字节，取数归宿主（示例程序回放本地数据包——构造性零网络）。
 
 ### 性能
@@ -291,6 +302,8 @@ purposes.
 | 打开 Bridge Edit（380,738 瓦可用域） | **2.0s** |
 | 最大瓦特征表构建（108k 特征/瓦） | **1635ms → 48ms**（O(n²)→O(n log n) 保真修复） |
 | 桥模型 20 级连续缩放 UI 线程最长停顿 | **≤235ms**（异步化前 10.4s） |
+| 重档桥视口平移+悬停拾取帧成本 | **45.6 → 25.0ms/帧**（15Hz 拾取节流，`ToolAdmin` 语义移植） |
+| 与参考 display-test-app 同视图渲染工作量对比（fit 态、同瓦态、8 标准旋转） | DanQing **~9.5ms** vs DTA **~60ms** 每帧（≈ **6×**；FPS 表观仅 2×——DanQing 被 vsync 槽位量化封顶，分段账见对比文档） |
 | 缩放/平移 LOD 细化 | 见顶部 hero 动图 |
 
 八模型打开耗时（Release 同机实测）：**New Bridge 2.25s（47.5GB / 169,920 瓦——最大模型，主线程阻塞 4ms）** /
@@ -300,7 +313,7 @@ Compatibility Test Seed **0.45s** / Mirukuru **0.44s** / Baytown **0.44s** /
 > 加载管线五段走读（异步管线/逐瓦耗时账/流式 LOD 行为/逐模型验证配方/诊断开关
 > 与故障排查）：**[大规模模型加载渲染性能与验证指南](docs/大规模模型加载渲染性能与验证指南.md)**。
 
-测试门禁：**2956 项 = 2928 通过 + 28 跳过（headless-GL 族）+ 0 失败**（Debug 全量；未下载大数据包时 54 只 dump 锁自动跳过——见下）。
+测试门禁：**2960 项 = 2939 通过 + 20 跳过（headless-GL 族）+ 1 在册环境态族失败**（屏幕捕获层闪溅，隔离复跑全绿——见 CLAUDE.md TD-26）（Debug 全量；未下载大数据包时 54 只 dump 锁自动跳过——见下）。
 
 ### 快速开始
 
@@ -376,6 +389,7 @@ ctest --test-dir build -C Debug --output-on-failure
 - `docs/DTA功能对照与专业化分析-2026-09-30.md` — 与 itwinjs display-test-app 的 85 行功能对照矩阵
 - `docs/DisplayTestApp-模型打开与数据加载说明.md` — 模型打开/数据加载说明
 - `docs/大规模模型加载渲染性能与验证指南.md` — **大体量模型加载与渲染性能指南 + 逐模型下载/运行/验证配方**
+- `docs/DTA与DanQing-DebugInfo逐视图对比-2026-10-24.md` — 经 Debug Info 面板与参考应用的逐视图性能对比（fit+rotate 协议、帧分段账、≈6× 渲染工作量比）
 - `docs/DanQing-C++代码规范.md` — C++ 格式规范（CLAUDE.md 的从属参考）
 - 里程碑计划/实录文档（`docs/阶段*-实现计划-*.md`）——逐里程碑取证台账
 
