@@ -51,8 +51,11 @@ dqCommon::TextLayoutRanges computeRangesForTextLayoutQt(
 class TextAnnotationHost final : public dqApp::IDecorator {
 public:
     // --- TextEditor 状态面（:47-70 同名） ---
+    // Anchor 字段序 = 参考 TextAnnotationAnchor（vertical 在前，horizontal 在后
+    // ——TextAnnotation.h:108-115 1:1 参考接口声明序）；勿按 horizontal 前缀位
+    // 置初始化（两者同为 string，错序可编译但语义反转）。
     dqCommon::TextAnnotationProps::Anchor anchor{
-        dqCommon::AnchorHorizontal::Left, dqCommon::AnchorVertical::Top};
+        dqCommon::AnchorVertical::Top, dqCommon::AnchorHorizontal::Left};
     dqGeom::Point3d origin;
     double rotation = 0.0;  // degrees（yaw）
     double offsetX = 0.0, offsetY = 0.0;

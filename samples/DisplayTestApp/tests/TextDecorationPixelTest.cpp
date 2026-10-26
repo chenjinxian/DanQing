@@ -108,7 +108,6 @@ FrameScan scanFrame(dqApp::Viewport& vp)
     QImage image(QString::fromStdString(path));
     if (image.isNull())
         return out;
-
     int const w = image.width();
     int const h = image.height();
     int minX = w, maxX = -1;

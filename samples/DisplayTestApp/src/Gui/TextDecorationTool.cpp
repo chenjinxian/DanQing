@@ -7,6 +7,7 @@
 #include "dqApp/Application.h"
 #include "dqApp/DecorateContext.h"
 #include "dqApp/ToolAdmin.h"
+#include "dqApp/ViewState.h"
 #include "dqRender/GraphicBuilder.h"
 #include "dqRender/RenderSystem.h"
 
@@ -123,7 +124,9 @@ void TextAnnotationHost::clear()
     origin = dqGeom::Point3d::FromZero();
     rotation = 0.0;
     offsetX = offsetY = 0.0;
-    anchor = {dqCommon::AnchorHorizontal::Center, dqCommon::AnchorVertical::Middle};
+    // Anchor{vertical, horizontal}（参考 TextDecoration.ts:148 clear 复位
+    // center/middle；字段序见 TextAnnotationAnchor 声明）。
+    anchor = {dqCommon::AnchorVertical::Middle, dqCommon::AnchorHorizontal::Center};
     debugAnchorPointAndRange = false;
     runStyle = dqCommon::TextStyleSettingsProps{};
     runStyle.font = dqCommon::FontFamilySelector{dqCommon::FontType::TrueType, "Arial"};
@@ -297,10 +300,25 @@ bool TextAnnotationHost::update(dqApp::Viewport& vp)
 
     dqCommon::TextAnnotationProps ap = annotationProps();
     dqCommon::TextAnnotation annotation = dqCommon::TextAnnotation::fromJSON(&ap);
+    if (std::getenv("DANQING_TEXT_TRACE")) {
+        dqGeom::Transform const tf = annotation.computeTransform(layout.range, 1.0);
+        dqGeom::Point3d const p0 = tf.MultiplyPoint3d(dqGeom::Point3d::FromZero());
+        dqGeom::Point3d const anc = annotation.computeAnchorPoint(layout.range);
+        std::fprintf(stderr,
+                     "[TEXT-xf] anchor=(%s,%s) anchorPt=(%.3f,%.3f) origin0->(%.3f,%.3f)\n",
+                     annotation.anchor.horizontal.c_str(), annotation.anchor.vertical.c_str(),
+                     anc.x, anc.y, p0.x, p0.y);
+    }
 
     m_stream.clear();
     if (std::getenv("DANQING_TEXT_TRACE"))
-        std::fprintf(stderr, "[TEXT-upd] layout lines=%zu\n", layout.lines.size());
+        std::fprintf(stderr,
+                     "[TEXT-upd] layout lines=%zu range=(%.3f,%.3f)-(%.3f,%.3f) text=(%.3f,%.3f)-(%.3f,%.3f)\n",
+                     layout.lines.size(),
+                     layout.range.low.x, layout.range.low.y,
+                     layout.range.high.x, layout.range.high.y,
+                     layout.textRange.low.x, layout.textRange.low.y,
+                     layout.textRange.high.x, layout.textRange.high.y);
     dqCommon::AppendTextAnnotationGeometryArgs gargs;
     gargs.annotation = &annotation;
     gargs.layout = &layout;
@@ -374,7 +392,10 @@ bool TextAnnotationHost::update(dqApp::Viewport& vp)
             QList<QPointF> const advances = font.advancesForGlyphIndexes(glyphIndices);
 
             // scale = height/emPx（宽向 × widthFactor；y 翻转——QPainterPath
-            // y 向下 vs 文本数学 y 向上）。
+            // y 向下 vs 文本数学 y 向上）。度量与布局缝同基（Qt 实测：
+            // QFontMetricsF 于 pixelSize 100 的 "HELLO" advance=312.72 vs
+            // QRawFont advances 之和 316.42，±1.2% 字距舍入——布局宽 62.548
+            // 与绘制宽 ≈63.3 于 h=20 一致）。
             double const scale = ts.height / kGlyphEmPx;
             double const wf = ts.widthFactor ? *ts.widthFactor : 1.0;
             dqGeom::Transform const place = placement.MultiplyTransform(
@@ -489,7 +510,16 @@ bool runTextDecorationCommand(dqApp::Viewport& vp, TextAnnotationHost& editor,
     if (cmd == "init")
     { editor.init(vp); return true; }
     if (cmd == "center") {
-        // vp.view.getCenter() —— NPC 立方中心 → 世界（DanQing 面）。
+        // Ported from: TextDecoration.ts:353 — editor.origin = vp.view.getCenter()。
+        // ViewState3d.getCenter 1:1（ViewState.cpp:353）。2d 面 DanQing ViewState
+        // 基类无 getCenter（ViewState3d 专属）→ 回退 NPC 立方中心（EQUIVALENCE：
+        // 发散=2d 视口视图中心取值；验证=本工具演示/测试均 3d 视图）。
+        if (auto* view = vp.GetView()) {
+            if (auto* view3d = view->AsViewState3d()) {
+                editor.origin = view3d->getCenter();
+                return true;
+            }
+        }
         editor.origin = vp.NpcToWorld(dqGeom::Point3d::From(0.5, 0.5, 0.5));
         return true;
     }
