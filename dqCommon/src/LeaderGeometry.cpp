@@ -34,7 +34,7 @@ std::vector<dqGeom::Point3d> sampleFrame(FrameGeometryResult const& frameCurve)
 
 dqGeom::Point3d plusScaled(dqGeom::Point3d const& p, dqGeom::Vector3d const& v, double s)
 {
-    return Point3d::From(p.x + v.x * s, p.y + v.y * s, p.z + v.z * s);
+    return dqGeom::Point3d::From(p.x + v.x * s, p.y + v.y * s, p.z + v.z * s);
 }
 
 }  // namespace
@@ -72,12 +72,14 @@ bool createTerminatorGeometry(CreateTerminatorGeometryArgs& args)
         fill.display = FillDisplay::Always;
         builder.appendGeometryParamsChange(args.params, &fill);
     };
+    // DanQing appendGeometry 返回 void（GeometryQueryPtr 转入 m_geometry 持活；
+    // 参考 appendGeometryQuery 的 bool 面——失败域为分配，登记 EQUIVALENCE）。
     auto addGeometry = [&](dqGeom::GeometryQuery* content, bool useLoop = false) {
         if (useLoop)
-            result = result && builder.appendGeometry(dqGeom::Loop::Create(
-                          {dqBase::StaticCast<dqGeom::CurvePrimitive>(content->clone())}));
+            builder.appendGeometry(dqGeom::Loop::Create(
+                {dqBase::StaticCast<dqGeom::CurvePrimitive>(content->clone())}));
         else
-            result = result && builder.appendGeometry(content->clone());
+            builder.appendGeometry(content->clone());
     };
 
     // shape = isArrow ? leader.terminatorShape : leader.targetPointShape（:189）。
@@ -85,29 +87,29 @@ bool createTerminatorGeometry(CreateTerminatorGeometryArgs& args)
         switch (args.textStyleSettings.leaderTerminatorShape) {
             case TerminatorShape::OpenArrow: {
                 auto ls = dqGeom::LineString3d::create({point1, point, point2});
-                addGeometry(ls.get());
+                addGeometry(ls.Get());
                 break;
             }
             case TerminatorShape::ClosedArrow: {
                 auto ls = dqGeom::LineString3d::create({point1, point, point2, point1});
-                addGeometry(ls.get());
+                addGeometry(ls.Get());
                 break;
             }
             case TerminatorShape::ClosedArrowFilled: {
                 addFillParams();
                 auto ls = dqGeom::LineString3d::create({point1, point, point2, point1});
-                addGeometry(ls.get(), /*useLoop=*/true);
+                addGeometry(ls.Get(), /*useLoop=*/true);
                 break;
             }
             case TerminatorShape::Circle: {
                 auto circle = dqGeom::Arc3d::CreateXY(point, terminatorHalfHeight);
-                addGeometry(circle.get());
+                addGeometry(circle.Get());
                 break;
             }
             case TerminatorShape::CircleFilled: {
                 addFillParams();
                 auto circle = dqGeom::Arc3d::CreateXY(point, terminatorHalfHeight);
-                addGeometry(circle.get(), /*useLoop=*/true);
+                addGeometry(circle.Get(), /*useLoop=*/true);
                 break;
             }
             case TerminatorShape::Slash: {
@@ -121,7 +123,7 @@ bool createTerminatorGeometry(CreateTerminatorGeometryArgs& args)
                 dqGeom::Point3d const endPoint =
                     plusScaled(point, normalizedVector, terminatorHalfHeight);
                 auto slashLine = dqGeom::LineSegment3d::create(startPoint, endPoint);
-                addGeometry(slashLine.get());
+                addGeometry(slashLine.Get());
                 break;
             }
             case TerminatorShape::None:
@@ -135,55 +137,55 @@ bool createTerminatorGeometry(CreateTerminatorGeometryArgs& args)
         case TargetPointShape::Cross: {  // 轴对齐 X（:237-243）
             double const halfSize = terminatorHalfHeight;
             auto d1 = dqGeom::LineSegment3d::create(
-                Point3d::From(point.x - halfSize, point.y - halfSize, point.z),
-                Point3d::From(point.x + halfSize, point.y + halfSize, point.z));
-            addGeometry(d1.get());
+                dqGeom::Point3d::From(point.x - halfSize, point.y - halfSize, point.z),
+                dqGeom::Point3d::From(point.x + halfSize, point.y + halfSize, point.z));
+            addGeometry(d1.Get());
             auto d2 = dqGeom::LineSegment3d::create(
-                Point3d::From(point.x - halfSize, point.y + halfSize, point.z),
-                Point3d::From(point.x + halfSize, point.y - halfSize, point.z));
-            addGeometry(d2.get());
+                dqGeom::Point3d::From(point.x - halfSize, point.y + halfSize, point.z),
+                dqGeom::Point3d::From(point.x + halfSize, point.y - halfSize, point.z));
+            addGeometry(d2.Get());
             break;
         }
         case TargetPointShape::Plus: {  // 轴对齐 +（:245-251）
             double const halfSize = terminatorHalfHeight;
             auto h = dqGeom::LineSegment3d::create(
-                Point3d::From(point.x - halfSize, point.y, point.z),
-                Point3d::From(point.x + halfSize, point.y, point.z));
-            addGeometry(h.get());
+                dqGeom::Point3d::From(point.x - halfSize, point.y, point.z),
+                dqGeom::Point3d::From(point.x + halfSize, point.y, point.z));
+            addGeometry(h.Get());
             auto v = dqGeom::LineSegment3d::create(
-                Point3d::From(point.x, point.y - halfSize, point.z),
-                Point3d::From(point.x, point.y + halfSize, point.z));
-            addGeometry(v.get());
+                dqGeom::Point3d::From(point.x, point.y - halfSize, point.z),
+                dqGeom::Point3d::From(point.x, point.y + halfSize, point.z));
+            addGeometry(v.Get());
             break;
         }
         case TargetPointShape::Circle: {  // circle 臂共享（:211-215）
             auto circle = dqGeom::Arc3d::CreateXY(point, terminatorHalfHeight);
-            addGeometry(circle.get());
+            addGeometry(circle.Get());
             break;
         }
         case TargetPointShape::Square: {  // 轴对齐方（:253-265）
             double const halfSize = terminatorHalfHeight;
             auto sq = dqGeom::LineString3d::create({
-                Point3d::From(point.x - halfSize, point.y - halfSize, point.z),
-                Point3d::From(point.x + halfSize, point.y - halfSize, point.z),
-                Point3d::From(point.x + halfSize, point.y + halfSize, point.z),
-                Point3d::From(point.x - halfSize, point.y + halfSize, point.z),
-                Point3d::From(point.x - halfSize, point.y - halfSize, point.z),
+                dqGeom::Point3d::From(point.x - halfSize, point.y - halfSize, point.z),
+                dqGeom::Point3d::From(point.x + halfSize, point.y - halfSize, point.z),
+                dqGeom::Point3d::From(point.x + halfSize, point.y + halfSize, point.z),
+                dqGeom::Point3d::From(point.x - halfSize, point.y + halfSize, point.z),
+                dqGeom::Point3d::From(point.x - halfSize, point.y - halfSize, point.z),
             });
-            addGeometry(sq.get());
+            addGeometry(sq.Get());
             break;
         }
         case TargetPointShape::Rectangle: {  // 宽高因子独立（:267-281）
             double const halfWidth = terminatorWidth / 2.0;
             double const halfHeight = terminatorHalfHeight;
             auto rect = dqGeom::LineString3d::create({
-                Point3d::From(point.x - halfWidth, point.y - halfHeight, point.z),
-                Point3d::From(point.x + halfWidth, point.y - halfHeight, point.z),
-                Point3d::From(point.x + halfWidth, point.y + halfHeight, point.z),
-                Point3d::From(point.x - halfWidth, point.y + halfHeight, point.z),
-                Point3d::From(point.x - halfWidth, point.y - halfHeight, point.z),
+                dqGeom::Point3d::From(point.x - halfWidth, point.y - halfHeight, point.z),
+                dqGeom::Point3d::From(point.x + halfWidth, point.y - halfHeight, point.z),
+                dqGeom::Point3d::From(point.x + halfWidth, point.y + halfHeight, point.z),
+                dqGeom::Point3d::From(point.x - halfWidth, point.y + halfHeight, point.z),
+                dqGeom::Point3d::From(point.x - halfWidth, point.y - halfHeight, point.z),
             });
-            addGeometry(rect.get());
+            addGeometry(rect.Get());
             break;
         }
     }
@@ -330,7 +332,7 @@ bool appendLeadersToBuilder(GeometryStreamBuilder& builder,
 {
     bool result = true;
     double const scaledBlockTextHeight = textStyleResolver.blockSettings.textHeight * scaleFactor;
-    TextFrameStyleProps const frame = textStyleResolver.blockSettings.toJSON().frame.value();
+    TextFrameStyleProps frame = textStyleResolver.blockSettings.toJSON().frame.value();
 
     // 无帧 → 矩形帧承载附件点计算（:38-40）。
     if (!frame.shape.has_value() || *frame.shape == TextAnnotationFrameShape::None)

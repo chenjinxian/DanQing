@@ -536,11 +536,27 @@ LineLayoutResult LineLayout::toResult() const
 // ---------------------------------------------------------------------------
 
 // Ported from: itwinjs-core TextBlockLayout ctor (:717-726)
+// 非持有形态——context 生命周期归调用方（参考 TS 引用语义；栈上 context 合法，
+// 析构**不得** delete）。
 TextBlockLayout::TextBlockLayout(TextBlock const& source_, LayoutContext& context)
     : source(&source_)
+    , m_context(&context)
 {
-    m_context = std::unique_ptr<LayoutContext>(&context);  // 接管调用方 new 的 context
-    LayoutContext& ctx = *m_context;
+    initialize(context);
+}
+
+// 持有形态（layoutTextBlock 专用）——接管 context。
+TextBlockLayout::TextBlockLayout(TextBlock const& source_, std::unique_ptr<LayoutContext> context)
+    : source(&source_)
+    , m_ownedContext(std::move(context))
+    , m_context(m_ownedContext.get())
+{
+    initialize(*m_context);
+}
+
+// Ported from: itwinjs-core TextBlockLayout ctor (:717-726) 的公共体。
+void TextBlockLayout::initialize(LayoutContext& ctx)
+{
     if (source->width > 0) {
         textRange.low.x = 0.0;
         textRange.high.x = source->width;
@@ -890,10 +906,11 @@ TextBlockLayout layoutTextBlock(LayoutTextBlockArgs const& args)
 {
     // 参考缺省注入面（iModel 原生字形/字体表）不在移植范围——三缝为必选形
     //（文件头 EQUIVALENCE 登记）。context/resolver 所有权归 TextBlockLayout。
-    auto* resolver = new TextStyleResolver(*args.textBlock, args.textStyleId, args.findTextStyle);
-    auto* context = new LayoutContext(*resolver, args.computeTextRange, args.findFontId,
-                                      args.lineBreaks);
-    return TextBlockLayout(*args.textBlock, *context);  // ctor 接管 context
+    auto resolver = std::make_unique<TextStyleResolver>(*args.textBlock, args.textStyleId,
+                                                        args.findTextStyle);
+    auto context = std::make_unique<LayoutContext>(*resolver, args.computeTextRange,
+                                                   args.findFontId, args.lineBreaks);
+    return TextBlockLayout(*args.textBlock, std::move(context));  // 持有形态
 }
 
 // Ported from: itwinjs-core computeLayoutTextBlockResult (:110-115)

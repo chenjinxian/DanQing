@@ -260,7 +260,14 @@ public:
 
     // Ported from: itwinjs-core TextBlockLayout ctor (:717-726) —
     // populateLines → justifyLines → applyMargins。
+    // 非持有形态：context 由调用方管理生命周期（参考 TS 引用语义；栈上
+    // LayoutContext 直接构造合法——**不得**在此路径 delete）。
     TextBlockLayout(TextBlock const& source, LayoutContext& context);
+
+    // 持有形态（layoutTextBlock 工厂唯一使用）：接管 context 生命周期。
+    // 参考 TS 中 LayoutContext 由返回的 TextBlockLayout 经闭包保持存活，
+    // C++ 以 unique_ptr 明确表达。
+    TextBlockLayout(TextBlock const& source, std::unique_ptr<LayoutContext> context);
 
     // Ported from: itwinjs-core TextBlockLayout.toResult (:728-732)
     TextBlockLayoutResult toResult() const;
@@ -274,7 +281,10 @@ public:
 
 private:
     friend class TextBlockLayoutAccess;
-    std::unique_ptr<LayoutContext> m_context;
+    std::unique_ptr<LayoutContext> m_ownedContext;  // 仅持有形态构造时非空
+    LayoutContext* m_context = nullptr;             // 恒有效（非持有路径由调用方保证）
+
+    void initialize(LayoutContext& context);
 
     LineLayout& backLine();
     void populateLines(LayoutContext& context);

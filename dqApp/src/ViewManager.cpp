@@ -197,19 +197,31 @@ void ViewManager::SetSelectedViewport(Viewport* vp)
     }
 }
 
+// Ported from: itwinjs-core ViewManager.addDecorator (ViewManager.ts:495-502) —
+// :500 invalidateDecorationsAllViews()（新增装饰须触发下一帧重收集）。
 void ViewManager::AddDecorator(IDecorator* decorator)
 {
     if (!decorator) return;
     auto it = std::find(m_decorators.begin(), m_decorators.end(), decorator);
     if (it != m_decorators.end()) return;
     m_decorators.push_back(decorator);
+    invalidateDecorationsAllViews();  // ViewManager.ts:500
 }
 
+// Ported from: itwinjs-core ViewManager.dropDecorator (ViewManager.ts:508-517) —
+// :513 invalidateCachedDecorationsAllViews(decorator)（删缓存条目——缓存持有图形，
+// 随条目销毁）→ splice → :515 invalidateDecorationsAllViews()。
 void ViewManager::DropDecorator(IDecorator* decorator)
 {
     auto it = std::find(m_decorators.begin(), m_decorators.end(), decorator);
     if (it == m_decorators.end()) return;
+    // :513 — 逐视口删该 decorator 的缓存条目（Viewport.ts:3235-3239）。
+    for (auto* vp : m_viewports) {
+        if (vp)
+            vp->InvalidateCachedDecorations(decorator);
+    }
     m_decorators.erase(it);
+    invalidateDecorationsAllViews();  // :515
 }
 
 IDecorator* ViewManager::FindDecoratorForHit(uint32_t featureId) const

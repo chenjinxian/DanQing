@@ -312,6 +312,12 @@ public:
 private:
     std::vector<GeometryStreamEntry> m_entries;
     std::vector<dqGeom::GeometryQueryPtr> m_geometry;  // keeps geometry alive
+
+public:
+    // 只读遍历面（宿主消费——TextDecorationTool 的 GeometryStream→GraphicBuilder
+    // 适配；几何条目与 m_geometry 按入列序对应）。
+    std::vector<GeometryStreamEntry> const& Entries() const noexcept { return m_entries; }
+    std::vector<dqGeom::GeometryQueryPtr> const& Geometries() const noexcept { return m_geometry; }
     // Inverse of the user-supplied local-to-world transform; used to convert world-coordinate
     // geometry input to be placement-relative. Ported from: GeometryStreamBuilder._worldToLocal.
     std::optional<dqGeom::Transform> m_worldToLocal;

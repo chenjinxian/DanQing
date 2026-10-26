@@ -61,7 +61,7 @@ DQ_COMMON_EXPORT std::optional<dqGeom::Point3d> computeLeaderAttachmentPoint(
 DQ_COMMON_EXPORT bool appendLeadersToBuilder(
     GeometryStreamBuilder& builder, std::vector<TextAnnotationLeader> const& leaders,
     TextBlockLayout const& layout, dqGeom::Transform const& transform,
-    GeometryAppearanceProps const& params, TextStyleResolver const& textStyleResolver,
+    GeometryAppearanceProps params, TextStyleResolver const& textStyleResolver,
     double scaleFactor);
 
 END_DQ_COMMON_NAMESPACE

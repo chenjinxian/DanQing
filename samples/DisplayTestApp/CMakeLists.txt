@@ -50,6 +50,7 @@ add_executable(DisplayTestApp WIN32
     src/Gui/TiledGraphics.cpp       # 第二 iModel 瓦叠加（M-O(2) I11——TiledGraphics.ts）
     src/Gui/TiledGraphics.h
     src/Gui/MacroTool.cpp            # Macro 播放器（M-O(4) P9——MacroTools.ts）
+    src/Gui/TextDecorationTool.cpp   # M-Y Y-d：文本装饰工具（TextDecoration.ts——dta text keyin 面）
     src/Gui/MacroTool.h
     src/Gui/CesiumDecorator.cpp      # 装饰图元陈列馆（M-O(4) P8——EmptyExample.ts）
     src/Gui/CesiumDecorator.h
@@ -309,6 +310,7 @@ if(TARGET gtest_main AND TARGET dqApp)
         tests/JoesHouseHoverTest.cpp    # JoesHouse hover 高亮像素锁（M-J Task 2——注册在 JoesHouseEdgeTest 之后：同因 fetcher 替换不回溢）
         tests/ThematicDisplayE2ETest.cpp # M-S S-d：Thematic Height/Slope 像素锁（注册在 JoesHouseHoverTest 之后：同因 fetcher 替换不回溢）
         tests/AmbientOcclusionE2ETest.cpp # M-T T-e：AO 交角遮蔽像素锁（Scene 装饰——注册序同族注记）
+        tests/TextDecorationPixelTest.cpp # M-Y Y-e：文本装饰像素锁（keyin 全链+WHERE+clear 往返）
         tests/DtaToolsWiringTest.cpp    # M-L(3) 接线级回归：Keyin 字段/诊断三小件/视口同步/ToolAssistance 提示表
         src/Gui/ZoomToSelectedTool.cpp  # M-N(2)：ZoomToSelectedElements（zoom 锁被测面）
         src/Gui/GridSettingsTool.cpp  # M-O(1) I5：ChangeGridSettings（grid 设置锁被测面）
@@ -320,6 +322,8 @@ if(TARGET gtest_main AND TARGET dqApp)
         src/Gui/TiledGraphics.h
         src/Gui/MacroTool.cpp            # M-O(4) P9：Macro 播放器（锁被测面）
         src/Gui/MacroTool.h
+        src/Gui/TextDecorationTool.cpp   # M-Y Y-d：文本装饰工具（锁被测面）
+        src/Gui/TextDecorationTool.h
         src/Gui/CesiumDecorator.cpp      # M-O(4) P8：陈列馆（像素锁被测面）
         src/Gui/CesiumDecorator.h
         src/Gui/FeatureOverridesPanel.cpp  # M-O(2) I10：Overrides 面板（像素锁被测面）

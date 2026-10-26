@@ -14,7 +14,7 @@ namespace {
 
 dqGeom::Point3d plusXYZ(dqGeom::Point3d const& p, double dx, double dy)
 {
-    return Point3d::From(p.x + dx, p.y + dy, p.z);
+    return dqGeom::Point3d::From(p.x + dx, p.y + dy, p.z);
 }
 
 // Ported from: debugAnchorPoint (:122-150) — 蓝框 margins + 蓝十字 anchor +
@@ -28,43 +28,44 @@ bool debugAnchorPoint(GeometryStreamBuilder& builder, TextAnnotation const& anno
 
     GeometryAppearanceProps blueParams;
     blueParams.color = ColorDef::blue.getTbgr();
-    bool result = builder.appendGeometryParamsChange(blueParams);
+    builder.appendGeometryParamsChange(blueParams);  // void 面
+    bool result = true;
 
     // margins 蓝框（corners3d(true) 闭合序）。
     std::vector<dqGeom::Point3d> marginCorners = {
         plusXYZ(range.low, 0.0, 0.0),
         plusXYZ(range.high, 0.0, 0.0),
-        Point3d::From(range.high.x, range.high.y, 0.0),
-        Point3d::From(range.low.x, range.high.y, 0.0),
+        dqGeom::Point3d::From(range.high.x, range.high.y, 0.0),
+        dqGeom::Point3d::From(range.low.x, range.high.y, 0.0),
         plusXYZ(range.low, 0.0, 0.0),
     };
     for (auto& c : marginCorners)
         c = transform.MultiplyPoint3d(c);
-    result = result && builder.appendGeometry(dqGeom::LineString3d::create(marginCorners)->clone());
+    builder.appendGeometry(dqGeom::LineString3d::create(marginCorners)->clone());  // void 面
 
     // anchor 蓝十字（1m × 1m）。
     auto x1 = dqGeom::LineSegment3d::create(plusXYZ(debugAnchorPt, -1.0, -1.0),
                                             plusXYZ(debugAnchorPt, 1.0, 1.0));
-    result = result && builder.appendGeometry(x1->clone());
+    builder.appendGeometry(x1->clone());
     auto x2 = dqGeom::LineSegment3d::create(plusXYZ(debugAnchorPt, 1.0, -1.0),
                                             plusXYZ(debugAnchorPt, -1.0, 1.0));
-    result = result && builder.appendGeometry(x2->clone());
+    builder.appendGeometry(x2->clone());
 
     // textRange 红框。
     GeometryAppearanceProps redParams;
     redParams.color = ColorDef::red.getTbgr();
-    result = result && builder.appendGeometryParamsChange(redParams);
+    builder.appendGeometryParamsChange(redParams);  // void 面
 
     std::vector<dqGeom::Point3d> rangeCorners = {
         plusXYZ(layout.textRange.low, 0.0, 0.0),
         plusXYZ(layout.textRange.high, 0.0, 0.0),
-        Point3d::From(layout.textRange.high.x, layout.textRange.high.y, 0.0),
-        Point3d::From(layout.textRange.low.x, layout.textRange.high.y, 0.0),
+        dqGeom::Point3d::From(layout.textRange.high.x, layout.textRange.high.y, 0.0),
+        dqGeom::Point3d::From(layout.textRange.low.x, layout.textRange.high.y, 0.0),
         plusXYZ(layout.textRange.low, 0.0, 0.0),
     };
     for (auto& c : rangeCorners)
         c = transform.MultiplyPoint3d(c);
-    result = result && builder.appendGeometry(dqGeom::LineString3d::create(rangeCorners)->clone());
+    builder.appendGeometry(dqGeom::LineString3d::create(rangeCorners)->clone());  // void 面
     return result;
 }
 
@@ -73,10 +74,10 @@ bool debugAnchorPoint(GeometryStreamBuilder& builder, TextAnnotation const& anno
 bool debugSnapPoints(GeometryStreamBuilder& builder, TextStyleSettings const& style,
                      dqGeom::Range2d const& range, dqGeom::Transform const& transform)
 {
-    if (!style.frameShape.has_value() || *style.frameShape == TextAnnotationFrameShape::None)
+    if (style.frameShape == TextAnnotationFrameShape::None)
         return false;
     ComputeFrameArgs cfa;
-    cfa.frame = *style.frameShape;
+    cfa.frame = style.frameShape;
     cfa.range = range;
     cfa.transform = transform;
     auto const points = computeIntervalPoints(cfa, 0.5, 0.25);
@@ -85,18 +86,16 @@ bool debugSnapPoints(GeometryStreamBuilder& builder, TextStyleSettings const& st
 
     GeometryAppearanceProps params;
     params.color = ColorDef::black.getTbgr();
-    params.weight = style.frameBorderWeight.has_value()
-        ? std::optional<int>(static_cast<int>(*style.frameBorderWeight * 5.0))
-        : std::nullopt;  // 点大于框沿（:160）
+    params.weight = static_cast<int>(style.frameBorderWeight * 5.0);  // 点大于框沿（:160）
 
-    bool const ok = builder.appendGeometryParamsChange(params);
+    builder.appendGeometryParamsChange(params);  // void 面
     double const cross = 0.05;  // 视觉等价十字半长（米）
-    bool result = ok;
+    bool result = true;
     for (auto const& p : *points) {
         auto d1 = dqGeom::LineSegment3d::create(plusXYZ(p, -cross, -cross), plusXYZ(p, cross, cross));
-        result = result && builder.appendGeometry(d1->clone());
+        builder.appendGeometry(d1->clone());
         auto d2 = dqGeom::LineSegment3d::create(plusXYZ(p, -cross, cross), plusXYZ(p, cross, -cross));
-        result = result && builder.appendGeometry(d2->clone());
+        builder.appendGeometry(d2->clone());
     }
     return result;
 }
@@ -130,7 +129,7 @@ bool debugRunLayout(GeometryStreamBuilder& builder, TextBlockLayout const& layou
             colorParams.color = newColor;
             if (isLineBreak)
                 colorParams.weight = 3;
-            result = result && builder.appendGeometryParamsChange(colorParams);
+            builder.appendGeometryParamsChange(colorParams);  // void 面（同 LeaderGeometry 登记）
             lastColor = newColor;
             haveColor = true;
         }
@@ -140,13 +139,13 @@ bool debugRunLayout(GeometryStreamBuilder& builder, TextBlockLayout const& layou
         std::vector<dqGeom::Point3d> corners = {
             plusXYZ(run.range.low, 0.0, 0.0),
             plusXYZ(run.range.high, 0.0, 0.0),
-            Point3d::From(run.range.high.x, run.range.high.y, 0.0),
-            Point3d::From(run.range.low.x, run.range.high.y, 0.0),
+            dqGeom::Point3d::From(run.range.high.x, run.range.high.y, 0.0),
+            dqGeom::Point3d::From(run.range.low.x, run.range.high.y, 0.0),
             plusXYZ(run.range.low, 0.0, 0.0),
         };
         for (auto& c : corners)
             c = runTrans.MultiplyPoint3d(c);
-        result = result && builder.appendGeometry(dqGeom::LineString3d::create(corners)->clone());
+        builder.appendGeometry(dqGeom::LineString3d::create(corners)->clone());  // void 面
     };
 
     for (auto const& line : layout.lines) {
@@ -194,8 +193,7 @@ bool appendTextAnnotationGeometry(AppendTextAnnotationGeometryArgs& args)
 
     // Frame（:77-82）。
     auto const& blockSettings = resolver.blockSettings;
-    if (blockSettings.frameShape.has_value()
-        && *blockSettings.frameShape != TextAnnotationFrameShape::None) {
+    if (blockSettings.frameShape != TextAnnotationFrameShape::None) {
         TextFrameStyleProps frame = blockSettings.toJSON().frame.value();
         if (!appendFrameToBuilder(*args.builder, frame, layout.range, transform, params))
             return false;
@@ -204,8 +202,7 @@ bool appendTextAnnotationGeometry(AppendTextAnnotationGeometryArgs& args)
     // annotation 优先级（:84-90）。
     if (args.renderPriority.annotation.has_value()) {
         params.displayPriority = args.renderPriority.annotation;
-        if (!args.builder->appendGeometryParamsChange(params))
-            return false;
+        args.builder->appendGeometryParamsChange(params);  // void 面
     }
 
     // Leaders（:92-97）。
@@ -220,8 +217,7 @@ bool appendTextAnnotationGeometry(AppendTextAnnotationGeometryArgs& args)
         if (!debugAnchorPoint(*args.builder, annotation, layout, transform)
             || !debugRunLayout(*args.builder, layout, transform))
             return false;
-        if (blockSettings.frameShape.has_value()
-            && *blockSettings.frameShape != TextAnnotationFrameShape::None) {
+        if (blockSettings.frameShape != TextAnnotationFrameShape::None) {
             if (!debugSnapPoints(*args.builder, blockSettings, layout.range, transform))
                 return false;
         }

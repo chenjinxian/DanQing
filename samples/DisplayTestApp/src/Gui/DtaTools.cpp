@@ -6,6 +6,8 @@
 // ViewTool.ts:628-655 (see setupToolAssistanceHints).
 #include "DtaTools.h"
 
+#include "TextDecorationTool.h"  // M-Y Y-d
+
 #include <QComboBox>
 #include <QHBoxLayout>
 #include <QKeySequence>
@@ -96,6 +98,12 @@ void registerDtaTools()
                       "dta imodel attach");
     // M-O(4) P9：MacroTool（MacroTools.ts:8-55——keyin "dta macro <file>"；
     // keyin 序列逐行播放 + 三分支告警）。
+    // M-Y Y-d：TextDecorationTool（TextDecoration.ts:321-627——keyin
+    // "dta text <cmd> [...]"；编辑器命令面直映；insert/insertstyle 等
+    // iModel 写入键 ➖9 结案缺席）。
+    registry.Register("AddTextDecoration",
+                      []() -> dqApp::InteractiveTool* { return new dta::TextDecorationTool(); },
+                      "dta text");
     registry.Register("Macro",
                       []() -> dqApp::InteractiveTool* { return new MacroTool(); },
                       "dta macro");
