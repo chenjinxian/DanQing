@@ -8,9 +8,11 @@
 
 #include "Export.h"
 #include "GeometryStream.h"
+#include "TextBlockGeometryProps.h"
 #include "DqCommon.h"
 
 #include <dqGeom/GeometryQuery.h>
+#include <dqGeom/LineSegment3d.h>
 #include <dqGeom/Point3d.h>
 #include <dqGeom/Range3d.h>
 #include <dqGeom/Transform.h>
@@ -202,15 +204,69 @@ public:
         appendGeometryPart3d(part);
     }
 
-    // TODO: blocked on missing TextString type
-    //       (ref GeometryStream.ts:341 appendTextString(textString: TextString) — DanQing has no
-    //        TextString type in dqCommon). Port once TextString is added.
-    // TODO: blocked on missing TextBlockGeometryProps type
-    //       (ref GeometryStream.ts:358 appendTextBlock(block: TextBlockGeometryProps) — DanQing has
-    //        no TextBlockGeometryProps). Port once TextBlockGeometryProps is added.
+    // Append a TextString supplied in either local or world coordinates.
+    // Ported from: itwinjs-core GeometryStreamBuilder.appendTextString
+    //              (GeometryStream.ts:325-337) —
+    // worldToLocal 在场时深拷贝并 transformInPlace（失败 = false 不入列）。
     // TODO: blocked on missing ImageGraphic type
     //       (ref GeometryStream.ts:376 appendImage(image: ImageGraphic) — DanQing has no ImageGraphic
     //        type). Port once ImageGraphic is added.
+    bool appendTextString(TextString const& textString)
+    {
+        if (m_worldToLocal) {
+            TextStringProps props = textString.toJSON();
+            TextString copy(props);
+            if (!copy.transformInPlace(*m_worldToLocal))
+                return false;
+            GeometryStreamEntry entry;
+            entry.opcode = ElementGeometryOpcode::TextString;
+            entry.textString = copy.toJSON();
+            m_entries.push_back(std::move(entry));
+            return true;
+        }
+        GeometryStreamEntry entry;
+        entry.opcode = ElementGeometryOpcode::TextString;
+        entry.textString = textString.toJSON();
+        m_entries.push_back(std::move(entry));
+        return true;
+    }
+
+    // Append a series of entries representing a TextBlock.
+    // Ported from: itwinjs-core GeometryStreamBuilder.appendTextBlock
+    //              (GeometryStream.ts:340-363) —
+    // text 臂 appendTextString / color 臂 subcategory→appendSubCategoryChange
+    // (Id64.invalid) 或 appearance 色 / separator 臂 LineSegment3d。
+    bool appendTextBlock(TextBlockGeometryProps const& block)
+    {
+        for (auto const& entry : block.entries) {
+            bool result = false;
+            if (auto const* text = std::get_if<TextStringProps>(&entry.payload)) {
+                result = appendTextString(TextString(*text));
+            } else if (auto const* color = std::get_if<TextStyleColor>(&entry.payload)) {
+                if (color->subcategory) {
+                    GeometryAppearanceProps appearance;
+                    appendSubCategoryChange(appearance);  // Id64.invalid 子类
+                    result = true;
+                } else {
+                    GeometryAppearanceProps appearance;
+                    appearance.color = color->color;
+                    GeometryStreamEntry e;
+                    e.opcode = ElementGeometryOpcode::BasicSymbology;
+                    e.appearance = appearance;
+                    m_entries.push_back(std::move(e));
+                    result = true;
+                }
+            } else if (auto const* sep = std::get_if<TextBlockGeometryPropsEntry::Separator>(
+                           &entry.payload)) {
+                auto segment = dqGeom::LineSegment3d::create(sep->startPoint, sep->endPoint);
+                appendGeometry(dqGeom::GeometryQueryPtr(std::move(segment)));
+                result = true;
+            }
+            if (!result)
+                return false;
+        }
+        return true;
+    }
 
     // Append fill properties.
     void appendFill(const AreaFillProps& fill)

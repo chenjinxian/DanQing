@@ -506,10 +506,23 @@ void TextBlock::clearStyleOverrides(ClearTextStyleOptions const* options)
                 child->clearStyleOverrides(options);
 }
 
-// Ported from: itwinjs-core TextBlock.toJSON (:720-726)
+// Ported from: itwinjs-core TextBlock.toJSON (:720-726) — TextBlockProps 形态。
+TextBlock::Props TextBlock::toJSONBlockProps() const
+{
+    Props p;
+    p.styleOverrides = TextBlockComponent::toJSON();
+    p.width = width;
+    for (auto const& para : m_children)
+        if (para)
+            p.children.push_back(std::unique_ptr<Paragraph>(
+                static_cast<Paragraph*>(para->clone().release())));
+    return p;
+}
+
+// 组件面（super.toJSON——styleOverrides）。
 TextStyleSettingsProps TextBlock::toJSON() const
 {
-    return TextBlockComponent::toJSON();  // width/children 序列化归 JSON 解析层
+    return TextBlockComponent::toJSON();
 }
 
 // Ported from: itwinjs-core TextBlock.isEmpty (:734-736)

@@ -13,6 +13,7 @@
 #include "Gradient.h"
 #include "GraphicParams.h"
 #include "DqCommon.h"
+#include "TextString.h"
 
 #include <dqBase/DqId.h>
 #include <dqGeom/Point3d.h>
@@ -142,6 +143,10 @@ struct DQ_COMMON_EXPORT GeometryStreamEntry {
     std::optional<GeometryMaterialProps> material;
     std::optional<BRepDataProps> brep;
     std::optional<GeometryPartInstanceProps> partRef;
+    // TextString entry（ElementGeometryOpcode::TextString）。
+    // Ported from: itwinjs-core GeometryStreamEntryProps.textString
+    //              (GeometryStream.ts:329 `{ textString: textString.toJSON() }`)
+    std::optional<TextStringProps> textString;
     // Sub-range for nested geometry
     std::optional<dqGeom::Range3d> subRange;
 };

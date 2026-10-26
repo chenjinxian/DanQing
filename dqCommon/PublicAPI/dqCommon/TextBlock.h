@@ -406,7 +406,12 @@ public:
     // Ported from: itwinjs-core TextBlock.clearStyleOverrides (:716-718)
     void clearStyleOverrides(ClearTextStyleOptions const* options = nullptr) override;
 
-    // Ported from: itwinjs-core TextBlock.toJSON (:720-726)
+    // Ported from: itwinjs-core TextBlock.toJSON (:720-726) —
+    // {...super.toJSON(), width, children}（TextBlockProps 全形态；children 携
+    // 实例克隆——§3.4 EQUIVALENCE 同 Props 注）。
+    Props toJSONBlockProps() const;
+
+    // 组件面（super.toJSON——styleOverrides）。
     TextStyleSettingsProps toJSON() const override;
 
     // True if every paragraph is empty.
@@ -430,6 +435,13 @@ public:
     void appendRun(std::unique_ptr<TextBlockComponent> run);
 
     bool equals(TextBlockComponent const& other) const override;
+
+    // children 拥有制（unique_ptr）——拷贝禁用、移动默认（MSVC 对隐式删除
+    // 特殊成员仍实例化成员 vector 拷贝赋值体，显式 delete 断开该链）。
+    TextBlock(TextBlock&&) = default;
+    TextBlock& operator=(TextBlock&&) = default;
+    TextBlock(TextBlock const&) = delete;
+    TextBlock& operator=(TextBlock const&) = delete;
 
 protected:
     explicit TextBlock(Props const* props);
