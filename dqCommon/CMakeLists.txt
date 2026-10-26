@@ -28,6 +28,7 @@ target_sources(dqCommon
         src/TextAnnotation.cpp
         src/TextBlockLayout.cpp
         src/TextBlockGeometry.cpp
+        src/FrameGeometry.cpp
         src/TextStyle.cpp
         src/TextString.cpp
         src/FeatureTable.cpp
