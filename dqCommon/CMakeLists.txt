@@ -24,6 +24,7 @@ target_sources(dqCommon
         src/ViewFlags.cpp
         src/Frustum.cpp
         src/Cartographic.cpp
+        src/TextStyle.cpp
         src/TextString.cpp
         src/FeatureTable.cpp
         src/FeatureSymbology.cpp
@@ -100,6 +101,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/EnvironmentAtmosphereTest.cpp  # M-W 集成面：Environment.atmosphere 载体（Environment.ts atmosphere 段）
         # A-lane 锚（M-W 起——A 道代理只在此锚下追加测试注册；勿动他区）
         tests/ContourDisplayTest.cpp  # M-X X-a1：ContourDisplay.test.ts 移植 + settings.contours 载体锁
+        tests/TextStyleTest.cpp       # M-Y Y-a2：TextStyle.test.ts 4 例直移
         tests/TextStringTest.cpp      # M-Y Y-a1：TextString.ts 语义锁（Authored——参考无独立单测）
     )
     target_link_libraries(dqCommonTest
