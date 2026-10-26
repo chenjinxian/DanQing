@@ -8,8 +8,10 @@
 
 #include "DrawCommand.h"
 #include "BranchStack.h"
-#include "FrustumPlanes.h"
 #include "gl/RenderFlags.h"
+
+#include <dqCommon/Frustum.h>        // setCheckRange 世界视锥（TD-37）
+#include <dqCommon/FrustumPlanes.h>  // fromFrustum 1:1（瓦剔除同源）
 
 #include <dqGeom/Transform.h>  // walk L2W（TD-37 rect 裁剪的世界变换）
 
@@ -270,9 +272,10 @@ private:
     // （P-7/TD-37：存原始 check MVP[S 子框仿射]——逐 batch × 栈顶 mvp 现提
     // 平面后测局部 range，clip 空间等价参考 transformBy(currentTransform)。）
     // TD-37 rect 裁剪：世界空间 rect 子视锥面（参考 _frustumPlanes 形——
-    // setCheckRange(worldFrustum)→FrustumPlanes.fromFrustum）。
-    FrustumPlanes m_checkPlanes;
-    bool m_checkPlanesValid = false;
+    // setCheckRange(worldFrustum)→FrustumPlanes.fromFrustum）。dqCommon 的
+    // fromFrustum 是参考 1:1（瓦剔除生产链已验证的同一实现——ImdlTileTree
+    // computeVisibility 同源）；isValid()==false 即 clearCheckRange 态。
+    dqCommon::FrustumPlanes m_checkPlanes;
 
 public:
 

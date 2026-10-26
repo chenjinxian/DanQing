@@ -1002,20 +1002,21 @@ void TargetImpl::readPixels(int32_t x, int32_t y, uint32_t width, uint32_t heigh
 
 // ---------------------------------------------------------------------------
 // applyRectCheckRange — pick 期 rect 视锥裁剪（TD-37）
-// Ported from: itwinjs-core Target.readPixelsFromFbo() (Target.ts:913-952)。
-// checkMvp = S（Ndc [-1,1] 子框仿射；DanQing 投影 GL 形，FrustumUniforms.h
-// :85-104）——addBatch 侧 S × 栈顶 mvp 现提平面后测 batch **局部** range
-// （RenderCommands.cpp addBatch 注——clip 空间等价参考
-// transformBy(currentTransform)，setTransform 分支变换已含于栈顶 mvp）。
+// Ported from: itwinjs-core Target.readPixelsFromFbo() (Target.ts:913-958)。
+// 世界空间 rect 子视锥：对 planFrustum 8 角做两段式角点插值（X 阶 tmpFrust
+// + Y 阶 rectFrust，interpolateFrustumPoint :1524-1526 → interpolatePoint
+// :1506-1512 两半防精度）→ RenderCommands.setCheckRange(rectFrust) →
+// addBatch 对 batch.range × 栈 l2w 的世界域测试（无装配期分支时序依赖——
+// 2026-10-26 [CULLMVP] 插桩定案的根治形）。
+// 插值源 = FrustumUniforms.planFrustum（changeFrustum 存档 :178）——与
+// pickState 的 view/proj 同一源（changeViewMatrix 活路径零调用，:38 注）。
 // 发散登记：参考 screenSpaceEffects.shouldApply 禁用分支——DanQing 无该面
 // 恒可用（效果面落地时补门）。
 // 验证法 = PickDumpScene/PickHiliteSelection/PickCollapse 全绿 + 帧成本诊断
 // PAN+HOVER 相位下降。
 void TargetImpl::applyRectCheckRange(int32_t x, int32_t y, uint32_t width, uint32_t height)
 {
-    // TD-37 在册：cull 默认关（DANQING_RECTLULL=1 启用）。取证实锤——装配期
-    // 栈顶 mvp 与绘制期 u_mvp 差 1e-3 刻度（-97.336 vs -0.097 同数字），pick
-    // pass 的矩阵源/时机与绘制不一致；先修矩阵源再启用（TD-37 注）。
+    // TD-37 在册：cull 默认关（DANQING_RECTLULL=1 启用）——全绿后翻默认。
     if (!std::getenv("DANQING_RECTLULL"))
         return;
     auto const vr = getViewRect();
@@ -1024,6 +1025,9 @@ void TargetImpl::applyRectCheckRange(int32_t x, int32_t y, uint32_t width, uint3
     if (vw < 1.0 || vh < 1.0)
         return;
     // 调用面坐标 = GL bottom-up 设备像素（PickAtPoint/PickAtRect 换算后）。
+    // 参考尺度（Target.ts:929-934）：left/right/top/bottom 各以视口对应边到
+    // rect 边的归一化距离内插（viewRect y 向下——本面 GL bottom-up 换算后
+    // b/t 语义与参考 bottomScale/topScale 逐位一致）。
     double const l = std::clamp(static_cast<double>(x) / vw, 0.0, 1.0);
     double const r = std::clamp((vw - static_cast<double>(x) - static_cast<double>(width)) / vw, 0.0, 1.0);
     double const b = std::clamp(static_cast<double>(y) / vh, 0.0, 1.0);
@@ -1032,47 +1036,7 @@ void TargetImpl::applyRectCheckRange(int32_t x, int32_t y, uint32_t width, uint3
     double const sy = 1.0 - b - t;
     if (sx <= 1.0e-12 || sy <= 1.0e-12)
         return;
-    // [-1,1] 子框 → 世界空间 rect 子视锥（Target.ts:926-958 的 1:1——两段
-    // 角点插值：tmpFrust 先左右[X 对]，rectFrust 再上下[Y 对]；
-    // interpolateFrustumPoint = interpolatePoint(p0, fraction, p1)→dest——
-    // fraction ≤/> 0.5 两半防精度，Target.ts:1506-1512）。
-    // TD-37 根治：世界面测试无装配期分支时序依赖（原 S×栈顶mvp 裁剪空间形
-    // 废弃——2026-10-26 [CULLMVP] 插桩定案 addBatch 时分支未 push）。
-    // EQUIVALENCE（插值源）：参考插值 planFrustum（changeFrustum 存档，
-    // FrustumUniforms.planFrustum :44）。DanQing 的 FrustumUniforms 另有
-    // changeViewMatrix 半边（:288——独立改 m_view 不动 planFrustum 的移植缝，
-    // 无参考对应），planFrustum 可与 pickState 的 view/proj（beginReadPixels
-    // 的 mv/mvp 源）desync——baytown [CULL] 对账实录（planFrustum 不含批
-    // 世界域而 OFF 态绘制命中）。故插值源改为与 pickState 同源重建：
-    // NDC 立方 8 角经 (proj×view)⁻¹ 逆映射到世界；验证法 = PickDumpScene
-    // 双态绿（自洽即无 desync）。
-    dqCommon::Frustum planFrustNdc;
-    planFrustNdc.initNpc();  // [-1,1] 立方 8 角
-    Matrix4d const viewRow = [&] {
-        auto const& view = m_uniforms.frustum.getViewMatrix();
-        auto const& r = view.matrix.coffs;
-        return Matrix4d::CreateRowValues(
-            r[0], r[1], r[2], view.origin.x,
-            r[3], r[4], r[5], view.origin.y,
-            r[6], r[7], r[8], view.origin.z,
-            0.0, 0.0, 0.0, 1.0);
-    }();
-    Matrix4d const mvpRow =
-        m_uniforms.frustum.getProjectionMatrix().MultiplyMatrixMatrix(viewRow);
-    Matrix4d mvpInv;
-    dqCommon::Frustum planFrust = planFrustNdc;
-    if (mvpRow.Inverse(mvpInv)) {
-        for (int i = 0; i < dqCommon::kNpcCornerCount; ++i) {
-            auto const& pt = planFrustNdc.points[i];
-            double const v4[4] = {pt.x, pt.y, pt.z, 1.0};
-            double o[4] = {0, 0, 0, 0};
-            for (int row = 0; row < 4; ++row)
-                for (int col = 0; col < 4; ++col)
-                    o[row] += mvpInv.at(row, col) * v4[col];
-            double const w = (0.0 != o[3]) ? o[3] : 1.0;
-            planFrust.points[i] = dqGeom::Point3d::From(o[0] / w, o[1] / w, o[2] / w);
-        }
-    }
+    dqCommon::Frustum const& planFrust = m_uniforms.frustum.getPlanFrustum();
     dqCommon::Frustum tmpFrust;
     dqCommon::Frustum rectFrust;
     auto const lS = static_cast<double>(l);

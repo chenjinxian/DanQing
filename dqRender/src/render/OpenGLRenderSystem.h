@@ -98,7 +98,8 @@ public:
     RenderGraphic* createRenderGraphic(void* cachedGeometry) override;
     RenderGraphic* createBatch(RenderGraphic* graphic,
                                dqCommon::FeatureTable const* featureTable,
-                               dqGeom::Range3d const& range) override;
+                               dqGeom::Range3d const& range,
+                               BatchOptions const* options = nullptr) override;
     RenderGraphic* createSkyBox(void const* skyBoxParams) override;
 
     // Create a render graphic from a GraphicTemplate.

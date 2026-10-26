@@ -307,29 +307,32 @@ void RenderCommands::addBatch(Batch& batch)
 
     // Frustum culling: skip batches outside the frustum.
     // Ported from: itwinjs-core addBatch (line 655-662)
-    if (m_checkPlanesValid) {
-        // TD-37 rect 裁剪（世界空间形，参考 addBatch :655-662 1:1）：
-        //   frustum = Frustum.fromRange(batch.range /*局部*/)
-        //   frustum.transformBy(target.currentTransform /*栈 l2w 组合*/)
-        //   → computeFrustumContainment(rectFrustumPlanes)
-        // batch range 为局部坐标（builder/contentRange 域），栈 l2w（BranchState
-        // 组合链）将其映射到世界——参考 currentTransform 语义（BranchUniforms
-        // 的 transform 即 BranchState.transform）。原 walk 预乘形废弃（双
-        // location 实录——栈 mvp 已含分支变换，再乘 world range 即重复）。
-        auto range = dqGeom::Range3d::CreateNull();
-        batch.unionRange(range);
-        if (!range.isNull()) {
-            dqGeom::Range3d const worldRange =
-                m_stack->getTop().getLocalToWorld().MultiplyRange(range);
-            bool const contained = m_checkPlanes.computeRangeContainmentWorld(worldRange);
-            if (std::getenv("DANQING_PICK_TRACE")) {
-                std::fprintf(stderr, "[CULL] batch=%u world=[%.1f %.1f %.1f]-[%.1f %.1f %.1f] contained=%d\n",
-                             batch.getBatchId(), worldRange.low.x, worldRange.low.y, worldRange.low.z,
-                             worldRange.high.x, worldRange.high.y, worldRange.high.z, contained ? 1 : 0);
-            }
-            if (!contained)
-                return;
+    //   if (!batch.range.isNull) {
+    //     frustum = Frustum.fromRange(batch.range).transformBy(target.currentTransform);
+    //     if (Containment.Outside === _frustumPlanes.computeFrustumContainment(frustum))
+    //       return;
+    //   }
+    // cull 输入 = Batch 创建时存储的 range（builder 的 meshes.range / imdl 的
+    // contentRange——ImdlReader.ts:123），**非** unionRange 树遍历；range 为
+    // null 的 batch（域缺席）直接跳过裁剪（参考同形）。世界映射经栈顶 l2w
+    // 组合（参考 target.currentTransform = BranchState.transform 组合链）；
+    // fromRange+transformBy 的 8 角精确变换 ≡ l2w.MultiplyRange(range) 后 8
+    // 角测试（仿射等价）。原 unionRange 树走查形废弃（2026-10-26 对参考定
+    // 案——树遍历把装饰批的子域并入，null-range 跳过语义随之丢失）。
+    if (m_checkPlanes.isValid() && !batch.getRange().isNull()) {
+        dqGeom::Range3d const worldRange =
+            m_stack->getTop().getLocalToWorld().MultiplyRange(batch.getRange());
+        bool const contained =
+            m_checkPlanes.computeContainment(worldRange)
+            != dqCommon::FrustumPlanes::Containment::Outside;
+        if (std::getenv("DANQING_PICK_TRACE")) {
+            std::fprintf(stderr, "[CULL] batch=%u feats=%u tile=%s world=[%.1f %.1f %.1f]-[%.1f %.1f %.1f] contained=%d\n",
+                         batch.getBatchId(), batch.getFeatureCount(), batch.getTileId().c_str(),
+                         worldRange.low.x, worldRange.low.y, worldRange.low.z,
+                         worldRange.high.x, worldRange.high.y, worldRange.high.z, contained ? 1 : 0);
         }
+        if (!contained)
+            return;
     }
 
     // Assign the batch id BEFORE pushing — the reference does it inside
@@ -1231,14 +1234,15 @@ void RenderCommands::setCheckRange(dqCommon::Frustum const& worldFrustum)
 {
     // Ported from: itwinjs-core RenderCommands.setCheckRange() (line 704)——
     // FrustumPlanes.fromFrustum(worldFrustum)（RenderCommands.ts:591）。
-    m_checkPlanes = FrustumPlanes(worldFrustum);
-    m_checkPlanesValid = true;
+    // dqCommon::FrustumPlanes::fromFrustum 为参考 1:1（角点序 = Npc 枚举
+    // 序，法线定向由绕序保证，无任何校正逻辑）。
+    m_checkPlanes = dqCommon::FrustumPlanes::fromFrustum(worldFrustum);
 }
 
 void RenderCommands::clearCheckRange()
 {
     // Ported from: itwinjs-core RenderCommands.clearCheckRange() (line 706)
-    m_checkPlanesValid = false;
+    m_checkPlanes = dqCommon::FrustumPlanes{};
 }
 
 END_DQ_RENDER_NAMESPACE

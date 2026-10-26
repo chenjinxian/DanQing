@@ -6,6 +6,7 @@
 #pragma once
 
 #include "Export.h"
+#include "BatchOptions.h"
 #include "CreateTextureArgs.h"
 #include "GraphicBuilder.h"
 #include "GraphicBranch.h"
@@ -220,11 +221,13 @@ public:
     /// Create a batch graphic (wraps graphic with feature table for picking).
     /// The batch is pickable (Graphic.ts:311 Batch.isPickable = true) and its
     /// feature table drives the per-batch feature-override LUT (hilite).
-    /// ← itwinjs-core: System.createBatch(graphic, features, range)
-    ///   (System.ts:555-561 — glTF 装饰的 pickable/hilite 来源)
+    /// ← itwinjs-core: System.createBatch(graphic, features, range, options?)
+    ///   (System.ts:555-561 — glTF 装饰的 pickable/hilite 来源；options 的
+    ///   tileId 为调试标识——BatchOptions.ts:25-27）
     virtual RenderGraphic* createBatch(RenderGraphic* /*graphic*/,
                                         dqCommon::FeatureTable const* /*featureTable*/,
-                                        dqGeom::Range3d const& /*range*/)
+                                        dqGeom::Range3d const& /*range*/,
+                                        BatchOptions const* /*options*/ = nullptr)
     {
         return nullptr;
     }

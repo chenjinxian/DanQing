@@ -285,13 +285,11 @@ void Batch::collectStatistics(RenderMemory::Statistics& stats) const
 // ---------------------------------------------------------------------------
 void Batch::unionRange(dqGeom::Range3d& range) const
 {
-    // Ported from: itwinjs-core Batch.unionRange()
+    // Ported from: itwinjs-core Batch.unionRange() (Graphic.ts:303-305)
+    //   range.extendRange(this.range) —— 仅并入创建时存储的 range。
+    // 子树走查为 DanQing 自创形（2026-10-26 对参考定案后废弃——cull 输入
+    // 即本 range，addBatch :655-662；null range 批的跳过语义由调用方保证）。
     range.ExtendRange(m_range);
-    if (m_child) m_child->unionRange(range);
-    // The feature table itself doesn't contribute additional spatial extent;
-    // the child graphic's geometry already covers the batch's spatial bounds.
-    // The feature table is a mapping from feature index to element ID,
-    // not a spatial structure.
 }
 
 // ---------------------------------------------------------------------------

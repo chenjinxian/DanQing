@@ -246,7 +246,8 @@ RenderGraphic* OpenGLRenderSystem::createRenderGraphic(void* cachedGeometry)
 // ---------------------------------------------------------------------------
 RenderGraphic* OpenGLRenderSystem::createBatch(RenderGraphic* graphic,
                                                 dqCommon::FeatureTable const* featureTable,
-                                                dqGeom::Range3d const& range)
+                                                dqGeom::Range3d const& range,
+                                                BatchOptions const* options)
 {
     if (!graphic) return nullptr;
 
@@ -273,6 +274,15 @@ RenderGraphic* OpenGLRenderSystem::createBatch(RenderGraphic* graphic,
     // isInternalGraphic 判型后正确分派（内部直连 / branch 迭代）。
     batch->setChild(std::make_unique<RenderGraphicAdapter>(graphic));
     batch->setRange(range);
+    // BatchOptions.ts 消费面：tileId 调试标识（Graphic.ts:242-245 Batch.tileId
+    // "chiefly for debugging"）+ locateOnly（addBatch 的 readPixels-only 门——
+    // 既有 setLocateOnly 的 options 通道形态）。noFlash/noHilite/noEmphasis
+    // 随 FeatureOverrides 面落地（BatchOptions.h TODO 注）。
+    if (options) {
+        batch->setTileId(options->tileId);
+        if (options->locateOnly)
+            batch->setLocateOnly(true);
+    }
     return batch;
 }
 

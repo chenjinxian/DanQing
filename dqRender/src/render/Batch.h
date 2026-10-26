@@ -118,9 +118,20 @@ public:
     /// PackedFeatureTable.pack at the reference's batch creation points).
     void setFeatureTable(std::unique_ptr<dqCommon::FeatureTable> table);
 
-    /// Set the batch's content range (used by unionRange).
+    /// Set the batch's content range (used by unionRange / pick culling).
     /// Ported from: itwinjs-core Batch constructor range (Graphic.ts:262-267)
     void setRange(dqGeom::Range3d const& range) noexcept { m_range = range; }
+
+    /// The stored creation range — the cull input of RenderCommands.addBatch
+    /// (:655-662 `batch.range`). Null range ⇒ skip culling (reference `if
+    /// (!batch.range.isNull)`).
+    dqGeom::Range3d const& getRange() const noexcept { return m_range; }
+
+    /// Identifies the Tile associated with the batch, chiefly for debugging.
+    /// Ported from: itwinjs-core Graphic.ts:242-245 Batch.tileId
+    ///   （options.tileId——BatchOptions.ts:25-27；ImdlTileTree 以瓦 contentId 填）
+    void setTileId(std::string id) { m_tileId = std::move(id); }
+    std::string const& getTileId() const noexcept { return m_tileId; }
 
     /// Get the per-batch thematic sensors（distanceCutoff>0 臂——
     /// Graphic.ts:111-120 的 PerTargetBatchData.getThematicSensors +
@@ -266,6 +277,7 @@ private:
     // primitives are CachedGeometry whose unionRange is a no-op, so without a
     // stored range a Batch contributes nothing to culling bounds.
     dqGeom::Range3d m_range;
+    std::string m_tileId;  // ← Graphic.ts:243 options.tileId（调试标识）
     uint32_t m_featureCount = 0;
     uint32_t m_batchId = 0;
     BatchState* m_batchState = nullptr;  // ← 注册表反指针（setBatchState 注）

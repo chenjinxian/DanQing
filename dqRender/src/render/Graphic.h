@@ -87,6 +87,11 @@ public:
     Primitive* toPrimitive() override { return this; }
     bool isPickable() const override { return false; }
 
+    /// The geometry's reachable domain（量化解码域——CachedGeometry::
+    /// computeRange 同式）。基类空实现的历史缺口（TD-37 取证：ACS 装饰批
+    /// range 空 + Primitive unionRange 空 → 域恒空）。
+    void unionRange(dqGeom::Range3d& range) const override;
+
     CachedGeometry* getGeometry() const noexcept { return m_geometry; }
 
     // Accessors — ported from: itwinjs-core Primitive.ts

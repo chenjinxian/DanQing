@@ -110,6 +110,32 @@ public:
         return m_surfaces;
     }
 
+    /// Ported from: itwinjs-core Mesh.ts MeshGraphic.unionRange (:163-168)
+    ///   instances ? range.extendRange(this._instances.range)
+    ///             : range.extendRange(this._meshRange)
+    /// _meshRange = 顶点表量化解码域（Mesh.ts:42 `qparams.computeRange()`——
+    /// qOrigin..qOrigin+0xFFFF*qScale，顶点着色器可达集）；DanQing 的多
+    /// surface 共享同一 LUT 顶点表，逐 surface 并入等价。
+    /// instances 臂：InstanceBuffers.range 未算（TD-25 在册 TODO——剔除/range
+    /// 消费面出现时补算）；实例化 mesh 的 cull 域由 Batch.range（imdl
+    /// contentRange——ImdlReader.ts:123）承载，本缺口不触及 pick 裁剪面。
+    void unionRange(dqGeom::Range3d& range) const override
+    {
+        for (auto const& surf : m_surfaces) {
+            if (!surf) continue;
+            VertexLutTexture const& lut = surf->getLut();
+            float const* qo = lut.getQOrigin();
+            float const* qs = lut.getQScale();
+            if (qo && qs) {
+                range.ExtendPoint(dqGeom::Point3d::From(qo[0], qo[1], qo[2]));
+                range.ExtendPoint(dqGeom::Point3d::From(
+                    qo[0] + qs[0] * 65535.0f,
+                    qo[1] + qs[1] * 65535.0f,
+                    qo[2] + qs[2] * 65535.0f));
+            }
+        }
+    }
+
     /// Get edge geometries.
     std::vector<std::unique_ptr<EdgeGeometry>> const& getEdges() const noexcept
     {

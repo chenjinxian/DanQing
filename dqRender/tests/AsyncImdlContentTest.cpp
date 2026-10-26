@@ -109,7 +109,8 @@ public:
     }
     RenderGraphic* createBatch(RenderGraphic* graphic,
                                dqCommon::FeatureTable const* featureTable,
-                               dqGeom::Range3d const& range) override
+                               dqGeom::Range3d const& range,
+                               BatchOptions const* /*options*/ = nullptr) override
     {
         if (!graphic)
             return nullptr;

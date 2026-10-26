@@ -87,7 +87,8 @@ public:
     // feature table 复制 + 范围记录。
     dqRender::RenderGraphic* createBatch(dqRender::RenderGraphic* graphic,
                                          dqCommon::FeatureTable const* featureTable,
-                                         dqGeom::Range3d const& range) override
+                                         dqGeom::Range3d const& range,
+                                         dqRender::BatchOptions const* /*options*/ = nullptr) override
     {
         if (!graphic)
             return nullptr;

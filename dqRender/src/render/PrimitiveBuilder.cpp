@@ -347,8 +347,27 @@ RenderGraphic* PrimitiveBuilder::finish()
         auto featureTable = std::make_unique<dqCommon::FeatureTable>(
             1, dqBase::DqId(0), dqCommon::BatchType::Primary);
         featureTable->insertWithIndex(dqCommon::Feature(m_pickableId), 0);
+        // Batch range = meshes 的网格域（PrimitiveBuilder.ts:194 `range:
+        // meshes.range ?? new Range3d()`）。空间约定：参考结构 Batch 在
+        // recenter 结点**外**（template node.transform 在批内——System.ts
+        // :552-560），meshes.range 原始空间即批空间；DanQing 的 Batch 包裹
+        // recenter Branch（本函数 :332-335），批空间 = child 域 = 原始域 −
+        // transformOrigin（points 存 recentered 形，points().range 存原始域
+        // ——MeshPrimitives.cpp:28-30）。null range 批在 addBatch 跳过裁剪
+        // （参考 :655 `!batch.range.isNull` 门）——此前 DanQing 恒传 null，
+        // 装饰批从未参与 pick cull。
+        dqGeom::Range3d batchRange = dqGeom::Range3d::CreateNull();
+        for (auto const& mesh : meshes) {
+            auto const& pr = mesh->points().range;
+            batchRange.ExtendXYZ(pr.low.x - transformOrigin.x,
+                                 pr.low.y - transformOrigin.y,
+                                 pr.low.z - transformOrigin.z);
+            batchRange.ExtendXYZ(pr.high.x - transformOrigin.x,
+                                 pr.high.y - transformOrigin.y,
+                                 pr.high.z - transformOrigin.z);
+        }
         return m_system.createBatch(branch.release(), featureTable.get(),
-                                    dqGeom::Range3d::CreateNull());
+                                    batchRange);
     }
     return branch.release();
 }

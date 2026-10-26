@@ -794,9 +794,12 @@ TileContent ImdlTile::createContentGraphics(ImdlParsedContent&& parsed)
             std::make_unique<dqCommon::FeatureTable>(packed.unpack());
         auto const tU1 = std::chrono::steady_clock::now();
         // ImdlReader.ts:122-123: graphic = system.createBatch(graphic,
-        // featureTable, content.contentRange).
+        // featureTable, content.contentRange)。tileId 调试标识（BatchOptions
+        // .ts:25——瓦 contentId；[CULL] 探针/Debug Info 消费）。
+        dqRender::BatchOptions batchOpts;
+        batchOpts.tileId = m_contentId;
         content.graphic.reset(system->createBatch(list, content.featureTable.get(),
-                                                  content.contentRange));
+                                                  content.contentRange, &batchOpts));
         if (std::getenv("DANQING_TILE_TIME")) {
             auto const usU = std::chrono::duration_cast<std::chrono::microseconds>(tU1 - tU0).count();
             auto const usB = std::chrono::duration_cast<std::chrono::microseconds>(

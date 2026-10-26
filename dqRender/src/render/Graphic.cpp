@@ -153,38 +153,45 @@ bool Branch::shouldAddCommands() const
 }
 
 // ---------------------------------------------------------------------------
+// Primitive — unionRange
+// Ported from: itwinjs-core Primitive.ts unionRange (line 76-78)
+//   range.extendRange(this.cachedGeometry.computeRange())
+// computeRange = 量化解码域（qOrigin .. qOrigin+0xFFFF*qScale，
+// CachedGeometry.ts:170-184）。参考的全部几何恒量化（qparams 必在）；
+// DanQing 的 VBO 形（PolyfaceGraphic——glTF/canvas 装饰）无 qparams——
+// 守卫缺席即不并入（不造 (0,0,0) 幻影点；域缺席由 GltfDecoration 的
+// GetGraphicRange workaround 承载，GltfDecoration.cpp 同源登记）。
+// ---------------------------------------------------------------------------
+void Primitive::unionRange(dqGeom::Range3d& range) const
+{
+    if (!m_geometry)
+        return;
+    float const* qo = m_geometry->getQOrigin();
+    float const* qs = m_geometry->getQScale();
+    if (qo && qs) {
+        range.ExtendPoint(dqGeom::Point3d::From(qo[0], qo[1], qo[2]));
+        range.ExtendPoint(dqGeom::Point3d::From(
+            qo[0] + qs[0] * 65535.0f,
+            qo[1] + qs[1] * 65535.0f,
+            qo[2] + qs[2] * 65535.0f));
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Branch — unionRange
-// Ported from: itwinjs-core Graphic.ts Branch.unionRange (line 396-407)
+// Ported from: itwinjs-core Graphic.ts Branch.unionRange (line 409-416)
+//   子域收集 → localToWorldTransform.multiplyRange → 并入 range。
+// 1:1：变换恒走 localToWorld（参考 Branch 无 mv/mvp 存储面——那些在
+// PushBranchCommand 绘制期推导；此前 DanQing 的 m_mv 8 角形 + l2w 分叉
+// 为自创等价形，2026-10-26 对参考定案后废弃）。
 // ---------------------------------------------------------------------------
 void Branch::unionRange(dqGeom::Range3d& range) const
 {
-    if (m_child) {
-        m_child->unionRange(range);
-        // Ported from: itwinjs-core Graphic.ts Branch.unionRange (line 396-407)
-        // Transform the range by the branch's local-to-world transform (m_mv).
-        if (m_hasTransform && !range.isNull()) {
-            // Transform all 8 corners of the AABB and recompute the range.
-            auto const& mv = m_mv;
-            double minX = range.low.x, minY = range.low.y, minZ = range.low.z;
-            double maxX = range.high.x, maxY = range.high.y, maxZ = range.high.z;
-
-            range = dqGeom::Range3d::CreateNull();
-            double corners[8][3] = {
-                {minX, minY, minZ}, {maxX, minY, minZ},
-                {minX, maxY, minZ}, {maxX, maxY, minZ},
-                {minX, minY, maxZ}, {maxX, minY, maxZ},
-                {minX, maxY, maxZ}, {maxX, maxY, maxZ}
-            };
-            for (int i = 0; i < 8; ++i) {
-                double x = corners[i][0], y = corners[i][1], z = corners[i][2];
-                // Column-major 4x4: result = M * point (with w=1)
-                double rx = mv[0]*x + mv[4]*y + mv[8]*z  + mv[12];
-                double ry = mv[1]*x + mv[5]*y + mv[9]*z  + mv[13];
-                double rz = mv[2]*x + mv[6]*y + mv[10]*z + mv[14];
-                range.ExtendXYZ(rx, ry, rz);
-            }
-        }
-    }
+    if (!m_child)
+        return;
+    dqGeom::Range3d thisRange = dqGeom::Range3d::CreateNull();
+    m_child->unionRange(thisRange);
+    range.ExtendRange(m_localToWorld.MultiplyRange(thisRange));
 }
 
 // ---------------------------------------------------------------------------
