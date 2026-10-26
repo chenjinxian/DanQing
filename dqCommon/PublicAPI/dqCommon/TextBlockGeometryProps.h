@@ -8,6 +8,7 @@
 #include "TextStyle.h"
 
 #include <dqGeom/Point3d.h>
+#include <dqGeom/Transform.h>
 
 #include <variant>
 #include <vector>
@@ -45,5 +46,14 @@ struct TextBlockGeometryProps {
     // The set of geometric primitives representing the TextBlock contents.
     std::vector<TextBlockGeometryPropsEntry> entries;
 };
+
+class TextBlockLayout;
+
+// Produces the geometry for a text block interpretable by GeometryStreamBuilder
+// (whole-TextAnnotation form = appendTextAnnotationGeometry，Y-c 后续件)。
+// Ported from: itwinjs-core produceTextBlockGeometry
+//              (TextBlockGeometry.ts:149-184)
+DQ_COMMON_EXPORT TextBlockGeometryProps produceTextBlockGeometry(
+    TextBlockLayout const& layout, dqGeom::Transform const& documentTransform);
 
 END_DQ_COMMON_NAMESPACE
