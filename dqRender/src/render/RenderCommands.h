@@ -11,6 +11,8 @@
 #include "FrustumPlanes.h"
 #include "gl/RenderFlags.h"
 
+#include <dqGeom/Transform.h>  // walk L2W（TD-37 rect 裁剪的世界变换）
+
 #include <array>
 #include <cstdint>
 #include <functional>
@@ -220,8 +222,10 @@ public:
     static bool isOpaquePass(RenderPass pass);
 
     /// Set a culling frustum from an MVP matrix.
-    /// Ported from: itwinjs-core RenderCommands.setCheckRange() (line 704)
-    void setCheckRange(float const* mvp16);
+    /// Ported from: itwinjs-core RenderCommands.setCheckRange() (line 704)——
+    /// 参考签名即 world Frustum（setCheckRange(frustum: Frustum) →
+    /// FrustumPlanes.fromFrustum，RenderCommands.ts:591）。
+    void setCheckRange(dqCommon::Frustum const& worldFrustum);
 
     /// Clear the culling frustum.
     /// Ported from: itwinjs-core RenderCommands.clearCheckRange() (line 706)
@@ -265,8 +269,14 @@ private:
     // Ported from: itwinjs-core RenderCommands._frustumPlanes
     // （P-7/TD-37：存原始 check MVP[S 子框仿射]——逐 batch × 栈顶 mvp 现提
     // 平面后测局部 range，clip 空间等价参考 transformBy(currentTransform)。）
-    std::array<float, 16> m_checkMvp = {};
-    bool m_checkMvpValid = false;
+    // TD-37 rect 裁剪：世界空间 rect 子视锥面（参考 _frustumPlanes 形——
+    // setCheckRange(worldFrustum)→FrustumPlanes.fromFrustum）。
+    FrustumPlanes m_checkPlanes;
+    bool m_checkPlanesValid = false;
+
+public:
+
+private:
 };
 
 END_DQ_RENDER_NAMESPACE

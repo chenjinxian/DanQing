@@ -325,6 +325,11 @@ protected:
         m_planeData[static_cast<int>(Plane::Right)] = right;
     }
 
+public:
+    /// The world-space plan frustum (reference FrustumUniforms.planFrustum :44——
+    /// changeFrustum 存档；TD-37 rect 裁剪的插值源）。
+    dqCommon::Frustum const& getPlanFrustum() const noexcept { return m_planFrustum; }
+
 private:
     // CPU state
     dqCommon::Frustum m_planFrustum;

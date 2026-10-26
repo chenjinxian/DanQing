@@ -307,53 +307,25 @@ void RenderCommands::addBatch(Batch& batch)
 
     // Frustum culling: skip batches outside the frustum.
     // Ported from: itwinjs-core addBatch (line 655-662)
-    if (m_checkMvpValid) {
-        // TEMP-DIAG（TD-37 时序取证——取证后删除）：装配期栈顶 mvp 全量 dump
-        // （首批一次；与绘制期 drawParams mvp 的 [CULLMVP-DRAW] 并排比对）。
-        static bool s_dumpedAsm = false;
-        if (!s_dumpedAsm && std::getenv("DANQING_PICK_TRACE")) {
-            s_dumpedAsm = true;
-            auto const& sm = m_stack->getCurrentMvp();
-            std::fprintf(stderr, "[CULLMVP-ASM] ");
-            for (int i = 0; i < 16; ++i) std::fprintf(stderr, "%.6f ", sm[i]);
-            std::fprintf(stderr, "\n");
-            std::fprintf(stderr, "[CULLMVP-CHK] ");
-            for (int i = 0; i < 16; ++i) std::fprintf(stderr, "%.6f ", m_checkMvp[i]);
-            std::fprintf(stderr, "\n");
-            std::fflush(stderr);
-        }
+    if (m_checkPlanesValid) {
+        // TD-37 rect 裁剪（世界空间形，参考 addBatch :655-662 1:1）：
+        //   frustum = Frustum.fromRange(batch.range /*局部*/)
+        //   frustum.transformBy(target.currentTransform /*栈 l2w 组合*/)
+        //   → computeFrustumContainment(rectFrustumPlanes)
+        // batch range 为局部坐标（builder/contentRange 域），栈 l2w（BranchState
+        // 组合链）将其映射到世界——参考 currentTransform 语义（BranchUniforms
+        // 的 transform 即 BranchState.transform）。原 walk 预乘形废弃（双
+        // location 实录——栈 mvp 已含分支变换，再乘 world range 即重复）。
         auto range = dqGeom::Range3d::CreateNull();
         batch.unionRange(range);
         if (!range.isNull()) {
-            auto const& stackMvp = m_stack->getCurrentMvp();
-            float batchMvp[16];
-            for (int col = 0; col < 4; ++col)
-                for (int row = 0; row < 4; ++row)
-                    batchMvp[col * 4 + row] =
-                        m_checkMvp[col * 4 + 0] * stackMvp[0 * 4 + row]
-                        + m_checkMvp[col * 4 + 1] * stackMvp[1 * 4 + row]
-                        + m_checkMvp[col * 4 + 2] * stackMvp[2 * 4 + row]
-                        + m_checkMvp[col * 4 + 3] * stackMvp[3 * 4 + row];
-            FrustumPlanes const planes(batchMvp);
-            bool const contained = planes.computeBoxContainment(range);
+            dqGeom::Range3d const worldRange =
+                m_stack->getTop().getLocalToWorld().MultiplyRange(range);
+            bool const contained = m_checkPlanes.computeRangeContainmentWorld(worldRange);
             if (std::getenv("DANQING_PICK_TRACE")) {
-                // 自检：range 中心过 batchMvp → 剪裁空间落点（contained 应与
-                // 中心落点粗一致）。
-                double const c[3] = {(range.low.x + range.high.x) / 2.0,
-                                     (range.low.y + range.high.y) / 2.0,
-                                     (range.low.z + range.high.z) / 2.0};
-                float clip[4];
-                for (int row = 0; row < 4; ++row)
-                    clip[row] = batchMvp[0 * 4 + row] * static_cast<float>(c[0])
-                                + batchMvp[1 * 4 + row] * static_cast<float>(c[1])
-                                + batchMvp[2 * 4 + row] * static_cast<float>(c[2])
-                                + batchMvp[3 * 4 + row];
-                float const wInv = 1.0f / (0.0f != clip[3] ? clip[3] : 1.0f);
-                std::fprintf(stderr, "[CULL] batch=%u range=[%.1f %.1f %.1f]-[%.1f %.1f %.1f] contained=%d"
-                                     " centerNdc=(%.3f,%.3f,%.3f)\n",
-                             batch.getBatchId(), range.low.x, range.low.y, range.low.z,
-                             range.high.x, range.high.y, range.high.z, contained ? 1 : 0,
-                             clip[0] * wInv, clip[1] * wInv, clip[2] * wInv);
+                std::fprintf(stderr, "[CULL] batch=%u world=[%.1f %.1f %.1f]-[%.1f %.1f %.1f] contained=%d\n",
+                             batch.getBatchId(), worldRange.low.x, worldRange.low.y, worldRange.low.z,
+                             worldRange.high.x, worldRange.high.y, worldRange.high.z, contained ? 1 : 0);
             }
             if (!contained)
                 return;
@@ -786,9 +758,11 @@ void RenderCommands::pushAndPopBranchForPass(RenderPass pass, Branch& branch,
 
     assert(pass != RenderPass::None);
 
+
     std::array<float, 16> mv, mvp;
     branchEffectiveTransform(branch, mv, mvp);
-    m_stack->pushTransform(mv.data(), mvp.data());
+    // l2w 传栈（TD-37——同 pushAndPopBranchInternal）。
+    m_stack->pushTransform(mv.data(), mvp.data(), &branch.getLocalToWorld());
     // Ported from: itwinjs-core pushAndPopBranchForPass (line 368-371)
     // Planar classifier push: if the branch has a planar classifier,
     // push it onto the classifier stack for classified rendering.
@@ -1045,9 +1019,12 @@ void RenderCommands::pushAndPop(DrawCommand& push, DrawCommand& pop,
 void RenderCommands::pushAndPopBranchInternal(Branch& branch,
                                                std::function<void()> func)
 {
+
     std::array<float, 16> mv, mvp;
     branchEffectiveTransform(branch, mv, mvp);
-    m_stack->pushTransform(mv.data(), mvp.data());
+    // l2w 传栈（TD-37：addBatch 世界 range = 栈 l2w × batch 局部 range——
+    // 绘制重放 PushBranchCommand 同款组合语义）。
+    m_stack->pushTransform(mv.data(), mvp.data(), &branch.getLocalToWorld());
     // Ported from: itwinjs-core _pushAndPopBranch (line 463-466)
     // Planar classifier push: if the branch has a planar classifier,
     // push it onto the classifier stack. Requires PlanarClassifier type.
@@ -1250,17 +1227,18 @@ bool RenderCommands::isOpaquePass(RenderPass pass)
         && pass <= RenderPass::OpaqueGeneral;
 }
 
-void RenderCommands::setCheckRange(float const* mvp16)
+void RenderCommands::setCheckRange(dqCommon::Frustum const& worldFrustum)
 {
-    // Ported from: itwinjs-core RenderCommands.setCheckRange() (line 704)
-    std::copy(mvp16, mvp16 + 16, m_checkMvp.begin());
-    m_checkMvpValid = true;
+    // Ported from: itwinjs-core RenderCommands.setCheckRange() (line 704)——
+    // FrustumPlanes.fromFrustum(worldFrustum)（RenderCommands.ts:591）。
+    m_checkPlanes = FrustumPlanes(worldFrustum);
+    m_checkPlanesValid = true;
 }
 
 void RenderCommands::clearCheckRange()
 {
     // Ported from: itwinjs-core RenderCommands.clearCheckRange() (line 706)
-    m_checkMvpValid = false;
+    m_checkPlanesValid = false;
 }
 
 END_DQ_RENDER_NAMESPACE

@@ -1032,17 +1032,91 @@ void TargetImpl::applyRectCheckRange(int32_t x, int32_t y, uint32_t width, uint3
     double const sy = 1.0 - b - t;
     if (sx <= 1.0e-12 || sy <= 1.0e-12)
         return;
-    // [-1,1] 子框：x ∈ [TX, TX+LX]，TX = -1+2l，LX = 2sx。
-    double const LX = 2.0 * sx;
-    double const TX = -1.0 + 2.0 * l;
-    double const LY = 2.0 * sy;
-    double const TY = -1.0 + 2.0 * b;
-    float const sGl[16] = {
-        static_cast<float>(1.0 / LX), 0.0f, 0.0f, 0.0f,
-        0.0f, static_cast<float>(1.0 / LY), 0.0f, 0.0f,
-        0.0f, 0.0f, 1.0f, 0.0f,
-        static_cast<float>(-TX / LX), static_cast<float>(-TY / LY), 0.0f, 1.0f};
-    m_commands.setCheckRange(sGl);
+    // [-1,1] 子框 → 世界空间 rect 子视锥（Target.ts:926-958 的 1:1——两段
+    // 角点插值：tmpFrust 先左右[X 对]，rectFrust 再上下[Y 对]；
+    // interpolateFrustumPoint = interpolatePoint(p0, fraction, p1)→dest——
+    // fraction ≤/> 0.5 两半防精度，Target.ts:1506-1512）。
+    // TD-37 根治：世界面测试无装配期分支时序依赖（原 S×栈顶mvp 裁剪空间形
+    // 废弃——2026-10-26 [CULLMVP] 插桩定案 addBatch 时分支未 push）。
+    // EQUIVALENCE（插值源）：参考插值 planFrustum（changeFrustum 存档，
+    // FrustumUniforms.planFrustum :44）。DanQing 的 FrustumUniforms 另有
+    // changeViewMatrix 半边（:288——独立改 m_view 不动 planFrustum 的移植缝，
+    // 无参考对应），planFrustum 可与 pickState 的 view/proj（beginReadPixels
+    // 的 mv/mvp 源）desync——baytown [CULL] 对账实录（planFrustum 不含批
+    // 世界域而 OFF 态绘制命中）。故插值源改为与 pickState 同源重建：
+    // NDC 立方 8 角经 (proj×view)⁻¹ 逆映射到世界；验证法 = PickDumpScene
+    // 双态绿（自洽即无 desync）。
+    dqCommon::Frustum planFrustNdc;
+    planFrustNdc.initNpc();  // [-1,1] 立方 8 角
+    Matrix4d const viewRow = [&] {
+        auto const& view = m_uniforms.frustum.getViewMatrix();
+        auto const& r = view.matrix.coffs;
+        return Matrix4d::CreateRowValues(
+            r[0], r[1], r[2], view.origin.x,
+            r[3], r[4], r[5], view.origin.y,
+            r[6], r[7], r[8], view.origin.z,
+            0.0, 0.0, 0.0, 1.0);
+    }();
+    Matrix4d const mvpRow =
+        m_uniforms.frustum.getProjectionMatrix().MultiplyMatrixMatrix(viewRow);
+    Matrix4d mvpInv;
+    dqCommon::Frustum planFrust = planFrustNdc;
+    if (mvpRow.Inverse(mvpInv)) {
+        for (int i = 0; i < dqCommon::kNpcCornerCount; ++i) {
+            auto const& pt = planFrustNdc.points[i];
+            double const v4[4] = {pt.x, pt.y, pt.z, 1.0};
+            double o[4] = {0, 0, 0, 0};
+            for (int row = 0; row < 4; ++row)
+                for (int col = 0; col < 4; ++col)
+                    o[row] += mvpInv.at(row, col) * v4[col];
+            double const w = (0.0 != o[3]) ? o[3] : 1.0;
+            planFrust.points[i] = dqGeom::Point3d::From(o[0] / w, o[1] / w, o[2] / w);
+        }
+    }
+    dqCommon::Frustum tmpFrust;
+    dqCommon::Frustum rectFrust;
+    auto const lS = static_cast<double>(l);
+    auto const rS = static_cast<double>(r);
+    auto const bS = static_cast<double>(b);
+    auto const tS = static_cast<double>(t);
+    auto lerpCorner = [](dqCommon::Frustum& dest, dqCommon::Npc destPt,
+                         dqCommon::Frustum const& src, dqCommon::Npc p0, double fraction,
+                         dqCommon::Npc p1) {
+        auto const& a = src.getCorner(p0);
+        auto const& c = src.getCorner(p1);
+        double x, y, z;
+        if (fraction <= 0.5) {
+            x = a.x + fraction * (c.x - a.x);
+            y = a.y + fraction * (c.y - a.y);
+            z = a.z + fraction * (c.z - a.z);
+        } else {
+            double const f = fraction - 1.0;
+            x = c.x + f * (a.x - c.x);
+            y = c.y + f * (a.y - c.y);
+            z = c.z + f * (a.z - c.z);
+        }
+        dest.getCorner(destPt) = dqGeom::Point3d::From(x, y, z);
+    };
+    using NPC = dqCommon::Npc;
+    // X 阶（:945-948）——left 边与 right 边各按 l/r 尺度内插。
+    lerpCorner(tmpFrust, NPC::LeftBottomRear,  planFrust, NPC::LeftBottomRear,  lS, NPC::RightBottomRear);
+    lerpCorner(tmpFrust, NPC::RightBottomRear, planFrust, NPC::RightBottomRear, rS, NPC::LeftBottomRear);
+    lerpCorner(tmpFrust, NPC::LeftTopRear,     planFrust, NPC::LeftTopRear,     lS, NPC::RightTopRear);
+    lerpCorner(tmpFrust, NPC::RightTopRear,    planFrust, NPC::RightTopRear,    rS, NPC::LeftTopRear);
+    lerpCorner(tmpFrust, NPC::LeftBottomFront, planFrust, NPC::LeftBottomFront, lS, NPC::RightBottomFront);
+    lerpCorner(tmpFrust, NPC::RightBottomFront, planFrust, NPC::RightBottomFront, rS, NPC::LeftBottomFront);
+    lerpCorner(tmpFrust, NPC::LeftTopFront,    planFrust, NPC::LeftTopFront,    lS, NPC::RightTopFront);
+    lerpCorner(tmpFrust, NPC::RightTopFront,   planFrust, NPC::RightTopFront,   rS, NPC::LeftTopFront);
+    // Y 阶（:955-958）——bottom/top 边按 b/t 尺度内插。
+    lerpCorner(rectFrust, NPC::LeftBottomRear,  tmpFrust, NPC::LeftBottomRear,  bS, NPC::LeftTopRear);
+    lerpCorner(rectFrust, NPC::RightBottomRear, tmpFrust, NPC::RightBottomRear, bS, NPC::RightTopRear);
+    lerpCorner(rectFrust, NPC::LeftTopRear,     tmpFrust, NPC::LeftTopRear,     tS, NPC::LeftBottomRear);
+    lerpCorner(rectFrust, NPC::RightTopRear,    tmpFrust, NPC::RightTopRear,    tS, NPC::RightBottomRear);
+    lerpCorner(rectFrust, NPC::LeftBottomFront, tmpFrust, NPC::LeftBottomFront, bS, NPC::LeftTopFront);
+    lerpCorner(rectFrust, NPC::RightBottomFront, tmpFrust, NPC::RightBottomFront, bS, NPC::RightTopFront);
+    lerpCorner(rectFrust, NPC::LeftTopFront,    tmpFrust, NPC::LeftTopFront,    tS, NPC::LeftBottomFront);
+    lerpCorner(rectFrust, NPC::RightTopFront,   tmpFrust, NPC::RightTopFront,   tS, NPC::RightBottomFront);
+    m_commands.setCheckRange(rectFrust);
 }
 
 // ---------------------------------------------------------------------------
