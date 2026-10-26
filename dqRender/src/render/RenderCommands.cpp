@@ -308,6 +308,20 @@ void RenderCommands::addBatch(Batch& batch)
     // Frustum culling: skip batches outside the frustum.
     // Ported from: itwinjs-core addBatch (line 655-662)
     if (m_checkMvpValid) {
+        // TEMP-DIAG（TD-37 时序取证——取证后删除）：装配期栈顶 mvp 全量 dump
+        // （首批一次；与绘制期 drawParams mvp 的 [CULLMVP-DRAW] 并排比对）。
+        static bool s_dumpedAsm = false;
+        if (!s_dumpedAsm && std::getenv("DANQING_PICK_TRACE")) {
+            s_dumpedAsm = true;
+            auto const& sm = m_stack->getCurrentMvp();
+            std::fprintf(stderr, "[CULLMVP-ASM] ");
+            for (int i = 0; i < 16; ++i) std::fprintf(stderr, "%.6f ", sm[i]);
+            std::fprintf(stderr, "\n");
+            std::fprintf(stderr, "[CULLMVP-CHK] ");
+            for (int i = 0; i < 16; ++i) std::fprintf(stderr, "%.6f ", m_checkMvp[i]);
+            std::fprintf(stderr, "\n");
+            std::fflush(stderr);
+        }
         auto range = dqGeom::Range3d::CreateNull();
         batch.unionRange(range);
         if (!range.isNull()) {

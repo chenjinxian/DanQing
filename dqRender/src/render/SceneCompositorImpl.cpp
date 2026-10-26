@@ -2630,6 +2630,20 @@ void SceneCompositor::drawPass(RenderCommands& commands, RenderPass pass,
                     // produces zero fragments while Surface fills (u_mvp) render correctly.
                     drawParams.setModelViewMatrix(m_branchStack.getCurrentMv().data());
                     drawParams.setModelViewProjectionMatrix(m_branchStack.getCurrentMvp().data());
+                    // TEMP-DIAG（TD-37 时序取证——取证后删除）：绘制期栈顶 mvp
+                    // 全量 dump（pass 首批一次；与 [CULLMVP-ASM] 并排比对）。
+                    if (std::getenv("DANQING_PICK_TRACE")) {
+                        static int s_dumpedDrawPass = -1;
+                        int const passId = static_cast<int>(pass);
+                        if (s_dumpedDrawPass != passId) {
+                            s_dumpedDrawPass = passId;
+                            auto const& dm = m_branchStack.getCurrentMvp();
+                            std::fprintf(stderr, "[CULLMVP-DRAW p%d] ", passId);
+                            for (int i = 0; i < 16; ++i) std::fprintf(stderr, "%.6f ", dm[i]);
+                            std::fprintf(stderr, "\n");
+                            std::fflush(stderr);
+                        }
+                    }
                     // Material uniforms (u_materialColor / u_materialParams).
                     // Ported from: itwinjs-core glsl/Surface.ts addMaterial (:206-220):
                     //   const info = wantMaterials(vf) ? geometry.materialInfo : undefined;
