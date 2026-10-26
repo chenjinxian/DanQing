@@ -312,21 +312,25 @@ std::optional<std::vector<dqGeom::Point3d>> computeIntervalPoints(
 {
     double const lineFactor = lineIntervalFactor.value_or(0.5);
     double const arcFactor = arcIntervalFactor.value_or(0.25);
-    (void)lineFactor;   // TODO 缝消費（CurveChain children——函数体 TODO 注）
-    (void)arcFactor;
 
     std::vector<dqGeom::Point3d> points;
     FrameGeometryResult frame = computeFrame(args);
     if (!frame.geometry)
         return std::nullopt;
-    // collectCurvePrimitives 面：Loop/Path 均为 CurveChain——曲线族子原语。此处
-    // 帧几何仅一 CurveChain；链子原语遍历（Arc→arcFactor 步进，线→lineFactor）。
-    // DanQing 的 CurveChain 子原语访问经 CloneStroked 路径为 Phase-N——按帧形
-    // 已知子原语结构直接展开（computeFrame 各臂的曲线清单是封闭集）。
-    (void)frame;
-    // TODO: 子原语遍历随 CurveChain 公开 children 缝落地复核（参考
-    // collectCurvePrimitives 泛型遍历）——LeaderAttachment KeyPoint 消费面
-    // （Y-c3 LeaderGeometry）启用时补。
+
+    // 参考 :115 collectCurvePrimitives(undefined, false, true) 的巡检面 =
+    // computeFrame 的曲线子原语封闭集（FrameGeometryResult.curves——变换后，
+    // 与 KeyPoint 附件索引同一清单）。:117-121 逐曲线：Arc → arcIntervalFactor，
+    // 其余 → lineIntervalFactor；`for (interval = 0; interval <= 1; interval += end)`
+    // 累加序 1:1（含浮点累加语义）。
+    for (auto const& curve : frame.curves) {
+        if (!curve)
+            continue;
+        double const end = curve->GetCurveType() == dqGeom::CurveType::Arc ? arcFactor
+                                                                          : lineFactor;
+        for (double interval = 0.0; interval <= 1.0; interval += end)
+            points.push_back(curve->FractionToPoint(interval));
+    }
     return points;
 }
 
@@ -374,12 +378,20 @@ bool appendFrameToBuilder(GeometryStreamBuilder& builder, TextFrameStyleProps co
     builder.appendGeometry(frameGeometry.geometry);
 
     // The tile generator does not produce an outline for shapes with blanking
-    // fill — add the outline separately（:50-56：Loop→其子曲线 Path）。
-    if (blankingFill && frameGeometry.isLoop) {
-        // 参考 Path.createArray(frameGeometry.children)——Loop 子原语的 Path
-        // 形。DanQing 子原语遍历同 computeIntervalPoints TODO 缝——以 CloneStroked
-        // 前置延后登记。
-        // TODO: Loop→Path 拆解随 CurveChain children 缝落地。
+    // fill — add the outline separately（:50-56）。
+    // 参考：`frameGeometry instanceof Loop ? Path.createArray(children) : frameGeometry`。
+    if (blankingFill) {
+        if (frameGeometry.isLoop) {
+            // Loop → Path.createArray(children)：children = 变换后子原语封闭集
+            //（FrameGeometryResult.curves）。
+            auto path = dqGeom::Path::Create(frameGeometry.curves);
+            if (path)
+                builder.appendGeometry(std::move(path));
+        } else {
+            // 非 Loop（Path 形）→ 再追加同一 frameGeometry（参考 appendGeometryQuery
+            // 共享同一对象两次——RefPtr 拷贝共持，绘制两次语义同构）。
+            builder.appendGeometry(frameGeometry.geometry);
+        }
     }
     return true;
 }

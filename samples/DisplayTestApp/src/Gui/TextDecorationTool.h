@@ -6,7 +6,10 @@
 // 字形度量缝（ComputeRangesForTextLayout）的宿主实现 = QRawFont/QFontMetricsF
 //（参考缺省 = IModelJsNative DgnDb.computeRangesForText——imodel-native 字形
 // 引擎；EQUIVALENCE：度量源为宿主系统字体 vs 内嵌 DgnFont——逐字宽差在字体
-// 差异域内，布局逻辑面经 TextBlockLayoutTest 直移锁独立验证）。
+// 差异域内，布局逻辑面经 TextBlockLayoutTest 直移锁独立验证；发散=字体族未
+// 接线（FindFontId 恒返回 1，宿主两半均用系统缺省字体——runStyle.font 的族名
+// 不参与度量/绘制），验证=字形位置/宽度经 TEXT 探针对账（布局宽 62.548 vs
+// 绘制 advance 和 63.3 @h=20，±1.2% 字距舍入）。
 // 字形显示 = QPainterPath 轮廓 → addLineString（参考 DgnFont 填充多边形；
 // 轮廓形视觉等价——填充面 TODO 随 dqRender TextString 消费落地）。
 #pragma once
