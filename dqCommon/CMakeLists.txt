@@ -26,6 +26,7 @@ target_sources(dqCommon
         src/Cartographic.cpp
         src/TextBlock.cpp
         src/TextAnnotation.cpp
+        src/TextBlockLayout.cpp
         src/TextStyle.cpp
         src/TextString.cpp
         src/FeatureTable.cpp
@@ -103,6 +104,7 @@ if(DANQING_BUILD_TESTS AND TARGET GTest::gtest_main)
         tests/EnvironmentAtmosphereTest.cpp  # M-W 集成面：Environment.atmosphere 载体（Environment.ts atmosphere 段）
         # A-lane 锚（M-W 起——A 道代理只在此锚下追加测试注册；勿动他区）
         tests/ContourDisplayTest.cpp  # M-X X-a1：ContourDisplay.test.ts 移植 + settings.contours 载体锁
+        tests/TextBlockLayoutTest.cpp # M-Y Y-b：TextBlock.test.ts 布局组直移[width/linebreak/word-wrap]
         tests/TextAnnotationTest.cpp  # M-Y Y-a2c：TextAnnotation.test.ts 全例直移
         tests/TextBlockTest.cpp       # M-Y Y-a2：TextBlock.test.ts setStyle/stringify/append 直移
         tests/TextStyleTest.cpp       # M-Y Y-a2：TextStyle.test.ts 4 例直移

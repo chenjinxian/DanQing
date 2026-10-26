@@ -261,6 +261,13 @@ public:
     // Ported from: itwinjs-core TextStyleSettings.defaults (TextStyle.ts:443)
     static TextStyleSettings const& defaults();
 
+    // 缺省 = defaults()（参考 TextStyleSettings.defaults 静态实例 :443——
+    // DanQing 以缺省构造对齐默认值语义）。
+    TextStyleSettings()
+        : TextStyleSettings(defaultProps())
+    {
+    }
+
     // Ported from: itwinjs-core TextStyleSettings ctor (TextStyle.ts:445-501) —
     // 每字段 `props.x ?? defaults.x`。defaults 缺省 = defaultProps。
     explicit TextStyleSettings(TextStyleSettingsProps const& props,

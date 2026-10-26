@@ -654,6 +654,16 @@ struct DQ_GEOM_EXPORT Range2d {
         ExtendXY(point.x, point.y);
     }
 
+    /// Return a copy translated by adding shift components in all directions.
+    /// Translation of a null range is also a null range.
+    /// Ported from: Range2d.cloneTranslated (Range.ts)
+    Range2d CloneTranslated(double dx, double dy) const
+    {
+        if (isNull())
+            return Range2d();
+        return Range2d(low.x + dx, low.y + dy, high.x + dx, high.y + dy);
+    }
+
     void ExtendRange(const Range2d& other)
     {
         if (!other.isNull()) {
