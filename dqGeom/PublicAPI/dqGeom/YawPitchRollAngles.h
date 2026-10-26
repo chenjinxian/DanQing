@@ -130,6 +130,21 @@ struct DQ_GEOM_EXPORT YawPitchRollAngles {
             sz * cy, (cz * cx - sz * sy * sx), -(cz * sx + sz * sy * cx),
             sy, cy * sx, cy * cx);
     }
+
+    /// Return true if this rotation does nothing. If allowPeriodShift is false,
+    /// any nonzero angle is considered a non-identity; if true, all angles are
+    /// individually allowed to be any multiple of 360 degrees.
+    /// Ported from: YawPitchRollAngles.isIdentity (YawPitchRollAngles.ts:209-216)
+    bool isIdentity(bool allowPeriodShift = true) const noexcept
+    {
+        if (allowPeriodShift)
+            return Angle::isAlmostEqualRadiansAllowPeriodShift(0.0, yaw.Radians())
+                && Angle::isAlmostEqualRadiansAllowPeriodShift(0.0, pitch.Radians())
+                && Angle::isAlmostEqualRadiansAllowPeriodShift(0.0, roll.Radians());
+        return Angle::isAlmostEqualRadiansNoPeriodShift(0.0, yaw.Radians())
+            && Angle::isAlmostEqualRadiansNoPeriodShift(0.0, pitch.Radians())
+            && Angle::isAlmostEqualRadiansNoPeriodShift(0.0, roll.Radians());
+    }
 };
 
 END_DQ_GEOM_NAMESPACE

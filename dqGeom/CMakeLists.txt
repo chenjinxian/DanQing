@@ -22,6 +22,7 @@ target_sources(dqGeom
     PRIVATE
         src/DqGeom.cpp
         src/Ellipsoid.cpp
+        src/Matrix3d.cpp
         src/ClipPlane.cpp
         src/ClipPrimitive.cpp
         src/ClipVector.cpp

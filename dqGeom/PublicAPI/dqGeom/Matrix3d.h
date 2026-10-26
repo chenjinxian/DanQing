@@ -40,6 +40,8 @@ inline int axisOrderToAxis(AxisOrder order, int index) noexcept {
     return ((axis % 3) + 3) % 3;  // Geometry.cyclic3dAxis
 }
 
+struct Transform;  // MultiplyMatrixTransform（Matrix3d.ts:2209）— Transform.h 包含本头
+
 /// 3x3 matrix in row-major order.
 /// Ported from: itwinjs-core Matrix3d
 struct DQ_GEOM_EXPORT Matrix3d {
@@ -665,6 +667,28 @@ struct DQ_GEOM_EXPORT Matrix3d {
         Vector3d const r = inv.MultiplyVector(Vector3d::From(x, y, z));
         return Point4d(r.x, r.y, r.z, w);
     }
+
+    /// Normalize each column in place. Returns false (columns unaltered, original
+    /// magnitudes still stored) if any column has (near) zero length.
+    /// Ported from: itwinjs-core Matrix3d.normalizeColumnsInPlace (Matrix3d.ts:2364-2376)
+    bool normalizeColumnsInPlace(Vector3d* originalColumnMagnitudes = nullptr) noexcept
+    {
+        double const ax = ColumnXMagnitude();
+        double const ay = ColumnYMagnitude();
+        double const az = ColumnZMagnitude();
+        if (originalColumnMagnitudes)
+            *originalColumnMagnitudes = Vector3d::From(ax, ay, az);
+        if (ax < kSmallMetricDistance || ay < kSmallMetricDistance || az < kSmallMetricDistance)
+            return false;  // Geometry.isSmallMetricDistance
+        *this = scaleColumns(1.0 / ax, 1.0 / ay, 1.0 / az);
+        return true;
+    }
+
+    /// The transform whose matrix is `this * other.matrix` and whose origin is
+    /// `this * other.origin`.（成员在 src/Matrix3d.cpp 定义——Transform 于本头
+    /// 仅前向声明。）
+    /// Ported from: itwinjs-core Matrix3d.multiplyMatrixTransform (Matrix3d.ts:2209-2213)
+    struct Transform multiplyMatrixTransform(struct Transform const& other) const;
 };
 
 } // namespace dqGeom
