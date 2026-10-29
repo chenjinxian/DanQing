@@ -222,8 +222,6 @@ part of the SDK).
   naming alignment, test provenance, architecture constraints)
 - `docs/DanQing-图形引擎架构设计.md` — current architecture description
 - `docs/itwinjs-core-渲染系统执行流程分析.md` — full render-pipeline analysis
-- `docs/DTA功能对照与专业化分析-2026-09-30.md` — 85-row feature-parity matrix vs
-  itwinjs display-test-app
 - `docs/DisplayTestApp-模型打开与数据加载说明.md` — model-open / data-loading explainer
 - `docs/大规模模型加载渲染性能与验证指南.md` — **large-model loading & rendering
   performance guide + per-model download/run/verify recipes**
@@ -386,7 +384,6 @@ ctest --test-dir build -C Debug --output-on-failure
 - **CLAUDE.md** — 开发规则的唯一权威（参考保真、命名对齐、测试溯源、架构约束）
 - `docs/DanQing-图形引擎架构设计.md` — 现行架构描述
 - `docs/itwinjs-core-渲染系统执行流程分析.md` — 渲染管线全流程分析
-- `docs/DTA功能对照与专业化分析-2026-09-30.md` — 与 itwinjs display-test-app 的 85 行功能对照矩阵
 - `docs/DisplayTestApp-模型打开与数据加载说明.md` — 模型打开/数据加载说明
 - `docs/大规模模型加载渲染性能与验证指南.md` — **大体量模型加载与渲染性能指南 + 逐模型下载/运行/验证配方**
 - `docs/DTA与DanQing-DebugInfo逐视图对比-2026-10-24.md` — 经 Debug Info 面板与参考应用的逐视图性能对比（fit+rotate 协议、帧分段账、≈6× 渲染工作量比）
