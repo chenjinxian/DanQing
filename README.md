@@ -1,5 +1,7 @@
 # 丹青（DanQing）
 
+> **Public project.** Issues and pull requests are welcome. DanQing is a separate public rendering-engine project in the [TiangongKaiwu / LubanCAD](https://github.com/chenjinxian/tiangong-kaiwu) family. This README focuses on what the engine can do and how to try it.
+
 **A pure client-side graphics engine for massive BIM / digital-twin models** —
 itwinjs-core's large-scale tile streaming and frontend rendering capability,
 re-implemented in C++20 with Filament-grade platform layers. Target users:
@@ -34,6 +36,24 @@ constants.
 - **Embeddable SDK** — engine modules `dqBase/dqGeom/dqCommon/dqRender` have
   Qt-free public APIs and build standalone; the Qt desktop app is a host, not a
   dependency. Zero network access in the engine by construction.
+
+### Capability map
+
+| Area | What you get |
+|---|---|
+| Massive-model streaming | itwinjs imdl tile trees, LOD refinement, multi-tree selectors, parent fallback, async fetch/parse |
+| Rendering | GPU vertex-LUT meshes, instancing, edge chains, polylines/points, embedded textures, WBOIT transparency, pick buffers |
+| Display & analysis | 14 rendering-style presets, hidden-line overrides, thematic display, HBAO, sectioning, contours, timelines, saved views |
+| Interaction | 24-step viewport pipeline, walk/fly/look-and-move, click/box selection, measure, zoom-to-selected, Debug Info panel |
+| Embeddable SDK | Qt-free `dqBase/dqGeom/dqCommon/dqRender` modules with DI seams for tile sources; zero network by construction |
+| Demo/testing | Real-backend dump replay, pixel-level regression locks, eight demo models, Windows sample app |
+
+### Who it is for
+
+- Digital-twin / BIM viewer teams that need to stream very large models on the client.
+- CAD / graphics application developers looking for an embeddable C++ rendering core.
+- Researchers reproducing or benchmarking itwinjs/Filament rendering behavior.
+- Teams that want a local, deterministic, network-free rendering test bed.
 
 ### Screenshots & demos
 
@@ -232,6 +252,13 @@ part of the SDK).
 - Milestone plan/record docs (`docs/阶段*-实现计划-*.md`) — per-milestone
   forensic records
 
+### Contributing
+
+- Read [`CLAUDE.md`](CLAUDE.md) first: reference fidelity, naming alignment, test provenance, and architecture constraints are mandatory.
+- Build and test with the commands above; describe the exact command and result in the PR.
+- Open an issue with a minimal reproduction and environment (OS/GPU/toolchain) before large changes.
+- PRs and issues are welcome in English or Chinese. Keep changes focused; add a pixel/functional test when behavior changes.
+
 ### License
 
 Apache License 2.0 — see [LICENSE](LICENSE). Portions derived from upstream
@@ -253,6 +280,24 @@ purposes.
 - **性能工程全部实测**——下表每个数字都可由仓内 harness 复核（见[性能](#性能)）。
 - **参考保真方法论**——2960 项自动化测试，含真实后端 RPC dump 回放的像素级回归锁；示例程序与 itwinjs display-test-app 的 UI 与交互 1:1。
 - **可嵌入 SDK**——引擎模块 `dqBase/dqGeom/dqCommon/dqRender` 公开 API 零 Qt、可独立构建；Qt 桌面端只是宿主。引擎构造性零网络。
+
+### 能力地图
+
+| 领域 | 能做什么 |
+|---|---|
+| 大体量流式 | itwinjs imdl 瓦树、LOD 细化、多树选择器、父瓦兜底、异步 fetch/parse |
+| 渲染 | GPU 顶点 LUT 网格、实例化、边缘链、折线/点串、嵌入纹理、WBOIT 透明、拾取缓冲 |
+| 显示与分析 | 14 种渲染样式、隐藏线覆盖、Thematic、HBAO、剖切、等值线、时间轴、Saved Views |
+| 交互 | 24 步视口管线、Walk/Fly/LookAndMove、点选/框选、测距、缩放到选中、Debug Info 面板 |
+| 可嵌入 SDK | 零 Qt 的 `dqBase/dqGeom/dqCommon/dqRender` 模块，瓦源 DI 缝隙，构造性零网络 |
+| 演示/测试 | 真实后端 dump 回放、像素级回归锁、八个演示模型、Windows 示例程序 |
+
+### 适用场景
+
+- 需要在客户端流畅浏览超大 BIM/数字孪生模型的团队；
+- 寻找可嵌入 C++ 渲染内核的 CAD/图形应用开发者；
+- 研究或复现 itwinjs/Filament 渲染行为的工程团队；
+- 需要本地、确定性、零网络渲染测试床的项目。
 
 ### 截图与演示
 
@@ -389,6 +434,13 @@ ctest --test-dir build -C Debug --output-on-failure
 - `docs/DTA与DanQing-DebugInfo逐视图对比-2026-10-24.md` — 经 Debug Info 面板与参考应用的逐视图性能对比（fit+rotate 协议、帧分段账、≈6× 渲染工作量比）
 - `docs/DanQing-C++代码规范.md` — C++ 格式规范（CLAUDE.md 的从属参考）
 - 里程碑计划/实录文档（`docs/阶段*-实现计划-*.md`）——逐里程碑取证台账
+
+### 参与共建
+
+- 先读 [`CLAUDE.md`](CLAUDE.md)：参考保真、命名对齐、测试溯源和架构约束是硬规则。
+- 用上方命令完成构建/测试，并在 PR 中写明命令与结果。
+- 大改前先开 Issue，附最小复现和环境（OS/GPU/工具链）。
+- Issue/PR 中英文均可；变更保持聚焦，行为变化需补像素/功能测试。
 
 ### 许可证
 
